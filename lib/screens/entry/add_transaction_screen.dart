@@ -7,7 +7,11 @@ import '../../models/transaction.dart';
 import '../../services/app_state_controller.dart';
 
 class AddTransactionScreen extends StatefulWidget {
-  const AddTransactionScreen({super.key});
+  const AddTransactionScreen({super.key, this.initialTransaction});
+
+  final Transaction? initialTransaction;
+
+  bool get isEditMode => initialTransaction != null;
 
   @override
   State<AddTransactionScreen> createState() => _AddTransactionScreenState();
@@ -19,11 +23,26 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   final TextEditingController _notesController = TextEditingController();
   final Uuid _uuid = const Uuid();
 
-  String _type = 'income';
-  String _currency = 'EGP';
+  late String _type;
+  late String _currency;
   String? _category;
-  DateTime _selectedDate = DateTime.now();
+  late DateTime _selectedDate;
   bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final Transaction? tx = widget.initialTransaction;
+    _type = tx?.type ?? 'income';
+    _currency = tx?.currency ?? 'EGP';
+    _category = tx?.category;
+    _selectedDate = _tryParseDate(tx?.date) ?? DateTime.now();
+    if (tx != null) {
+      _amountController.text = tx.amount.toStringAsFixed(
+          tx.amount.truncateToDouble() == tx.amount ? 0 : 2);
+      _notesController.text = tx.description;
+    }
+  }
 
   @override
   void dispose() {
@@ -44,7 +63,9 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Add Transaction')),
+      appBar: AppBar(
+        title: Text(widget.isEditMode ? 'Edit Transaction' : 'Add Transaction'),
+      ),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
@@ -174,25 +195,42 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                             final double amount =
                                 double.parse(_amountController.text.trim());
 
+                            final Transaction? original = widget.initialTransaction;
                             final Transaction transaction = Transaction(
-                              id: _uuid.v4(),
+                              id: original?.id ?? _uuid.v4(),
                               type: _type,
                               date: _dateIso(_selectedDate),
                               amount: amount,
                               currency: _currency,
                               category: _category!,
                               description: _notesController.text.trim(),
-                              createdAt: DateTime.now().toIso8601String(),
-                              rolledOver: false,
+                              createdAt: original?.createdAt ??
+                                  DateTime.now().toIso8601String(),
+                              rolledOver: original?.rolledOver ?? false,
+                              rolledAmount: original?.rolledAmount,
+                              sourceIncomeId: original?.sourceIncomeId,
+                              exchangePairId: original?.exchangePairId,
+                              exchangeSourceIncomeId:
+                                  original?.exchangeSourceIncomeId,
+                              remainingAmount: original?.remainingAmount,
                             );
 
                             final AppStateController appStateController =
                                 context.read<AppStateController>();
-                            await appStateController.addTransaction(transaction);
+                            if (widget.isEditMode) {
+                              await appStateController
+                                  .updateTransaction(transaction);
+                            } else {
+                              await appStateController.addTransaction(transaction);
+                            }
                             if (!context.mounted) return;
                             Navigator.of(context).pop();
                           },
-                    child: Text(_saving ? 'Saving...' : 'Save Transaction'),
+                    child: Text(_saving
+                        ? 'Saving...'
+                        : (widget.isEditMode
+                            ? 'Update Transaction'
+                            : 'Save Transaction')),
                   ),
                 ),
               ],
@@ -201,6 +239,15 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
         ),
       ),
     );
+  }
+
+  static DateTime? _tryParseDate(String? value) {
+    if (value == null || value.isEmpty) return null;
+    try {
+      return DateTime.parse(value);
+    } catch (_) {
+      return null;
+    }
   }
 
   static String _dateIso(DateTime date) {
