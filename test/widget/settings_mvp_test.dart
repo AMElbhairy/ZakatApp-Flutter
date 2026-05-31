@@ -6,6 +6,7 @@ import 'package:zakatapp_flutter/main.dart';
 import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
 import 'package:zakatapp_flutter/services/app_state_controller.dart';
 import 'package:zakatapp_flutter/services/local_storage_service.dart';
+import 'dart:convert';
 
 Widget _buildApp() {
   const LocalStorageService localStorage = LocalStorageService();
@@ -18,7 +19,11 @@ Widget _buildApp() {
 }
 
 Future<void> _openSettings(WidgetTester tester) async {
-  await tester.tap(find.text('Account').first);
+  final Finder navAccount = find.descendant(
+    of: find.byType(NavigationBar),
+    matching: find.text('Account'),
+  );
+  await tester.tap(navAccount.last);
   await tester.pumpAndSettle();
 }
 
@@ -46,9 +51,11 @@ void main() {
     expect(find.text('Settings'), findsOneWidget);
     expect(find.text('Currency'), findsOneWidget);
     expect(find.text('Zakat Calculation'), findsOneWidget);
-    expect(find.text('Appearance'), findsOneWidget);
-    await tester.drag(find.byType(ListView).first, const Offset(0, -600));
+    await tester.drag(find.byType(ListView).first, const Offset(0, -1000));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Appearance'));
+    await tester.pumpAndSettle();
+    expect(find.text('Appearance'), findsOneWidget);
     expect(find.text('Backup & Sync'), findsOneWidget);
     expect(find.text('About'), findsOneWidget);
   });
@@ -156,10 +163,50 @@ void main() {
 
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
-    await _openSettings(tester);
 
-    expect(find.text('QAR'), findsWidgets);
-    expect(find.text('AED'), findsWidgets);
-    expect(find.byKey(const Key('settingsAnnualDateSection')), findsOneWidget);
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String? raw = prefs.getString('zakatAppData');
+    expect(raw, isNotNull);
+    final Map<String, dynamic> json = jsonDecode(raw!) as Map<String, dynamic>;
+    expect(json['mainCurrency'], 'QAR');
+    expect(json['defaultEntryCurrency'], 'AED');
+    expect(json['zakatMethod'], 'annual');
+  });
+
+  testWidgets('save/load market snapshot', (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    await tester.pumpWidget(_buildApp());
+    await tester.pumpAndSettle();
+
+    await _openSettings(tester);
+    await tester.drag(find.byType(ListView).first, const Offset(0, -800));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byKey(const Key('marketGoldField')), '5200');
+    await tester.enterText(find.byKey(const Key('marketSilverField')), '62.5');
+    await tester.enterText(find.byKey(const Key('marketUsdField')), '50');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('saveMarketDataButton')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('saveMarketDataButton')));
+    await tester.pumpAndSettle();
+
+    await tester.pumpWidget(_buildApp());
+    await tester.pumpAndSettle();
+    await _openSettings(tester);
+    await tester.drag(find.byType(ListView).first, const Offset(0, -800));
+    await tester.pumpAndSettle();
+
+    final TextFormField goldField =
+        tester.widget<TextFormField>(find.byKey(const Key('marketGoldField')));
+    final TextFormField silverField =
+        tester.widget<TextFormField>(find.byKey(const Key('marketSilverField')));
+    final TextFormField usdField =
+        tester.widget<TextFormField>(find.byKey(const Key('marketUsdField')));
+
+    expect(goldField.controller?.text, '5200');
+    expect(silverField.controller?.text, '62.5');
+    expect(usdField.controller?.text, '50');
   });
 }

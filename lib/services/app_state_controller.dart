@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../models/app_state.dart';
 import '../models/financial_plan.dart';
 import '../models/investment_asset.dart';
+import '../models/market_snapshot.dart';
 import '../models/recurring_transaction.dart';
 import '../models/saving.dart';
 import '../models/transaction.dart';
@@ -16,6 +17,8 @@ class AppStateController extends ChangeNotifier {
   AppStateModel _state;
 
   AppStateModel get state => _state;
+  MarketSnapshot get currentMarketSnapshot =>
+      MarketSnapshot.fromAppStateJson(_state.marketData);
 
   Future<void> load() async {
     _state = await repository.loadAppState();
@@ -142,6 +145,10 @@ class AppStateController extends ChangeNotifier {
 
   Future<void> updateZakatAnnualDate(String annualDate) async {
     await updateState(_state.copyWith(zakatAnnualDate: annualDate));
+  }
+
+  Future<void> updateMarketSnapshot(MarketSnapshot snapshot) async {
+    await updateState(_state.copyWith(marketData: snapshot.toAppStateJson()));
   }
 }
 

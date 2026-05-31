@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zakatapp_flutter/models/app_state.dart';
 import 'package:zakatapp_flutter/models/financial_plan.dart';
 import 'package:zakatapp_flutter/models/investment_asset.dart';
+import 'package:zakatapp_flutter/models/market_snapshot.dart';
 import 'package:zakatapp_flutter/models/recurring_transaction.dart';
 import 'package:zakatapp_flutter/models/saving.dart';
 import 'package:zakatapp_flutter/models/transaction.dart';
@@ -69,5 +70,26 @@ void main() {
     expect(roundtrip.mainCurrency, appState.mainCurrency);
     expect(roundtrip.zakatMethod, appState.zakatMethod);
     expect(roundtrip.zakatAnnualDate, appState.zakatAnnualDate);
+  });
+
+  test('market snapshot fromJson/toJson', () {
+    final Map<String, dynamic> json = <String, dynamic>{
+      'gold24kPricePerGramEgp': 5200,
+      'silverPricePerGramEgp': 62.5,
+      'usdToEgp': 50,
+      'sarToEgp': 13.3,
+      'aedToEgp': 13.6,
+      'kwdToEgp': 162.5,
+      'qarToEgp': 13.7,
+      'lastUpdated': '2026-05-31T09:00:00Z',
+    };
+
+    final MarketSnapshot snapshot = MarketSnapshot.fromJson(json);
+    final Map<String, dynamic> out = snapshot.toJson();
+
+    expect(out['gold24kPricePerGramEgp'], 5200);
+    expect(out['silverPricePerGramEgp'], 62.5);
+    expect(out['usdToEgp'], 50);
+    expect(out['lastUpdated'], '2026-05-31T09:00:00Z');
   });
 }

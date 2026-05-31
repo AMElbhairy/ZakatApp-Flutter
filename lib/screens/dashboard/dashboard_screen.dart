@@ -6,6 +6,7 @@ import '../../core/services/zakat_engine.dart';
 import '../../core/services/zakat_schedule_service.dart';
 import '../../core/widgets/app_ui.dart';
 import '../../models/investment_asset.dart';
+import '../../models/market_snapshot.dart';
 import '../../models/saving.dart';
 import '../../models/transaction.dart';
 import '../../services/app_state_controller.dart';
@@ -31,6 +32,8 @@ class DashboardScreen extends StatelessWidget {
     final investments = state.investments;
 
     final market = MarketData.fromJson(state.marketData);
+    final MarketSnapshot snapshot = controller.currentMarketSnapshot;
+    final bool hasMarketData = snapshot.hasRequiredData;
 
     double totalIncomeEgp = 0;
     double totalExpensesEgp = 0;
@@ -71,14 +74,16 @@ class DashboardScreen extends StatelessWidget {
         ZakatEngineService.defaultConfig.nisabGoldGrams * market.goldPrice24kEgp;
     final bool nisabMet = ZakatEngineService.checkCashNisab(totalWealthEgp, market);
 
-    final List<Map<String, dynamic>> schedule = _buildSchedule(
-      zakatMethod: state.zakatMethod,
-      zakatAnnualDate: state.zakatAnnualDate,
-      transactions: transactions,
-      savings: savings,
-      investments: investments,
-      marketData: market,
-    );
+    final List<Map<String, dynamic>> schedule = hasMarketData
+        ? _buildSchedule(
+            zakatMethod: state.zakatMethod,
+            zakatAnnualDate: state.zakatAnnualDate,
+            transactions: transactions,
+            savings: savings,
+            investments: investments,
+            marketData: market,
+          )
+        : const <Map<String, dynamic>>[];
     final _Dues dues = _computeDues(schedule);
 
     final _Allocation allocation = _computeAllocation(
@@ -121,13 +126,16 @@ class DashboardScreen extends StatelessWidget {
                 Text('Total Wealth', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),
                 Text(
-                  _formatEgp(totalWealthEgp),
+                  _formatOrMissing(totalWealthEgp, hasMarketData),
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                         fontWeight: FontWeight.w800,
                       ),
                 ),
                 const SizedBox(height: 12),
-                MetricTile(label: 'Net Position', value: _formatEgp(netPositionEgp)),
+                MetricTile(
+                  label: 'Net Position',
+                  value: _formatOrMissing(netPositionEgp, hasMarketData),
+                ),
               ],
             ),
           ),
@@ -143,10 +151,13 @@ class DashboardScreen extends StatelessWidget {
                 const SizedBox(height: 10),
                 MetricTile(
                   label: 'Total Savings Wealth',
-                  value: _formatEgp(savingsTotals.totalSavingsWealthEgp),
+                  value: _formatOrMissing(savingsTotals.totalSavingsWealthEgp, hasMarketData),
                 ),
                 const SizedBox(height: 10),
-                MetricTile(label: 'Investment Wealth', value: _formatEgp(investmentsEgp)),
+                MetricTile(
+                  label: 'Investment Wealth',
+                  value: _formatOrMissing(investmentsEgp, hasMarketData),
+                ),
               ],
             ),
           ),
@@ -168,22 +179,30 @@ class DashboardScreen extends StatelessWidget {
                 ),
                 MetricTile(
                   label: 'Nisab Status',
-                  value: nisabMet ? 'Met' : 'Not Met',
+                  value: hasMarketData
+                      ? (nisabMet ? 'Met' : 'Not Met')
+                      : 'Market data required',
                   bold: nisabMet,
                 ),
                 const SizedBox(height: 10),
                 MetricTile(
                   label: 'Current Nisab Threshold',
-                  value: _formatEgp(nisabThreshold),
+                  value: _formatOrMissing(nisabThreshold, hasMarketData),
                 ),
                 const SizedBox(height: 10),
-                MetricTile(label: 'Zakat Due This Month', value: _formatEgp(dues.thisMonth)),
+                MetricTile(
+                  label: 'Zakat Due This Month',
+                  value: _formatOrMissing(dues.thisMonth, hasMarketData),
+                ),
                 const SizedBox(height: 10),
-                MetricTile(label: 'Zakat Due Next Month', value: _formatEgp(dues.nextMonth)),
+                MetricTile(
+                  label: 'Zakat Due Next Month',
+                  value: _formatOrMissing(dues.nextMonth, hasMarketData),
+                ),
                 const SizedBox(height: 10),
                 MetricTile(
                   label: 'Total Upcoming Dues',
-                  value: _formatEgp(dues.totalUpcoming),
+                  value: _formatOrMissing(dues.totalUpcoming, hasMarketData),
                   bold: true,
                 ),
               ],
@@ -349,6 +368,11 @@ class DashboardScreen extends StatelessWidget {
   static String _formatEgp(double value) {
     final NumberFormat formatter = NumberFormat('#,##0.00', 'en_US');
     return 'E£ ${formatter.format(value)}';
+  }
+
+  static String _formatOrMissing(double value, bool hasMarketData) {
+    if (!hasMarketData) return 'Market data required';
+    return _formatEgp(value);
   }
 
   static String _formatPct(double value) {

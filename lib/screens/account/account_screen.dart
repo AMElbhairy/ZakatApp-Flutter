@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../models/market_snapshot.dart';
 import '../../services/app_state_controller.dart';
 
 class AccountScreen extends StatefulWidget {
@@ -20,17 +21,42 @@ class _AccountScreenState extends State<AccountScreen> {
     'QAR',
   ];
 
+  final TextEditingController _goldController = TextEditingController();
+  final TextEditingController _silverController = TextEditingController();
+  final TextEditingController _usdController = TextEditingController();
+  final TextEditingController _sarController = TextEditingController();
+  final TextEditingController _aedController = TextEditingController();
+  final TextEditingController _kwdController = TextEditingController();
+  final TextEditingController _qarController = TextEditingController();
+  String _lastUpdated = '';
+  bool _marketInitialized = false;
+
+  @override
+  void dispose() {
+    _goldController.dispose();
+    _silverController.dispose();
+    _usdController.dispose();
+    _sarController.dispose();
+    _aedController.dispose();
+    _kwdController.dispose();
+    _qarController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<AppStateController>();
     final state = controller.state;
 
-    final String mainCurrency = state.mainCurrency.isEmpty ? 'EGP' : state.mainCurrency;
+    final String mainCurrency =
+        state.mainCurrency.isEmpty ? 'EGP' : state.mainCurrency;
     final String defaultEntryCurrency =
         state.defaultEntryCurrency.isEmpty ? 'EGP' : state.defaultEntryCurrency;
     final String zakatMethod = state.zakatMethod == 'annual' ? 'annual' : 'hawl';
 
     final _AnnualDate annualDate = _AnnualDate.parse(state.zakatAnnualDate);
+    final MarketSnapshot snapshot = controller.currentMarketSnapshot;
+    _syncMarketControllers(snapshot);
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -39,7 +65,8 @@ class _AccountScreenState extends State<AccountScreen> {
         const SizedBox(height: 16),
         _SectionCard(
           title: 'Account',
-          child: const Text('Sign-in and profile settings will be available in a later phase.'),
+          child: const Text(
+              'Sign-in and profile settings will be available in a later phase.'),
         ),
         const SizedBox(height: 12),
         _SectionCard(
@@ -49,15 +76,15 @@ class _AccountScreenState extends State<AccountScreen> {
             children: <Widget>[
               DropdownButtonFormField<String>(
                 key: const Key('settingsMainCurrencyField'),
-                initialValue: _supportedCurrencies.contains(mainCurrency)
-                    ? mainCurrency
-                    : 'EGP',
+                initialValue:
+                    _supportedCurrencies.contains(mainCurrency) ? mainCurrency : 'EGP',
                 decoration: const InputDecoration(
                   labelText: 'Main Currency',
                   border: OutlineInputBorder(),
                 ),
                 items: _supportedCurrencies
-                    .map((String c) => DropdownMenuItem<String>(value: c, child: Text(c)))
+                    .map((String c) =>
+                        DropdownMenuItem<String>(value: c, child: Text(c)))
                     .toList(growable: false),
                 onChanged: (String? value) {
                   if (value == null) return;
@@ -75,13 +102,12 @@ class _AccountScreenState extends State<AccountScreen> {
                   border: OutlineInputBorder(),
                 ),
                 items: _supportedCurrencies
-                    .map((String c) => DropdownMenuItem<String>(value: c, child: Text(c)))
+                    .map((String c) =>
+                        DropdownMenuItem<String>(value: c, child: Text(c)))
                     .toList(growable: false),
                 onChanged: (String? value) {
                   if (value == null) return;
-                  context
-                      .read<AppStateController>()
-                      .updateDefaultEntryCurrency(value);
+                  context.read<AppStateController>().updateDefaultEntryCurrency(value);
                 },
               ),
             ],
@@ -182,13 +208,101 @@ class _AccountScreenState extends State<AccountScreen> {
         ),
         const SizedBox(height: 12),
         _SectionCard(
+          title: 'Market Data',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              TextFormField(
+                key: const Key('marketGoldField'),
+                controller: _goldController,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'Gold 24K price / gram (EGP)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextFormField(
+                key: const Key('marketSilverField'),
+                controller: _silverController,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'Silver price / gram (EGP)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextFormField(
+                key: const Key('marketUsdField'),
+                controller: _usdController,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'USD to EGP',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextFormField(
+                key: const Key('marketSarField'),
+                controller: _sarController,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'SAR to EGP',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextFormField(
+                key: const Key('marketAedField'),
+                controller: _aedController,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'AED to EGP',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextFormField(
+                key: const Key('marketKwdField'),
+                controller: _kwdController,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'KWD to EGP',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextFormField(
+                key: const Key('marketQarField'),
+                controller: _qarController,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'QAR to EGP',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text('Last updated: ${_lastUpdated.isEmpty ? '-' : _lastUpdated}'),
+              const SizedBox(height: 12),
+              FilledButton(
+                key: const Key('saveMarketDataButton'),
+                onPressed: _saveMarketData,
+                child: const Text('Save Market Data'),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        _SectionCard(
           title: 'Appearance',
-          child: const Text('Theme mode (System / Light / Dark) will be wired in a later phase.'),
+          child: const Text(
+              'Theme mode (System / Light / Dark) will be wired in a later phase.'),
         ),
         const SizedBox(height: 12),
         _SectionCard(
           title: 'Backup & Sync',
-          child: const Text('Backup and sync options will be available in a later phase.'),
+          child: const Text(
+              'Backup and sync options will be available in a later phase.'),
         ),
         const SizedBox(height: 12),
         _SectionCard(
@@ -208,6 +322,40 @@ class _AccountScreenState extends State<AccountScreen> {
     );
   }
 
+  void _syncMarketControllers(MarketSnapshot snapshot) {
+    if (_marketInitialized) return;
+    _goldController.text = _fmt(snapshot.gold24kPricePerGramEgp);
+    _silverController.text = _fmt(snapshot.silverPricePerGramEgp);
+    _usdController.text = _fmt(snapshot.usdToEgp);
+    _sarController.text = _fmt(snapshot.sarToEgp);
+    _aedController.text = _fmt(snapshot.aedToEgp);
+    _kwdController.text = _fmt(snapshot.kwdToEgp);
+    _qarController.text = _fmt(snapshot.qarToEgp);
+    _lastUpdated = snapshot.lastUpdated;
+    _marketInitialized = true;
+  }
+
+  Future<void> _saveMarketData() async {
+    final DateTime now = DateTime.now();
+    final String lastUpdated =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+
+    final MarketSnapshot snapshot = MarketSnapshot(
+      gold24kPricePerGramEgp: _asDouble(_goldController.text),
+      silverPricePerGramEgp: _asDouble(_silverController.text),
+      usdToEgp: _asDouble(_usdController.text),
+      sarToEgp: _asDouble(_sarController.text),
+      aedToEgp: _asDouble(_aedController.text),
+      kwdToEgp: _asDouble(_kwdController.text),
+      qarToEgp: _asDouble(_qarController.text),
+      lastUpdated: lastUpdated,
+    );
+
+    await context.read<AppStateController>().updateMarketSnapshot(snapshot);
+    if (!mounted) return;
+    setState(() => _lastUpdated = lastUpdated);
+  }
+
   Future<void> _updateAnnualDate(int month, int day) {
     final String mm = month.toString().padLeft(2, '0');
     final String dd = day.toString().padLeft(2, '0');
@@ -215,8 +363,16 @@ class _AccountScreenState extends State<AccountScreen> {
   }
 
   static int _hijriMonthLength(int month) {
-    // Reuses the same convention used in engine/schedule code.
     return month == 12 ? 30 : ((month % 2 == 1) ? 30 : 29);
+  }
+
+  static double _asDouble(String value) {
+    return double.tryParse(value.trim()) ?? 0;
+  }
+
+  static String _fmt(double value) {
+    if (value == 0) return '';
+    return value.toStringAsFixed(value.truncateToDouble() == value ? 0 : 2);
   }
 }
 

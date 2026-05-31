@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -6,6 +8,47 @@ import 'package:zakatapp_flutter/main.dart';
 import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
 import 'package:zakatapp_flutter/services/app_state_controller.dart';
 import 'package:zakatapp_flutter/services/local_storage_service.dart';
+
+Map<String, dynamic> _seedStateWithMarketData() {
+  return <String, dynamic>{
+    'transactions': <dynamic>[],
+    'savings': <dynamic>[],
+    'recurringTransactions': <dynamic>[],
+    'investments': <dynamic>[],
+    'financialPlans': <dynamic>[],
+    'lastRollover': '',
+    'categories': <String, dynamic>{
+      'income': <String>['Salary'],
+      'expense': <String>['Food & Dining'],
+    },
+    'zakatPaidMonths': <dynamic>[],
+    'processedExpenseIds': <dynamic>[],
+    'mainCurrency': 'EGP',
+    'defaultEntryCurrency': 'EGP',
+    'zakatExpenseIds': <String, dynamic>{},
+    'zakatMethod': 'hawl',
+    'zakatAnnualDate': '',
+    'zakatScheduleFilter': 'unpaid',
+    'marketData': <String, dynamic>{
+      'GOLD_PRICE_24K_EGP': 5000,
+      'SILVER_PRICE_EGP': 60,
+      'USD_TO_EGP': 50,
+      'SAR_TO_EGP': 13.3,
+      'RATES_TO_EGP': <String, dynamic>{'EGP': 1, 'USD': 50, 'SAR': 13.3},
+      'LAST_UPDATED': '2026-05-31T10:00:00Z',
+    },
+    'marketHistory': <dynamic>[],
+    'syncHealth': <String, dynamic>{
+      'lastSuccessAt': '',
+      'lastFailureAt': '',
+      'lastError': '',
+      'pendingWrites': 0,
+    },
+    'aiSettings': <String, dynamic>{'keys': <String>['', ''], 'defaultKeyIndex': 0},
+    'cloudHydrated': false,
+    'hasUnsyncedAuthChanges': false,
+  };
+}
 
 Widget _buildApp() {
   const LocalStorageService localStorage = LocalStorageService();
@@ -78,7 +121,9 @@ void main() {
 
   testWidgets('adding saving updates savings wealth',
       (WidgetTester tester) async {
-    SharedPreferences.setMockInitialValues(<String, Object>{});
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'zakatAppData': jsonEncode(_seedStateWithMarketData()),
+    });
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
@@ -90,7 +135,9 @@ void main() {
 
   testWidgets('adding investment updates investment wealth',
       (WidgetTester tester) async {
-    SharedPreferences.setMockInitialValues(<String, Object>{});
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'zakatAppData': jsonEncode(_seedStateWithMarketData()),
+    });
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
@@ -152,5 +199,30 @@ void main() {
 
     expect(find.text('Activity'), findsWidgets);
     expect(find.text('All'), findsWidgets);
+  });
+
+  testWidgets('dashboard shows Market data required when missing',
+      (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    await tester.pumpWidget(_buildApp());
+    await tester.pumpAndSettle();
+
+    await _addIncome(tester, '350');
+
+    expect(find.text('Market data required'), findsWidgets);
+  });
+
+  testWidgets('dashboard shows nisab threshold when market data exists',
+      (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'zakatAppData': jsonEncode(_seedStateWithMarketData()),
+    });
+    await tester.pumpWidget(_buildApp());
+    await tester.pumpAndSettle();
+
+    await _addIncome(tester, '100');
+
+    expect(find.text('Current Nisab Threshold'), findsOneWidget);
+    expect(find.textContaining('E£ 425,000.00'), findsWidgets);
   });
 }

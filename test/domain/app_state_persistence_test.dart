@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zakatapp_flutter/models/investment_asset.dart';
+import 'package:zakatapp_flutter/models/market_snapshot.dart';
 import 'package:zakatapp_flutter/models/saving.dart';
 import 'package:zakatapp_flutter/models/transaction.dart';
 import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
@@ -165,5 +166,31 @@ void main() {
 
     expect(loaded.transactions, isEmpty);
     expect(loaded.mainCurrency, 'EGP');
+  });
+
+  test('update market data persists', () async {
+    await controller.load();
+
+    await controller.updateMarketSnapshot(
+      const MarketSnapshot(
+        gold24kPricePerGramEgp: 5300,
+        silverPricePerGramEgp: 63,
+        usdToEgp: 51,
+        sarToEgp: 13.5,
+        aedToEgp: 13.9,
+        kwdToEgp: 165,
+        qarToEgp: 14,
+        lastUpdated: '2026-05-31T10:00:00Z',
+      ),
+    );
+
+    final AppStateController reloaded = AppStateController(repository: repository);
+    await reloaded.load();
+    final snapshot = reloaded.currentMarketSnapshot;
+
+    expect(snapshot.gold24kPricePerGramEgp, 5300);
+    expect(snapshot.silverPricePerGramEgp, 63);
+    expect(snapshot.usdToEgp, 51);
+    expect(snapshot.lastUpdated, '2026-05-31T10:00:00Z');
   });
 }
