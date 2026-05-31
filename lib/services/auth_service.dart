@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:google_sign_in/google_sign_in.dart';
 
 import '../models/user_profile.dart';
@@ -9,9 +11,14 @@ abstract class AuthService {
 }
 
 class GoogleAuthService implements AuthService {
+  static const String _iosClientId = String.fromEnvironment(
+    'GOOGLE_IOS_CLIENT_ID',
+  );
+
   GoogleAuthService({GoogleSignIn? googleSignIn})
       : _googleSignIn = googleSignIn ??
             GoogleSignIn(
+              clientId: _iosClientId.trim().isEmpty ? null : _iosClientId,
               scopes: const <String>[
                 'https://www.googleapis.com/auth/drive.file',
                 'profile',
@@ -21,8 +28,19 @@ class GoogleAuthService implements AuthService {
 
   final GoogleSignIn _googleSignIn;
 
+  bool get _isConfiguredForCurrentPlatform {
+    if (!Platform.isIOS) return true;
+    return _iosClientId.trim().isNotEmpty;
+  }
+
   @override
   Future<UserProfile?> signIn() async {
+    if (!_isConfiguredForCurrentPlatform) {
+      throw StateError(
+        'Google Sign-In is not configured on iOS. '
+        'Set GOOGLE_IOS_CLIENT_ID (dart-define) or GIDClientID in Info.plist.',
+      );
+    }
     final GoogleSignInAccount? account = await _googleSignIn.signIn();
     if (account == null) return null;
     return _toProfile(account);
@@ -35,6 +53,9 @@ class GoogleAuthService implements AuthService {
 
   @override
   Future<UserProfile?> restoreSession() async {
+    if (!_isConfiguredForCurrentPlatform) {
+      return null;
+    }
     final GoogleSignInAccount? account = await _googleSignIn.signInSilently();
     if (account == null) return null;
     return _toProfile(account);

@@ -1,21 +1,50 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:zakatapp_flutter/main.dart';
+import 'package:zakatapp_flutter/core/i18n/app_localizations.dart';
+import 'package:zakatapp_flutter/models/user_profile.dart';
 import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
+import 'package:zakatapp_flutter/screens/account/account_screen.dart';
 import 'package:zakatapp_flutter/services/app_state_controller.dart';
+import 'package:zakatapp_flutter/services/auth_controller.dart';
+import 'package:zakatapp_flutter/services/auth_service.dart';
 import 'package:zakatapp_flutter/services/local_storage_service.dart';
 import 'package:zakatapp_flutter/services/market_data_api_service.dart';
 import 'dart:convert';
+
+class _FakeAuthService implements AuthService {
+  @override
+  Future<UserProfile?> restoreSession() async => null;
+
+  @override
+  Future<UserProfile?> signIn() async => null;
+
+  @override
+  Future<void> signOut() async {}
+}
 
 Widget _buildApp() {
   const LocalStorageService localStorage = LocalStorageService();
   final AppStateRepository repository =
       AppStateRepository(localStorage: localStorage);
-  return ChangeNotifierProvider<AppStateController>(
-    create: (_) => AppStateController(repository: repository),
-    child: const ZakatApp(),
+  return MultiProvider(
+    providers: <ChangeNotifierProvider<dynamic>>[
+      ChangeNotifierProvider<AppStateController>(
+        create: (_) => AppStateController(
+          repository: repository,
+          marketDataApiService: _FakeMarketDataApiService(),
+        ),
+      ),
+      ChangeNotifierProvider<AuthController>(
+        create: (_) => AuthController(
+          authService: _FakeAuthService(),
+          localStorage: localStorage,
+        ),
+      ),
+    ],
+    child: const _SettingsTestApp(),
   );
 }
 
@@ -23,11 +52,41 @@ Widget _buildAppWithService(MarketDataApiService service) {
   const LocalStorageService localStorage = LocalStorageService();
   final AppStateRepository repository =
       AppStateRepository(localStorage: localStorage);
-  return ChangeNotifierProvider<AppStateController>(
-    create: (_) =>
-        AppStateController(repository: repository, marketDataApiService: service),
-    child: const ZakatApp(),
+  return MultiProvider(
+    providers: <ChangeNotifierProvider<dynamic>>[
+      ChangeNotifierProvider<AppStateController>(
+        create: (_) => AppStateController(
+          repository: repository,
+          marketDataApiService: service,
+        ),
+      ),
+      ChangeNotifierProvider<AuthController>(
+        create: (_) => AuthController(
+          authService: _FakeAuthService(),
+          localStorage: localStorage,
+        ),
+      ),
+    ],
+    child: const _SettingsTestApp(),
   );
+}
+
+class _SettingsTestApp extends StatelessWidget {
+  const _SettingsTestApp();
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      supportedLocales: AppLocalizations.supportedLocales,
+      localizationsDelegates: const <LocalizationsDelegate<dynamic>>[
+        AppLocalizationsDelegate(),
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      home: const Scaffold(body: SafeArea(child: AccountScreen())),
+    );
+  }
 }
 
 class _FakeMarketDataApiService implements MarketDataApiService {
@@ -42,15 +101,6 @@ class _FakeMarketDataApiService implements MarketDataApiService {
   @override
   Future<double?> fetchSilverPerGramEgp({required double usdToEgp}) async =>
       null;
-}
-
-Future<void> _openSettings(WidgetTester tester) async {
-  final Finder navAccount = find.descendant(
-    of: find.byType(NavigationBar),
-    matching: find.text('Account'),
-  );
-  await tester.tap(navAccount.last);
-  await tester.pumpAndSettle();
 }
 
 Future<void> _setDropdownString(
@@ -79,11 +129,9 @@ void main() {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    await _openSettings(tester);
-
     expect(find.text('Settings'), findsOneWidget);
-    expect(find.text('Currency'), findsOneWidget);
-    expect(find.text('Zakat Calculation'), findsOneWidget);
+    expect(find.byKey(const Key('settingsMainCurrencyField')), findsOneWidget);
+    expect(find.byKey(const Key('settingsZakatMethodField')), findsOneWidget);
     await tester.drag(find.byType(ListView).first, const Offset(0, -1000));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Appearance'));
@@ -98,7 +146,6 @@ void main() {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    await _openSettings(tester);
     await _setDropdownString(
       tester,
       fieldKey: const Key('settingsMainCurrencyField'),
@@ -107,8 +154,6 @@ void main() {
 
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
-    await _openSettings(tester);
-
     expect(find.text('SAR'), findsWidgets);
   });
 
@@ -118,7 +163,6 @@ void main() {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    await _openSettings(tester);
     await _setDropdownString(
       tester,
       fieldKey: const Key('settingsDefaultEntryCurrencyField'),
@@ -127,8 +171,6 @@ void main() {
 
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
-    await _openSettings(tester);
-
     expect(find.text('USD'), findsWidgets);
   });
 
@@ -137,7 +179,6 @@ void main() {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    await _openSettings(tester);
     await _setDropdownString(
       tester,
       fieldKey: const Key('settingsZakatMethodField'),
@@ -148,8 +189,6 @@ void main() {
 
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
-    await _openSettings(tester);
-
     expect(find.byKey(const Key('settingsAnnualDateSection')), findsOneWidget);
   });
 
@@ -158,8 +197,6 @@ void main() {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
-
-    await _openSettings(tester);
 
     expect(find.byKey(const Key('settingsAnnualDateSection')), findsNothing);
 
@@ -177,7 +214,6 @@ void main() {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    await _openSettings(tester);
     await _setDropdownString(
       tester,
       fieldKey: const Key('settingsMainCurrencyField'),
@@ -211,7 +247,6 @@ void main() {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    await _openSettings(tester);
     await tester.drag(find.byType(ListView).first, const Offset(0, -800));
     await tester.pumpAndSettle();
     await _expandManualOverride(tester);
@@ -234,7 +269,6 @@ void main() {
 
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
-    await _openSettings(tester);
     await tester.drag(find.byType(ListView).first, const Offset(0, -800));
     await tester.pumpAndSettle();
     await _expandManualOverride(tester);
@@ -297,7 +331,6 @@ void main() {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    await _openSettings(tester);
     await tester.drag(find.byType(ListView).first, const Offset(0, -800));
     await tester.pumpAndSettle();
 
@@ -310,7 +343,6 @@ void main() {
     await tester.pumpWidget(_buildAppWithService(_FakeMarketDataApiService()));
     await tester.pumpAndSettle();
 
-    await _openSettings(tester);
     await tester.drag(find.byType(ListView).first, const Offset(0, -900));
     await tester.pumpAndSettle();
 

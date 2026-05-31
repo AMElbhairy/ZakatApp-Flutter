@@ -6,16 +6,57 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zakatapp_flutter/core/constants/storage_keys.dart';
 import 'package:zakatapp_flutter/main.dart';
+import 'package:zakatapp_flutter/models/user_profile.dart';
 import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
 import 'package:zakatapp_flutter/services/app_state_controller.dart';
+import 'package:zakatapp_flutter/services/auth_controller.dart';
+import 'package:zakatapp_flutter/services/auth_service.dart';
 import 'package:zakatapp_flutter/services/local_storage_service.dart';
+import 'package:zakatapp_flutter/services/market_data_api_service.dart';
+
+class _NoopMarketDataApiService implements MarketDataApiService {
+  @override
+  Future<Map<String, double>?> fetchFxRatesToEgp() async => null;
+
+  @override
+  Future<double?> fetchGold24kPerGramEgp({required double usdToEgp}) async =>
+      null;
+
+  @override
+  Future<double?> fetchSilverPerGramEgp({required double usdToEgp}) async =>
+      null;
+}
+
+class _FakeAuthService implements AuthService {
+  @override
+  Future<UserProfile?> restoreSession() async => null;
+
+  @override
+  Future<UserProfile?> signIn() async => null;
+
+  @override
+  Future<void> signOut() async {}
+}
 
 Widget _buildApp() {
   const LocalStorageService localStorage = LocalStorageService();
   final AppStateRepository repository =
       AppStateRepository(localStorage: localStorage);
-  return ChangeNotifierProvider<AppStateController>(
-    create: (_) => AppStateController(repository: repository),
+  return MultiProvider(
+    providers: <ChangeNotifierProvider<dynamic>>[
+      ChangeNotifierProvider<AppStateController>(
+        create: (_) => AppStateController(
+          repository: repository,
+          marketDataApiService: _NoopMarketDataApiService(),
+        ),
+      ),
+      ChangeNotifierProvider<AuthController>(
+        create: (_) => AuthController(
+          authService: _FakeAuthService(),
+          localStorage: localStorage,
+        ),
+      ),
+    ],
     child: const ZakatApp(),
   );
 }
@@ -70,7 +111,7 @@ Future<void> _seedState(Map<String, dynamic> state) async {
 }
 
 Future<void> _openScheduleTab(WidgetTester tester) async {
-  await tester.tap(find.text('Activity').first);
+  await tester.tap(find.byIcon(Icons.receipt_long_outlined).first);
   await tester.pumpAndSettle();
   await tester.tap(find.text('Zakat Schedule'));
   await tester.pumpAndSettle();
@@ -82,7 +123,7 @@ void main() {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Activity').first);
+    await tester.tap(find.byIcon(Icons.receipt_long_outlined).first);
     await tester.pumpAndSettle();
 
     expect(find.text('Transactions'), findsOneWidget);
@@ -183,7 +224,7 @@ void main() {
     await tester.pumpAndSettle();
 
     if (find.byKey(const Key('activitySectionSegment')).evaluate().isEmpty) {
-      await tester.tap(find.text('Activity').first);
+      await tester.tap(find.byIcon(Icons.receipt_long_outlined).first);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Zakat Schedule').last);
       await tester.pumpAndSettle();

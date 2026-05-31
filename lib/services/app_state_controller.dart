@@ -197,7 +197,9 @@ class AppStateController extends ChangeNotifier {
 
     try {
       fxRates = await marketDataApiService.fetchFxRatesToEgp();
-    } catch (_) {
+    } catch (error, stackTrace) {
+      debugPrint('AppStateController.refreshMarketData: FX refresh failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
       fxRates = null;
     }
 
@@ -232,14 +234,20 @@ class AppStateController extends ChangeNotifier {
       goldPrice = await marketDataApiService.fetchGold24kPerGramEgp(
         usdToEgp: usdToEgpForMetals,
       );
-    } catch (_) {
+    } catch (error, stackTrace) {
+      debugPrint('AppStateController.refreshMarketData: gold refresh failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
       goldPrice = null;
     }
     try {
       silverPrice = await marketDataApiService.fetchSilverPerGramEgp(
         usdToEgp: usdToEgpForMetals,
       );
-    } catch (_) {
+    } catch (error, stackTrace) {
+      debugPrint(
+        'AppStateController.refreshMarketData: silver refresh failed: $error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
       silverPrice = null;
     }
 

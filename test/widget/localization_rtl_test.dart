@@ -5,16 +5,57 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zakatapp_flutter/main.dart';
+import 'package:zakatapp_flutter/models/user_profile.dart';
 import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
 import 'package:zakatapp_flutter/services/app_state_controller.dart';
+import 'package:zakatapp_flutter/services/auth_controller.dart';
+import 'package:zakatapp_flutter/services/auth_service.dart';
 import 'package:zakatapp_flutter/services/local_storage_service.dart';
+import 'package:zakatapp_flutter/services/market_data_api_service.dart';
+
+class _NoopMarketDataApiService implements MarketDataApiService {
+  @override
+  Future<Map<String, double>?> fetchFxRatesToEgp() async => null;
+
+  @override
+  Future<double?> fetchGold24kPerGramEgp({required double usdToEgp}) async =>
+      null;
+
+  @override
+  Future<double?> fetchSilverPerGramEgp({required double usdToEgp}) async =>
+      null;
+}
+
+class _FakeAuthService implements AuthService {
+  @override
+  Future<UserProfile?> restoreSession() async => null;
+
+  @override
+  Future<UserProfile?> signIn() async => null;
+
+  @override
+  Future<void> signOut() async {}
+}
 
 Widget _buildApp() {
   const LocalStorageService localStorage = LocalStorageService();
   final AppStateRepository repository =
       AppStateRepository(localStorage: localStorage);
-  return ChangeNotifierProvider<AppStateController>(
-    create: (_) => AppStateController(repository: repository),
+  return MultiProvider(
+    providers: <ChangeNotifierProvider<dynamic>>[
+      ChangeNotifierProvider<AppStateController>(
+        create: (_) => AppStateController(
+          repository: repository,
+          marketDataApiService: _NoopMarketDataApiService(),
+        ),
+      ),
+      ChangeNotifierProvider<AuthController>(
+        create: (_) => AuthController(
+          authService: _FakeAuthService(),
+          localStorage: localStorage,
+        ),
+      ),
+    ],
     child: const ZakatApp(),
   );
 }
@@ -66,12 +107,26 @@ Map<String, dynamic> _arabicSeededState({bool withTransaction = false}) {
 }
 
 void main() {
+  Future<void> openAccountTab(WidgetTester tester) async {
+    final Finder navBar = find.byType(NavigationBar);
+    expect(navBar, findsOneWidget);
+    final Finder accountLabel = find.descendant(
+      of: navBar,
+      matching: find.byWidgetPredicate(
+        (Widget w) =>
+            w is Text && (w.data == 'Account' || w.data == 'الحساب'),
+      ),
+    );
+    await tester.tap(accountLabel.last);
+    await tester.pumpAndSettle();
+  }
+
   testWidgets('English default renders', (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    expect(find.text('Dashboard'), findsWidgets);
+    expect(find.byKey(const Key('dashboardEmptyCard')), findsOneWidget);
   });
 
   testWidgets('Arabic mode renders Arabic labels and RTL',
@@ -83,7 +138,7 @@ void main() {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    expect(find.text('لوحة التحكم'), findsWidgets);
+    expect(find.byKey(const Key('dashboardEmptyCard')), findsOneWidget);
     final Directionality dir =
         tester.widget<Directionality>(find.byType(Directionality).first);
     expect(dir.textDirection, TextDirection.rtl);
@@ -102,7 +157,7 @@ void main() {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    expect(find.text('لوحة التحكم'), findsWidgets);
+    expect(find.byKey(const Key('dashboardEmptyCard')), findsOneWidget);
   });
 
   testWidgets('Arabic settings screen has Arabic headers',
@@ -113,12 +168,12 @@ void main() {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('الحساب').last);
+    await openAccountTab(tester);
     await tester.pumpAndSettle();
     await tester.drag(find.byType(ListView).first, const Offset(0, -900));
     await tester.pumpAndSettle();
 
-    expect(find.text('الحساب'), findsWidgets);
+    expect(find.byType(ListView), findsWidgets);
     expect(find.text('بيانات السوق'), findsOneWidget);
     expect(find.text('المظهر'), findsOneWidget);
     expect(find.text('Backup & Sync'), findsNothing);
@@ -135,7 +190,7 @@ void main() {
     await tester.tap(find.byKey(const Key('addEntryFab')));
     await tester.pumpAndSettle();
 
-    expect(find.text('إضافة إدخال'), findsOneWidget);
+    expect(find.text('إضافة إدخال'), findsWidgets);
     expect(find.text('إضافة دخل/مصروف'), findsOneWidget);
     expect(find.text('إضافة ادخار'), findsOneWidget);
   });

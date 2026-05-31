@@ -139,10 +139,55 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
 
   Future<double?> _fetchGoldApiUsd(String symbol) async {
     final Uri uri = Uri.parse('https://api.gold-api.com/price/$symbol');
-    final Map<String, dynamic>? json = await _getJson(uri);
-    if (json == null) return null;
-    final double value = _asDouble(json['price']);
-    return value > 0 ? value : null;
+    final Map<String, dynamic>? json = await _getJson(
+      uri,
+      headers: const <String, String>{
+        'accept': 'application/json',
+        'user-agent': 'zakatapp_flutter/1.0',
+      },
+    );
+    if (json == null) {
+      return null;
+    }
+    final double value = extractUsdPerOunceFromGoldApiJson(json, symbol: symbol);
+    if (value <= 0) {
+      // Keep this log concise so refresh failures are diagnosable on-device.
+      // ignore: avoid_print
+      print(
+        'MarketDataApiService: gold-api payload missing usable price for $symbol: $json',
+      );
+      return null;
+    }
+    return value;
+  }
+
+  static double extractUsdPerOunceFromGoldApiJson(
+    Map<String, dynamic> json, {
+    required String symbol,
+  }) {
+    final double fromPrice = _asDouble(json['price']);
+    if (fromPrice > 0) return fromPrice;
+
+    final double fromAsk = _asDouble(json['ask']);
+    if (fromAsk > 0) return fromAsk;
+
+    final double fromBid = _asDouble(json['bid']);
+    if (fromBid > 0) return fromBid;
+
+    final String metal = symbol.toUpperCase();
+    if (metal == 'XAU') {
+      final double gram24k = _asDouble(
+        json['price_gram_24k'] ?? json['price_gram_9999'],
+      );
+      if (gram24k > 0) return gram24k * _troyOunceToGrams;
+    }
+
+    final double gramAny = _asDouble(
+      json['price_gram'] ?? json['price_per_gram'],
+    );
+    if (gramAny > 0) return gramAny * _troyOunceToGrams;
+
+    return 0;
   }
 
   Future<Map<String, dynamic>?> _getJson(
@@ -163,10 +208,18 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
       final HttpClientRequest request = await _httpClient.getUrl(uri);
       headers?.forEach(request.headers.add);
       final HttpClientResponse response = await request.close();
-      if (response.statusCode != 200) return null;
+      if (response.statusCode != 200) {
+        // ignore: avoid_print
+        print(
+          'MarketDataApiService: request failed ${uri.toString()} with status ${response.statusCode}',
+        );
+        return null;
+      }
       final String body = await response.transform(utf8.decoder).join();
       return jsonDecode(body);
-    } catch (_) {
+    } catch (error) {
+      // ignore: avoid_print
+      print('MarketDataApiService: request error ${uri.toString()}: $error');
       return null;
     }
   }

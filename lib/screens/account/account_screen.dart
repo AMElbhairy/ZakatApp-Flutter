@@ -106,6 +106,14 @@ class _AccountScreenState extends State<AccountScreen> {
             children: <Widget>[
               if (authController == null || !authController.isSignedIn) ...<Widget>[
                 Text(context.l10n.tr('signed_out_state')),
+                if (authController?.error != null &&
+                    authController!.error!.trim().isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 8),
+                  Text(
+                    authController.error!,
+                    style: TextStyle(color: Theme.of(context).colorScheme.error),
+                  ),
+                ],
                 const SizedBox(height: 10),
                 FilledButton.icon(
                   key: const Key('googleSignInButton'),

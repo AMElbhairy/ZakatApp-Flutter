@@ -5,9 +5,37 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zakatapp_flutter/main.dart';
+import 'package:zakatapp_flutter/models/user_profile.dart';
 import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
 import 'package:zakatapp_flutter/services/app_state_controller.dart';
+import 'package:zakatapp_flutter/services/auth_controller.dart';
+import 'package:zakatapp_flutter/services/auth_service.dart';
 import 'package:zakatapp_flutter/services/local_storage_service.dart';
+import 'package:zakatapp_flutter/services/market_data_api_service.dart';
+
+class _NoopMarketDataApiService implements MarketDataApiService {
+  @override
+  Future<Map<String, double>?> fetchFxRatesToEgp() async => null;
+
+  @override
+  Future<double?> fetchGold24kPerGramEgp({required double usdToEgp}) async =>
+      null;
+
+  @override
+  Future<double?> fetchSilverPerGramEgp({required double usdToEgp}) async =>
+      null;
+}
+
+class _FakeAuthService implements AuthService {
+  @override
+  Future<UserProfile?> restoreSession() async => null;
+
+  @override
+  Future<UserProfile?> signIn() async => null;
+
+  @override
+  Future<void> signOut() async {}
+}
 
 Map<String, dynamic> _seedStateWithMarketData() {
   return <String, dynamic>{
@@ -54,8 +82,21 @@ Widget _buildApp() {
   const LocalStorageService localStorage = LocalStorageService();
   final AppStateRepository repository =
       AppStateRepository(localStorage: localStorage);
-  return ChangeNotifierProvider<AppStateController>(
-    create: (_) => AppStateController(repository: repository),
+  return MultiProvider(
+    providers: <ChangeNotifierProvider<dynamic>>[
+      ChangeNotifierProvider<AppStateController>(
+        create: (_) => AppStateController(
+          repository: repository,
+          marketDataApiService: _NoopMarketDataApiService(),
+        ),
+      ),
+      ChangeNotifierProvider<AuthController>(
+        create: (_) => AuthController(
+          authService: _FakeAuthService(),
+          localStorage: localStorage,
+        ),
+      ),
+    ],
     child: const ZakatApp(),
   );
 }
