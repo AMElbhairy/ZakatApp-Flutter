@@ -16,6 +16,9 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
   static const String _hexaRateApiKey = String.fromEnvironment(
     'HEXA_RATE_API_KEY',
   );
+  static const String _goldApiKey = String.fromEnvironment(
+    'GOLD_API_KEY',
+  );
 
   static const List<String> _supportedFx = <String>[
     'USD',
@@ -138,14 +141,49 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
   }
 
   Future<double?> _fetchGoldApiUsd(String symbol) async {
-    final Uri uri = Uri.parse('https://api.gold-api.com/price/$symbol');
-    final Map<String, dynamic>? json = await _getJson(
-      uri,
-      headers: const <String, String>{
-        'accept': 'application/json',
-        'user-agent': 'zakatapp_flutter/1.0',
-      },
-    );
+    Uri uri = Uri.parse('https://api.gold-api.com/price/$symbol');
+    if (_goldApiKey.trim().isNotEmpty) {
+      final Map<String, String> qp = Map<String, String>.from(uri.queryParameters);
+      qp['apikey'] = _goldApiKey;
+      uri = uri.replace(queryParameters: qp);
+    }
+    const int maxRetries = 3;
+    int attempt = 0;
+    Map<String, dynamic>? json;
+    while (attempt < maxRetries) {
+      attempt += 1;
+      try {
+        final HttpClientRequest request = await _httpClient.getUrl(uri);
+        request.headers.add('accept', 'application/json');
+        request.headers.add('user-agent', 'zakatapp_flutter/1.0');
+        if (_goldApiKey.trim().isNotEmpty) {
+          // Some providers accept the API key as a header; add common header too.
+          try {
+            request.headers.add('x-api-key', _goldApiKey);
+          } catch (_) {}
+        }
+        final HttpClientResponse response = await request.close();
+        final String body = await response.transform(utf8.decoder).join();
+        if (response.statusCode == 200) {
+          json = jsonDecode(body) as Map<String, dynamic>;
+          break;
+        }
+        // If rate limited or other error, log response body and optionally retry.
+        // ignore: avoid_print
+        print('MarketDataApiService: request failed ${uri.toString()} with status ${response.statusCode} (attempt $attempt) - body: $body');
+        if (response.statusCode == 429 && attempt < maxRetries) {
+          final Duration wait = Duration(seconds: 1 << (attempt - 1));
+          await Future.delayed(wait);
+          continue;
+        }
+        return null;
+      } catch (error) {
+        // ignore: avoid_print
+        print('MarketDataApiService: request error ${uri.toString()}: $error');
+        if (attempt >= maxRetries) return null;
+        await Future.delayed(Duration(milliseconds: 200 * attempt));
+      }
+    }
     if (json == null) {
       return null;
     }
