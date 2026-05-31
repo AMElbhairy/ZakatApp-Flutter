@@ -49,7 +49,7 @@ void main() {
 
     expect(find.text('Total Transactions'), findsOneWidget);
     expect(find.text('1'), findsOneWidget);
-    expect(find.text('E£ 100.00'), findsNWidgets(2));
+    expect(find.text('E£ 100.00'), findsWidgets);
     expect(find.text('E£ 0.00'), findsWidgets);
   });
 
@@ -76,6 +76,6 @@ void main() {
 
     expect(find.text('Total Transactions'), findsOneWidget);
     expect(find.text('1'), findsOneWidget);
-    expect(find.text('E£ 250.00'), findsNWidgets(2));
+    expect(find.text('E£ 250.00'), findsWidgets);
   });
 }

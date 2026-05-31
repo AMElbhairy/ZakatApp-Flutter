@@ -84,6 +84,21 @@ class AppStateController extends ChangeNotifier {
     ));
   }
 
+  Future<void> updateInvestment(InvestmentAsset investment) async {
+    final List<InvestmentAsset> next = _state.investments
+        .map((InvestmentAsset entry) =>
+            entry.id == investment.id ? investment : entry)
+        .toList(growable: false);
+    await updateState(_state.copyWith(investments: next));
+  }
+
+  Future<void> deleteInvestment(String investmentId) async {
+    final List<InvestmentAsset> next = _state.investments
+        .where((InvestmentAsset entry) => entry.id != investmentId)
+        .toList(growable: false);
+    await updateState(_state.copyWith(investments: next));
+  }
+
   Future<void> addRecurringTransaction(RecurringTransaction recurring) async {
     await updateState(_state.copyWith(
       recurringTransactions: <RecurringTransaction>[
