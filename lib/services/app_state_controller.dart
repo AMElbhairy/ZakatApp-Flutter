@@ -24,6 +24,7 @@ class AppStateController extends ChangeNotifier {
   AppStateModel _state;
   Timer? _marketRefreshTimer;
   bool _marketAutoRefreshStarted = false;
+  Future<MarketRefreshResult>? _marketRefreshInFlight;
   static const Duration marketRefreshInterval = Duration(minutes: 5);
 
   AppStateModel get state => _state;
@@ -47,11 +48,11 @@ class AppStateController extends ChangeNotifier {
   Future<void> startMarketAutoRefresh() async {
     if (_marketAutoRefreshStarted) return;
     _marketAutoRefreshStarted = true;
-    await refreshMarketData();
+    await refreshMarketData(respectCooldown: true);
     _marketRefreshTimer?.cancel();
     _marketRefreshTimer = Timer.periodic(
       marketRefreshInterval,
-      (_) => refreshMarketData(),
+      (_) => refreshMarketData(respectCooldown: true),
     );
   }
 
@@ -191,8 +192,34 @@ class AppStateController extends ChangeNotifier {
     await updateState(_state.copyWith(marketData: snapshot.toAppStateJson()));
   }
 
-  Future<MarketRefreshResult> refreshMarketData() async {
+  Future<MarketRefreshResult> refreshMarketData({
+    bool force = false,
+    bool respectCooldown = false,
+  }) {
+    if (_marketRefreshInFlight != null) {
+      return _marketRefreshInFlight!;
+    }
+    final Future<MarketRefreshResult> run = _refreshMarketDataInternal(
+      force: force,
+      respectCooldown: respectCooldown,
+    );
+    _marketRefreshInFlight = run;
+    run.whenComplete(() => _marketRefreshInFlight = null);
+    return run;
+  }
+
+  Future<MarketRefreshResult> _refreshMarketDataInternal({
+    required bool force,
+    required bool respectCooldown,
+  }) async {
     final MarketSnapshot before = currentMarketSnapshot;
+    if (!force && respectCooldown && _isWithinMarketCooldown(before.lastUpdated)) {
+      return const MarketRefreshResult(
+        success: true,
+        updatedFields: 0,
+        message: 'Using last saved market data',
+      );
+    }
     Map<String, double>? fxRates;
 
     try {
@@ -270,11 +297,30 @@ class AppStateController extends ChangeNotifier {
       );
     }
 
+    if (before.lastUpdated.trim().isNotEmpty) {
+      return const MarketRefreshResult(
+        success: true,
+        updatedFields: 0,
+        message: 'Using last saved market data',
+      );
+    }
     return const MarketRefreshResult(
       success: false,
       updatedFields: 0,
       message: 'No market data refreshed. Manual prices required.',
     );
+  }
+
+  static bool _isWithinMarketCooldown(String lastUpdatedRaw) {
+    final String value = lastUpdatedRaw.trim();
+    if (value.isEmpty) return false;
+    try {
+      final DateTime last = DateTime.parse(value).toUtc();
+      final Duration diff = DateTime.now().toUtc().difference(last);
+      return diff.inSeconds >= 0 && diff < marketRefreshInterval;
+    } catch (_) {
+      return false;
+    }
   }
 }
 

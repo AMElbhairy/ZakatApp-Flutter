@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:shared_preferences/shared_preferences.dart';
+
 abstract class MarketDataApiService {
   Future<Map<String, double>?> fetchFxRatesToEgp();
   Future<double?> fetchGold24kPerGramEgp({required double usdToEgp});
@@ -12,6 +14,29 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
       : _httpClient = httpClient ?? HttpClient();
 
   final HttpClient _httpClient;
+  SharedPreferences? _prefs;
+
+  Future<void> _initPrefs() async {
+    _prefs ??= await SharedPreferences.getInstance();
+  }
+
+  Future<void> _cachePriceUsd(String symbol, double price) async {
+    await _initPrefs();
+    await _prefs?.setDouble('cached_price_usd_$symbol', price);
+    // ignore: avoid_print
+    print('MarketDataApiService: cached $symbol price USD $price');
+  }
+
+  Future<double?> _getCachedPriceUsd(String symbol) async {
+    await _initPrefs();
+    final double? cached = _prefs?.getDouble('cached_price_usd_$symbol');
+    if (cached != null && cached > 0) {
+      // ignore: avoid_print
+      print('MarketDataApiService: using cached $symbol price USD $cached');
+      return cached;
+    }
+    return null;
+  }
   static const double _troyOunceToGrams = 31.1034768;
   static const String _hexaRateApiKey = String.fromEnvironment(
     'HEXA_RATE_API_KEY',
@@ -41,10 +66,9 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
   Future<Map<String, double>?> fetchFxRatesToEgp() async {
     final Map<String, double>? fromHexa = await _fetchFxFromHexaRate();
     if (fromHexa != null) return fromHexa;
-    final Map<String, double>? fromHexaProxy = await _fetchFxFromHexaRateProxy();
+    final Map<String, double>? fromHexaProxy =
+        await _fetchFxFromHexaRateProxy();
     if (fromHexaProxy != null) return fromHexaProxy;
-    final Map<String, double>? fromFrankfurter = await _fetchFxFromFrankfurter();
-    if (fromFrankfurter != null) return fromFrankfurter;
     return _fetchFxFromOpenErApi();
   }
 
@@ -71,13 +95,15 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
   }
 
   Future<Map<String, double>?> _fetchFxFromHexaRate() async {
-    if (_hexaRateApiKey.trim().isEmpty) return null;
     final Uri uri = Uri.parse(
       'https://hexarate.paikama.co/api/rates/latest/USD?target=EGP',
     );
+    final Map<String, String>? headers = _hexaRateApiKey.trim().isEmpty
+        ? null
+        : <String, String>{'Authorization': 'Bearer $_hexaRateApiKey'};
     final Map<String, dynamic>? json = await _getJson(
       uri,
-      headers: <String, String>{'Authorization': 'Bearer $_hexaRateApiKey'},
+      headers: headers,
     );
     if (json == null) return null;
     final double usdToEgp = _asDouble(json['mid']);
@@ -86,37 +112,20 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
   }
 
   Future<Map<String, double>?> _fetchFxFromHexaRateProxy() async {
-    if (_hexaRateApiKey.trim().isEmpty) return null;
     final Uri uri = Uri.parse(
       'https://api.allorigins.win/raw?url=https://hexarate.paikama.co/api/rates/latest/USD?target=EGP',
     );
+    final Map<String, String>? headers = _hexaRateApiKey.trim().isEmpty
+        ? null
+        : <String, String>{'Authorization': 'Bearer $_hexaRateApiKey'};
     final Map<String, dynamic>? json = await _getJson(
       uri,
-      headers: <String, String>{'Authorization': 'Bearer $_hexaRateApiKey'},
+      headers: headers,
     );
     if (json == null) return null;
     final double usdToEgp = _asDouble(json['mid']);
     if (usdToEgp <= 0) return null;
     return <String, double>{'EGP': 1, 'USD': usdToEgp};
-  }
-
-  Future<Map<String, double>?> _fetchFxFromFrankfurter() async {
-    final Uri uri = Uri.parse(
-      'https://api.frankfurter.app/latest?from=USD&to=EGP,SAR',
-    );
-    final Map<String, dynamic>? json = await _getJson(uri);
-    if (json == null) return null;
-    final Map<String, dynamic> rates = Map<String, dynamic>.from(
-      (json['rates'] as Map?) ?? <String, dynamic>{},
-    );
-    final double usdToEgp = _asDouble(rates['EGP']);
-    final double usdToSar = _asDouble(rates['SAR']);
-    if (usdToEgp <= 0 || usdToSar <= 0) return null;
-    return <String, double>{
-      'EGP': 1,
-      'USD': usdToEgp,
-      'SAR': usdToEgp / usdToSar,
-    };
   }
 
   Future<Map<String, double>?> _fetchFxFromOpenErApi() async {
@@ -141,39 +150,8 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
   }
 
   Future<double?> _fetchGoldApiUsd(String symbol) async {
-    // Try metals.live first (free, no API key, often not rate-limited)
-    try {
-      if (symbol.toUpperCase() == 'XAU') {
-        final dynamic live =
-            await _getJsonDynamic(Uri.parse('https://api.metals.live/v1/spot/gold'));
-        if (live is List && live.isNotEmpty) {
-          final dynamic first = live[0];
-          final double maybe =
-              _asDouble(first['gold'] ?? first['price'] ?? first['value']);
-          if (maybe > 0) return maybe;
-        } else if (live is Map) {
-          final double maybe =
-              _asDouble(live['gold'] ?? live['price'] ?? live['value']);
-          if (maybe > 0) return maybe;
-        }
-      }
-      if (symbol.toUpperCase() == 'XAG') {
-        final dynamic live =
-            await _getJsonDynamic(Uri.parse('https://api.metals.live/v1/spot/silver'));
-        if (live is List && live.isNotEmpty) {
-          final dynamic first = live[0];
-          final double maybe =
-              _asDouble(first['silver'] ?? first['price'] ?? first['value']);
-          if (maybe > 0) return maybe;
-        } else if (live is Map) {
-          final double maybe =
-              _asDouble(live['silver'] ?? live['price'] ?? live['value']);
-          if (maybe > 0) return maybe;
-        }
-      }
-    } catch (_) {
-      // ignore and fall back to gold-api below
-    }
+    // Note: metals.live fails on iOS with TLS SNI errors, so we skip it
+    // and go directly to gold-api.com with retry logic
 
     Uri uri = Uri.parse('https://api.gold-api.com/price/$symbol');
     if (_goldApiKey.trim().isNotEmpty) {
@@ -181,56 +159,49 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
       qp['apikey'] = _goldApiKey;
       uri = uri.replace(queryParameters: qp);
     }
-    const int maxRetries = 3;
-    int attempt = 0;
-    Map<String, dynamic>? json;
-    while (attempt < maxRetries) {
-      attempt += 1;
-      try {
-        final HttpClientRequest request = await _httpClient.getUrl(uri);
-        request.headers.add('accept', 'application/json');
-        request.headers.add('user-agent', 'zakatapp_flutter/1.0');
-        if (_goldApiKey.trim().isNotEmpty) {
-          // Some providers accept the API key as a header; add common header too.
-          try {
-            request.headers.add('x-api-key', _goldApiKey);
-          } catch (_) {}
-        }
-        final HttpClientResponse response = await request.close();
-        final String body = await response.transform(utf8.decoder).join();
-        if (response.statusCode == 200) {
-          json = jsonDecode(body) as Map<String, dynamic>;
-          break;
-        }
-        // If rate limited or other error, log response body and optionally retry.
-        // ignore: avoid_print
-        print('MarketDataApiService: request failed ${uri.toString()} with status ${response.statusCode} (attempt $attempt) - body: $body');
-        if (response.statusCode == 429 && attempt < maxRetries) {
-          final Duration wait = Duration(seconds: 1 << (attempt - 1));
-          await Future.delayed(wait);
-          continue;
-        }
-        return null;
-      } catch (error) {
-        // ignore: avoid_print
-        print('MarketDataApiService: request error ${uri.toString()}: $error');
-        if (attempt >= maxRetries) return null;
-        await Future.delayed(Duration(milliseconds: 200 * attempt));
+    
+    try {
+      final HttpClientRequest request = await _httpClient.getUrl(uri);
+      request.headers.add('accept', 'application/json');
+      request.headers.add('user-agent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15');
+      if (_goldApiKey.trim().isNotEmpty) {
+        try {
+          request.headers.add('x-api-key', _goldApiKey);
+        } catch (_) {}
       }
-    }
-    if (json == null) {
-      return null;
-    }
-    final double value = extractUsdPerOunceFromGoldApiJson(json, symbol: symbol);
-    if (value <= 0) {
-      // Keep this log concise so refresh failures are diagnosable on-device.
+      final HttpClientResponse response = await request.close();
+      final String body = await response.transform(utf8.decoder).join();
+      
+      if (response.statusCode != 200) {
+        // ignore: avoid_print
+        print('MarketDataApiService: gold-api returned ${response.statusCode} for $symbol');
+        final double? cached = await _getCachedPriceUsd(symbol);
+        return cached;
+      }
+      
+      final Map<String, dynamic>? json = jsonDecode(body) as Map<String, dynamic>?;
+      if (json == null) {
+        final double? cached = await _getCachedPriceUsd(symbol);
+        return cached;
+      }
+      
+      final double value = extractUsdPerOunceFromGoldApiJson(json, symbol: symbol);
+      if (value <= 0) {
+        // ignore: avoid_print
+        print('MarketDataApiService: gold-api payload missing usable price for $symbol');
+        final double? cached = await _getCachedPriceUsd(symbol);
+        return cached;
+      }
+      
+      // Success — cache this price
+      await _cachePriceUsd(symbol, value);
+      return value;
+    } catch (error) {
       // ignore: avoid_print
-      print(
-        'MarketDataApiService: gold-api payload missing usable price for $symbol: $json',
-      );
-      return null;
+      print('MarketDataApiService: gold-api request failed for $symbol: $error');
+      final double? cached = await _getCachedPriceUsd(symbol);
+      return cached;
     }
-    return value;
   }
 
   static double extractUsdPerOunceFromGoldApiJson(

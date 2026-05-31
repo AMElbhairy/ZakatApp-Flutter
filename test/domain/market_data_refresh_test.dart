@@ -14,6 +14,7 @@ class _FakeMarketDataApiService implements MarketDataApiService {
     this.throwFx = false,
     this.throwGold = false,
     this.throwSilver = false,
+    this.delay = Duration.zero,
   });
 
   final Map<String, double>? fxRates;
@@ -22,6 +23,10 @@ class _FakeMarketDataApiService implements MarketDataApiService {
   final bool throwFx;
   final bool throwGold;
   final bool throwSilver;
+  final Duration delay;
+  int fxCalls = 0;
+  int goldCalls = 0;
+  int silverCalls = 0;
   int callOrder = 0;
   int? fxOrder;
   int? goldOrder;
@@ -31,6 +36,10 @@ class _FakeMarketDataApiService implements MarketDataApiService {
 
   @override
   Future<Map<String, double>?> fetchFxRatesToEgp() async {
+    fxCalls += 1;
+    if (delay > Duration.zero) {
+      await Future<void>.delayed(delay);
+    }
     callOrder += 1;
     fxOrder ??= callOrder;
     if (throwFx) {
@@ -41,6 +50,10 @@ class _FakeMarketDataApiService implements MarketDataApiService {
 
   @override
   Future<double?> fetchGold24kPerGramEgp({required double usdToEgp}) async {
+    goldCalls += 1;
+    if (delay > Duration.zero) {
+      await Future<void>.delayed(delay);
+    }
     if (throwGold) throw Exception('gold error');
     callOrder += 1;
     goldOrder ??= callOrder;
@@ -50,6 +63,10 @@ class _FakeMarketDataApiService implements MarketDataApiService {
 
   @override
   Future<double?> fetchSilverPerGramEgp({required double usdToEgp}) async {
+    silverCalls += 1;
+    if (delay > Duration.zero) {
+      await Future<void>.delayed(delay);
+    }
     if (throwSilver) throw Exception('silver error');
     callOrder += 1;
     silverOrder ??= callOrder;
@@ -277,5 +294,84 @@ void main() {
     // Idempotent repeated startup call.
     await controller.startMarketAutoRefresh();
     expect(AppStateController.marketRefreshInterval, const Duration(minutes: 5));
+  });
+
+  test('duplicate refresh calls are suppressed while one is in flight', () async {
+    final fake = _FakeMarketDataApiService(
+      fxRates: <String, double>{'USD': 50, 'SAR': 13.3},
+      goldPrice: 5100,
+      silverPrice: 63,
+      delay: const Duration(milliseconds: 40),
+    );
+    final controller = AppStateController(
+      repository: repository,
+      marketDataApiService: fake,
+    );
+    await controller.load();
+
+    final Future<MarketRefreshResult> a = controller.refreshMarketData();
+    final Future<MarketRefreshResult> b = controller.refreshMarketData();
+    final results = await Future.wait(<Future<MarketRefreshResult>>[a, b]);
+
+    expect(results.first.success, isTrue);
+    expect(results.last.success, isTrue);
+    expect(fake.fxCalls, 1);
+    expect(fake.goldCalls, 1);
+    expect(fake.silverCalls, 1);
+  });
+
+  test('startup refresh honors cooldown and uses last saved market data', () async {
+    final fake = _FakeMarketDataApiService(
+      fxRates: <String, double>{'USD': 99, 'SAR': 25},
+      goldPrice: 9999,
+      silverPrice: 99,
+    );
+    final controller = AppStateController(
+      repository: repository,
+      marketDataApiService: fake,
+    );
+    await controller.load();
+    final String justNow = DateTime.now().toUtc().toIso8601String();
+    await controller.updateMarketSnapshot(
+      MarketSnapshot.empty.copyWith(
+        gold24kPricePerGramEgp: 5000,
+        silverPricePerGramEgp: 60,
+        usdToEgp: 50,
+        sarToEgp: 13.3,
+        lastUpdated: justNow,
+      ),
+    );
+
+    final result = await controller.refreshMarketData(respectCooldown: true);
+    expect(result.message, 'Using last saved market data');
+    expect(fake.fxCalls, 0);
+    expect(fake.goldCalls, 0);
+    expect(fake.silverCalls, 0);
+  });
+
+  test('failed refresh keeps last saved data message when snapshot exists', () async {
+    final controller = AppStateController(
+      repository: repository,
+      marketDataApiService: _FakeMarketDataApiService(
+        throwFx: true,
+        throwGold: true,
+        throwSilver: true,
+      ),
+    );
+    await controller.load();
+    await controller.updateMarketSnapshot(
+      MarketSnapshot.empty.copyWith(
+        gold24kPricePerGramEgp: 5200,
+        silverPricePerGramEgp: 62,
+        usdToEgp: 50,
+        sarToEgp: 13.3,
+        lastUpdated: '2026-05-01T00:00:00Z',
+      ),
+    );
+
+    final result = await controller.refreshMarketData();
+    expect(result.success, isTrue);
+    expect(result.message, 'Using last saved market data');
+    expect(controller.currentMarketSnapshot.gold24kPricePerGramEgp, 5200);
   });
 }

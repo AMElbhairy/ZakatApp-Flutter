@@ -486,7 +486,7 @@ class _AccountScreenState extends State<AccountScreen> {
       _isRefreshingMarket = true;
       _refreshMarketMessage = '';
     });
-    final result = await context.read<AppStateController>().refreshMarketData();
+    final result = await context.read<AppStateController>().refreshMarketData(force: true);
     if (!mounted) return;
     final MarketSnapshot updated = context.read<AppStateController>().currentMarketSnapshot;
     setState(() {
@@ -499,6 +499,7 @@ class _AccountScreenState extends State<AccountScreen> {
 
   String _localizedRefreshMessage(BuildContext context, String raw) {
     if (raw == 'Market data refreshed.') return context.l10n.tr('market_data_refreshed');
+    if (raw == 'Using last saved market data') return 'Using last saved market data';
     if (raw == 'No market data refreshed. Manual prices required.') {
       return '${context.l10n.tr('no_market_data_refreshed')} ${context.l10n.tr('manual_prices_required')}';
     }
