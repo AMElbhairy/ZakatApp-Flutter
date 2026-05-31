@@ -4,6 +4,7 @@ import 'account/account_screen.dart';
 import 'activity/activity_screen.dart';
 import 'assets/assets_screen.dart';
 import 'dashboard/dashboard_screen.dart';
+import 'entry/add_transaction_screen.dart';
 import 'plans/plans_screen.dart';
 
 class AppShell extends StatefulWidget {
@@ -35,7 +36,14 @@ class _AppShellState extends State<AppShell> {
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       floatingActionButton: FloatingActionButton(
-        onPressed: () {},
+        key: const Key('addEntryFab'),
+        onPressed: () {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => const AddTransactionScreen(),
+            ),
+          );
+        },
         child: const Icon(Icons.add),
       ),
       bottomNavigationBar: SafeArea(
