@@ -32,8 +32,7 @@ void main() {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    expect(find.text('Total Transactions'), findsOneWidget);
-    expect(find.text('0'), findsOneWidget);
+    expect(find.byKey(const Key('dashboardEmptyCard')), findsOneWidget);
 
     await _openTransactionForm(tester);
 
@@ -47,10 +46,10 @@ void main() {
     await tester.tap(find.byKey(const Key('saveTransactionButton')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Total Transactions'), findsOneWidget);
-    expect(find.text('1'), findsOneWidget);
+    expect(find.text('Financial Summary'), findsOneWidget);
+    expect(find.text('Total Income'), findsOneWidget);
     expect(find.text('E£ 100.00'), findsWidgets);
-    expect(find.text('E£ 0.00'), findsWidgets);
+    expect(find.text('Total Expenses'), findsOneWidget);
   });
 
   testWidgets('persistence survives reload', (WidgetTester tester) async {
@@ -74,8 +73,7 @@ void main() {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    expect(find.text('Total Transactions'), findsOneWidget);
-    expect(find.text('1'), findsOneWidget);
+    expect(find.text('Total Income'), findsOneWidget);
     expect(find.text('E£ 250.00'), findsWidgets);
   });
 }

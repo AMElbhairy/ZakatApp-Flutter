@@ -19,22 +19,25 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   int _index = 0;
 
-  static const List<Widget> _tabs = <Widget>[
-    DashboardScreen(),
-    AssetsScreen(),
-    ActivityScreen(),
-    PlansScreen(),
-    AccountScreen(),
-  ];
-
   @override
   Widget build(BuildContext context) {
+    final List<Widget> tabs = <Widget>[
+      DashboardScreen(
+        onViewAllActivity: () => setState(() => _index = 2),
+        onOpenAddActions: () => _showAddActions(context),
+      ),
+      const AssetsScreen(),
+      const ActivityScreen(),
+      const PlansScreen(),
+      const AccountScreen(),
+    ];
+
     return Scaffold(
       resizeToAvoidBottomInset: false,
       extendBody: true,
       body: SafeArea(
         bottom: false,
-        child: IndexedStack(index: _index, children: _tabs),
+        child: IndexedStack(index: _index, children: tabs),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       floatingActionButton: FloatingActionButton(
