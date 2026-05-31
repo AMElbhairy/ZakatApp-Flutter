@@ -127,6 +127,22 @@ class AppStateController extends ChangeNotifier {
         .toList(growable: false);
     await updateState(_state.copyWith(financialPlans: next));
   }
+
+  Future<void> updateMainCurrency(String currency) async {
+    await updateState(_state.copyWith(mainCurrency: currency));
+  }
+
+  Future<void> updateDefaultEntryCurrency(String currency) async {
+    await updateState(_state.copyWith(defaultEntryCurrency: currency));
+  }
+
+  Future<void> updateZakatMethod(String method) async {
+    await updateState(_state.copyWith(zakatMethod: method));
+  }
+
+  Future<void> updateZakatAnnualDate(String annualDate) async {
+    await updateState(_state.copyWith(zakatAnnualDate: annualDate));
+  }
 }
 
 extension AppStateModelCopyWith on AppStateModel {
