@@ -141,6 +141,40 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
   }
 
   Future<double?> _fetchGoldApiUsd(String symbol) async {
+    // Try metals.live first (free, no API key, often not rate-limited)
+    try {
+      if (symbol.toUpperCase() == 'XAU') {
+        final dynamic live =
+            await _getJsonDynamic(Uri.parse('https://api.metals.live/v1/spot/gold'));
+        if (live is List && live.isNotEmpty) {
+          final dynamic first = live[0];
+          final double maybe =
+              _asDouble(first['gold'] ?? first['price'] ?? first['value']);
+          if (maybe > 0) return maybe;
+        } else if (live is Map) {
+          final double maybe =
+              _asDouble(live['gold'] ?? live['price'] ?? live['value']);
+          if (maybe > 0) return maybe;
+        }
+      }
+      if (symbol.toUpperCase() == 'XAG') {
+        final dynamic live =
+            await _getJsonDynamic(Uri.parse('https://api.metals.live/v1/spot/silver'));
+        if (live is List && live.isNotEmpty) {
+          final dynamic first = live[0];
+          final double maybe =
+              _asDouble(first['silver'] ?? first['price'] ?? first['value']);
+          if (maybe > 0) return maybe;
+        } else if (live is Map) {
+          final double maybe =
+              _asDouble(live['silver'] ?? live['price'] ?? live['value']);
+          if (maybe > 0) return maybe;
+        }
+      }
+    } catch (_) {
+      // ignore and fall back to gold-api below
+    }
+
     Uri uri = Uri.parse('https://api.gold-api.com/price/$symbol');
     if (_goldApiKey.trim().isNotEmpty) {
       final Map<String, String> qp = Map<String, String>.from(uri.queryParameters);
