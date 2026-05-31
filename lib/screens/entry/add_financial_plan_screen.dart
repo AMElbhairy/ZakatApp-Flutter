@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/services/zakat_engine.dart';
+import '../../core/widgets/app_ui.dart';
 import '../../models/financial_plan.dart';
 import '../../services/app_state_controller.dart';
 
@@ -230,12 +231,13 @@ class _AddFinancialPlanScreenState extends State<AddFinancialPlanScreen> {
                 const SizedBox(height: 24),
                 SizedBox(
                   width: double.infinity,
-                  child: FilledButton(
+                  child: AppPrimaryButton(
                     key: const Key('savePlanButton'),
                     onPressed: _saving ? null : _submit,
-                    child: Text(_saving
+                    label: _saving
                         ? 'Saving...'
-                        : (widget.isEditMode ? 'Update Plan' : 'Save Plan')),
+                        : (widget.isEditMode ? 'Update Plan' : 'Save Plan'),
+                    icon: Icons.check,
                   ),
                 ),
               ],

@@ -8,7 +8,8 @@ class AppColors {
   static const Color emeraldDeep = Color(0xFF0A4F49);
 
   static const Color gold = Color(0xFFD4AF37);
-  static const Color goldSoft = Color(0xFFF2E2A4);
+  static const Color goldSoft = Color(0xFFE7D8A0);
+  static const Color goldMuted = Color(0xFFBFA55A);
 
   static const Color lightBg = Color(0xFFF7FAF9);
   static const Color lightSurface = Color(0xFFFFFFFF);

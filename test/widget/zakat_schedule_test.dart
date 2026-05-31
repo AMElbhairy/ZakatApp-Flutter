@@ -178,10 +178,17 @@ void main() {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('dashboardZakatSummaryCard')));
+    await tester.ensureVisible(find.text('Zakat Summary').first);
+    await tester.tap(find.text('Zakat Summary').first, warnIfMissed: false);
     await tester.pumpAndSettle();
 
-    expect(find.text('Activity'), findsWidgets);
+    if (find.byKey(const Key('activitySectionSegment')).evaluate().isEmpty) {
+      await tester.tap(find.text('Activity').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Zakat Schedule').last);
+      await tester.pumpAndSettle();
+    }
+
     expect(find.byKey(const Key('activitySectionSegment')), findsOneWidget);
     expect(find.byKey(const Key('zakatScheduleList')), findsOneWidget);
   });

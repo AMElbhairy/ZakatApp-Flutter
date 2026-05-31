@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/services/zakat_engine.dart';
+import '../../core/widgets/app_ui.dart';
 import '../../models/transaction.dart';
 import '../../services/app_state_controller.dart';
 
@@ -183,7 +184,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                 const SizedBox(height: 24),
                 SizedBox(
                   width: double.infinity,
-                  child: FilledButton(
+                  child: AppPrimaryButton(
                     key: const Key('saveTransactionButton'),
                     onPressed: _saving
                         ? null
@@ -226,11 +227,12 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                             if (!context.mounted) return;
                             Navigator.of(context).pop();
                           },
-                    child: Text(_saving
+                    label: _saving
                         ? 'Saving...'
                         : (widget.isEditMode
                             ? 'Update Transaction'
-                            : 'Save Transaction')),
+                            : 'Save Transaction'),
+                    icon: Icons.check,
                   ),
                 ),
               ],

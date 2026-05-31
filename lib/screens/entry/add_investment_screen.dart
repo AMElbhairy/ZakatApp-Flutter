@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/services/zakat_engine.dart';
+import '../../core/widgets/app_ui.dart';
 import '../../models/investment_asset.dart';
 import '../../services/app_state_controller.dart';
 
@@ -225,14 +226,15 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                 const SizedBox(height: 24),
                 SizedBox(
                   width: double.infinity,
-                  child: FilledButton(
+                  child: AppPrimaryButton(
                     key: const Key('saveInvestmentButton'),
                     onPressed: _saving ? null : _submit,
-                    child: Text(_saving
+                    label: _saving
                         ? 'Saving...'
                         : (widget.isEditMode
                             ? 'Update Investment'
-                            : 'Save Investment')),
+                            : 'Save Investment'),
+                    icon: Icons.check,
                   ),
                 ),
               ],

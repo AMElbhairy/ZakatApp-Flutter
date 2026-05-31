@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/widgets/app_ui.dart';
 
 import 'account/account_screen.dart';
 import 'activity/activity_screen.dart';
@@ -101,63 +102,73 @@ class _AppShellState extends State<AppShell> {
       context: context,
       useSafeArea: true,
       builder: (BuildContext context) {
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            ListTile(
-              key: const Key('actionAddTransaction'),
-              leading: const Icon(Icons.swap_horiz),
-              title: const Text('Add Income/Expense'),
-              onTap: () {
-                Navigator.of(context).pop();
-                Navigator.of(this.context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const AddTransactionScreen(),
-                  ),
-                );
-              },
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                const SectionHeader(title: 'Add Entry', bottomSpacing: 8),
+                ListTile(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  key: const Key('actionAddTransaction'),
+                  leading: const Icon(Icons.swap_horiz),
+                  title: const Text('Add Income/Expense'),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    Navigator.of(this.context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const AddTransactionScreen(),
+                      ),
+                    );
+                  },
+                ),
+                ListTile(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  key: const Key('actionAddSaving'),
+                  leading: const Icon(Icons.savings_outlined),
+                  title: const Text('Add Saving'),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    Navigator.of(this.context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const AddSavingScreen(),
+                      ),
+                    );
+                  },
+                ),
+                ListTile(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  key: const Key('actionAddInvestment'),
+                  leading: const Icon(Icons.business_outlined),
+                  title: const Text('Add Investment'),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    Navigator.of(this.context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const AddInvestmentScreen(),
+                      ),
+                    );
+                  },
+                ),
+                ListTile(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  key: const Key('actionAddPlan'),
+                  leading: const Icon(Icons.auto_graph_outlined),
+                  title: const Text('Add Plan'),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    Navigator.of(this.context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const AddFinancialPlanScreen(),
+                      ),
+                    );
+                  },
+                ),
+              ],
             ),
-            ListTile(
-              key: const Key('actionAddSaving'),
-              leading: const Icon(Icons.savings_outlined),
-              title: const Text('Add Saving'),
-              onTap: () {
-                Navigator.of(context).pop();
-                Navigator.of(this.context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const AddSavingScreen(),
-                  ),
-                );
-              },
-            ),
-            ListTile(
-              key: const Key('actionAddInvestment'),
-              leading: const Icon(Icons.business_outlined),
-              title: const Text('Add Investment'),
-              onTap: () {
-                Navigator.of(context).pop();
-                Navigator.of(this.context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const AddInvestmentScreen(),
-                  ),
-                );
-              },
-            ),
-            ListTile(
-              key: const Key('actionAddPlan'),
-              leading: const Icon(Icons.auto_graph_outlined),
-              title: const Text('Add Plan'),
-              onTap: () {
-                Navigator.of(context).pop();
-                Navigator.of(this.context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const AddFinancialPlanScreen(),
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
+          ),
         );
       },
     );

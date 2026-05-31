@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/services/zakat_engine.dart';
 import '../../core/services/zakat_schedule_service.dart';
+import '../../core/widgets/app_ui.dart';
 import '../../models/investment_asset.dart';
 import '../../models/saving.dart';
 import '../../models/transaction.dart';
@@ -97,122 +98,143 @@ class DashboardScreen extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: <Widget>[
-        Text('Dashboard', style: Theme.of(context).textTheme.headlineSmall),
-        const SizedBox(height: 16),
+        SectionHeader(title: 'Dashboard', bottomSpacing: 14),
         if (!hasAnyData)
-          Card(
-            key: const Key('dashboardEmptyCard'),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text('Start your Zakat journey',
-                      style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 8),
-                  const Text('Add your first income, saving, or asset.'),
-                  const SizedBox(height: 14),
-                  FilledButton(
-                    key: const Key('dashboardStartAddingButton'),
-                    onPressed: onOpenAddActions,
-                    child: const Text('Add First Entry'),
-                  ),
-                ],
-              ),
+          EmptyStateCard(
+            cardKey: const Key('dashboardEmptyCard'),
+            icon: Icons.auto_graph,
+            title: 'Start your Zakat journey',
+            message: 'Add your first income, saving, or asset.',
+            action: AppPrimaryButton(
+              key: const Key('dashboardStartAddingButton'),
+              onPressed: onOpenAddActions,
+              label: 'Add First Entry',
+              icon: Icons.add,
             ),
           )
         else ...<Widget>[
-          _sectionCard(
-            context,
-            title: 'Financial Summary',
-            children: <Widget>[
-              _metricRow('Total Wealth', _formatEgp(totalWealthEgp), bold: true),
-              const SizedBox(height: 10),
-              _metricRow('Net Position', _formatEgp(netPositionEgp)),
-              const SizedBox(height: 10),
-              _metricRow('Total Income', _formatEgp(totalIncomeEgp)),
-              const SizedBox(height: 10),
-              _metricRow('Total Expenses', _formatEgp(totalExpensesEgp)),
-              const SizedBox(height: 10),
-              _metricRow(
-                'Total Savings Wealth',
-                _formatEgp(savingsTotals.totalSavingsWealthEgp),
-              ),
-              const SizedBox(height: 10),
-              _metricRow('Investment Wealth', _formatEgp(investmentsEgp)),
-            ],
+          PremiumCard(
+            hero: true,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text('Total Wealth', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                Text(
+                  _formatEgp(totalWealthEgp),
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+                const SizedBox(height: 12),
+                MetricTile(label: 'Net Position', value: _formatEgp(netPositionEgp)),
+              ],
+            ),
           ),
           const SizedBox(height: 12),
-          _sectionCard(
-            context,
-            title: 'Zakat Summary',
+          PremiumCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                SectionHeader(title: 'Financial Summary', bottomSpacing: 10),
+                MetricTile(label: 'Total Income', value: _formatEgp(totalIncomeEgp)),
+                const SizedBox(height: 10),
+                MetricTile(label: 'Total Expenses', value: _formatEgp(totalExpensesEgp)),
+                const SizedBox(height: 10),
+                MetricTile(
+                  label: 'Total Savings Wealth',
+                  value: _formatEgp(savingsTotals.totalSavingsWealthEgp),
+                ),
+                const SizedBox(height: 10),
+                MetricTile(label: 'Investment Wealth', value: _formatEgp(investmentsEgp)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          PremiumCard(
             key: const Key('dashboardZakatSummaryCard'),
             onTap: onOpenZakatSchedule,
-            children: <Widget>[
-              _metricRow('Nisab Status', nisabMet ? 'Met' : 'Not Met',
-                  bold: nisabMet),
-              const SizedBox(height: 10),
-              _metricRow('Current Nisab Threshold', _formatEgp(nisabThreshold)),
-              const SizedBox(height: 10),
-              _metricRow('Zakat Due This Month', _formatEgp(dues.thisMonth)),
-              const SizedBox(height: 10),
-              _metricRow('Zakat Due Next Month', _formatEgp(dues.nextMonth)),
-              const SizedBox(height: 10),
-              _metricRow('Total Upcoming Dues', _formatEgp(dues.totalUpcoming),
-                  bold: true),
-            ],
-          ),
-          const SizedBox(height: 12),
-          _sectionCard(
-            context,
-            title: 'Asset Allocation',
-            children: <Widget>[
-              _metricRow('Cash %', _formatPct(allocation.cashPct)),
-              const SizedBox(height: 10),
-              _metricRow('Metals %', _formatPct(allocation.metalsPct)),
-              const SizedBox(height: 10),
-              _metricRow('Property %', _formatPct(allocation.propertyPct)),
-              const SizedBox(height: 10),
-              _metricRow('Company %', _formatPct(allocation.companyPct)),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Row(
-                    children: <Widget>[
-                      Text('Recent Activity',
-                          style: Theme.of(context).textTheme.titleMedium),
-                      const Spacer(),
-                      TextButton(
-                        key: const Key('dashboardViewAllActivityButton'),
-                        onPressed: onViewAllActivity,
-                        child: const Text('View All'),
-                      ),
-                    ],
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                SectionHeader(
+                  title: 'Zakat Summary',
+                  bottomSpacing: 10,
+                  trailing: Icon(
+                    Icons.arrow_forward_ios,
+                    size: 14,
+                    color: Theme.of(context).colorScheme.primary,
                   ),
-                  if (recent4.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 8),
-                      child: Text('No recent transactions'),
-                    )
-                  else
-                    ...recent4.map((Transaction tx) => ListTile(
-                          key: Key('dashboardRecentTx_${tx.id}'),
-                          contentPadding: EdgeInsets.zero,
-                          dense: true,
-                          title: Text(tx.category),
-                          subtitle: Text(tx.date),
-                          trailing: Text(
-                            '${tx.type == 'expense' ? '-' : '+'}${tx.amount.toStringAsFixed(2)} ${tx.currency}',
-                          ),
-                        )),
-                ],
-              ),
+                ),
+                MetricTile(
+                  label: 'Nisab Status',
+                  value: nisabMet ? 'Met' : 'Not Met',
+                  bold: nisabMet,
+                ),
+                const SizedBox(height: 10),
+                MetricTile(
+                  label: 'Current Nisab Threshold',
+                  value: _formatEgp(nisabThreshold),
+                ),
+                const SizedBox(height: 10),
+                MetricTile(label: 'Zakat Due This Month', value: _formatEgp(dues.thisMonth)),
+                const SizedBox(height: 10),
+                MetricTile(label: 'Zakat Due Next Month', value: _formatEgp(dues.nextMonth)),
+                const SizedBox(height: 10),
+                MetricTile(
+                  label: 'Total Upcoming Dues',
+                  value: _formatEgp(dues.totalUpcoming),
+                  bold: true,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          PremiumCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                SectionHeader(title: 'Asset Allocation', bottomSpacing: 10),
+                MetricTile(label: 'Cash %', value: _formatPct(allocation.cashPct)),
+                const SizedBox(height: 10),
+                MetricTile(label: 'Metals %', value: _formatPct(allocation.metalsPct)),
+                const SizedBox(height: 10),
+                MetricTile(label: 'Property %', value: _formatPct(allocation.propertyPct)),
+                const SizedBox(height: 10),
+                MetricTile(label: 'Company %', value: _formatPct(allocation.companyPct)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          PremiumCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                SectionHeader(
+                  title: 'Recent Activity',
+                  trailing: TextButton(
+                    key: const Key('dashboardViewAllActivityButton'),
+                    onPressed: onViewAllActivity,
+                    child: const Text('View All'),
+                  ),
+                ),
+                if (recent4.isEmpty)
+                  const Text('No recent transactions')
+                else
+                  ...recent4.map(
+                    (Transaction tx) => ListTile(
+                      key: Key('dashboardRecentTx_${tx.id}'),
+                      contentPadding: const EdgeInsets.symmetric(vertical: 2),
+                      dense: true,
+                      title: Text(tx.category),
+                      subtitle: Text(tx.date),
+                      trailing: Text(
+                        '${tx.type == 'expense' ? '-' : '+'}${tx.amount.toStringAsFixed(2)} ${tx.currency}',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
         ],
@@ -321,48 +343,6 @@ class DashboardScreen extends StatelessWidget {
       metalsPct: (metals / totalWealthEgp) * 100,
       propertyPct: (property / totalWealthEgp) * 100,
       companyPct: (company / totalWealthEgp) * 100,
-    );
-  }
-
-  static Card _sectionCard(
-    BuildContext context, {
-    Key? key,
-    required String title,
-    required List<Widget> children,
-    VoidCallback? onTap,
-  }) {
-    return Card(
-      key: key,
-      child: Padding(
-        padding: EdgeInsets.zero,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(20),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(title, style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 12),
-                ...children,
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  static Widget _metricRow(String label, String value, {bool bold = false}) {
-    return Row(
-      children: <Widget>[
-        Expanded(child: Text(label)),
-        Text(
-          value,
-          style: TextStyle(fontWeight: bold ? FontWeight.w700 : FontWeight.w500),
-        ),
-      ],
     );
   }
 

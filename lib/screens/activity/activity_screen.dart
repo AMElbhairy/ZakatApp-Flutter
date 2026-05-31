@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/services/zakat_engine.dart';
 import '../../core/services/zakat_schedule_service.dart';
+import '../../core/widgets/app_ui.dart';
 import '../../models/transaction.dart';
 import '../../services/app_state_controller.dart';
 import '../entry/add_transaction_screen.dart';
@@ -72,8 +73,7 @@ class ActivityScreenState extends State<ActivityScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text('Activity', style: Theme.of(context).textTheme.headlineSmall),
-          const SizedBox(height: 12),
+          const SectionHeader(title: 'Activity'),
           SegmentedButton<_ActivitySection>(
             key: const Key('activitySectionSegment'),
             segments: const <ButtonSegment<_ActivitySection>>[
@@ -132,9 +132,11 @@ class ActivityScreenState extends State<ActivityScreen> {
         Expanded(
           child: filtered.isEmpty
               ? const Center(
-                  child: Text(
-                    'No transactions yet',
-                    key: Key('activityEmptyState'),
+                  child: EmptyStateCard(
+                    cardKey: Key('activityEmptyState'),
+                    icon: Icons.receipt_long_outlined,
+                    title: 'No transactions yet',
+                    message: 'Add income or expenses to see activity history.',
                   ),
                 )
               : ListView.separated(
@@ -144,17 +146,17 @@ class ActivityScreenState extends State<ActivityScreen> {
                     final Transaction tx = filtered[index];
                     final bool isIncome = tx.type == 'income';
 
-                    return Card(
+                    return PremiumCard(
                       child: ListTile(
                         key: Key('transactionTile_${tx.id}'),
                         onTap: () {
                           Navigator.of(context).push(
                             MaterialPageRoute<void>(
-                              builder: (_) =>
-                                  AddTransactionScreen(initialTransaction: tx),
+                              builder: (_) => AddTransactionScreen(initialTransaction: tx),
                             ),
                           );
                         },
+                        contentPadding: const EdgeInsets.symmetric(vertical: 2),
                         title: Row(
                           children: <Widget>[
                             _TypeBadge(type: tx.type),
@@ -183,8 +185,9 @@ class ActivityScreenState extends State<ActivityScreen> {
                             ],
                           ),
                         ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
+                        trailing: Wrap(
+                          spacing: 2,
+                          crossAxisAlignment: WrapCrossAlignment.center,
                           children: <Widget>[
                             Text(
                               '${isIncome ? '+' : '-'}${tx.amount.toStringAsFixed(2)} ${tx.currency}',
@@ -214,33 +217,24 @@ class ActivityScreenState extends State<ActivityScreen> {
   Widget _buildScheduleView(List<Map<String, dynamic>> schedule) {
     if (schedule.isEmpty) {
       return const Center(
-        child: Card(
-          child: Padding(
-            padding: EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text('No Zakat Due Yet', key: Key('zakatScheduleEmptyState')),
-                SizedBox(height: 8),
-                Text(
-                  'Dues appear after your assets and income reach hawl and nisab.',
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          ),
+        child: EmptyStateCard(
+          cardKey: Key('zakatScheduleEmptyState'),
+          icon: Icons.event_note,
+          title: 'No Zakat Due Yet',
+          message: 'Dues appear after your assets and income reach hawl and nisab.',
         ),
       );
     }
 
     final List<Map<String, dynamic>> sorted = List<Map<String, dynamic>>.from(schedule)
-      ..sort((a, b) => (a['monthKey'] ?? '').toString().compareTo((b['monthKey'] ?? '').toString()));
+      ..sort((a, b) => (a['monthKey'] ?? '')
+          .toString()
+          .compareTo((b['monthKey'] ?? '').toString()));
 
     return ListView.separated(
       key: const Key('zakatScheduleList'),
       itemCount: sorted.length,
-      separatorBuilder: (BuildContext context, int index) =>
-          const SizedBox(height: 8),
+      separatorBuilder: (BuildContext context, int index) => const SizedBox(height: 10),
       itemBuilder: (_, int index) {
         final Map<String, dynamic> row = sorted[index];
         final bool isPast = row['isPast'] == true;
@@ -251,15 +245,16 @@ class ActivityScreenState extends State<ActivityScreen> {
         final String paymentDate = (row['paymentDate'] ?? '').toString();
         final double totalZakat = ((row['totalZakat'] ?? 0) as num).toDouble();
 
-        return Card(
+        return PremiumCard(
           child: ExpansionTile(
             key: Key('scheduleRow_$monthKey'),
+            tilePadding: EdgeInsets.zero,
             title: Text('$monthKey • $paymentDate'),
             subtitle: Text('Entries: ${entries.length}'),
             trailing: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: <Widget>[
-                Text(_formatEgp(totalZakat)),
+                Text(_formatEgp(totalZakat), style: const TextStyle(fontWeight: FontWeight.w700)),
                 Text(status, style: const TextStyle(fontSize: 12)),
               ],
             ),
@@ -298,8 +293,7 @@ class ActivityScreenState extends State<ActivityScreen> {
       );
     }
 
-    final List<Map<String, dynamic>> monthly =
-        ZakatScheduleService.calculateMonthlyZakatSchedule(
+    final List<Map<String, dynamic>> monthly = ZakatScheduleService.calculateMonthlyZakatSchedule(
       transactions: transactions.map((e) => e.toJson()).toList(growable: false),
       marketData: marketData,
     );

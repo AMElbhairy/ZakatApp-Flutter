@@ -64,6 +64,8 @@ void main() {
 
     await tester.tap(find.text('Assets').first);
     await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView).first, const Offset(0, -400));
+    await tester.pumpAndSettle();
 
     expect(find.text('Property'), findsOneWidget);
     expect(find.text('Cairo Apartment'), findsOneWidget);
@@ -82,6 +84,8 @@ void main() {
     );
 
     await tester.tap(find.text('Assets').first);
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView).first, const Offset(0, -500));
     await tester.pumpAndSettle();
 
     expect(find.text('Company Shares'), findsOneWidget);
@@ -103,7 +107,10 @@ void main() {
 
     await tester.tap(find.text('Assets').first);
     await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView).first, const Offset(0, -500));
+    await tester.pumpAndSettle();
 
+    await tester.ensureVisible(find.text('Villa').first);
     await tester.tap(find.text('Villa').first);
     await tester.pumpAndSettle();
 
@@ -119,6 +126,8 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Assets').first);
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView).first, const Offset(0, -500));
     await tester.pumpAndSettle();
 
     expect(find.text('950000.00'), findsWidgets);
@@ -138,7 +147,10 @@ void main() {
 
     await tester.tap(find.text('Assets').first);
     await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView).first, const Offset(0, -500));
+    await tester.pumpAndSettle();
 
+    await tester.ensureVisible(find.byIcon(Icons.delete_outline).last);
     await tester.tap(find.byIcon(Icons.delete_outline).last);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Delete'));

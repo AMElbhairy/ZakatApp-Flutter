@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/services/zakat_engine.dart';
+import '../../core/widgets/app_ui.dart';
 import '../../models/saving.dart';
 import '../../services/app_state_controller.dart';
 
@@ -197,12 +198,13 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
                 const SizedBox(height: 24),
                 SizedBox(
                   width: double.infinity,
-                  child: FilledButton(
+                  child: AppPrimaryButton(
                     key: const Key('saveSavingButton'),
                     onPressed: _saving ? null : _submit,
-                    child: Text(_saving
+                    label: _saving
                         ? 'Saving...'
-                        : (widget.isEditMode ? 'Update Saving' : 'Save Saving')),
+                        : (widget.isEditMode ? 'Update Saving' : 'Save Saving'),
+                    icon: Icons.check,
                   ),
                 ),
               ],
