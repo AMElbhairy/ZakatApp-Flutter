@@ -180,6 +180,15 @@ void main() {
         aedToEgp: 13.9,
         kwdToEgp: 165,
         qarToEgp: 14,
+        eurToEgp: 55,
+        gbpToEgp: 65,
+        bhdToEgp: 135,
+        omrToEgp: 132,
+        jodToEgp: 72,
+        tryToEgp: 1.5,
+        myrToEgp: 11.5,
+        pkrToEgp: 0.18,
+        idrToEgp: 0.0032,
         lastUpdated: '2026-05-31T10:00:00Z',
       ),
     );
@@ -192,5 +201,53 @@ void main() {
     expect(snapshot.silverPricePerGramEgp, 63);
     expect(snapshot.usdToEgp, 51);
     expect(snapshot.lastUpdated, '2026-05-31T10:00:00Z');
+  });
+
+  test('corrupted local app state JSON falls back to default', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'zakatAppData': '{invalid json',
+    });
+    const LocalStorageService localStorage = LocalStorageService();
+    final AppStateRepository badRepository =
+        AppStateRepository(localStorage: localStorage);
+    final AppStateController badController =
+        AppStateController(repository: badRepository);
+
+    await badController.load();
+
+    expect(badController.state.transactions, isEmpty);
+    expect(badController.state.mainCurrency, 'EGP');
+  });
+
+  test('incompatible shapes preserve valid fields where possible', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'zakatAppData': '''
+{
+  "transactions": "bad",
+  "savings": "bad",
+  "recurringTransactions": 1,
+  "investments": {},
+  "financialPlans": "bad",
+  "mainCurrency": "USD",
+  "defaultEntryCurrency": "SAR",
+  "zakatMethod": "annual",
+  "marketData": "bad"
+}
+''',
+    });
+    const LocalStorageService localStorage = LocalStorageService();
+    final AppStateRepository mixedRepository =
+        AppStateRepository(localStorage: localStorage);
+    final AppStateController mixedController =
+        AppStateController(repository: mixedRepository);
+
+    await mixedController.load();
+
+    expect(mixedController.state.transactions, isEmpty);
+    expect(mixedController.state.savings, isEmpty);
+    expect(mixedController.state.mainCurrency, 'USD');
+    expect(mixedController.state.defaultEntryCurrency, 'SAR');
+    expect(mixedController.state.zakatMethod, 'annual');
+    expect(mixedController.currentMarketSnapshot.gold24kPricePerGramEgp, 0);
   });
 }

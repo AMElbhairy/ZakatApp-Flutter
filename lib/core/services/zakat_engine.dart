@@ -163,22 +163,42 @@ class ZakatEngineService {
     return (assetType ?? '').trim().toLowerCase();
   }
 
-  static double convertToEgp(double amount, String? currency, MarketData marketData) {
-    if (currency == null || currency.isEmpty || currency == 'EGP') return amount;
-    final double? rateFromMap = marketData.ratesToEgp[currency];
-    final double? fallbackUsd = currency == 'USD' ? marketData.usdToEgp : null;
-    final double? fallbackSar = currency == 'SAR' ? marketData.sarToEgp : null;
-    final double rate = rateFromMap ?? fallbackUsd ?? fallbackSar ?? 1;
+  static bool isCurrencyConversionAvailable(
+      String? currency, MarketData marketData) {
+    final String cur = (currency ?? '').trim();
+    if (cur.isEmpty || cur == 'EGP') return true;
+    final double? rate = _resolveRateToEgp(cur, marketData);
+    return rate != null && rate > 0;
+  }
+
+  static double? tryConvertToEgp(
+      double amount, String? currency, MarketData marketData) {
+    final String cur = (currency ?? '').trim();
+    if (cur.isEmpty || cur == 'EGP') return amount;
+    final double? rate = _resolveRateToEgp(cur, marketData);
+    if (rate == null || rate <= 0) return null;
     return amount * rate;
   }
 
+  static double convertToEgp(double amount, String? currency, MarketData marketData) {
+    final double? converted = tryConvertToEgp(amount, currency, marketData);
+    return converted ?? double.nan;
+  }
+
   static double convertFromEgp(double amountEgp, String? currency, MarketData marketData) {
-    if (currency == null || currency.isEmpty || currency == 'EGP') return amountEgp;
-    final double? rateFromMap = marketData.ratesToEgp[currency];
-    final double? fallbackUsd = currency == 'USD' ? marketData.usdToEgp : null;
-    final double? fallbackSar = currency == 'SAR' ? marketData.sarToEgp : null;
-    final double rate = rateFromMap ?? fallbackUsd ?? fallbackSar ?? 1;
-    return rate > 0 ? amountEgp / rate : amountEgp;
+    final String cur = (currency ?? '').trim();
+    if (cur.isEmpty || cur == 'EGP') return amountEgp;
+    final double? rate = _resolveRateToEgp(cur, marketData);
+    if (rate == null || rate <= 0) return double.nan;
+    return amountEgp / rate;
+  }
+
+  static double? _resolveRateToEgp(String currency, MarketData marketData) {
+    final double? fromMap = marketData.ratesToEgp[currency];
+    if (fromMap != null && fromMap > 0) return fromMap;
+    if (currency == 'USD' && marketData.usdToEgp > 0) return marketData.usdToEgp;
+    if (currency == 'SAR' && marketData.sarToEgp > 0) return marketData.sarToEgp;
+    return null;
   }
 
   static double convertToGold24k(double weight, String? karat,

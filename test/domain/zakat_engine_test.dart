@@ -19,6 +19,27 @@ void main() {
     expect(ZakatEngineService.convertFromEgp(100, 'USD', marketData), closeTo(2, 1e-9));
   });
 
+  test('EGP conversion works without FX', () {
+    final MarketData emptyMarket = MarketData.fromJson(const <String, dynamic>{});
+    expect(ZakatEngineService.convertToEgp(42, 'EGP', emptyMarket), 42);
+  });
+
+  test('non-EGP missing rate does not silently equal amount', () {
+    final MarketData emptyMarket = MarketData.fromJson(const <String, dynamic>{});
+    final double converted = ZakatEngineService.convertToEgp(10, 'USD', emptyMarket);
+    expect(converted.isNaN, isTrue);
+    expect(ZakatEngineService.tryConvertToEgp(10, 'USD', emptyMarket), isNull);
+  });
+
+  test('missing USD/SAR/AED/KWD/QAR rates are unavailable', () {
+    final MarketData emptyMarket = MarketData.fromJson(const <String, dynamic>{});
+    for (final String c in <String>['USD', 'SAR', 'AED', 'KWD', 'QAR']) {
+      expect(ZakatEngineService.isCurrencyConversionAvailable(c, emptyMarket), isFalse);
+      expect(ZakatEngineService.tryConvertToEgp(10, c, emptyMarket), isNull);
+      expect(ZakatEngineService.convertToEgp(10, c, emptyMarket).isNaN, isTrue);
+    }
+  });
+
   test('nisab calculation', () {
     final totals = ZakatEngineService.computeNisabTotals(
       savings: appState.savings,

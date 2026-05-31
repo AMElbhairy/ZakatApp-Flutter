@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 
 import '../../models/market_snapshot.dart';
 import '../../services/app_state_controller.dart';
@@ -282,7 +283,7 @@ class _AccountScreenState extends State<AccountScreen> {
                 ),
               ),
               const SizedBox(height: 10),
-              Text('Last updated: ${_lastUpdated.isEmpty ? '-' : _lastUpdated}'),
+              Text('Last updated: ${_formatLastUpdatedForDisplay(_lastUpdated)}'),
               const SizedBox(height: 12),
               FilledButton(
                 key: const Key('saveMarketDataButton'),
@@ -336,9 +337,7 @@ class _AccountScreenState extends State<AccountScreen> {
   }
 
   Future<void> _saveMarketData() async {
-    final DateTime now = DateTime.now();
-    final String lastUpdated =
-        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+    final String lastUpdated = DateTime.now().toUtc().toIso8601String();
 
     final MarketSnapshot snapshot = MarketSnapshot(
       gold24kPricePerGramEgp: _asDouble(_goldController.text),
@@ -348,6 +347,15 @@ class _AccountScreenState extends State<AccountScreen> {
       aedToEgp: _asDouble(_aedController.text),
       kwdToEgp: _asDouble(_kwdController.text),
       qarToEgp: _asDouble(_qarController.text),
+      eurToEgp: 0,
+      gbpToEgp: 0,
+      bhdToEgp: 0,
+      omrToEgp: 0,
+      jodToEgp: 0,
+      tryToEgp: 0,
+      myrToEgp: 0,
+      pkrToEgp: 0,
+      idrToEgp: 0,
       lastUpdated: lastUpdated,
     );
 
@@ -373,6 +381,28 @@ class _AccountScreenState extends State<AccountScreen> {
   static String _fmt(double value) {
     if (value == 0) return '';
     return value.toStringAsFixed(value.truncateToDouble() == value ? 0 : 2);
+  }
+
+  static String _formatLastUpdatedForDisplay(String raw) {
+    if (raw.trim().isEmpty) return '-';
+    final DateTime? parsed = _tryParseLegacyOrIso(raw);
+    if (parsed == null) return raw;
+    return DateFormat('yyyy-MM-dd HH:mm').format(parsed.toLocal());
+  }
+
+  static DateTime? _tryParseLegacyOrIso(String raw) {
+    try {
+      return DateTime.parse(raw);
+    } catch (_) {}
+    final RegExp legacy = RegExp(r'^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$');
+    final Match? match = legacy.firstMatch(raw.trim());
+    if (match == null) return null;
+    final int y = int.parse(match.group(1)!);
+    final int m = int.parse(match.group(2)!);
+    final int d = int.parse(match.group(3)!);
+    final int hh = int.parse(match.group(4)!);
+    final int mm = int.parse(match.group(5)!);
+    return DateTime(y, m, d, hh, mm);
   }
 }
 

@@ -7,6 +7,15 @@ class MarketSnapshot {
     required this.aedToEgp,
     required this.kwdToEgp,
     required this.qarToEgp,
+    required this.eurToEgp,
+    required this.gbpToEgp,
+    required this.bhdToEgp,
+    required this.omrToEgp,
+    required this.jodToEgp,
+    required this.tryToEgp,
+    required this.myrToEgp,
+    required this.pkrToEgp,
+    required this.idrToEgp,
     required this.lastUpdated,
   });
 
@@ -17,6 +26,15 @@ class MarketSnapshot {
   final double aedToEgp;
   final double kwdToEgp;
   final double qarToEgp;
+  final double eurToEgp;
+  final double gbpToEgp;
+  final double bhdToEgp;
+  final double omrToEgp;
+  final double jodToEgp;
+  final double tryToEgp;
+  final double myrToEgp;
+  final double pkrToEgp;
+  final double idrToEgp;
   final String lastUpdated;
 
   static const MarketSnapshot empty = MarketSnapshot(
@@ -27,6 +45,15 @@ class MarketSnapshot {
     aedToEgp: 0,
     kwdToEgp: 0,
     qarToEgp: 0,
+    eurToEgp: 0,
+    gbpToEgp: 0,
+    bhdToEgp: 0,
+    omrToEgp: 0,
+    jodToEgp: 0,
+    tryToEgp: 0,
+    myrToEgp: 0,
+    pkrToEgp: 0,
+    idrToEgp: 0,
     lastUpdated: '',
   );
 
@@ -42,6 +69,15 @@ class MarketSnapshot {
       aedToEgp: _asDouble(json['aedToEgp']),
       kwdToEgp: _asDouble(json['kwdToEgp']),
       qarToEgp: _asDouble(json['qarToEgp']),
+      eurToEgp: _asDouble(json['eurToEgp']),
+      gbpToEgp: _asDouble(json['gbpToEgp']),
+      bhdToEgp: _asDouble(json['bhdToEgp']),
+      omrToEgp: _asDouble(json['omrToEgp']),
+      jodToEgp: _asDouble(json['jodToEgp']),
+      tryToEgp: _asDouble(json['tryToEgp']),
+      myrToEgp: _asDouble(json['myrToEgp']),
+      pkrToEgp: _asDouble(json['pkrToEgp']),
+      idrToEgp: _asDouble(json['idrToEgp']),
       lastUpdated: (json['lastUpdated'] ?? '').toString(),
     );
   }
@@ -58,6 +94,15 @@ class MarketSnapshot {
       aedToEgp: _asDouble(rates['AED']),
       kwdToEgp: _asDouble(rates['KWD']),
       qarToEgp: _asDouble(rates['QAR']),
+      eurToEgp: _asDouble(rates['EUR']),
+      gbpToEgp: _asDouble(rates['GBP']),
+      bhdToEgp: _asDouble(rates['BHD']),
+      omrToEgp: _asDouble(rates['OMR']),
+      jodToEgp: _asDouble(rates['JOD']),
+      tryToEgp: _asDouble(rates['TRY']),
+      myrToEgp: _asDouble(rates['MYR']),
+      pkrToEgp: _asDouble(rates['PKR']),
+      idrToEgp: _asDouble(rates['IDR']),
       lastUpdated: (json['LAST_UPDATED'] ?? '').toString(),
     );
   }
@@ -71,6 +116,15 @@ class MarketSnapshot {
       'aedToEgp': aedToEgp,
       'kwdToEgp': kwdToEgp,
       'qarToEgp': qarToEgp,
+      'eurToEgp': eurToEgp,
+      'gbpToEgp': gbpToEgp,
+      'bhdToEgp': bhdToEgp,
+      'omrToEgp': omrToEgp,
+      'jodToEgp': jodToEgp,
+      'tryToEgp': tryToEgp,
+      'myrToEgp': myrToEgp,
+      'pkrToEgp': pkrToEgp,
+      'idrToEgp': idrToEgp,
       'lastUpdated': lastUpdated,
     };
   }
@@ -88,6 +142,15 @@ class MarketSnapshot {
         if (aedToEgp > 0) 'AED': aedToEgp,
         if (kwdToEgp > 0) 'KWD': kwdToEgp,
         if (qarToEgp > 0) 'QAR': qarToEgp,
+        if (eurToEgp > 0) 'EUR': eurToEgp,
+        if (gbpToEgp > 0) 'GBP': gbpToEgp,
+        if (bhdToEgp > 0) 'BHD': bhdToEgp,
+        if (omrToEgp > 0) 'OMR': omrToEgp,
+        if (jodToEgp > 0) 'JOD': jodToEgp,
+        if (tryToEgp > 0) 'TRY': tryToEgp,
+        if (myrToEgp > 0) 'MYR': myrToEgp,
+        if (pkrToEgp > 0) 'PKR': pkrToEgp,
+        if (idrToEgp > 0) 'IDR': idrToEgp,
       },
       'LAST_UPDATED': lastUpdated,
     };

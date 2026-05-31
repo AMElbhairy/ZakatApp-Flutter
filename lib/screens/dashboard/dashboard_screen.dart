@@ -33,46 +33,70 @@ class DashboardScreen extends StatelessWidget {
 
     final market = MarketData.fromJson(state.marketData);
     final MarketSnapshot snapshot = controller.currentMarketSnapshot;
-    final bool hasMarketData = snapshot.hasRequiredData;
-
-    double totalIncomeEgp = 0;
-    double totalExpensesEgp = 0;
-
-    for (final tx in transactions) {
-      final double egpAmount =
-          ZakatEngineService.convertToEgp(tx.amount, tx.currency, market);
-      if (tx.type == 'income') {
-        totalIncomeEgp += egpAmount;
-      } else if (tx.type == 'expense') {
-        totalExpensesEgp += egpAmount;
-      }
-    }
-
-    final NisabTotals savingsTotals = ZakatEngineService.computeNisabTotals(
-      savings: savings,
-      marketData: market,
-    );
-    final double investmentsEgp = ZakatEngineService.calculateTotalInvestmentsEgp(
-      investments: investments,
-      marketData: market,
-    );
-    final double totalWealthEgp = ZakatEngineService.calculateTotalWealthEgp(
+    final Set<String> requiredCurrencies = _requiredCurrencies(
       transactions: transactions,
       savings: savings,
       investments: investments,
-      marketData: market,
     );
+    final bool hasMarketData = snapshot.hasRequiredData &&
+        requiredCurrencies.every(
+          (String c) => ZakatEngineService.isCurrencyConversionAvailable(c, market),
+        );
 
-    final double investmentLiabilityEgp = investments.fold<double>(
-      0,
-      (double sum, InvestmentAsset asset) =>
-          sum + ZakatEngineService.convertToEgp(asset.loanBalance, asset.currency, market),
+    double totalIncomeEgp = 0;
+    double totalExpensesEgp = 0;
+    NisabTotals savingsTotals = const NisabTotals(
+      totalCashEgp: 0,
+      totalGold24k: 0,
+      totalGoldEgp: 0,
+      totalSilverGrams: 0,
+      totalSilverEgp: 0,
+      totalSavingsWealthEgp: 0,
     );
-    final double netPositionEgp = totalWealthEgp - investmentLiabilityEgp;
+    double investmentsEgp = 0;
+    double totalWealthEgp = 0;
+    double investmentLiabilityEgp = 0;
+    double netPositionEgp = 0;
+    double nisabThreshold = 0;
+    bool nisabMet = false;
 
-    final double nisabThreshold =
-        ZakatEngineService.defaultConfig.nisabGoldGrams * market.goldPrice24kEgp;
-    final bool nisabMet = ZakatEngineService.checkCashNisab(totalWealthEgp, market);
+    if (hasMarketData) {
+      for (final tx in transactions) {
+        final double egpAmount =
+            ZakatEngineService.convertToEgp(tx.amount, tx.currency, market);
+        if (tx.type == 'income') {
+          totalIncomeEgp += egpAmount;
+        } else if (tx.type == 'expense') {
+          totalExpensesEgp += egpAmount;
+        }
+      }
+
+      savingsTotals = ZakatEngineService.computeNisabTotals(
+        savings: savings,
+        marketData: market,
+      );
+      investmentsEgp = ZakatEngineService.calculateTotalInvestmentsEgp(
+        investments: investments,
+        marketData: market,
+      );
+      totalWealthEgp = ZakatEngineService.calculateTotalWealthEgp(
+        transactions: transactions,
+        savings: savings,
+        investments: investments,
+        marketData: market,
+      );
+
+      investmentLiabilityEgp = investments.fold<double>(
+        0,
+        (double sum, InvestmentAsset asset) =>
+            sum + ZakatEngineService.convertToEgp(asset.loanBalance, asset.currency, market),
+      );
+      netPositionEgp = totalWealthEgp - investmentLiabilityEgp;
+
+      nisabThreshold =
+          ZakatEngineService.defaultConfig.nisabGoldGrams * market.goldPrice24kEgp;
+      nisabMet = ZakatEngineService.checkCashNisab(totalWealthEgp, market);
+    }
 
     final List<Map<String, dynamic>> schedule = hasMarketData
         ? _buildSchedule(
@@ -363,6 +387,27 @@ class DashboardScreen extends StatelessWidget {
       propertyPct: (property / totalWealthEgp) * 100,
       companyPct: (company / totalWealthEgp) * 100,
     );
+  }
+
+  static Set<String> _requiredCurrencies({
+    required List<Transaction> transactions,
+    required List<Saving> savings,
+    required List<InvestmentAsset> investments,
+  }) {
+    final Set<String> out = <String>{};
+    for (final Transaction tx in transactions) {
+      out.add(tx.currency);
+    }
+    for (final Saving s in savings) {
+      if ((s.assetType).toLowerCase() == 'cash') {
+        out.add(s.unit);
+      }
+    }
+    for (final InvestmentAsset asset in investments) {
+      out.add(asset.currency);
+    }
+    out.removeWhere((String c) => c.trim().isEmpty || c == 'EGP');
+    return out;
   }
 
   static String _formatEgp(double value) {

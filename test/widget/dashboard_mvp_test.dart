@@ -108,7 +108,9 @@ void main() {
 
   testWidgets('adding transaction updates income/expense',
       (WidgetTester tester) async {
-    SharedPreferences.setMockInitialValues(<String, Object>{});
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'zakatAppData': jsonEncode(_seedStateWithMarketData()),
+    });
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
@@ -208,6 +210,39 @@ void main() {
     await tester.pumpAndSettle();
 
     await _addIncome(tester, '350');
+
+    expect(find.text('Market data required'), findsWidgets);
+  });
+
+  testWidgets('dashboard shows Market data required when FX rate is missing',
+      (WidgetTester tester) async {
+    final Map<String, dynamic> seeded = _seedStateWithMarketData();
+    seeded['marketData'] = <String, dynamic>{
+      'GOLD_PRICE_24K_EGP': 5000,
+      'SILVER_PRICE_EGP': 60,
+      'USD_TO_EGP': 0,
+      'SAR_TO_EGP': 13.3,
+      'RATES_TO_EGP': <String, dynamic>{'EGP': 1, 'SAR': 13.3},
+      'LAST_UPDATED': '2026-05-31T10:00:00Z',
+    };
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'zakatAppData': jsonEncode(seeded),
+    });
+    await tester.pumpWidget(_buildApp());
+    await tester.pumpAndSettle();
+
+    await _openAction(tester, const Key('actionAddTransaction'));
+    await tester.enterText(find.byKey(const Key('amountField')), '100');
+    await tester.tap(find.byKey(const Key('currencyField')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('USD').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('categoryField')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Salary').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('saveTransactionButton')));
+    await tester.pumpAndSettle();
 
     expect(find.text('Market data required'), findsWidgets);
   });

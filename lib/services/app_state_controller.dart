@@ -21,7 +21,16 @@ class AppStateController extends ChangeNotifier {
       MarketSnapshot.fromAppStateJson(_state.marketData);
 
   Future<void> load() async {
-    _state = await repository.loadAppState();
+    try {
+      _state = await repository.loadAppState();
+    } catch (error, stackTrace) {
+      debugPrint(
+        'AppStateController.load: unexpected error while loading local app state. '
+        'Using default state. Error: $error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+      _state = AppStateDefaults.create();
+    }
     notifyListeners();
   }
 

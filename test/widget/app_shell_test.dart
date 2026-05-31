@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -30,5 +31,26 @@ void main() {
 
     // Dashboard placeholder title is visible by default.
     expect(find.text('Dashboard'), findsWidgets);
+  });
+
+  testWidgets('app still starts with corrupted local state JSON',
+      (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'zakatAppData': '{not-json',
+    });
+    const LocalStorageService localStorage = LocalStorageService();
+    final AppStateRepository repository =
+        AppStateRepository(localStorage: localStorage);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<AppStateController>(
+        create: (_) => AppStateController(repository: repository),
+        child: const ZakatApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Dashboard'), findsWidgets);
+    expect(find.byKey(const Key('dashboardEmptyCard')), findsOneWidget);
   });
 }

@@ -55,51 +55,40 @@ class AppStateModel {
 
   factory AppStateModel.fromJson(Map<String, dynamic> json) {
     return AppStateModel(
-      transactions: (json['transactions'] as List<dynamic>? ?? const <dynamic>[])
-          .map((dynamic e) => Transaction.fromJson(
-              Map<String, dynamic>.from((e as Map?) ?? const <String, dynamic>{})))
+      transactions: _asList(json['transactions'])
+          .map((dynamic e) => Transaction.fromJson(_asMap(e)))
           .toList(growable: false),
-      savings: (json['savings'] as List<dynamic>? ?? const <dynamic>[])
-          .map((dynamic e) => Saving.fromJson(
-              Map<String, dynamic>.from((e as Map?) ?? const <String, dynamic>{})))
+      savings: _asList(json['savings'])
+          .map((dynamic e) => Saving.fromJson(_asMap(e)))
           .toList(growable: false),
-      recurringTransactions:
-          (json['recurringTransactions'] as List<dynamic>? ?? const <dynamic>[])
-              .map((dynamic e) => RecurringTransaction.fromJson(Map<String, dynamic>.from(
-                  (e as Map?) ?? const <String, dynamic>{})))
-              .toList(growable: false),
-      investments: (json['investments'] as List<dynamic>? ?? const <dynamic>[])
-          .map((dynamic e) => InvestmentAsset.fromJson(
-              Map<String, dynamic>.from((e as Map?) ?? const <String, dynamic>{})))
+      recurringTransactions: _asList(json['recurringTransactions'])
+          .map((dynamic e) => RecurringTransaction.fromJson(_asMap(e)))
           .toList(growable: false),
-      financialPlans:
-          (json['financialPlans'] as List<dynamic>? ?? const <dynamic>[])
-              .map((dynamic e) => FinancialPlan.fromJson(
-                  Map<String, dynamic>.from((e as Map?) ?? const <String, dynamic>{})))
-              .toList(growable: false),
+      investments: _asList(json['investments'])
+          .map((dynamic e) => InvestmentAsset.fromJson(_asMap(e)))
+          .toList(growable: false),
+      financialPlans: _asList(json['financialPlans'])
+          .map((dynamic e) => FinancialPlan.fromJson(_asMap(e)))
+          .toList(growable: false),
       lastRollover: (json['lastRollover'] ?? '').toString(),
-      categories: AppCategories.fromJson(
-          Map<String, dynamic>.from((json['categories'] as Map?) ?? const <String, dynamic>{})),
-      zakatPaidMonths: (json['zakatPaidMonths'] as List<dynamic>? ?? const <dynamic>[])
+      categories: AppCategories.fromJson(_asMap(json['categories'])),
+      zakatPaidMonths: _asList(json['zakatPaidMonths'])
           .map((dynamic e) => e.toString())
           .toList(growable: false),
-      processedExpenseIds:
-          (json['processedExpenseIds'] as List<dynamic>? ?? const <dynamic>[])
-              .map((dynamic e) => e.toString())
-              .toList(growable: false),
+      processedExpenseIds: _asList(json['processedExpenseIds'])
+          .map((dynamic e) => e.toString())
+          .toList(growable: false),
       mainCurrency: (json['mainCurrency'] ?? '').toString(),
       defaultEntryCurrency: (json['defaultEntryCurrency'] ?? '').toString(),
-      zakatExpenseIds:
-          Map<String, dynamic>.from((json['zakatExpenseIds'] as Map?) ?? const <String, dynamic>{}),
+      zakatExpenseIds: _asMap(json['zakatExpenseIds']),
       zakatMethod: (json['zakatMethod'] ?? '').toString(),
       zakatAnnualDate: (json['zakatAnnualDate'] ?? '').toString(),
       zakatScheduleFilter: (json['zakatScheduleFilter'] ?? '').toString(),
-      marketData: Map<String, dynamic>.from((json['marketData'] as Map?) ?? const <String, dynamic>{}),
-      marketHistory: (json['marketHistory'] as List<dynamic>? ?? const <dynamic>[])
-          .map((dynamic e) => Map<String, dynamic>.from((e as Map?) ?? const <String, dynamic>{}))
+      marketData: _asMap(json['marketData']),
+      marketHistory: _asList(json['marketHistory'])
+          .map((dynamic e) => _asMap(e))
           .toList(growable: false),
-      syncHealth: SyncHealth.fromJson(
-          Map<String, dynamic>.from((json['syncHealth'] as Map?) ?? const <String, dynamic>{})),
+      syncHealth: SyncHealth.fromJson(_asMap(json['syncHealth'])),
       aiSettings: json['aiSettings'] is Map
           ? Map<String, dynamic>.from(json['aiSettings'] as Map)
           : null,
@@ -147,6 +136,18 @@ class AppStateModel {
     if (value is num) return value != 0;
     final String raw = (value ?? '').toString().toLowerCase();
     return raw == 'true' || raw == '1';
+  }
+
+  static List<dynamic> _asList(dynamic value) {
+    if (value is List) return value;
+    return const <dynamic>[];
+  }
+
+  static Map<String, dynamic> _asMap(dynamic value) {
+    if (value is Map) {
+      return Map<String, dynamic>.from(value);
+    }
+    return const <String, dynamic>{};
   }
 }
 

@@ -81,6 +81,15 @@ void main() {
       'aedToEgp': 13.6,
       'kwdToEgp': 162.5,
       'qarToEgp': 13.7,
+      'eurToEgp': 55,
+      'gbpToEgp': 64,
+      'bhdToEgp': 130,
+      'omrToEgp': 128,
+      'jodToEgp': 70,
+      'tryToEgp': 1.4,
+      'myrToEgp': 11,
+      'pkrToEgp': 0.18,
+      'idrToEgp': 0.0031,
       'lastUpdated': '2026-05-31T09:00:00Z',
     };
 
@@ -90,6 +99,42 @@ void main() {
     expect(out['gold24kPricePerGramEgp'], 5200);
     expect(out['silverPricePerGramEgp'], 62.5);
     expect(out['usdToEgp'], 50);
+    expect(out['eurToEgp'], 55);
+    expect(out['idrToEgp'], 0.0031);
     expect(out['lastUpdated'], '2026-05-31T09:00:00Z');
+  });
+
+  test('market snapshot missing fields falls back safely', () {
+    final MarketSnapshot snapshot = MarketSnapshot.fromJson(
+      <String, dynamic>{'gold24kPricePerGramEgp': 5100},
+    );
+
+    expect(snapshot.gold24kPricePerGramEgp, 5100);
+    expect(snapshot.silverPricePerGramEgp, 0);
+    expect(snapshot.usdToEgp, 0);
+    expect(snapshot.lastUpdated, '');
+  });
+
+  test('old formatted lastUpdated value remains safe', () {
+    final MarketSnapshot snapshot = MarketSnapshot.fromJson(
+      <String, dynamic>{'lastUpdated': '2026-05-31 10:45'},
+    );
+    expect(snapshot.lastUpdated, '2026-05-31 10:45');
+  });
+
+  test('market snapshot invalid field types do not throw', () {
+    final MarketSnapshot snapshot = MarketSnapshot.fromJson(
+      <String, dynamic>{
+        'gold24kPricePerGramEgp': 'bad',
+        'silverPricePerGramEgp': <String>['x'],
+        'usdToEgp': null,
+        'lastUpdated': 12345,
+      },
+    );
+
+    expect(snapshot.gold24kPricePerGramEgp, 0);
+    expect(snapshot.silverPricePerGramEgp, 0);
+    expect(snapshot.usdToEgp, 0);
+    expect(snapshot.lastUpdated, '12345');
   });
 }

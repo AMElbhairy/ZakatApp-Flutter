@@ -192,6 +192,12 @@ void main() {
     await tester.tap(find.byKey(const Key('saveMarketDataButton')));
     await tester.pumpAndSettle();
 
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String raw = prefs.getString('zakatAppData')!;
+    final Map<String, dynamic> json = jsonDecode(raw) as Map<String, dynamic>;
+    final String lastUpdated = (json['marketData'] as Map<String, dynamic>)['LAST_UPDATED'] as String;
+    expect(() => DateTime.parse(lastUpdated), returnsNormally);
+
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
     await _openSettings(tester);
@@ -208,5 +214,58 @@ void main() {
     expect(goldField.controller?.text, '5200');
     expect(silverField.controller?.text, '62.5');
     expect(usdField.controller?.text, '50');
+  });
+
+  testWidgets('old formatted lastUpdated still displays safely',
+      (WidgetTester tester) async {
+    final Map<String, dynamic> seededState = <String, dynamic>{
+      'transactions': <dynamic>[],
+      'savings': <dynamic>[],
+      'recurringTransactions': <dynamic>[],
+      'investments': <dynamic>[],
+      'financialPlans': <dynamic>[],
+      'lastRollover': '',
+      'categories': <String, dynamic>{
+        'income': <String>['Salary'],
+        'expense': <String>['Food & Dining'],
+      },
+      'zakatPaidMonths': <dynamic>[],
+      'processedExpenseIds': <dynamic>[],
+      'mainCurrency': 'EGP',
+      'defaultEntryCurrency': 'EGP',
+      'zakatExpenseIds': <String, dynamic>{},
+      'zakatMethod': 'hawl',
+      'zakatAnnualDate': '',
+      'zakatScheduleFilter': 'unpaid',
+      'marketData': <String, dynamic>{
+        'GOLD_PRICE_24K_EGP': 5000,
+        'SILVER_PRICE_EGP': 60,
+        'USD_TO_EGP': 50,
+        'SAR_TO_EGP': 13.3,
+        'RATES_TO_EGP': <String, dynamic>{'EGP': 1, 'USD': 50, 'SAR': 13.3},
+        'LAST_UPDATED': '2026-05-31 10:45',
+      },
+      'marketHistory': <dynamic>[],
+      'syncHealth': <String, dynamic>{
+        'lastSuccessAt': '',
+        'lastFailureAt': '',
+        'lastError': '',
+        'pendingWrites': 0,
+      },
+      'aiSettings': <String, dynamic>{'keys': <String>['', ''], 'defaultKeyIndex': 0},
+      'cloudHydrated': false,
+      'hasUnsyncedAuthChanges': false,
+    };
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'zakatAppData': jsonEncode(seededState),
+    });
+    await tester.pumpWidget(_buildApp());
+    await tester.pumpAndSettle();
+
+    await _openSettings(tester);
+    await tester.drag(find.byType(ListView).first, const Offset(0, -800));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Last updated:'), findsOneWidget);
   });
 }

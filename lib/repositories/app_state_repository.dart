@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 
 import '../core/constants/storage_keys.dart';
 import '../models/app_state.dart';
@@ -22,7 +23,12 @@ class AppStateRepository {
       final Map<String, dynamic> json =
           jsonDecode(raw) as Map<String, dynamic>;
       return AppStateModel.fromJson(json);
-    } catch (_) {
+    } catch (error, stackTrace) {
+      debugPrint(
+        'AppStateRepository.loadAppState: failed to parse persisted app state. '
+        'Falling back to default state. Error: $error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
       return AppStateDefaults.create();
     }
   }
