@@ -1,9 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import 'repositories/app_state_repository.dart';
 import 'screens/dashboard_screen.dart';
+import 'services/app_state_controller.dart';
+import 'services/local_storage_service.dart';
 
 void main() {
-  runApp(const ZakatApp());
+  const LocalStorageService localStorage = LocalStorageService();
+  final AppStateRepository repository =
+      AppStateRepository(localStorage: localStorage);
+  runApp(
+    ChangeNotifierProvider<AppStateController>(
+      create: (_) => AppStateController(repository: repository)..load(),
+      child: const ZakatApp(),
+    ),
+  );
 }
 
 class ZakatApp extends StatelessWidget {
