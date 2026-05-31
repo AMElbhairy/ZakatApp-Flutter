@@ -18,16 +18,29 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   int _index = 0;
+  final GlobalKey<ActivityScreenState> _activityKey =
+      GlobalKey<ActivityScreenState>();
 
   @override
   Widget build(BuildContext context) {
     final List<Widget> tabs = <Widget>[
       DashboardScreen(
-        onViewAllActivity: () => setState(() => _index = 2),
+        onViewAllActivity: () {
+          setState(() => _index = 2);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _activityKey.currentState?.showTransactions();
+          });
+        },
         onOpenAddActions: () => _showAddActions(context),
+        onOpenZakatSchedule: () {
+          setState(() => _index = 2);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _activityKey.currentState?.showSchedule();
+          });
+        },
       ),
       const AssetsScreen(),
-      const ActivityScreen(),
+      ActivityScreen(key: _activityKey),
       const PlansScreen(),
       const AccountScreen(),
     ];

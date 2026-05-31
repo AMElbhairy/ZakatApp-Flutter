@@ -1,26 +1,41 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/services/zakat_engine.dart';
+import '../../core/services/zakat_schedule_service.dart';
 import '../../models/transaction.dart';
 import '../../services/app_state_controller.dart';
 import '../entry/add_transaction_screen.dart';
 
 enum _ActivityFilter { all, income, expense }
+enum _ActivitySection { transactions, schedule }
 
 class ActivityScreen extends StatefulWidget {
   const ActivityScreen({super.key});
 
   @override
-  State<ActivityScreen> createState() => _ActivityScreenState();
+  ActivityScreenState createState() => ActivityScreenState();
 }
 
-class _ActivityScreenState extends State<ActivityScreen> {
+class ActivityScreenState extends State<ActivityScreen> {
   _ActivityFilter _filter = _ActivityFilter.all;
+  _ActivitySection _section = _ActivitySection.transactions;
+
+  void showSchedule() {
+    if (!mounted) return;
+    setState(() => _section = _ActivitySection.schedule);
+  }
+
+  void showTransactions() {
+    if (!mounted) return;
+    setState(() => _section = _ActivitySection.transactions);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final List<Transaction> transactions =
-        context.watch<AppStateController>().state.transactions;
+    final controller = context.watch<AppStateController>();
+    final state = controller.state;
+    final List<Transaction> transactions = state.transactions;
 
     final List<Transaction> sorted = List<Transaction>.from(transactions)
       ..sort((Transaction a, Transaction b) {
@@ -42,6 +57,16 @@ class _ActivityScreenState extends State<ActivityScreen> {
       }
     }).toList(growable: false);
 
+    final MarketData market = MarketData.fromJson(state.marketData);
+    final List<Map<String, dynamic>> schedule = _buildSchedule(
+      zakatMethod: state.zakatMethod,
+      zakatAnnualDate: state.zakatAnnualDate,
+      transactions: state.transactions,
+      savings: state.savings.map((e) => e.toJson()).toList(growable: false),
+      investments: state.investments.map((e) => e.toJson()).toList(growable: false),
+      marketData: market,
+    );
+
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -49,110 +74,241 @@ class _ActivityScreenState extends State<ActivityScreen> {
         children: <Widget>[
           Text('Activity', style: Theme.of(context).textTheme.headlineSmall),
           const SizedBox(height: 12),
-          SegmentedButton<_ActivityFilter>(
-            segments: const <ButtonSegment<_ActivityFilter>>[
-              ButtonSegment<_ActivityFilter>(
-                value: _ActivityFilter.all,
-                label: Text('All'),
+          SegmentedButton<_ActivitySection>(
+            key: const Key('activitySectionSegment'),
+            segments: const <ButtonSegment<_ActivitySection>>[
+              ButtonSegment<_ActivitySection>(
+                value: _ActivitySection.transactions,
+                label: Text('Transactions'),
               ),
-              ButtonSegment<_ActivityFilter>(
-                value: _ActivityFilter.income,
-                label: Text('Income'),
-              ),
-              ButtonSegment<_ActivityFilter>(
-                value: _ActivityFilter.expense,
-                label: Text('Expense'),
+              ButtonSegment<_ActivitySection>(
+                value: _ActivitySection.schedule,
+                label: Text('Zakat Schedule'),
               ),
             ],
-            selected: <_ActivityFilter>{_filter},
-            onSelectionChanged: (Set<_ActivityFilter> selected) {
-              setState(() {
-                _filter = selected.first;
-              });
+            selected: <_ActivitySection>{_section},
+            onSelectionChanged: (Set<_ActivitySection> selected) {
+              setState(() => _section = selected.first);
             },
           ),
           const SizedBox(height: 12),
           Expanded(
-            child: filtered.isEmpty
-                ? const Center(
-                    child: Text(
-                      'No transactions yet',
-                      key: Key('activityEmptyState'),
-                    ),
-                  )
-                : ListView.separated(
-                    itemCount: filtered.length,
-                    separatorBuilder: (_, index) => const SizedBox(height: 10),
-                    itemBuilder: (BuildContext context, int index) {
-                      final Transaction tx = filtered[index];
-                      final bool isIncome = tx.type == 'income';
-
-                      return Card(
-                        child: ListTile(
-                          key: Key('transactionTile_${tx.id}'),
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) =>
-                                    AddTransactionScreen(initialTransaction: tx),
-                              ),
-                            );
-                          },
-                          title: Row(
-                            children: <Widget>[
-                              _TypeBadge(type: tx.type),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  tx.category,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                          subtitle: Padding(
-                            padding: const EdgeInsets.only(top: 6),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: <Widget>[
-                                Text('${tx.date} • ${tx.currency}'),
-                                if (tx.description.trim().isNotEmpty)
-                                  Text(
-                                    tx.description,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                              ],
-                            ),
-                          ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: <Widget>[
-                              Text(
-                                '${isIncome ? '+' : '-'}${tx.amount.toStringAsFixed(2)} ${tx.currency}',
-                                style: TextStyle(
-                                  color: isIncome
-                                      ? Colors.green.shade700
-                                      : Colors.red.shade700,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              IconButton(
-                                key: Key('deleteTransaction_${tx.id}'),
-                                icon: const Icon(Icons.delete_outline),
-                                onPressed: () => _confirmDelete(context, tx),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
+            child: _section == _ActivitySection.transactions
+                ? _buildTransactionsView(context, filtered)
+                : _buildScheduleView(schedule),
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildTransactionsView(BuildContext context, List<Transaction> filtered) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        SegmentedButton<_ActivityFilter>(
+          segments: const <ButtonSegment<_ActivityFilter>>[
+            ButtonSegment<_ActivityFilter>(
+              value: _ActivityFilter.all,
+              label: Text('All'),
+            ),
+            ButtonSegment<_ActivityFilter>(
+              value: _ActivityFilter.income,
+              label: Text('Income'),
+            ),
+            ButtonSegment<_ActivityFilter>(
+              value: _ActivityFilter.expense,
+              label: Text('Expense'),
+            ),
+          ],
+          selected: <_ActivityFilter>{_filter},
+          onSelectionChanged: (Set<_ActivityFilter> selected) {
+            setState(() {
+              _filter = selected.first;
+            });
+          },
+        ),
+        const SizedBox(height: 12),
+        Expanded(
+          child: filtered.isEmpty
+              ? const Center(
+                  child: Text(
+                    'No transactions yet',
+                    key: Key('activityEmptyState'),
+                  ),
+                )
+              : ListView.separated(
+                  itemCount: filtered.length,
+                  separatorBuilder: (_, index) => const SizedBox(height: 10),
+                  itemBuilder: (BuildContext context, int index) {
+                    final Transaction tx = filtered[index];
+                    final bool isIncome = tx.type == 'income';
+
+                    return Card(
+                      child: ListTile(
+                        key: Key('transactionTile_${tx.id}'),
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) =>
+                                  AddTransactionScreen(initialTransaction: tx),
+                            ),
+                          );
+                        },
+                        title: Row(
+                          children: <Widget>[
+                            _TypeBadge(type: tx.type),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                tx.category,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                        subtitle: Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Text('${tx.date} • ${tx.currency}'),
+                              if (tx.description.trim().isNotEmpty)
+                                Text(
+                                  tx.description,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                            ],
+                          ),
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            Text(
+                              '${isIncome ? '+' : '-'}${tx.amount.toStringAsFixed(2)} ${tx.currency}',
+                              style: TextStyle(
+                                color: isIncome
+                                    ? Colors.green.shade700
+                                    : Colors.red.shade700,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            IconButton(
+                              key: Key('deleteTransaction_${tx.id}'),
+                              icon: const Icon(Icons.delete_outline),
+                              onPressed: () => _confirmDelete(context, tx),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildScheduleView(List<Map<String, dynamic>> schedule) {
+    if (schedule.isEmpty) {
+      return const Center(
+        child: Card(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text('No Zakat Due Yet', key: Key('zakatScheduleEmptyState')),
+                SizedBox(height: 8),
+                Text(
+                  'Dues appear after your assets and income reach hawl and nisab.',
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final List<Map<String, dynamic>> sorted = List<Map<String, dynamic>>.from(schedule)
+      ..sort((a, b) => (a['monthKey'] ?? '').toString().compareTo((b['monthKey'] ?? '').toString()));
+
+    return ListView.separated(
+      key: const Key('zakatScheduleList'),
+      itemCount: sorted.length,
+      separatorBuilder: (BuildContext context, int index) =>
+          const SizedBox(height: 8),
+      itemBuilder: (_, int index) {
+        final Map<String, dynamic> row = sorted[index];
+        final bool isPast = row['isPast'] == true;
+        final bool isCurrent = row['isCurrentMonth'] == true;
+        final List<dynamic> entries = (row['entries'] as List<dynamic>? ?? const []);
+        final String status = isCurrent ? 'Due Now' : (isPast ? 'Past' : 'Upcoming');
+        final String monthKey = (row['monthKey'] ?? '').toString();
+        final String paymentDate = (row['paymentDate'] ?? '').toString();
+        final double totalZakat = ((row['totalZakat'] ?? 0) as num).toDouble();
+
+        return Card(
+          child: ExpansionTile(
+            key: Key('scheduleRow_$monthKey'),
+            title: Text('$monthKey • $paymentDate'),
+            subtitle: Text('Entries: ${entries.length}'),
+            trailing: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: <Widget>[
+                Text(_formatEgp(totalZakat)),
+                Text(status, style: const TextStyle(fontSize: 12)),
+              ],
+            ),
+            children: entries.map((dynamic raw) {
+              final Map<String, dynamic> entry = Map<String, dynamic>.from(raw as Map);
+              final String type = (entry['type'] ?? 'entry').toString();
+              final double amount = ((entry['zakatAmount'] ?? 0) as num).toDouble();
+              return ListTile(
+                dense: true,
+                title: Text(type),
+                subtitle: Text((entry['dueDateRaw'] ?? '').toString()),
+                trailing: Text(_formatEgp(amount)),
+              );
+            }).toList(growable: false),
+          ),
+        );
+      },
+    );
+  }
+
+  static List<Map<String, dynamic>> _buildSchedule({
+    required String zakatMethod,
+    required String zakatAnnualDate,
+    required List<Transaction> transactions,
+    required List<Map<String, dynamic>> savings,
+    required List<Map<String, dynamic>> investments,
+    required MarketData marketData,
+  }) {
+    if (zakatMethod == 'annual') {
+      return ZakatScheduleService.calculateAnnualZakatSchedule(
+        zakatAnnualDate: zakatAnnualDate,
+        transactions: transactions.map((e) => e.toJson()).toList(growable: false),
+        savings: savings,
+        investments: investments,
+        marketData: marketData,
+      );
+    }
+
+    final List<Map<String, dynamic>> monthly =
+        ZakatScheduleService.calculateMonthlyZakatSchedule(
+      transactions: transactions.map((e) => e.toJson()).toList(growable: false),
+      marketData: marketData,
+    );
+    final List<Map<String, dynamic>> savingsSchedule =
+        ZakatScheduleService.calculateSavingsZakatSchedule(
+      savings: savings,
+      marketData: marketData,
+    );
+    return <Map<String, dynamic>>[...monthly, ...savingsSchedule];
   }
 
   Future<void> _confirmDelete(BuildContext context, Transaction tx) async {
@@ -187,6 +343,10 @@ class _ActivityScreenState extends State<ActivityScreen> {
     } catch (_) {
       return DateTime.fromMillisecondsSinceEpoch(0);
     }
+  }
+
+  static String _formatEgp(double value) {
+    return 'E£ ${value.toStringAsFixed(2)}';
   }
 }
 

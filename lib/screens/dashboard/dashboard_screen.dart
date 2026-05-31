@@ -14,10 +14,12 @@ class DashboardScreen extends StatelessWidget {
     super.key,
     this.onViewAllActivity,
     this.onOpenAddActions,
+    this.onOpenZakatSchedule,
   });
 
   final VoidCallback? onViewAllActivity;
   final VoidCallback? onOpenAddActions;
+  final VoidCallback? onOpenZakatSchedule;
 
   @override
   Widget build(BuildContext context) {
@@ -144,6 +146,8 @@ class DashboardScreen extends StatelessWidget {
           _sectionCard(
             context,
             title: 'Zakat Summary',
+            key: const Key('dashboardZakatSummaryCard'),
+            onTap: onOpenZakatSchedule,
             children: <Widget>[
               _metricRow('Nisab Status', nisabMet ? 'Met' : 'Not Met',
                   bold: nisabMet),
@@ -322,19 +326,29 @@ class DashboardScreen extends StatelessWidget {
 
   static Card _sectionCard(
     BuildContext context, {
+    Key? key,
     required String title,
     required List<Widget> children,
+    VoidCallback? onTap,
   }) {
     return Card(
+      key: key,
       child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text(title, style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 12),
-            ...children,
-          ],
+        padding: EdgeInsets.zero,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(title, style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 12),
+                ...children,
+              ],
+            ),
+          ),
         ),
       ),
     );
