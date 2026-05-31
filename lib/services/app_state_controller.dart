@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../models/app_state.dart';
@@ -21,6 +22,9 @@ class AppStateController extends ChangeNotifier {
   final AppStateRepository repository;
   final MarketDataApiService marketDataApiService;
   AppStateModel _state;
+  Timer? _marketRefreshTimer;
+  bool _marketAutoRefreshStarted = false;
+  static const Duration marketRefreshInterval = Duration(minutes: 5);
 
   AppStateModel get state => _state;
   MarketSnapshot get currentMarketSnapshot =>
@@ -38,6 +42,23 @@ class AppStateController extends ChangeNotifier {
       _state = AppStateDefaults.create();
     }
     notifyListeners();
+  }
+
+  Future<void> startMarketAutoRefresh() async {
+    if (_marketAutoRefreshStarted) return;
+    _marketAutoRefreshStarted = true;
+    await refreshMarketData();
+    _marketRefreshTimer?.cancel();
+    _marketRefreshTimer = Timer.periodic(
+      marketRefreshInterval,
+      (_) => refreshMarketData(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _marketRefreshTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> save() async {
@@ -173,23 +194,11 @@ class AppStateController extends ChangeNotifier {
   Future<MarketRefreshResult> refreshMarketData() async {
     final MarketSnapshot before = currentMarketSnapshot;
     Map<String, double>? fxRates;
-    double? goldPrice;
-    double? silverPrice;
 
     try {
       fxRates = await marketDataApiService.fetchFxRatesToEgp();
     } catch (_) {
       fxRates = null;
-    }
-    try {
-      goldPrice = await marketDataApiService.fetchGold24kPerGramEgp();
-    } catch (_) {
-      goldPrice = null;
-    }
-    try {
-      silverPrice = await marketDataApiService.fetchSilverPerGramEgp();
-    } catch (_) {
-      silverPrice = null;
     }
 
     int updated = 0;
@@ -213,6 +222,25 @@ class AppStateController extends ChangeNotifier {
         idrToEgp: fxRates['IDR'] ?? after.idrToEgp,
       );
       updated += fxRates.length;
+    }
+
+    final double usdToEgpForMetals =
+        after.usdToEgp > 0 ? after.usdToEgp : before.usdToEgp;
+    double? goldPrice;
+    double? silverPrice;
+    try {
+      goldPrice = await marketDataApiService.fetchGold24kPerGramEgp(
+        usdToEgp: usdToEgpForMetals,
+      );
+    } catch (_) {
+      goldPrice = null;
+    }
+    try {
+      silverPrice = await marketDataApiService.fetchSilverPerGramEgp(
+        usdToEgp: usdToEgpForMetals,
+      );
+    } catch (_) {
+      silverPrice = null;
     }
 
     if (goldPrice != null && goldPrice > 0) {

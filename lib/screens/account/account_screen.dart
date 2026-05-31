@@ -34,6 +34,7 @@ class _AccountScreenState extends State<AccountScreen> {
   bool _marketInitialized = false;
   bool _isRefreshingMarket = false;
   String _refreshMarketMessage = '';
+  bool _manualOverrideExpanded = false;
 
   @override
   void dispose() {
@@ -245,84 +246,10 @@ class _AccountScreenState extends State<AccountScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              TextFormField(
-                key: const Key('marketGoldField'),
-                controller: _goldController,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(
-                  labelText: 'Gold 24K price / gram (EGP)',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextFormField(
-                key: const Key('marketSilverField'),
-                controller: _silverController,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(
-                  labelText: 'Silver price / gram (EGP)',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextFormField(
-                key: const Key('marketUsdField'),
-                controller: _usdController,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(
-                  labelText: 'USD to EGP',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextFormField(
-                key: const Key('marketSarField'),
-                controller: _sarController,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(
-                  labelText: 'SAR to EGP',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextFormField(
-                key: const Key('marketAedField'),
-                controller: _aedController,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(
-                  labelText: 'AED to EGP',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextFormField(
-                key: const Key('marketKwdField'),
-                controller: _kwdController,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(
-                  labelText: 'KWD to EGP',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextFormField(
-                key: const Key('marketQarField'),
-                controller: _qarController,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(
-                  labelText: 'QAR to EGP',
-                  border: OutlineInputBorder(),
-                ),
-              ),
+              const Text('Automatic refresh: Every 5 minutes while app is open'),
               const SizedBox(height: 10),
               Text('Last updated: ${_formatLastUpdatedForDisplay(_lastUpdated)}'),
               const SizedBox(height: 12),
-              FilledButton(
-                key: const Key('saveMarketDataButton'),
-                onPressed: _saveMarketData,
-                child: Text(context.l10n.tr('save_market_data')),
-              ),
-              const SizedBox(height: 10),
               FilledButton.tonal(
                 key: const Key('refreshMarketDataButton'),
                 onPressed: _isRefreshingMarket ? null : _refreshMarketData,
@@ -338,6 +265,110 @@ class _AccountScreenState extends State<AccountScreen> {
                 const SizedBox(height: 8),
                 Text(_refreshMarketMessage),
               ],
+              const SizedBox(height: 12),
+              ExpansionTile(
+                key: const Key('marketAdvancedOverrideTile'),
+                title: const Text('Advanced Manual Override'),
+                initiallyExpanded: _manualOverrideExpanded,
+                onExpansionChanged: (bool expanded) {
+                  setState(() => _manualOverrideExpanded = expanded);
+                },
+                childrenPadding: const EdgeInsets.only(bottom: 12),
+                children: <Widget>[
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    child: Column(
+                      children: <Widget>[
+                        TextFormField(
+                          key: const Key('marketGoldField'),
+                          controller: _goldController,
+                          keyboardType:
+                              const TextInputType.numberWithOptions(decimal: true),
+                          decoration: const InputDecoration(
+                            labelText: 'Gold 24K price / gram (EGP)',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        TextFormField(
+                          key: const Key('marketSilverField'),
+                          controller: _silverController,
+                          keyboardType:
+                              const TextInputType.numberWithOptions(decimal: true),
+                          decoration: const InputDecoration(
+                            labelText: 'Silver price / gram (EGP)',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        TextFormField(
+                          key: const Key('marketUsdField'),
+                          controller: _usdController,
+                          keyboardType:
+                              const TextInputType.numberWithOptions(decimal: true),
+                          decoration: const InputDecoration(
+                            labelText: 'USD to EGP',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        TextFormField(
+                          key: const Key('marketSarField'),
+                          controller: _sarController,
+                          keyboardType:
+                              const TextInputType.numberWithOptions(decimal: true),
+                          decoration: const InputDecoration(
+                            labelText: 'SAR to EGP',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        TextFormField(
+                          key: const Key('marketAedField'),
+                          controller: _aedController,
+                          keyboardType:
+                              const TextInputType.numberWithOptions(decimal: true),
+                          decoration: const InputDecoration(
+                            labelText: 'AED to EGP',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        TextFormField(
+                          key: const Key('marketKwdField'),
+                          controller: _kwdController,
+                          keyboardType:
+                              const TextInputType.numberWithOptions(decimal: true),
+                          decoration: const InputDecoration(
+                            labelText: 'KWD to EGP',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        TextFormField(
+                          key: const Key('marketQarField'),
+                          controller: _qarController,
+                          keyboardType:
+                              const TextInputType.numberWithOptions(decimal: true),
+                          decoration: const InputDecoration(
+                            labelText: 'QAR to EGP',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: FilledButton(
+                            key: const Key('saveMarketDataButton'),
+                            onPressed: _saveMarketData,
+                            child: Text(context.l10n.tr('save_market_data')),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
         ),

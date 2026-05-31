@@ -281,6 +281,6 @@ void main() {
     await _addIncome(tester, '1200');
 
     expect(find.textContaining('E£ 1,200.00'), findsWidgets);
-    expect(find.text('Gold/silver price required'), findsWidgets);
+    expect(find.text('Gold/Silver prices required'), findsWidgets);
   });
 }

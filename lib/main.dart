@@ -69,7 +69,13 @@ class _AppBootstrapperState extends State<_AppBootstrapper> {
   @override
   void initState() {
     super.initState();
-    _loadFuture = context.read<AppStateController>().load();
+    _loadFuture = _loadAndStartMarketRefresh();
+  }
+
+  Future<void> _loadAndStartMarketRefresh() async {
+    final AppStateController controller = context.read<AppStateController>();
+    await controller.load();
+    await controller.startMarketAutoRefresh();
   }
 
   @override

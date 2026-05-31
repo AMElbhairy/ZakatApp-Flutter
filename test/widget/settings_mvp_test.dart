@@ -36,10 +36,12 @@ class _FakeMarketDataApiService implements MarketDataApiService {
       <String, double>{'USD': 50, 'SAR': 13.3, 'AED': 13.6};
 
   @override
-  Future<double?> fetchGold24kPerGramEgp() async => null;
+  Future<double?> fetchGold24kPerGramEgp({required double usdToEgp}) async =>
+      null;
 
   @override
-  Future<double?> fetchSilverPerGramEgp() async => null;
+  Future<double?> fetchSilverPerGramEgp({required double usdToEgp}) async =>
+      null;
 }
 
 Future<void> _openSettings(WidgetTester tester) async {
@@ -61,6 +63,13 @@ Future<void> _setDropdownString(
   await tester.tap(find.byKey(fieldKey));
   await tester.pumpAndSettle();
   await tester.tap(find.text(value).last);
+  await tester.pumpAndSettle();
+}
+
+Future<void> _expandManualOverride(WidgetTester tester) async {
+  await tester.ensureVisible(find.byKey(const Key('marketAdvancedOverrideTile')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const Key('marketAdvancedOverrideTile')));
   await tester.pumpAndSettle();
 }
 
@@ -205,6 +214,7 @@ void main() {
     await _openSettings(tester);
     await tester.drag(find.byType(ListView).first, const Offset(0, -800));
     await tester.pumpAndSettle();
+    await _expandManualOverride(tester);
 
     await tester.enterText(find.byKey(const Key('marketGoldField')), '5200');
     await tester.enterText(find.byKey(const Key('marketSilverField')), '62.5');
@@ -227,6 +237,7 @@ void main() {
     await _openSettings(tester);
     await tester.drag(find.byType(ListView).first, const Offset(0, -800));
     await tester.pumpAndSettle();
+    await _expandManualOverride(tester);
 
     final TextFormField goldField =
         tester.widget<TextFormField>(find.byKey(const Key('marketGoldField')));
