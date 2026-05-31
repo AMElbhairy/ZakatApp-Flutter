@@ -1,0 +1,109 @@
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
+
+import '../core/constants/storage_keys.dart';
+import '../models/user_profile.dart';
+import 'auth_service.dart';
+import 'local_storage_service.dart';
+
+class AuthController extends ChangeNotifier {
+  AuthController({
+    required this.authService,
+    required this.localStorage,
+  });
+
+  final AuthService authService;
+  final LocalStorageService localStorage;
+
+  UserProfile? _currentUser;
+  bool _isLoading = false;
+  String? _error;
+
+  UserProfile? get currentUser => _currentUser;
+  bool get isLoading => _isLoading;
+  bool get isSignedIn => _currentUser != null;
+  String? get error => _error;
+
+  Future<void> load() async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final String? raw =
+          await localStorage.loadString(StorageKeys.userProfileKey);
+      if (raw != null && raw.trim().isNotEmpty) {
+        try {
+          final Map<String, dynamic> json =
+              jsonDecode(raw) as Map<String, dynamic>;
+          _currentUser = UserProfile.fromJson(json);
+        } catch (_) {
+          _currentUser = null;
+        }
+      }
+
+      final UserProfile? restored = await authService.restoreSession();
+      if (restored != null) {
+        _currentUser = restored;
+        await _persistCurrentUser();
+      }
+    } catch (error, stackTrace) {
+      debugPrint('AuthController.load failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      _error = error.toString();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> signIn() async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final UserProfile? user = await authService.signIn();
+      if (user != null) {
+        _currentUser = user;
+        await _persistCurrentUser();
+      }
+    } catch (error, stackTrace) {
+      debugPrint('AuthController.signIn failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      _error = error.toString();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> signOut() async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      await authService.signOut();
+    } catch (error, stackTrace) {
+      debugPrint('AuthController.signOut failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      _error = error.toString();
+    } finally {
+      _currentUser = null;
+      await localStorage.remove(StorageKeys.userProfileKey);
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _persistCurrentUser() async {
+    final UserProfile? user = _currentUser;
+    if (user == null) return;
+    await localStorage.saveString(
+      StorageKeys.userProfileKey,
+      jsonEncode(user.toJson()),
+    );
+  }
+}

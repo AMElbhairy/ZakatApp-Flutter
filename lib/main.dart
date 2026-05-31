@@ -7,6 +7,8 @@ import 'core/theme/app_theme.dart';
 import 'repositories/app_state_repository.dart';
 import 'screens/app_shell.dart';
 import 'services/app_state_controller.dart';
+import 'services/auth_controller.dart';
+import 'services/auth_service.dart';
 import 'services/local_storage_service.dart';
 
 void main() {
@@ -14,8 +16,18 @@ void main() {
   final AppStateRepository repository =
       AppStateRepository(localStorage: localStorage);
   runApp(
-    ChangeNotifierProvider<AppStateController>(
-      create: (_) => AppStateController(repository: repository),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider<AppStateController>(
+          create: (_) => AppStateController(repository: repository),
+        ),
+        ChangeNotifierProvider<AuthController>(
+          create: (_) => AuthController(
+            authService: GoogleAuthService(),
+            localStorage: localStorage,
+          ),
+        ),
+      ],
       child: const ZakatApp(),
     ),
   );
@@ -74,7 +86,9 @@ class _AppBootstrapperState extends State<_AppBootstrapper> {
 
   Future<void> _loadAndStartMarketRefresh() async {
     final AppStateController controller = context.read<AppStateController>();
+    final AuthController authController = context.read<AuthController>();
     await controller.load();
+    await authController.load();
     await controller.startMarketAutoRefresh();
   }
 

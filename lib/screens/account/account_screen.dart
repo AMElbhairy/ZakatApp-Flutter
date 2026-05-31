@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../core/i18n/app_localizations.dart';
 import '../../models/market_snapshot.dart';
 import '../../services/app_state_controller.dart';
+import '../../services/auth_controller.dart';
 
 class AccountScreen extends StatefulWidget {
   const AccountScreen({super.key});
@@ -51,6 +52,7 @@ class _AccountScreenState extends State<AccountScreen> {
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<AppStateController>();
+    final authController = context.watch<AuthController?>();
     final state = controller.state;
 
     final String mainCurrency =
@@ -99,7 +101,38 @@ class _AccountScreenState extends State<AccountScreen> {
         const SizedBox(height: 12),
         _SectionCard(
           title: context.l10n.tr('account_section'),
-          child: Text(context.l10n.tr('account_placeholder')),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              if (authController == null || !authController.isSignedIn) ...<Widget>[
+                Text(context.l10n.tr('signed_out_state')),
+                const SizedBox(height: 10),
+                FilledButton.icon(
+                  key: const Key('googleSignInButton'),
+                  onPressed: authController == null || authController.isLoading
+                      ? null
+                      : () => context.read<AuthController?>()?.signIn(),
+                  icon: const Icon(Icons.login),
+                  label: Text(context.l10n.tr('sign_in_google')),
+                ),
+              ] else ...<Widget>[
+                Text(
+                  authController.currentUser?.name ?? '-',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                Text(authController.currentUser?.email ?? '-'),
+                const SizedBox(height: 10),
+                FilledButton.tonalIcon(
+                  key: const Key('googleSignOutButton'),
+                  onPressed: authController.isLoading
+                      ? null
+                      : () => context.read<AuthController?>()?.signOut(),
+                  icon: const Icon(Icons.logout),
+                  label: Text(context.l10n.tr('sign_out')),
+                ),
+              ],
+            ],
+          ),
         ),
         const SizedBox(height: 12),
         _SectionCard(

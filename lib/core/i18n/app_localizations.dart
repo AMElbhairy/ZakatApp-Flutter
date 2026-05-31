@@ -181,6 +181,9 @@ class AppLocalizations {
       'activity_empty_message': 'Add income or expenses to see activity history.',
       'schedule_empty_message':
           'Dues appear after your assets and income reach hawl and nisab.',
+      'signed_out_state': 'You are signed out.',
+      'sign_in_google': 'Sign in with Google',
+      'sign_out': 'Sign out',
       'market_data_refreshed': 'Market data refreshed.',
       'no_market_data_refreshed': 'No market data refreshed.',
       'usd_to_egp': 'USD to EGP',
@@ -358,6 +361,9 @@ class AppLocalizations {
       'activity_empty_message': 'أضف دخلًا أو مصروفات لعرض سجل النشاط.',
       'schedule_empty_message':
           'تظهر المستحقات بعد وصول الأصول والدخل إلى الحول والنصاب.',
+      'signed_out_state': 'أنت غير مسجّل الدخول.',
+      'sign_in_google': 'تسجيل الدخول باستخدام Google',
+      'sign_out': 'تسجيل الخروج',
       'market_data_refreshed': 'تم تحديث بيانات السوق.',
       'no_market_data_refreshed': 'لم يتم تحديث أي بيانات سوق.',
       'usd_to_egp': 'USD إلى EGP',
