@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../core/i18n/app_localizations.dart';
 import '../../core/services/zakat_engine.dart';
 import '../../core/widgets/app_ui.dart';
 import '../../models/transaction.dart';
@@ -65,7 +66,11 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.isEditMode ? 'Edit Transaction' : 'Add Transaction'),
+        title: Text(
+          widget.isEditMode
+              ? context.l10n.tr('edit_transaction')
+              : context.l10n.tr('add_transaction'),
+        ),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -76,14 +81,14 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 SegmentedButton<String>(
-                  segments: const <ButtonSegment<String>>[
+                  segments: <ButtonSegment<String>>[
                     ButtonSegment<String>(
                       value: 'income',
-                      label: Text('Income'),
+                      label: Text(context.l10n.tr('income')),
                     ),
                     ButtonSegment<String>(
                       value: 'expense',
-                      label: Text('Expense'),
+                      label: Text(context.l10n.tr('expense')),
                     ),
                   ],
                   selected: <String>{_type},
@@ -99,14 +104,14 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                   controller: _amountController,
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(
-                    labelText: 'Amount',
+                  decoration: InputDecoration(
+                    labelText: context.l10n.tr('amount'),
                     border: OutlineInputBorder(),
                   ),
                   validator: (String? value) {
                     final double amount =
                         double.tryParse((value ?? '').trim()) ?? 0;
-                    if (amount <= 0) return 'Amount must be greater than 0';
+                    if (amount <= 0) return context.l10n.tr('amount_gt_zero');
                     return null;
                   },
                 ),
@@ -114,8 +119,8 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                 DropdownButtonFormField<String>(
                   key: const Key('currencyField'),
                   initialValue: _currency,
-                  decoration: const InputDecoration(
-                    labelText: 'Currency',
+                  decoration: InputDecoration(
+                    labelText: context.l10n.tr('currency'),
                     border: OutlineInputBorder(),
                   ),
                   items: ZakatEngineService.supportedCurrencies
@@ -133,8 +138,8 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                 DropdownButtonFormField<String>(
                   key: const Key('categoryField'),
                   initialValue: _category,
-                  decoration: const InputDecoration(
-                    labelText: 'Category',
+                  decoration: InputDecoration(
+                    labelText: context.l10n.tr('category'),
                     border: OutlineInputBorder(),
                   ),
                   items: categories
@@ -148,7 +153,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                   },
                   validator: (String? value) {
                     if (value == null || value.trim().isEmpty) {
-                      return 'Category is required';
+                      return context.l10n.tr('category_required');
                     }
                     return null;
                   },
@@ -158,15 +163,15 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                   key: const Key('notesField'),
                   controller: _notesController,
                   maxLines: 2,
-                  decoration: const InputDecoration(
-                    labelText: 'Notes',
+                  decoration: InputDecoration(
+                    labelText: context.l10n.tr('notes'),
                     border: OutlineInputBorder(),
                   ),
                 ),
                 const SizedBox(height: 16),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('Date'),
+                  title: Text(context.l10n.tr('date')),
                   subtitle: Text(_dateLabel(_selectedDate)),
                   trailing: const Icon(Icons.calendar_today),
                   onTap: () async {
@@ -228,10 +233,10 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                             Navigator.of(context).pop();
                           },
                     label: _saving
-                        ? 'Saving...'
+                        ? context.l10n.tr('saving_progress')
                         : (widget.isEditMode
-                            ? 'Update Transaction'
-                            : 'Save Transaction'),
+                            ? context.l10n.tr('update_transaction')
+                            : context.l10n.tr('save_transaction')),
                     icon: Icons.check,
                   ),
                 ),

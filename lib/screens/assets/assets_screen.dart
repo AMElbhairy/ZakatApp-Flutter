@@ -59,20 +59,27 @@ class AssetsScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                const SectionHeader(title: 'Totals', bottomSpacing: 8),
-                MetricTile(label: 'Total Cash', value: totalCash.toStringAsFixed(2)),
-                const SizedBox(height: 8),
-                MetricTile(label: 'Total Gold (g)', value: totalGold.toStringAsFixed(2)),
-                const SizedBox(height: 8),
-                MetricTile(label: 'Total Silver (g)', value: totalSilver.toStringAsFixed(2)),
+                SectionHeader(title: context.l10n.tr('totals'), bottomSpacing: 8),
+                MetricTile(
+                    label: context.l10n.tr('total_cash'), value: totalCash.toStringAsFixed(2)),
                 const SizedBox(height: 8),
                 MetricTile(
-                  label: 'Total Investment Value (EGP)',
+                  label: context.l10n.tr('total_gold_grams'),
+                  value: totalGold.toStringAsFixed(2),
+                ),
+                const SizedBox(height: 8),
+                MetricTile(
+                  label: context.l10n.tr('total_silver_grams'),
+                  value: totalSilver.toStringAsFixed(2),
+                ),
+                const SizedBox(height: 8),
+                MetricTile(
+                  label: context.l10n.tr('total_investment_value_egp'),
                   value: totalInvestmentEgp.toStringAsFixed(2),
                 ),
                 const SizedBox(height: 8),
                 MetricTile(
-                  label: 'Total Investment Net (EGP)',
+                  label: context.l10n.tr('total_investment_net_egp'),
                   value: totalInvestmentNetEgp.toStringAsFixed(2),
                 ),
               ],
@@ -83,19 +90,23 @@ class AssetsScreen extends StatelessWidget {
             child: !hasAnyAssets
                 ? Center(
                     child: EmptyStateCard(
-                      cardKey: Key('assetsEmptyState'),
+                      cardKey: const Key('assetsEmptyState'),
                       icon: Icons.account_balance_wallet_outlined,
                       title: context.l10n.tr('no_assets_yet'),
-                      message: 'Add savings and investments to track your wealth.',
+                      message: context.l10n.tr('assets_empty_message'),
                     ),
                   )
                 : ListView(
                     children: <Widget>[
-                      _savingSection(context, 'Cash', cash),
-                      _savingSection(context, 'Gold', gold),
-                      _savingSection(context, 'Silver', silver),
-                      _investmentSection(context, 'Property', properties),
-                      _investmentSection(context, 'Company Shares', companyShares),
+                      _savingSection(context, context.l10n.tr('cash'), cash),
+                      _savingSection(context, context.l10n.tr('gold'), gold),
+                      _savingSection(context, context.l10n.tr('silver'), silver),
+                      _investmentSection(context, context.l10n.tr('property'), properties),
+                      _investmentSection(
+                        context,
+                        context.l10n.tr('company_shares'),
+                        companyShares,
+                      ),
                     ],
                   ),
           ),
@@ -113,7 +124,10 @@ class AssetsScreen extends StatelessWidget {
           children: <Widget>[
             SectionHeader(title: title, bottomSpacing: 8),
             if (list.isEmpty)
-              Text('No $title entries', style: Theme.of(context).textTheme.bodySmall),
+              Text(
+                context.l10n.trf('no_entries_for', <String, String>{'label': title}),
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
             ...list.map(
               (Saving saving) => ListTile(
                 key: Key('savingItem_${saving.id}'),
@@ -127,7 +141,7 @@ class AssetsScreen extends StatelessWidget {
                 contentPadding: const EdgeInsets.symmetric(vertical: 2),
                 title: Text(
                   saving.description.isEmpty
-                      ? _titleForAssetType(saving.assetType)
+                      ? _titleForAssetType(context, saving.assetType)
                       : saving.description,
                 ),
                 subtitle: Text('${saving.dateAcquired} • ${saving.unit}'),
@@ -137,7 +151,7 @@ class AssetsScreen extends StatelessWidget {
                   children: <Widget>[
                     Text(saving.remainingAmount.toStringAsFixed(2)),
                     IconButton(
-                      tooltip: 'Delete saving',
+                      tooltip: context.l10n.tr('delete_saving'),
                       icon: const Icon(Icons.delete_outline),
                       onPressed: () => _confirmDeleteSaving(context, saving),
                     ),
@@ -160,7 +174,10 @@ class AssetsScreen extends StatelessWidget {
           children: <Widget>[
             SectionHeader(title: title, bottomSpacing: 8),
             if (list.isEmpty)
-              Text('No $title entries', style: Theme.of(context).textTheme.bodySmall),
+              Text(
+                context.l10n.trf('no_entries_for', <String, String>{'label': title}),
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
             ...list.map(
               (InvestmentAsset asset) => ListTile(
                 key: Key('investmentItem_${asset.id}'),
@@ -175,8 +192,8 @@ class AssetsScreen extends StatelessWidget {
                 title: Text(
                   asset.location.isEmpty
                       ? (asset.investmentType == 'company_share'
-                          ? 'Company Share'
-                          : 'Property')
+                          ? context.l10n.tr('company_shares')
+                          : context.l10n.tr('property'))
                       : asset.location,
                 ),
                 subtitle: Text('${asset.valuationDate} • ${asset.currency}'),
@@ -186,7 +203,7 @@ class AssetsScreen extends StatelessWidget {
                   children: <Widget>[
                     Text(asset.marketValue.toStringAsFixed(2)),
                     IconButton(
-                      tooltip: 'Delete investment',
+                      tooltip: context.l10n.tr('delete_investment'),
                       icon: const Icon(Icons.delete_outline),
                       onPressed: () => _confirmDeleteInvestment(context, asset),
                     ),
@@ -200,10 +217,10 @@ class AssetsScreen extends StatelessWidget {
     );
   }
 
-  static String _titleForAssetType(String assetType) {
-    if (assetType == 'cash') return 'Cash Saving';
-    if (assetType == 'gold') return 'Gold Saving';
-    return 'Silver Saving';
+  String _titleForAssetType(BuildContext context, String assetType) {
+    if (assetType == 'cash') return context.l10n.tr('cash');
+    if (assetType == 'gold') return context.l10n.tr('gold');
+    return context.l10n.tr('silver');
   }
 
   Future<void> _confirmDeleteSaving(BuildContext context, Saving saving) async {
@@ -211,16 +228,16 @@ class AssetsScreen extends StatelessWidget {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: const Text('Delete saving?'),
-          content: const Text('This saving entry will be removed permanently.'),
+          title: Text(context.l10n.tr('delete_saving')),
+          content: Text(context.l10n.tr('delete_saving_message')),
           actions: <Widget>[
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancel'),
+              child: Text(context.l10n.tr('cancel')),
             ),
             FilledButton(
               onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Delete'),
+              child: Text(context.l10n.tr('delete')),
             ),
           ],
         );
@@ -237,16 +254,16 @@ class AssetsScreen extends StatelessWidget {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: const Text('Delete investment?'),
-          content: const Text('This investment entry will be removed permanently.'),
+          title: Text(context.l10n.tr('delete_investment')),
+          content: Text(context.l10n.tr('delete_investment_message')),
           actions: <Widget>[
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancel'),
+              child: Text(context.l10n.tr('cancel')),
             ),
             FilledButton(
               onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Delete'),
+              child: Text(context.l10n.tr('delete')),
             ),
           ],
         );

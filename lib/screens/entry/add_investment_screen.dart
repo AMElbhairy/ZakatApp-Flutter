@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../core/i18n/app_localizations.dart';
 import '../../core/services/zakat_engine.dart';
 import '../../core/widgets/app_ui.dart';
 import '../../models/investment_asset.dart';
@@ -70,7 +71,11 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.isEditMode ? 'Edit Investment' : 'Add Investment'),
+        title: Text(
+          widget.isEditMode
+              ? context.l10n.tr('edit_investment_title')
+              : context.l10n.tr('add_investment_title'),
+        ),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -83,18 +88,18 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                 DropdownButtonFormField<String>(
                   key: const Key('investmentTypeField'),
                   initialValue: _assetType,
-                  decoration: const InputDecoration(
-                    labelText: 'Asset Type',
+                  decoration: InputDecoration(
+                    labelText: context.l10n.tr('asset_type'),
                     border: OutlineInputBorder(),
                   ),
-                  items: const <DropdownMenuItem<String>>[
+                  items: <DropdownMenuItem<String>>[
                     DropdownMenuItem<String>(
                       value: 'property',
-                      child: Text('Property'),
+                      child: Text(context.l10n.tr('property')),
                     ),
                     DropdownMenuItem<String>(
                       value: 'company_share',
-                      child: Text('Company Share'),
+                      child: Text(context.l10n.tr('company_share')),
                     ),
                   ],
                   onChanged: (String? value) {
@@ -106,12 +111,12 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                 TextFormField(
                   key: const Key('investmentNameField'),
                   controller: _nameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Name',
+                  decoration: InputDecoration(
+                    labelText: context.l10n.tr('name'),
                     border: OutlineInputBorder(),
                   ),
                   validator: (String? value) {
-                    if ((value ?? '').trim().isEmpty) return 'Name is required';
+                    if ((value ?? '').trim().isEmpty) return context.l10n.tr('name_required');
                     return null;
                   },
                 ),
@@ -121,13 +126,13 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                   controller: _currentValueController,
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(
-                    labelText: 'Current Value',
+                  decoration: InputDecoration(
+                    labelText: context.l10n.tr('current_value'),
                     border: OutlineInputBorder(),
                   ),
                   validator: (String? value) {
                     final double v = double.tryParse((value ?? '').trim()) ?? 0;
-                    if (v <= 0) return 'Current value must be greater than 0';
+                    if (v <= 0) return context.l10n.tr('current_value_gt_zero');
                     return null;
                   },
                 ),
@@ -135,8 +140,8 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                 DropdownButtonFormField<String>(
                   key: const Key('investmentCurrencyField'),
                   initialValue: _currency,
-                  decoration: const InputDecoration(
-                    labelText: 'Currency',
+                  decoration: InputDecoration(
+                    labelText: context.l10n.tr('currency'),
                     border: OutlineInputBorder(),
                   ),
                   items: ZakatEngineService.supportedCurrencies
@@ -146,7 +151,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                           ))
                       .toList(growable: false),
                   validator: (String? value) {
-                    if ((value ?? '').isEmpty) return 'Currency is required';
+                    if ((value ?? '').isEmpty) return context.l10n.tr('currency_required');
                     return null;
                   },
                   onChanged: (String? value) {
@@ -160,15 +165,15 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                   controller: _ownershipPctController,
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(
-                    labelText: 'Ownership %',
+                  decoration: InputDecoration(
+                    labelText: context.l10n.tr('ownership_pct'),
                     border: OutlineInputBorder(),
                   ),
                   validator: (String? value) {
                     final double pct =
                         double.tryParse((value ?? '').trim()) ?? -1;
                     if (pct < 0 || pct > 100) {
-                      return 'Ownership % must be between 0 and 100';
+                      return context.l10n.tr('ownership_pct_range');
                     }
                     return null;
                   },
@@ -179,8 +184,8 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                   controller: _purchasePriceController,
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(
-                    labelText: 'Purchase Price (Optional)',
+                  decoration: InputDecoration(
+                    labelText: context.l10n.tr('purchase_price_optional'),
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -190,8 +195,8 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                   controller: _liabilityController,
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(
-                    labelText: 'Remaining Liability (Optional)',
+                  decoration: InputDecoration(
+                    labelText: context.l10n.tr('remaining_liability_optional'),
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -200,15 +205,15 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                   key: const Key('investmentNotesField'),
                   controller: _notesController,
                   maxLines: 2,
-                  decoration: const InputDecoration(
-                    labelText: 'Notes',
+                  decoration: InputDecoration(
+                    labelText: context.l10n.tr('notes'),
                     border: OutlineInputBorder(),
                   ),
                 ),
                 const SizedBox(height: 16),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('Valuation Date'),
+                  title: Text(context.l10n.tr('valuation_date')),
                   subtitle: Text(_dateIso(_selectedDate)),
                   trailing: const Icon(Icons.calendar_today),
                   onTap: () async {
@@ -230,10 +235,10 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                     key: const Key('saveInvestmentButton'),
                     onPressed: _saving ? null : _submit,
                     label: _saving
-                        ? 'Saving...'
+                        ? context.l10n.tr('saving_progress')
                         : (widget.isEditMode
-                            ? 'Update Investment'
-                            : 'Save Investment'),
+                            ? context.l10n.tr('update_investment')
+                            : context.l10n.tr('save_investment')),
                     icon: Icons.check,
                   ),
                 ),

@@ -50,9 +50,9 @@ class _AppShellState extends State<AppShell> {
 
     return Scaffold(
       resizeToAvoidBottomInset: false,
-      extendBody: true,
+      extendBody: false,
       body: SafeArea(
-        bottom: false,
+        bottom: true,
         child: IndexedStack(index: _index, children: tabs),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,

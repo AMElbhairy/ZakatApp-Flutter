@@ -137,7 +137,7 @@ class ActivityScreenState extends State<ActivityScreen> {
                     cardKey: Key('activityEmptyState'),
                     icon: Icons.receipt_long_outlined,
                     title: context.l10n.tr('no_transactions_yet'),
-                    message: 'Add income or expenses to see activity history.',
+                    message: context.l10n.tr('activity_empty_message'),
                   ),
                 )
               : ListView.separated(
@@ -222,7 +222,7 @@ class ActivityScreenState extends State<ActivityScreen> {
           cardKey: Key('zakatScheduleEmptyState'),
           icon: Icons.event_note,
           title: context.l10n.tr('zakat_schedule'),
-          message: 'Dues appear after your assets and income reach hawl and nisab.',
+          message: context.l10n.tr('schedule_empty_message'),
         ),
       );
     }
@@ -313,16 +313,16 @@ class ActivityScreenState extends State<ActivityScreen> {
           context: context,
           builder: (BuildContext context) {
             return AlertDialog(
-              title: const Text('Delete transaction?'),
-              content: const Text('This action cannot be undone.'),
+              title: Text(context.l10n.tr('delete_transaction')),
+              content: Text(context.l10n.tr('delete_transaction_message')),
               actions: <Widget>[
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(false),
-                  child: const Text('Cancel'),
+                  child: Text(context.l10n.tr('cancel')),
                 ),
                 FilledButton(
                   onPressed: () => Navigator.of(context).pop(true),
-                  child: const Text('Delete'),
+                  child: Text(context.l10n.tr('delete')),
                 ),
               ],
             );
@@ -365,7 +365,7 @@ class _TypeBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
-        isIncome ? 'Income' : 'Expense',
+        isIncome ? context.l10n.tr('income') : context.l10n.tr('expense'),
         style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: fg),
       ),
     );

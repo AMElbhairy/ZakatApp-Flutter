@@ -42,7 +42,7 @@ class PlansScreen extends StatelessWidget {
                       cardKey: Key('plansEmptyState'),
                       icon: Icons.auto_graph,
                       title: context.l10n.tr('no_plans_yet'),
-                      message: 'Create a plan to track long-term goals.',
+                      message: context.l10n.tr('plans_empty_message'),
                     ),
                   )
                 : ListView.separated(
@@ -70,12 +70,29 @@ class PlansScreen extends StatelessWidget {
                             mainAxisSize: MainAxisSize.min,
                             children: <Widget>[
                               const SizedBox(height: 4),
-                              Text('Duration: ${plan.durationYears} years'),
                               Text(
-                                'Monthly saving: ${plan.monthlyIncome.toStringAsFixed(2)} ${plan.currency}',
+                                context.l10n.trf(
+                                  'duration_years',
+                                  <String, String>{'years': '${plan.durationYears}'},
+                                ),
                               ),
                               Text(
-                                'Projected balance: ${projected.toStringAsFixed(2)} ${plan.currency}',
+                                context.l10n.trf(
+                                  'monthly_saving_value',
+                                  <String, String>{
+                                    'amount': plan.monthlyIncome.toStringAsFixed(2),
+                                    'currency': plan.currency,
+                                  },
+                                ),
+                              ),
+                              Text(
+                                context.l10n.trf(
+                                  'projected_balance_value',
+                                  <String, String>{
+                                    'amount': projected.toStringAsFixed(2),
+                                    'currency': plan.currency,
+                                  },
+                                ),
                               ),
                             ],
                           ),
@@ -112,16 +129,16 @@ class PlansScreen extends StatelessWidget {
           context: context,
           builder: (BuildContext context) {
             return AlertDialog(
-              title: const Text('Delete plan?'),
-              content: const Text('This plan will be removed permanently.'),
+              title: Text(context.l10n.tr('delete_plan')),
+              content: Text(context.l10n.tr('delete_plan_message')),
               actions: <Widget>[
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(false),
-                  child: const Text('Cancel'),
+                  child: Text(context.l10n.tr('cancel')),
                 ),
                 FilledButton(
                   onPressed: () => Navigator.of(context).pop(true),
-                  child: const Text('Delete'),
+                  child: Text(context.l10n.tr('delete')),
                 ),
               ],
             );

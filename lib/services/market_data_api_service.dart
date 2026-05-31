@@ -16,7 +16,6 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
   static const String _hexaRateApiKey = String.fromEnvironment(
     'HEXA_RATE_API_KEY',
   );
-  static const String _goldApiKey = String.fromEnvironment('GOLD_API_KEY');
 
   static const List<String> _supportedFx = <String>[
     'USD',
@@ -49,8 +48,7 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
   @override
   Future<double?> fetchGold24kPerGramEgp({required double usdToEgp}) async {
     if (usdToEgp <= 0) return null;
-    final double? usdPerOunce =
-        await _fetchMetalsLiveSpot('gold') ?? await _fetchGoldApiUsd('XAU');
+    final double? usdPerOunce = await _fetchGoldApiUsd('XAU');
     if (usdPerOunce == null || usdPerOunce <= 0) return null;
     return convertUsdPerOunceToEgpPerGram(
       usdPerOunce: usdPerOunce,
@@ -61,8 +59,7 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
   @override
   Future<double?> fetchSilverPerGramEgp({required double usdToEgp}) async {
     if (usdToEgp <= 0) return null;
-    final double? usdPerOunce =
-        await _fetchMetalsLiveSpot('silver') ?? await _fetchGoldApiUsd('XAG');
+    final double? usdPerOunce = await _fetchGoldApiUsd('XAG');
     if (usdPerOunce == null || usdPerOunce <= 0) return null;
     return convertUsdPerOunceToEgpPerGram(
       usdPerOunce: usdPerOunce,
@@ -140,27 +137,9 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
     return toEgp;
   }
 
-  Future<double?> _fetchMetalsLiveSpot(String symbol) async {
-    final Uri uri = Uri.parse('https://api.metals.live/v1/spot');
-    final dynamic json = await _getJsonDynamic(uri);
-    if (json is List) {
-      for (final dynamic row in json) {
-        if (row is Map && row.containsKey(symbol)) {
-          final double price = _asDouble(row[symbol]);
-          if (price > 0) return price;
-        }
-      }
-    }
-    return null;
-  }
-
   Future<double?> _fetchGoldApiUsd(String symbol) async {
-    if (_goldApiKey.trim().isEmpty) return null;
-    final Uri uri = Uri.parse('https://www.goldapi.io/api/$symbol/USD');
-    final Map<String, dynamic>? json = await _getJson(
-      uri,
-      headers: <String, String>{'x-access-token': _goldApiKey},
-    );
+    final Uri uri = Uri.parse('https://api.gold-api.com/price/$symbol');
+    final Map<String, dynamic>? json = await _getJson(uri);
     if (json == null) return null;
     final double value = _asDouble(json['price']);
     return value > 0 ? value : null;

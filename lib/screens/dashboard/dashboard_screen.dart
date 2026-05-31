@@ -138,12 +138,12 @@ class DashboardScreen extends StatelessWidget {
           EmptyStateCard(
             cardKey: const Key('dashboardEmptyCard'),
             icon: Icons.auto_graph,
-            title: 'Start your Zakat journey',
-            message: 'Add your first income, saving, or asset.',
+            title: context.l10n.tr('start_zakat_journey'),
+            message: context.l10n.tr('add_first_income_saving_asset'),
             action: AppPrimaryButton(
               key: const Key('dashboardStartAddingButton'),
               onPressed: onOpenAddActions,
-              label: 'Add First Entry',
+              label: context.l10n.tr('add_first_entry'),
               icon: Icons.add,
             ),
           )
@@ -157,15 +157,15 @@ class DashboardScreen extends StatelessWidget {
                     style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),
                 Text(
-                  _formatOrMissing(totalWealthEgp, hasMarketData),
+                  _formatOrMissing(context, totalWealthEgp, hasMarketData),
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                         fontWeight: FontWeight.w800,
                       ),
                 ),
                 const SizedBox(height: 12),
                 MetricTile(
-                  label: 'Net Position',
-                  value: _formatOrMissing(netPositionEgp, hasMarketData),
+                  label: context.l10n.tr('net_position'),
+                  value: _formatOrMissing(context, netPositionEgp, hasMarketData),
                 ),
               ],
             ),
@@ -178,22 +178,26 @@ class DashboardScreen extends StatelessWidget {
                 SectionHeader(title: context.l10n.tr('financial_summary'), bottomSpacing: 10),
                 MetricTile(
                   label: context.l10n.tr('total_income'),
-                  value: _formatOrMissing(totalIncomeEgp, hasFxData),
+                  value: _formatOrMissing(context, totalIncomeEgp, hasFxData),
                 ),
                 const SizedBox(height: 10),
                 MetricTile(
                   label: context.l10n.tr('total_expenses'),
-                  value: _formatOrMissing(totalExpensesEgp, hasFxData),
+                  value: _formatOrMissing(context, totalExpensesEgp, hasFxData),
                 ),
                 const SizedBox(height: 10),
                 MetricTile(
                   label: context.l10n.tr('total_savings_wealth'),
-                  value: _formatOrMissing(savingsTotals.totalSavingsWealthEgp, hasMarketData),
+                  value: _formatOrMissing(
+                    context,
+                    savingsTotals.totalSavingsWealthEgp,
+                    hasMarketData,
+                  ),
                 ),
                 const SizedBox(height: 10),
                 MetricTile(
                   label: context.l10n.tr('investment_wealth'),
-                  value: _formatOrMissing(investmentsEgp, hasFxData),
+                  value: _formatOrMissing(context, investmentsEgp, hasFxData),
                 ),
               ],
             ),
@@ -217,7 +221,9 @@ class DashboardScreen extends StatelessWidget {
                 MetricTile(
                   label: context.l10n.tr('nisab_status'),
                   value: hasMarketData
-                      ? (nisabMet ? 'Met' : 'Not Met')
+                      ? (nisabMet
+                          ? context.l10n.tr('met')
+                          : context.l10n.tr('not_met'))
                       : (hasFxData
                           ? context.l10n.tr('gold_silver_required')
                           : context.l10n.tr('market_data_required')),
@@ -228,22 +234,22 @@ class DashboardScreen extends StatelessWidget {
                   label: context.l10n.tr('current_nisab_threshold'),
                   value: hasFxData && !hasMetalsData
                       ? context.l10n.tr('gold_silver_required')
-                      : _formatOrMissing(nisabThreshold, hasMarketData),
+                      : _formatOrMissing(context, nisabThreshold, hasMarketData),
                 ),
                 const SizedBox(height: 10),
                 MetricTile(
-                  label: 'Zakat Due This Month',
-                  value: _formatOrMissing(dues.thisMonth, hasMarketData),
+                  label: context.l10n.tr('zakat_due_this_month'),
+                  value: _formatOrMissing(context, dues.thisMonth, hasMarketData),
                 ),
                 const SizedBox(height: 10),
                 MetricTile(
-                  label: 'Zakat Due Next Month',
-                  value: _formatOrMissing(dues.nextMonth, hasMarketData),
+                  label: context.l10n.tr('zakat_due_next_month'),
+                  value: _formatOrMissing(context, dues.nextMonth, hasMarketData),
                 ),
                 const SizedBox(height: 10),
                 MetricTile(
-                  label: 'Total Upcoming Dues',
-                  value: _formatOrMissing(dues.totalUpcoming, hasMarketData),
+                  label: context.l10n.tr('total_upcoming_dues'),
+                  value: _formatOrMissing(context, dues.totalUpcoming, hasMarketData),
                   bold: true,
                 ),
               ],
@@ -254,14 +260,14 @@ class DashboardScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                SectionHeader(title: 'Asset Allocation', bottomSpacing: 10),
-                MetricTile(label: 'Cash %', value: _formatPct(allocation.cashPct)),
+                SectionHeader(title: context.l10n.tr('asset_allocation'), bottomSpacing: 10),
+                MetricTile(label: context.l10n.tr('cash_pct'), value: _formatPct(allocation.cashPct)),
                 const SizedBox(height: 10),
-                MetricTile(label: 'Metals %', value: _formatPct(allocation.metalsPct)),
+                MetricTile(label: context.l10n.tr('metals_pct'), value: _formatPct(allocation.metalsPct)),
                 const SizedBox(height: 10),
-                MetricTile(label: 'Property %', value: _formatPct(allocation.propertyPct)),
+                MetricTile(label: context.l10n.tr('property_pct'), value: _formatPct(allocation.propertyPct)),
                 const SizedBox(height: 10),
-                MetricTile(label: 'Company %', value: _formatPct(allocation.companyPct)),
+                MetricTile(label: context.l10n.tr('company_pct'), value: _formatPct(allocation.companyPct)),
               ],
             ),
           ),
@@ -271,7 +277,7 @@ class DashboardScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 SectionHeader(
-                  title: 'Recent Activity',
+                  title: context.l10n.tr('recent_activity_title'),
                   trailing: TextButton(
                     key: const Key('dashboardViewAllActivityButton'),
                     onPressed: onViewAllActivity,
@@ -432,8 +438,8 @@ class DashboardScreen extends StatelessWidget {
     return 'E£ ${formatter.format(value)}';
   }
 
-  static String _formatOrMissing(double value, bool hasMarketData) {
-    if (!hasMarketData) return 'Market data required';
+  static String _formatOrMissing(BuildContext context, double value, bool hasMarketData) {
+    if (!hasMarketData) return context.l10n.tr('market_data_required');
     return _formatEgp(value);
   }
 

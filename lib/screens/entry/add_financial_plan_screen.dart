@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../core/i18n/app_localizations.dart';
 import '../../core/services/zakat_engine.dart';
 import '../../core/widgets/app_ui.dart';
 import '../../models/financial_plan.dart';
@@ -78,7 +79,11 @@ class _AddFinancialPlanScreenState extends State<AddFinancialPlanScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.isEditMode ? 'Edit Plan' : 'Add Plan'),
+        title: Text(
+          widget.isEditMode
+              ? context.l10n.tr('edit_plan_title')
+              : context.l10n.tr('add_plan_title'),
+        ),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -91,12 +96,12 @@ class _AddFinancialPlanScreenState extends State<AddFinancialPlanScreen> {
                 TextFormField(
                   key: const Key('planNameField'),
                   controller: _nameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Plan Name',
+                  decoration: InputDecoration(
+                    labelText: context.l10n.tr('plan_name'),
                     border: OutlineInputBorder(),
                   ),
                   validator: (String? value) {
-                    if ((value ?? '').trim().isEmpty) return 'Name is required';
+                    if ((value ?? '').trim().isEmpty) return context.l10n.tr('name_required');
                     return null;
                   },
                 ),
@@ -106,13 +111,13 @@ class _AddFinancialPlanScreenState extends State<AddFinancialPlanScreen> {
                   controller: _startingBalanceController,
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(
-                    labelText: 'Starting Balance',
+                  decoration: InputDecoration(
+                    labelText: context.l10n.tr('starting_balance'),
                     border: OutlineInputBorder(),
                   ),
                   validator: (String? value) {
                     final double v = double.tryParse((value ?? '').trim()) ?? -1;
-                    if (v < 0) return 'Starting balance must be >= 0';
+                    if (v < 0) return context.l10n.tr('starting_balance_non_negative');
                     return null;
                   },
                 ),
@@ -122,8 +127,8 @@ class _AddFinancialPlanScreenState extends State<AddFinancialPlanScreen> {
                   controller: _monthlySavingController,
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(
-                    labelText: 'Monthly Saving',
+                  decoration: InputDecoration(
+                    labelText: context.l10n.tr('monthly_saving'),
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -133,8 +138,8 @@ class _AddFinancialPlanScreenState extends State<AddFinancialPlanScreen> {
                   controller: _monthlyExpenseController,
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(
-                    labelText: 'Monthly Expense',
+                  decoration: InputDecoration(
+                    labelText: context.l10n.tr('monthly_expense'),
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -144,8 +149,8 @@ class _AddFinancialPlanScreenState extends State<AddFinancialPlanScreen> {
                   controller: _annualReturnController,
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(
-                    labelText: 'Expected Annual Return %',
+                  decoration: InputDecoration(
+                    labelText: context.l10n.tr('expected_annual_return'),
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -154,13 +159,13 @@ class _AddFinancialPlanScreenState extends State<AddFinancialPlanScreen> {
                   key: const Key('planDurationYearsField'),
                   controller: _durationYearsController,
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'Duration Years',
+                  decoration: InputDecoration(
+                    labelText: context.l10n.tr('duration_years_label'),
                     border: OutlineInputBorder(),
                   ),
                   validator: (String? value) {
                     final int years = int.tryParse((value ?? '').trim()) ?? 0;
-                    if (years <= 0) return 'Duration years must be > 0';
+                    if (years <= 0) return context.l10n.tr('duration_years_gt_zero');
                     return null;
                   },
                 ),
@@ -168,8 +173,8 @@ class _AddFinancialPlanScreenState extends State<AddFinancialPlanScreen> {
                 DropdownButtonFormField<String>(
                   key: const Key('planCurrencyField'),
                   initialValue: _currency,
-                  decoration: const InputDecoration(
-                    labelText: 'Currency',
+                  decoration: InputDecoration(
+                    labelText: context.l10n.tr('currency'),
                     border: OutlineInputBorder(),
                   ),
                   items: ZakatEngineService.supportedCurrencies
@@ -179,7 +184,7 @@ class _AddFinancialPlanScreenState extends State<AddFinancialPlanScreen> {
                           ))
                       .toList(growable: false),
                   validator: (String? value) {
-                    if ((value ?? '').isEmpty) return 'Currency is required';
+                    if ((value ?? '').isEmpty) return context.l10n.tr('currency_required');
                     return null;
                   },
                   onChanged: (String? value) {
@@ -190,7 +195,7 @@ class _AddFinancialPlanScreenState extends State<AddFinancialPlanScreen> {
                 const SizedBox(height: 16),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('Start Date'),
+                  title: Text(context.l10n.tr('start_date')),
                   subtitle: Text(_dateIso(_startDate)),
                   trailing: const Icon(Icons.calendar_today),
                   onTap: () async {
@@ -207,14 +212,14 @@ class _AddFinancialPlanScreenState extends State<AddFinancialPlanScreen> {
                 ),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('Include Installments'),
+                  title: Text(context.l10n.tr('include_installments')),
                   value: _includeInstallments,
                   onChanged: (bool value) =>
                       setState(() => _includeInstallments = value),
                 ),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('Include Zakat'),
+                  title: Text(context.l10n.tr('include_zakat')),
                   value: _includeZakat,
                   onChanged: (bool value) => setState(() => _includeZakat = value),
                 ),
@@ -223,8 +228,8 @@ class _AddFinancialPlanScreenState extends State<AddFinancialPlanScreen> {
                   key: const Key('planNotesField'),
                   controller: _notesController,
                   maxLines: 2,
-                  decoration: const InputDecoration(
-                    labelText: 'Notes',
+                  decoration: InputDecoration(
+                    labelText: context.l10n.tr('notes'),
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -235,8 +240,10 @@ class _AddFinancialPlanScreenState extends State<AddFinancialPlanScreen> {
                     key: const Key('savePlanButton'),
                     onPressed: _saving ? null : _submit,
                     label: _saving
-                        ? 'Saving...'
-                        : (widget.isEditMode ? 'Update Plan' : 'Save Plan'),
+                        ? context.l10n.tr('saving_progress')
+                        : (widget.isEditMode
+                            ? context.l10n.tr('update_plan')
+                            : context.l10n.tr('save_plan')),
                     icon: Icons.check,
                   ),
                 ),

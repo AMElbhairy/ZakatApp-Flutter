@@ -19,6 +19,52 @@ Widget _buildApp() {
   );
 }
 
+Map<String, dynamic> _arabicSeededState({bool withTransaction = false}) {
+  return <String, dynamic>{
+    'transactions': withTransaction
+        ? <dynamic>[
+            <String, dynamic>{
+              'id': 'tx_1',
+              'type': 'income',
+              'date': '2026-06-01',
+              'amount': 100,
+              'currency': 'EGP',
+              'category': 'Salary',
+              'description': '',
+              'createdAt': '2026-06-01T00:00:00Z',
+              'rolledOver': false,
+            }
+          ]
+        : <dynamic>[],
+    'savings': <dynamic>[],
+    'recurringTransactions': <dynamic>[],
+    'investments': <dynamic>[],
+    'financialPlans': <dynamic>[],
+    'lastRollover': '',
+    'categories': <String, dynamic>{
+      'income': <String>['Salary'],
+      'expense': <String>['Food & Dining'],
+    },
+    'zakatPaidMonths': <dynamic>[],
+    'processedExpenseIds': <dynamic>[],
+    'mainCurrency': 'EGP',
+    'defaultEntryCurrency': 'EGP',
+    'zakatExpenseIds': <String, dynamic>{},
+    'zakatMethod': 'hawl',
+    'zakatAnnualDate': '',
+    'zakatScheduleFilter': 'unpaid',
+    'marketData': <String, dynamic>{},
+    'marketHistory': <dynamic>[],
+    'syncHealth': <String, dynamic>{
+      'lastSuccessAt': '',
+      'lastFailureAt': '',
+      'lastError': '',
+      'pendingWrites': 0,
+    },
+    'languagePreference': 'ar',
+  };
+}
+
 void main() {
   testWidgets('English default renders', (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
@@ -30,35 +76,7 @@ void main() {
 
   testWidgets('Arabic mode renders Arabic labels and RTL',
       (WidgetTester tester) async {
-    final Map<String, dynamic> seeded = <String, dynamic>{
-      'transactions': <dynamic>[],
-      'savings': <dynamic>[],
-      'recurringTransactions': <dynamic>[],
-      'investments': <dynamic>[],
-      'financialPlans': <dynamic>[],
-      'lastRollover': '',
-      'categories': <String, dynamic>{
-        'income': <String>['Salary'],
-        'expense': <String>['Food & Dining'],
-      },
-      'zakatPaidMonths': <dynamic>[],
-      'processedExpenseIds': <dynamic>[],
-      'mainCurrency': 'EGP',
-      'defaultEntryCurrency': 'EGP',
-      'zakatExpenseIds': <String, dynamic>{},
-      'zakatMethod': 'hawl',
-      'zakatAnnualDate': '',
-      'zakatScheduleFilter': 'unpaid',
-      'marketData': <String, dynamic>{},
-      'marketHistory': <dynamic>[],
-      'syncHealth': <String, dynamic>{
-        'lastSuccessAt': '',
-        'lastFailureAt': '',
-        'lastError': '',
-        'pendingWrites': 0,
-      },
-      'languagePreference': 'ar',
-    };
+    final Map<String, dynamic> seeded = _arabicSeededState();
     SharedPreferences.setMockInitialValues(<String, Object>{
       'zakatAppData': jsonEncode(seeded),
     });
@@ -85,5 +103,74 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('لوحة التحكم'), findsWidgets);
+  });
+
+  testWidgets('Arabic settings screen has Arabic headers',
+      (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'zakatAppData': jsonEncode(_arabicSeededState()),
+    });
+    await tester.pumpWidget(_buildApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('الحساب').last);
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView).first, const Offset(0, -900));
+    await tester.pumpAndSettle();
+
+    expect(find.text('الحساب'), findsWidgets);
+    expect(find.text('بيانات السوق'), findsOneWidget);
+    expect(find.text('المظهر'), findsOneWidget);
+    expect(find.text('Backup & Sync'), findsNothing);
+  });
+
+  testWidgets('Arabic action sheet labels are Arabic',
+      (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'zakatAppData': jsonEncode(_arabicSeededState()),
+    });
+    await tester.pumpWidget(_buildApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('addEntryFab')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('إضافة إدخال'), findsOneWidget);
+    expect(find.text('إضافة دخل/مصروف'), findsOneWidget);
+    expect(find.text('إضافة ادخار'), findsOneWidget);
+  });
+
+  testWidgets('Arabic validation messages are Arabic',
+      (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'zakatAppData': jsonEncode(_arabicSeededState()),
+    });
+    await tester.pumpWidget(_buildApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('addEntryFab')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('actionAddTransaction')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('saveTransactionButton')));
+    await tester.pumpAndSettle();
+    expect(find.text('يجب أن يكون المبلغ أكبر من 0'), findsOneWidget);
+
+  });
+
+  testWidgets('Arabic delete dialogs are Arabic', (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'zakatAppData': jsonEncode(_arabicSeededState(withTransaction: true)),
+    });
+    await tester.pumpWidget(_buildApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('النشاط').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('deleteTransaction_tx_1')));
+    await tester.pumpAndSettle();
+    expect(find.text('حذف المعاملة؟'), findsOneWidget);
+    expect(find.text('إلغاء'), findsOneWidget);
+    expect(find.text('حذف'), findsOneWidget);
   });
 }

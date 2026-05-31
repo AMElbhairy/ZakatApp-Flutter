@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../core/i18n/app_localizations.dart';
 import '../../core/services/zakat_engine.dart';
 import '../../core/widgets/app_ui.dart';
 import '../../models/saving.dart';
@@ -68,7 +69,11 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.isEditMode ? 'Edit Saving' : 'Add Saving'),
+        title: Text(
+          widget.isEditMode
+              ? context.l10n.tr('edit_saving_title')
+              : context.l10n.tr('add_saving_title'),
+        ),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -81,17 +86,17 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
                 DropdownButtonFormField<String>(
                   key: const Key('savingTypeField'),
                   initialValue: _assetType,
-                  decoration: const InputDecoration(
-                    labelText: 'Type',
+                  decoration: InputDecoration(
+                    labelText: context.l10n.tr('type'),
                     border: OutlineInputBorder(),
                   ),
-                  items: const <DropdownMenuItem<String>>[
+                  items: <DropdownMenuItem<String>>[
                     DropdownMenuItem<String>(
-                        value: 'cash', child: Text('Cash')),
+                        value: 'cash', child: Text(context.l10n.tr('cash'))),
                     DropdownMenuItem<String>(
-                        value: 'gold', child: Text('Gold')),
+                        value: 'gold', child: Text(context.l10n.tr('gold'))),
                     DropdownMenuItem<String>(
-                        value: 'silver', child: Text('Silver')),
+                        value: 'silver', child: Text(context.l10n.tr('silver'))),
                   ],
                   onChanged: (String? value) {
                     if (value == null) return;
@@ -105,13 +110,15 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
                   decoration: InputDecoration(
-                    labelText: _assetType == 'cash' ? 'Amount' : 'Weight (grams)',
+                    labelText: _assetType == 'cash'
+                        ? context.l10n.tr('amount')
+                        : context.l10n.tr('weight_grams'),
                     border: const OutlineInputBorder(),
                   ),
                   validator: (String? value) {
                     final double amount =
                         double.tryParse((value ?? '').trim()) ?? 0;
-                    if (amount <= 0) return 'Amount must be greater than 0';
+                    if (amount <= 0) return context.l10n.tr('amount_gt_zero');
                     return null;
                   },
                 ),
@@ -120,8 +127,8 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
                   DropdownButtonFormField<String>(
                     key: const Key('savingCurrencyField'),
                     initialValue: _cashCurrency,
-                    decoration: const InputDecoration(
-                      labelText: 'Currency',
+                    decoration: InputDecoration(
+                      labelText: context.l10n.tr('currency'),
                       border: OutlineInputBorder(),
                     ),
                     items: ZakatEngineService.supportedCurrencies
@@ -135,7 +142,7 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
                       setState(() => _cashCurrency = value);
                     },
                     validator: (String? value) {
-                      if ((value ?? '').isEmpty) return 'Currency is required';
+                      if ((value ?? '').isEmpty) return context.l10n.tr('currency_required');
                       return null;
                     },
                   ),
@@ -143,8 +150,8 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
                   DropdownButtonFormField<String>(
                     key: const Key('savingGoldPurityField'),
                     initialValue: _goldPurity,
-                    decoration: const InputDecoration(
-                      labelText: 'Gold Purity (Karat)',
+                    decoration: InputDecoration(
+                      labelText: context.l10n.tr('gold_purity'),
                       border: OutlineInputBorder(),
                     ),
                     items: const <DropdownMenuItem<String>>[
@@ -157,14 +164,14 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
                     },
                     validator: (String? value) {
                       if ((value ?? '').isEmpty) {
-                        return 'Gold purity is required';
+                        return context.l10n.tr('gold_purity_required');
                       }
                       return null;
                     },
                   ),
                 if (_assetType == 'silver')
-                  const Text(
-                    'Silver uses grams as unit.',
+                  Text(
+                    context.l10n.tr('silver_uses_grams'),
                     style: TextStyle(fontWeight: FontWeight.w500),
                   ),
                 const SizedBox(height: 16),
@@ -172,15 +179,15 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
                   key: const Key('savingNotesField'),
                   controller: _notesController,
                   maxLines: 2,
-                  decoration: const InputDecoration(
-                    labelText: 'Notes',
+                  decoration: InputDecoration(
+                    labelText: context.l10n.tr('notes'),
                     border: OutlineInputBorder(),
                   ),
                 ),
                 const SizedBox(height: 16),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('Date'),
+                  title: Text(context.l10n.tr('date')),
                   subtitle: Text(_dateIso(_selectedDate)),
                   trailing: const Icon(Icons.calendar_today),
                   onTap: () async {
@@ -202,8 +209,10 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
                     key: const Key('saveSavingButton'),
                     onPressed: _saving ? null : _submit,
                     label: _saving
-                        ? 'Saving...'
-                        : (widget.isEditMode ? 'Update Saving' : 'Save Saving'),
+                        ? context.l10n.tr('saving_progress')
+                        : (widget.isEditMode
+                            ? context.l10n.tr('update_saving')
+                            : context.l10n.tr('save_saving')),
                     icon: Icons.check,
                   ),
                 ),

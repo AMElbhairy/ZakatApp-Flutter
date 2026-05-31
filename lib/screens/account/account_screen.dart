@@ -76,8 +76,8 @@ class _AccountScreenState extends State<AccountScreen> {
           child: DropdownButtonFormField<String>(
             key: const Key('settingsLanguageField'),
             initialValue: languagePreference,
-            decoration: const InputDecoration(
-              labelText: 'Language',
+            decoration: InputDecoration(
+              labelText: context.l10n.tr('language_label'),
               border: OutlineInputBorder(),
             ),
             items: <DropdownMenuItem<String>>[
@@ -98,13 +98,12 @@ class _AccountScreenState extends State<AccountScreen> {
         ),
         const SizedBox(height: 12),
         _SectionCard(
-          title: 'Account',
-          child: const Text(
-              'Sign-in and profile settings will be available in a later phase.'),
+          title: context.l10n.tr('account_section'),
+          child: Text(context.l10n.tr('account_placeholder')),
         ),
         const SizedBox(height: 12),
         _SectionCard(
-          title: 'Currency',
+          title: context.l10n.tr('currency_section'),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
@@ -112,8 +111,8 @@ class _AccountScreenState extends State<AccountScreen> {
                 key: const Key('settingsMainCurrencyField'),
                 initialValue:
                     _supportedCurrencies.contains(mainCurrency) ? mainCurrency : 'EGP',
-                decoration: const InputDecoration(
-                  labelText: 'Main Currency',
+                decoration: InputDecoration(
+                  labelText: context.l10n.tr('main_currency'),
                   border: OutlineInputBorder(),
                 ),
                 items: _supportedCurrencies
@@ -131,8 +130,8 @@ class _AccountScreenState extends State<AccountScreen> {
                 initialValue: _supportedCurrencies.contains(defaultEntryCurrency)
                     ? defaultEntryCurrency
                     : 'EGP',
-                decoration: const InputDecoration(
-                  labelText: 'Default Entry Currency',
+                decoration: InputDecoration(
+                  labelText: context.l10n.tr('default_entry_currency'),
                   border: OutlineInputBorder(),
                 ),
                 items: _supportedCurrencies
@@ -149,25 +148,25 @@ class _AccountScreenState extends State<AccountScreen> {
         ),
         const SizedBox(height: 12),
         _SectionCard(
-          title: 'Zakat Calculation',
+          title: context.l10n.tr('zakat_calculation_section'),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               DropdownButtonFormField<String>(
                 key: const Key('settingsZakatMethodField'),
                 initialValue: zakatMethod,
-                decoration: const InputDecoration(
-                  labelText: 'Method',
+                decoration: InputDecoration(
+                  labelText: context.l10n.tr('method'),
                   border: OutlineInputBorder(),
                 ),
-                items: const <DropdownMenuItem<String>>[
+                items: <DropdownMenuItem<String>>[
                   DropdownMenuItem<String>(
                     value: 'hawl',
-                    child: Text('Monthly / Hawl'),
+                    child: Text(context.l10n.tr('monthly_hawl')),
                   ),
                   DropdownMenuItem<String>(
                     value: 'annual',
-                    child: Text('Annual'),
+                    child: Text(context.l10n.tr('annual')),
                   ),
                 ],
                 onChanged: (String? value) {
@@ -184,8 +183,8 @@ class _AccountScreenState extends State<AccountScreen> {
                       child: DropdownButtonFormField<int>(
                         key: const Key('settingsHijriMonthField'),
                         initialValue: annualDate.month,
-                        decoration: const InputDecoration(
-                          labelText: 'Hijri Month',
+                        decoration: InputDecoration(
+                          labelText: context.l10n.tr('hijri_month'),
                           border: OutlineInputBorder(),
                         ),
                         items: List<DropdownMenuItem<int>>.generate(
@@ -213,8 +212,8 @@ class _AccountScreenState extends State<AccountScreen> {
                       child: DropdownButtonFormField<int>(
                         key: const Key('settingsHijriDayField'),
                         initialValue: annualDate.day,
-                        decoration: const InputDecoration(
-                          labelText: 'Hijri Day',
+                        decoration: InputDecoration(
+                          labelText: context.l10n.tr('hijri_day'),
                           border: OutlineInputBorder(),
                         ),
                         items: List<DropdownMenuItem<int>>.generate(
@@ -242,13 +241,13 @@ class _AccountScreenState extends State<AccountScreen> {
         ),
         const SizedBox(height: 12),
         _SectionCard(
-          title: 'Market Data',
+          title: context.l10n.tr('market_data_section'),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              const Text('Automatic refresh: Every 5 minutes while app is open'),
+              Text(context.l10n.tr('auto_refresh_market')),
               const SizedBox(height: 10),
-              Text('Last updated: ${_formatLastUpdatedForDisplay(_lastUpdated)}'),
+              Text('${context.l10n.tr('last_updated')}: ${_formatLastUpdatedForDisplay(_lastUpdated)}'),
               const SizedBox(height: 12),
               FilledButton.tonal(
                 key: const Key('refreshMarketDataButton'),
@@ -263,12 +262,12 @@ class _AccountScreenState extends State<AccountScreen> {
               ),
               if (_refreshMarketMessage.isNotEmpty) ...<Widget>[
                 const SizedBox(height: 8),
-                Text(_refreshMarketMessage),
+                Text(_localizedRefreshMessage(context, _refreshMarketMessage)),
               ],
               const SizedBox(height: 12),
               ExpansionTile(
                 key: const Key('marketAdvancedOverrideTile'),
-                title: const Text('Advanced Manual Override'),
+                title: Text(context.l10n.tr('advanced_manual_override')),
                 initiallyExpanded: _manualOverrideExpanded,
                 onExpansionChanged: (bool expanded) {
                   setState(() => _manualOverrideExpanded = expanded);
@@ -284,8 +283,8 @@ class _AccountScreenState extends State<AccountScreen> {
                           controller: _goldController,
                           keyboardType:
                               const TextInputType.numberWithOptions(decimal: true),
-                          decoration: const InputDecoration(
-                            labelText: 'Gold 24K price / gram (EGP)',
+                          decoration: InputDecoration(
+                            labelText: context.l10n.tr('gold_24k_price_per_gram_egp'),
                             border: OutlineInputBorder(),
                           ),
                         ),
@@ -295,8 +294,8 @@ class _AccountScreenState extends State<AccountScreen> {
                           controller: _silverController,
                           keyboardType:
                               const TextInputType.numberWithOptions(decimal: true),
-                          decoration: const InputDecoration(
-                            labelText: 'Silver price / gram (EGP)',
+                          decoration: InputDecoration(
+                            labelText: context.l10n.tr('silver_price_per_gram_egp'),
                             border: OutlineInputBorder(),
                           ),
                         ),
@@ -306,8 +305,8 @@ class _AccountScreenState extends State<AccountScreen> {
                           controller: _usdController,
                           keyboardType:
                               const TextInputType.numberWithOptions(decimal: true),
-                          decoration: const InputDecoration(
-                            labelText: 'USD to EGP',
+                          decoration: InputDecoration(
+                            labelText: context.l10n.tr('usd_to_egp'),
                             border: OutlineInputBorder(),
                           ),
                         ),
@@ -317,8 +316,8 @@ class _AccountScreenState extends State<AccountScreen> {
                           controller: _sarController,
                           keyboardType:
                               const TextInputType.numberWithOptions(decimal: true),
-                          decoration: const InputDecoration(
-                            labelText: 'SAR to EGP',
+                          decoration: InputDecoration(
+                            labelText: context.l10n.tr('sar_to_egp'),
                             border: OutlineInputBorder(),
                           ),
                         ),
@@ -328,8 +327,8 @@ class _AccountScreenState extends State<AccountScreen> {
                           controller: _aedController,
                           keyboardType:
                               const TextInputType.numberWithOptions(decimal: true),
-                          decoration: const InputDecoration(
-                            labelText: 'AED to EGP',
+                          decoration: InputDecoration(
+                            labelText: context.l10n.tr('aed_to_egp'),
                             border: OutlineInputBorder(),
                           ),
                         ),
@@ -339,8 +338,8 @@ class _AccountScreenState extends State<AccountScreen> {
                           controller: _kwdController,
                           keyboardType:
                               const TextInputType.numberWithOptions(decimal: true),
-                          decoration: const InputDecoration(
-                            labelText: 'KWD to EGP',
+                          decoration: InputDecoration(
+                            labelText: context.l10n.tr('kwd_to_egp'),
                             border: OutlineInputBorder(),
                           ),
                         ),
@@ -350,8 +349,8 @@ class _AccountScreenState extends State<AccountScreen> {
                           controller: _qarController,
                           keyboardType:
                               const TextInputType.numberWithOptions(decimal: true),
-                          decoration: const InputDecoration(
-                            labelText: 'QAR to EGP',
+                          decoration: InputDecoration(
+                            labelText: context.l10n.tr('qar_to_egp'),
                             border: OutlineInputBorder(),
                           ),
                         ),
@@ -374,27 +373,25 @@ class _AccountScreenState extends State<AccountScreen> {
         ),
         const SizedBox(height: 12),
         _SectionCard(
-          title: 'Appearance',
-          child: const Text(
-              'Theme mode (System / Light / Dark) will be wired in a later phase.'),
+          title: context.l10n.tr('appearance_section'),
+          child: Text(context.l10n.tr('appearance_placeholder')),
         ),
         const SizedBox(height: 12),
         _SectionCard(
-          title: 'Backup & Sync',
-          child: const Text(
-              'Backup and sync options will be available in a later phase.'),
+          title: context.l10n.tr('backup_sync_section'),
+          child: Text(context.l10n.tr('backup_placeholder')),
         ),
         const SizedBox(height: 12),
         _SectionCard(
-          title: 'About',
-          child: const Column(
+          title: context.l10n.tr('about_section'),
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Text('ZakatApp'),
+              const Text('ZakatApp'),
               SizedBox(height: 4),
-              Text('Version: 1.0.0 (placeholder)'),
+              Text(context.l10n.tr('about_version')),
               SizedBox(height: 4),
-              Text('Build/Branch: local-dev (placeholder)'),
+              Text(context.l10n.tr('about_build')),
             ],
           ),
         ),
@@ -457,6 +454,14 @@ class _AccountScreenState extends State<AccountScreen> {
       _syncMarketControllers(updated);
       _refreshMarketMessage = result.message;
     });
+  }
+
+  String _localizedRefreshMessage(BuildContext context, String raw) {
+    if (raw == 'Market data refreshed.') return context.l10n.tr('market_data_refreshed');
+    if (raw == 'No market data refreshed. Manual prices required.') {
+      return '${context.l10n.tr('no_market_data_refreshed')} ${context.l10n.tr('manual_prices_required')}';
+    }
+    return raw;
   }
 
   Future<void> _updateAnnualDate(int month, int day) {
