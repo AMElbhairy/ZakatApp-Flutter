@@ -4,6 +4,7 @@ import 'account/account_screen.dart';
 import 'activity/activity_screen.dart';
 import 'assets/assets_screen.dart';
 import 'dashboard/dashboard_screen.dart';
+import 'entry/add_saving_screen.dart';
 import 'entry/add_transaction_screen.dart';
 import 'plans/plans_screen.dart';
 
@@ -37,13 +38,7 @@ class _AppShellState extends State<AppShell> {
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       floatingActionButton: FloatingActionButton(
         key: const Key('addEntryFab'),
-        onPressed: () {
-          Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => const AddTransactionScreen(),
-            ),
-          );
-        },
+        onPressed: () => _showAddActions(context),
         child: const Icon(Icons.add),
       ),
       bottomNavigationBar: SafeArea(
@@ -80,6 +75,47 @@ class _AppShellState extends State<AppShell> {
           ],
         ),
       ),
+    );
+  }
+
+  Future<void> _showAddActions(BuildContext context) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      builder: (BuildContext context) {
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            ListTile(
+              key: const Key('actionAddTransaction'),
+              leading: const Icon(Icons.swap_horiz),
+              title: const Text('Add Income/Expense'),
+              onTap: () {
+                Navigator.of(context).pop();
+                Navigator.of(this.context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const AddTransactionScreen(),
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              key: const Key('actionAddSaving'),
+              leading: const Icon(Icons.savings_outlined),
+              title: const Text('Add Saving'),
+              onTap: () {
+                Navigator.of(context).pop();
+                Navigator.of(this.context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const AddSavingScreen(),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        );
+      },
     );
   }
 }

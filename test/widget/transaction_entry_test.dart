@@ -17,6 +17,13 @@ Widget _buildApp() {
   );
 }
 
+Future<void> _openTransactionForm(WidgetTester tester) async {
+  await tester.tap(find.byKey(const Key('addEntryFab')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const Key('actionAddTransaction')));
+  await tester.pumpAndSettle();
+}
+
 void main() {
   testWidgets('save transaction and dashboard updates',
       (WidgetTester tester) async {
@@ -28,8 +35,7 @@ void main() {
     expect(find.text('Total Transactions'), findsOneWidget);
     expect(find.text('0'), findsOneWidget);
 
-    await tester.tap(find.byKey(const Key('addEntryFab')));
-    await tester.pumpAndSettle();
+    await _openTransactionForm(tester);
 
     await tester.enterText(find.byKey(const Key('amountField')), '100');
 
@@ -44,7 +50,7 @@ void main() {
     expect(find.text('Total Transactions'), findsOneWidget);
     expect(find.text('1'), findsOneWidget);
     expect(find.text('E£ 100.00'), findsNWidgets(2));
-    expect(find.text('E£ 0.00'), findsOneWidget);
+    expect(find.text('E£ 0.00'), findsWidgets);
   });
 
   testWidgets('persistence survives reload', (WidgetTester tester) async {
@@ -53,8 +59,7 @@ void main() {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('addEntryFab')));
-    await tester.pumpAndSettle();
+    await _openTransactionForm(tester);
 
     await tester.enterText(find.byKey(const Key('amountField')), '250');
 

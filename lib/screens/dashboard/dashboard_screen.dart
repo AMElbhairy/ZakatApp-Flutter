@@ -12,6 +12,7 @@ class DashboardScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = context.watch<AppStateController>();
     final transactions = controller.state.transactions;
+    final savings = controller.state.savings;
 
     final market = MarketData.fromJson(controller.state.marketData);
 
@@ -27,6 +28,11 @@ class DashboardScreen extends StatelessWidget {
         totalExpensesEgp += egpAmount;
       }
     }
+
+    final NisabTotals savingsTotals = ZakatEngineService.computeNisabTotals(
+      savings: savings,
+      marketData: market,
+    );
 
     final double netEgp = totalIncomeEgp - totalExpensesEgp;
 
@@ -50,6 +56,12 @@ class DashboardScreen extends StatelessWidget {
                   _metricRow('Total Expenses', _formatEgp(totalExpensesEgp)),
                   const Divider(height: 24),
                   _metricRow('Net Balance', _formatEgp(netEgp), bold: true),
+                  const SizedBox(height: 16),
+                  _metricRow(
+                    'Savings Wealth',
+                    _formatEgp(savingsTotals.totalSavingsWealthEgp),
+                    bold: true,
+                  ),
                 ],
               ),
             ),
