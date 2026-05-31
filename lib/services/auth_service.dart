@@ -1,4 +1,3 @@
-import 'dart:io';
 
 import 'package:google_sign_in/google_sign_in.dart';
 
@@ -29,8 +28,11 @@ class GoogleAuthService implements AuthService {
   final GoogleSignIn _googleSignIn;
 
   bool get _isConfiguredForCurrentPlatform {
-    if (!Platform.isIOS) return true;
-    return _iosClientId.trim().isNotEmpty;
+    // Allow configuration via either `GOOGLE_IOS_CLIENT_ID` (dart-define)
+    // or `GIDClientID` in Info.plist. The native plugin will read
+    // Info.plist when `clientId` is not provided, so assume configured
+    // and let the underlying plugin surface any errors if misconfigured.
+    return true;
   }
 
   @override
