@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/i18n/app_localizations.dart';
 import '../../core/services/zakat_engine.dart';
 import '../../core/services/zakat_schedule_service.dart';
 import '../../core/widgets/app_ui.dart';
@@ -132,7 +133,7 @@ class DashboardScreen extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: <Widget>[
-        SectionHeader(title: 'Dashboard', bottomSpacing: 14),
+        SectionHeader(title: context.l10n.tr('dashboard'), bottomSpacing: 14),
         if (!hasAnyData)
           EmptyStateCard(
             cardKey: const Key('dashboardEmptyCard'),
@@ -152,7 +153,8 @@ class DashboardScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Text('Total Wealth', style: Theme.of(context).textTheme.titleMedium),
+                Text(context.l10n.tr('total_wealth'),
+                    style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),
                 Text(
                   _formatOrMissing(totalWealthEgp, hasMarketData),
@@ -173,24 +175,24 @@ class DashboardScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                SectionHeader(title: 'Financial Summary', bottomSpacing: 10),
+                SectionHeader(title: context.l10n.tr('financial_summary'), bottomSpacing: 10),
                 MetricTile(
-                  label: 'Total Income',
+                  label: context.l10n.tr('total_income'),
                   value: _formatOrMissing(totalIncomeEgp, hasFxData),
                 ),
                 const SizedBox(height: 10),
                 MetricTile(
-                  label: 'Total Expenses',
+                  label: context.l10n.tr('total_expenses'),
                   value: _formatOrMissing(totalExpensesEgp, hasFxData),
                 ),
                 const SizedBox(height: 10),
                 MetricTile(
-                  label: 'Total Savings Wealth',
+                  label: context.l10n.tr('total_savings_wealth'),
                   value: _formatOrMissing(savingsTotals.totalSavingsWealthEgp, hasMarketData),
                 ),
                 const SizedBox(height: 10),
                 MetricTile(
-                  label: 'Investment Wealth',
+                  label: context.l10n.tr('investment_wealth'),
                   value: _formatOrMissing(investmentsEgp, hasFxData),
                 ),
               ],
@@ -204,7 +206,7 @@ class DashboardScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 SectionHeader(
-                  title: 'Zakat Summary',
+                  title: context.l10n.tr('zakat_summary'),
                   bottomSpacing: 10,
                   trailing: Icon(
                     Icons.arrow_forward_ios,
@@ -213,17 +215,19 @@ class DashboardScreen extends StatelessWidget {
                   ),
                 ),
                 MetricTile(
-                  label: 'Nisab Status',
+                  label: context.l10n.tr('nisab_status'),
                   value: hasMarketData
                       ? (nisabMet ? 'Met' : 'Not Met')
-                      : (hasFxData ? 'Gold/silver price required' : 'Market data required'),
+                      : (hasFxData
+                          ? context.l10n.tr('gold_silver_required')
+                          : context.l10n.tr('market_data_required')),
                   bold: nisabMet,
                 ),
                 const SizedBox(height: 10),
                 MetricTile(
-                  label: 'Current Nisab Threshold',
+                  label: context.l10n.tr('current_nisab_threshold'),
                   value: hasFxData && !hasMetalsData
-                      ? 'Gold/silver price required'
+                      ? context.l10n.tr('gold_silver_required')
                       : _formatOrMissing(nisabThreshold, hasMarketData),
                 ),
                 const SizedBox(height: 10),
@@ -271,11 +275,11 @@ class DashboardScreen extends StatelessWidget {
                   trailing: TextButton(
                     key: const Key('dashboardViewAllActivityButton'),
                     onPressed: onViewAllActivity,
-                    child: const Text('View All'),
+                    child: Text(context.l10n.tr('view_all')),
                   ),
                 ),
                 if (recent4.isEmpty)
-                  const Text('No recent transactions')
+                  Text(context.l10n.tr('no_recent_transactions'))
                 else
                   ...recent4.map(
                     (Transaction tx) => ListTile(

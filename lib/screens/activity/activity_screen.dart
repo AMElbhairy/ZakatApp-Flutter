@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/i18n/app_localizations.dart';
 import '../../core/services/zakat_engine.dart';
 import '../../core/services/zakat_schedule_service.dart';
 import '../../core/widgets/app_ui.dart';
@@ -73,17 +74,17 @@ class ActivityScreenState extends State<ActivityScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          const SectionHeader(title: 'Activity'),
+          SectionHeader(title: context.l10n.tr('activity')),
           SegmentedButton<_ActivitySection>(
             key: const Key('activitySectionSegment'),
-            segments: const <ButtonSegment<_ActivitySection>>[
+            segments: <ButtonSegment<_ActivitySection>>[
               ButtonSegment<_ActivitySection>(
                 value: _ActivitySection.transactions,
-                label: Text('Transactions'),
+                label: Text(context.l10n.tr('transactions')),
               ),
               ButtonSegment<_ActivitySection>(
                 value: _ActivitySection.schedule,
-                label: Text('Zakat Schedule'),
+                label: Text(context.l10n.tr('zakat_schedule')),
               ),
             ],
             selected: <_ActivitySection>{_section},
@@ -107,18 +108,18 @@ class ActivityScreenState extends State<ActivityScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         SegmentedButton<_ActivityFilter>(
-          segments: const <ButtonSegment<_ActivityFilter>>[
+          segments: <ButtonSegment<_ActivityFilter>>[
             ButtonSegment<_ActivityFilter>(
               value: _ActivityFilter.all,
-              label: Text('All'),
+              label: Text(context.l10n.tr('all')),
             ),
             ButtonSegment<_ActivityFilter>(
               value: _ActivityFilter.income,
-              label: Text('Income'),
+              label: Text(context.l10n.tr('income')),
             ),
             ButtonSegment<_ActivityFilter>(
               value: _ActivityFilter.expense,
-              label: Text('Expense'),
+              label: Text(context.l10n.tr('expense')),
             ),
           ],
           selected: <_ActivityFilter>{_filter},
@@ -131,11 +132,11 @@ class ActivityScreenState extends State<ActivityScreen> {
         const SizedBox(height: 12),
         Expanded(
           child: filtered.isEmpty
-              ? const Center(
+              ? Center(
                   child: EmptyStateCard(
                     cardKey: Key('activityEmptyState'),
                     icon: Icons.receipt_long_outlined,
-                    title: 'No transactions yet',
+                    title: context.l10n.tr('no_transactions_yet'),
                     message: 'Add income or expenses to see activity history.',
                   ),
                 )
@@ -216,11 +217,11 @@ class ActivityScreenState extends State<ActivityScreen> {
 
   Widget _buildScheduleView(List<Map<String, dynamic>> schedule) {
     if (schedule.isEmpty) {
-      return const Center(
+      return Center(
         child: EmptyStateCard(
           cardKey: Key('zakatScheduleEmptyState'),
           icon: Icons.event_note,
-          title: 'No Zakat Due Yet',
+          title: context.l10n.tr('zakat_schedule'),
           message: 'Dues appear after your assets and income reach hawl and nisab.',
         ),
       );
@@ -240,7 +241,9 @@ class ActivityScreenState extends State<ActivityScreen> {
         final bool isPast = row['isPast'] == true;
         final bool isCurrent = row['isCurrentMonth'] == true;
         final List<dynamic> entries = (row['entries'] as List<dynamic>? ?? const []);
-        final String status = isCurrent ? 'Due Now' : (isPast ? 'Past' : 'Upcoming');
+        final String status = isCurrent
+            ? context.l10n.tr('due_now')
+            : (isPast ? context.l10n.tr('past') : context.l10n.tr('upcoming'));
         final String monthKey = (row['monthKey'] ?? '').toString();
         final String paymentDate = (row['paymentDate'] ?? '').toString();
         final double totalZakat = ((row['totalZakat'] ?? 0) as num).toDouble();
@@ -250,7 +253,7 @@ class ActivityScreenState extends State<ActivityScreen> {
             key: Key('scheduleRow_$monthKey'),
             tilePadding: EdgeInsets.zero,
             title: Text('$monthKey • $paymentDate'),
-            subtitle: Text('Entries: ${entries.length}'),
+            subtitle: Text('${context.l10n.tr('entries')}: ${entries.length}'),
             trailing: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: <Widget>[

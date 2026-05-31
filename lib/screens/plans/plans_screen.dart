@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/i18n/app_localizations.dart';
 import '../../core/widgets/app_ui.dart';
 import '../../models/financial_plan.dart';
 import '../../services/app_state_controller.dart';
@@ -20,7 +21,7 @@ class PlansScreen extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           SectionHeader(
-            title: 'Plans',
+            title: context.l10n.tr('plans'),
             trailing: FilledButton.icon(
               key: const Key('addPlanButton'),
               onPressed: () {
@@ -31,16 +32,16 @@ class PlansScreen extends StatelessWidget {
                 );
               },
               icon: const Icon(Icons.add),
-              label: const Text('Add Plan'),
+              label: Text(context.l10n.tr('add_plan')),
             ),
           ),
           Expanded(
             child: plans.isEmpty
-                ? const Center(
+                ? Center(
                     child: EmptyStateCard(
                       cardKey: Key('plansEmptyState'),
                       icon: Icons.auto_graph,
-                      title: 'No financial plans yet',
+                      title: context.l10n.tr('no_plans_yet'),
                       message: 'Create a plan to track long-term goals.',
                     ),
                   )

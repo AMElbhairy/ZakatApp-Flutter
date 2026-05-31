@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/i18n/app_localizations.dart';
 import '../../core/services/zakat_engine.dart';
 import '../../core/widgets/app_ui.dart';
 import '../../models/investment_asset.dart';
@@ -53,7 +54,7 @@ class AssetsScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          const SectionHeader(title: 'Assets', bottomSpacing: 14),
+          SectionHeader(title: context.l10n.tr('assets'), bottomSpacing: 14),
           PremiumCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -80,11 +81,11 @@ class AssetsScreen extends StatelessWidget {
           const SizedBox(height: 12),
           Expanded(
             child: !hasAnyAssets
-                ? const Center(
+                ? Center(
                     child: EmptyStateCard(
                       cardKey: Key('assetsEmptyState'),
                       icon: Icons.account_balance_wallet_outlined,
-                      title: 'No assets added yet',
+                      title: context.l10n.tr('no_assets_yet'),
                       message: 'Add savings and investments to track your wealth.',
                     ),
                   )

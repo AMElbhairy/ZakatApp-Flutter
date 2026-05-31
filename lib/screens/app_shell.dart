@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/i18n/app_localizations.dart';
 import '../core/widgets/app_ui.dart';
 
 import 'account/account_screen.dart';
@@ -65,31 +66,31 @@ class _AppShellState extends State<AppShell> {
         child: NavigationBar(
           selectedIndex: _index,
           onDestinationSelected: (int i) => setState(() => _index = i),
-          destinations: const <NavigationDestination>[
+          destinations: <NavigationDestination>[
             NavigationDestination(
-              icon: Icon(Icons.dashboard_outlined),
-              selectedIcon: Icon(Icons.dashboard),
-              label: 'Dashboard',
+              icon: const Icon(Icons.dashboard_outlined),
+              selectedIcon: const Icon(Icons.dashboard),
+              label: context.l10n.tr('dashboard'),
             ),
             NavigationDestination(
-              icon: Icon(Icons.account_balance_wallet_outlined),
-              selectedIcon: Icon(Icons.account_balance_wallet),
-              label: 'Assets',
+              icon: const Icon(Icons.account_balance_wallet_outlined),
+              selectedIcon: const Icon(Icons.account_balance_wallet),
+              label: context.l10n.tr('assets'),
             ),
             NavigationDestination(
-              icon: Icon(Icons.receipt_long_outlined),
-              selectedIcon: Icon(Icons.receipt_long),
-              label: 'Activity',
+              icon: const Icon(Icons.receipt_long_outlined),
+              selectedIcon: const Icon(Icons.receipt_long),
+              label: context.l10n.tr('activity'),
             ),
             NavigationDestination(
-              icon: Icon(Icons.auto_graph_outlined),
-              selectedIcon: Icon(Icons.auto_graph),
-              label: 'Plans',
+              icon: const Icon(Icons.auto_graph_outlined),
+              selectedIcon: const Icon(Icons.auto_graph),
+              label: context.l10n.tr('plans'),
             ),
             NavigationDestination(
-              icon: Icon(Icons.person_outline),
-              selectedIcon: Icon(Icons.person),
-              label: 'Account',
+              icon: const Icon(Icons.person_outline),
+              selectedIcon: const Icon(Icons.person),
+              label: context.l10n.tr('account'),
             ),
           ],
         ),
@@ -109,12 +110,12 @@ class _AppShellState extends State<AppShell> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                const SectionHeader(title: 'Add Entry', bottomSpacing: 8),
+                SectionHeader(title: context.l10n.tr('add_entry'), bottomSpacing: 8),
                 ListTile(
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   key: const Key('actionAddTransaction'),
                   leading: const Icon(Icons.swap_horiz),
-                  title: const Text('Add Income/Expense'),
+                  title: Text(context.l10n.tr('add_income_expense')),
                   onTap: () {
                     Navigator.of(context).pop();
                     Navigator.of(this.context).push(
@@ -128,7 +129,7 @@ class _AppShellState extends State<AppShell> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   key: const Key('actionAddSaving'),
                   leading: const Icon(Icons.savings_outlined),
-                  title: const Text('Add Saving'),
+                  title: Text(context.l10n.tr('add_saving')),
                   onTap: () {
                     Navigator.of(context).pop();
                     Navigator.of(this.context).push(
@@ -142,7 +143,7 @@ class _AppShellState extends State<AppShell> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   key: const Key('actionAddInvestment'),
                   leading: const Icon(Icons.business_outlined),
-                  title: const Text('Add Investment'),
+                  title: Text(context.l10n.tr('add_investment')),
                   onTap: () {
                     Navigator.of(context).pop();
                     Navigator.of(this.context).push(
@@ -156,7 +157,7 @@ class _AppShellState extends State<AppShell> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   key: const Key('actionAddPlan'),
                   leading: const Icon(Icons.auto_graph_outlined),
-                  title: const Text('Add Plan'),
+                  title: Text(context.l10n.tr('add_plan')),
                   onTap: () {
                     Navigator.of(context).pop();
                     Navigator.of(this.context).push(

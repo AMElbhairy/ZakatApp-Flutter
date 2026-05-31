@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/i18n/app_localizations.dart';
 import '../../models/market_snapshot.dart';
 import '../../services/app_state_controller.dart';
 
@@ -56,6 +57,8 @@ class _AccountScreenState extends State<AccountScreen> {
     final String defaultEntryCurrency =
         state.defaultEntryCurrency.isEmpty ? 'EGP' : state.defaultEntryCurrency;
     final String zakatMethod = state.zakatMethod == 'annual' ? 'annual' : 'hawl';
+    final String languagePreference =
+        state.languagePreference == 'ar' ? 'ar' : 'en';
 
     final _AnnualDate annualDate = _AnnualDate.parse(state.zakatAnnualDate);
     final MarketSnapshot snapshot = controller.currentMarketSnapshot;
@@ -64,8 +67,35 @@ class _AccountScreenState extends State<AccountScreen> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: <Widget>[
-        Text('Settings', style: Theme.of(context).textTheme.headlineSmall),
+        Text(context.l10n.tr('settings'),
+            style: Theme.of(context).textTheme.headlineSmall),
         const SizedBox(height: 16),
+        _SectionCard(
+          title: context.l10n.tr('language'),
+          child: DropdownButtonFormField<String>(
+            key: const Key('settingsLanguageField'),
+            initialValue: languagePreference,
+            decoration: const InputDecoration(
+              labelText: 'Language',
+              border: OutlineInputBorder(),
+            ),
+            items: <DropdownMenuItem<String>>[
+              DropdownMenuItem<String>(
+                value: 'en',
+                child: Text(context.l10n.tr('english')),
+              ),
+              DropdownMenuItem<String>(
+                value: 'ar',
+                child: Text(context.l10n.tr('arabic')),
+              ),
+            ],
+            onChanged: (String? value) {
+              if (value == null) return;
+              context.read<AppStateController>().updateLanguagePreference(value);
+            },
+          ),
+        ),
+        const SizedBox(height: 12),
         _SectionCard(
           title: 'Account',
           child: const Text(
@@ -290,7 +320,7 @@ class _AccountScreenState extends State<AccountScreen> {
               FilledButton(
                 key: const Key('saveMarketDataButton'),
                 onPressed: _saveMarketData,
-                child: const Text('Save Market Data'),
+                child: Text(context.l10n.tr('save_market_data')),
               ),
               const SizedBox(height: 10),
               FilledButton.tonal(
@@ -302,7 +332,7 @@ class _AccountScreenState extends State<AccountScreen> {
                         height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Text('Refresh Market Data'),
+                    : Text(context.l10n.tr('refresh_market_data')),
               ),
               if (_refreshMarketMessage.isNotEmpty) ...<Widget>[
                 const SizedBox(height: 8),

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 
+import 'core/i18n/app_localizations.dart';
 import 'core/theme/app_theme.dart';
 import 'repositories/app_state_repository.dart';
 import 'screens/app_shell.dart';
@@ -24,11 +26,31 @@ class ZakatApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final String languageCode =
+        context.watch<AppStateController>().state.languagePreference;
+    final Locale locale = languageCode == 'ar'
+        ? const Locale('ar')
+        : const Locale('en');
     return MaterialApp(
       title: 'ZakatApp',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
+      locale: locale,
+      supportedLocales: AppLocalizations.supportedLocales,
+      localizationsDelegates: const <LocalizationsDelegate<dynamic>>[
+        AppLocalizationsDelegate(),
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      builder: (BuildContext context, Widget? child) {
+        return GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+          child: child,
+        );
+      },
       home: const _AppBootstrapper(),
     );
   }

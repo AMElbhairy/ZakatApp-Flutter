@@ -105,6 +105,7 @@ class AppStateDefaults {
         lastError: '',
         pendingWrites: 0,
       ),
+      languagePreference: 'en',
       aiSettings: <String, dynamic>{
         'keys': <String>['', ''],
         'defaultKeyIndex': 0,
