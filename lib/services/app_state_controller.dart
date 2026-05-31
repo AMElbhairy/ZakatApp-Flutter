@@ -113,6 +113,20 @@ class AppStateController extends ChangeNotifier {
       financialPlans: <FinancialPlan>[..._state.financialPlans, plan],
     ));
   }
+
+  Future<void> updateFinancialPlan(FinancialPlan plan) async {
+    final List<FinancialPlan> next = _state.financialPlans
+        .map((FinancialPlan entry) => entry.id == plan.id ? plan : entry)
+        .toList(growable: false);
+    await updateState(_state.copyWith(financialPlans: next));
+  }
+
+  Future<void> deleteFinancialPlan(String planId) async {
+    final List<FinancialPlan> next = _state.financialPlans
+        .where((FinancialPlan entry) => entry.id != planId)
+        .toList(growable: false);
+    await updateState(_state.copyWith(financialPlans: next));
+  }
 }
 
 extension AppStateModelCopyWith on AppStateModel {

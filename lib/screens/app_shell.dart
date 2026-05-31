@@ -5,6 +5,7 @@ import 'activity/activity_screen.dart';
 import 'assets/assets_screen.dart';
 import 'dashboard/dashboard_screen.dart';
 import 'entry/add_investment_screen.dart';
+import 'entry/add_financial_plan_screen.dart';
 import 'entry/add_saving_screen.dart';
 import 'entry/add_transaction_screen.dart';
 import 'plans/plans_screen.dart';
@@ -138,6 +139,19 @@ class _AppShellState extends State<AppShell> {
                 Navigator.of(this.context).push(
                   MaterialPageRoute<void>(
                     builder: (_) => const AddInvestmentScreen(),
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              key: const Key('actionAddPlan'),
+              leading: const Icon(Icons.auto_graph_outlined),
+              title: const Text('Add Plan'),
+              onTap: () {
+                Navigator.of(context).pop();
+                Navigator.of(this.context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const AddFinancialPlanScreen(),
                   ),
                 );
               },
