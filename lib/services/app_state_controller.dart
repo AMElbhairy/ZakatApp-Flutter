@@ -8,12 +8,18 @@ import '../models/recurring_transaction.dart';
 import '../models/saving.dart';
 import '../models/transaction.dart';
 import '../repositories/app_state_repository.dart';
+import 'market_data_api_service.dart';
 
 class AppStateController extends ChangeNotifier {
-  AppStateController({required this.repository})
-      : _state = AppStateDefaults.create();
+  AppStateController({
+    required this.repository,
+    MarketDataApiService? marketDataApiService,
+  })  : _state = AppStateDefaults.create(),
+        marketDataApiService =
+            marketDataApiService ?? MarketDataApiServiceImpl();
 
   final AppStateRepository repository;
+  final MarketDataApiService marketDataApiService;
   AppStateModel _state;
 
   AppStateModel get state => _state;
@@ -158,6 +164,77 @@ class AppStateController extends ChangeNotifier {
 
   Future<void> updateMarketSnapshot(MarketSnapshot snapshot) async {
     await updateState(_state.copyWith(marketData: snapshot.toAppStateJson()));
+  }
+
+  Future<MarketRefreshResult> refreshMarketData() async {
+    final MarketSnapshot before = currentMarketSnapshot;
+    Map<String, double>? fxRates;
+    double? goldPrice;
+    double? silverPrice;
+
+    try {
+      fxRates = await marketDataApiService.fetchFxRatesToEgp();
+    } catch (_) {
+      fxRates = null;
+    }
+    try {
+      goldPrice = await marketDataApiService.fetchGold24kPerGramEgp();
+    } catch (_) {
+      goldPrice = null;
+    }
+    try {
+      silverPrice = await marketDataApiService.fetchSilverPerGramEgp();
+    } catch (_) {
+      silverPrice = null;
+    }
+
+    int updated = 0;
+    MarketSnapshot after = before;
+
+    if (fxRates != null && fxRates.isNotEmpty) {
+      after = after.copyWith(
+        usdToEgp: fxRates['USD'] ?? after.usdToEgp,
+        sarToEgp: fxRates['SAR'] ?? after.sarToEgp,
+        aedToEgp: fxRates['AED'] ?? after.aedToEgp,
+        kwdToEgp: fxRates['KWD'] ?? after.kwdToEgp,
+        qarToEgp: fxRates['QAR'] ?? after.qarToEgp,
+        eurToEgp: fxRates['EUR'] ?? after.eurToEgp,
+        gbpToEgp: fxRates['GBP'] ?? after.gbpToEgp,
+        bhdToEgp: fxRates['BHD'] ?? after.bhdToEgp,
+        omrToEgp: fxRates['OMR'] ?? after.omrToEgp,
+        jodToEgp: fxRates['JOD'] ?? after.jodToEgp,
+        tryToEgp: fxRates['TRY'] ?? after.tryToEgp,
+        myrToEgp: fxRates['MYR'] ?? after.myrToEgp,
+        pkrToEgp: fxRates['PKR'] ?? after.pkrToEgp,
+        idrToEgp: fxRates['IDR'] ?? after.idrToEgp,
+      );
+      updated += fxRates.length;
+    }
+
+    if (goldPrice != null && goldPrice > 0) {
+      after = after.copyWith(gold24kPricePerGramEgp: goldPrice);
+      updated += 1;
+    }
+    if (silverPrice != null && silverPrice > 0) {
+      after = after.copyWith(silverPricePerGramEgp: silverPrice);
+      updated += 1;
+    }
+
+    if (updated > 0) {
+      after = after.copyWith(lastUpdated: DateTime.now().toUtc().toIso8601String());
+      await updateMarketSnapshot(after);
+      return MarketRefreshResult(
+        success: true,
+        updatedFields: updated,
+        message: 'Market data refreshed.',
+      );
+    }
+
+    return const MarketRefreshResult(
+      success: false,
+      updatedFields: 0,
+      message: 'No market data refreshed. Manual prices required.',
+    );
   }
 }
 

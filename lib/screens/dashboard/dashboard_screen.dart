@@ -38,10 +38,12 @@ class DashboardScreen extends StatelessWidget {
       savings: savings,
       investments: investments,
     );
-    final bool hasMarketData = snapshot.hasRequiredData &&
+    final bool hasFxData =
         requiredCurrencies.every(
           (String c) => ZakatEngineService.isCurrencyConversionAvailable(c, market),
         );
+    final bool hasMetalsData = snapshot.hasRequiredData;
+    final bool hasMarketData = hasFxData && hasMetalsData;
 
     double totalIncomeEgp = 0;
     double totalExpensesEgp = 0;
@@ -60,7 +62,7 @@ class DashboardScreen extends StatelessWidget {
     double nisabThreshold = 0;
     bool nisabMet = false;
 
-    if (hasMarketData) {
+    if (hasFxData) {
       for (final tx in transactions) {
         final double egpAmount =
             ZakatEngineService.convertToEgp(tx.amount, tx.currency, market);
@@ -71,12 +73,15 @@ class DashboardScreen extends StatelessWidget {
         }
       }
 
-      savingsTotals = ZakatEngineService.computeNisabTotals(
-        savings: savings,
-        marketData: market,
-      );
       investmentsEgp = ZakatEngineService.calculateTotalInvestmentsEgp(
         investments: investments,
+        marketData: market,
+      );
+    }
+
+    if (hasMarketData) {
+      savingsTotals = ZakatEngineService.computeNisabTotals(
+        savings: savings,
         marketData: market,
       );
       totalWealthEgp = ZakatEngineService.calculateTotalWealthEgp(
@@ -169,9 +174,15 @@ class DashboardScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 SectionHeader(title: 'Financial Summary', bottomSpacing: 10),
-                MetricTile(label: 'Total Income', value: _formatEgp(totalIncomeEgp)),
+                MetricTile(
+                  label: 'Total Income',
+                  value: _formatOrMissing(totalIncomeEgp, hasFxData),
+                ),
                 const SizedBox(height: 10),
-                MetricTile(label: 'Total Expenses', value: _formatEgp(totalExpensesEgp)),
+                MetricTile(
+                  label: 'Total Expenses',
+                  value: _formatOrMissing(totalExpensesEgp, hasFxData),
+                ),
                 const SizedBox(height: 10),
                 MetricTile(
                   label: 'Total Savings Wealth',
@@ -180,7 +191,7 @@ class DashboardScreen extends StatelessWidget {
                 const SizedBox(height: 10),
                 MetricTile(
                   label: 'Investment Wealth',
-                  value: _formatOrMissing(investmentsEgp, hasMarketData),
+                  value: _formatOrMissing(investmentsEgp, hasFxData),
                 ),
               ],
             ),
@@ -205,13 +216,15 @@ class DashboardScreen extends StatelessWidget {
                   label: 'Nisab Status',
                   value: hasMarketData
                       ? (nisabMet ? 'Met' : 'Not Met')
-                      : 'Market data required',
+                      : (hasFxData ? 'Gold/silver price required' : 'Market data required'),
                   bold: nisabMet,
                 ),
                 const SizedBox(height: 10),
                 MetricTile(
                   label: 'Current Nisab Threshold',
-                  value: _formatOrMissing(nisabThreshold, hasMarketData),
+                  value: hasFxData && !hasMetalsData
+                      ? 'Gold/silver price required'
+                      : _formatOrMissing(nisabThreshold, hasMarketData),
                 ),
                 const SizedBox(height: 10),
                 MetricTile(

@@ -6,6 +6,7 @@ import 'package:zakatapp_flutter/main.dart';
 import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
 import 'package:zakatapp_flutter/services/app_state_controller.dart';
 import 'package:zakatapp_flutter/services/local_storage_service.dart';
+import 'package:zakatapp_flutter/services/market_data_api_service.dart';
 import 'dart:convert';
 
 Widget _buildApp() {
@@ -16,6 +17,29 @@ Widget _buildApp() {
     create: (_) => AppStateController(repository: repository),
     child: const ZakatApp(),
   );
+}
+
+Widget _buildAppWithService(MarketDataApiService service) {
+  const LocalStorageService localStorage = LocalStorageService();
+  final AppStateRepository repository =
+      AppStateRepository(localStorage: localStorage);
+  return ChangeNotifierProvider<AppStateController>(
+    create: (_) =>
+        AppStateController(repository: repository, marketDataApiService: service),
+    child: const ZakatApp(),
+  );
+}
+
+class _FakeMarketDataApiService implements MarketDataApiService {
+  @override
+  Future<Map<String, double>?> fetchFxRatesToEgp() async =>
+      <String, double>{'USD': 50, 'SAR': 13.3, 'AED': 13.6};
+
+  @override
+  Future<double?> fetchGold24kPerGramEgp() async => null;
+
+  @override
+  Future<double?> fetchSilverPerGramEgp() async => null;
 }
 
 Future<void> _openSettings(WidgetTester tester) async {
@@ -267,5 +291,21 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('Last updated:'), findsOneWidget);
+  });
+
+  testWidgets('settings refresh button triggers refresh',
+      (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    await tester.pumpWidget(_buildAppWithService(_FakeMarketDataApiService()));
+    await tester.pumpAndSettle();
+
+    await _openSettings(tester);
+    await tester.drag(find.byType(ListView).first, const Offset(0, -900));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('refreshMarketDataButton')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Market data refreshed.'), findsOneWidget);
   });
 }

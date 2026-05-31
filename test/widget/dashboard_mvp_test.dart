@@ -260,4 +260,27 @@ void main() {
     expect(find.text('Current Nisab Threshold'), findsOneWidget);
     expect(find.textContaining('E£ 425,000.00'), findsWidgets);
   });
+
+  testWidgets('dashboard remains safe when metals missing',
+      (WidgetTester tester) async {
+    final Map<String, dynamic> seeded = _seedStateWithMarketData();
+    seeded['marketData'] = <String, dynamic>{
+      'GOLD_PRICE_24K_EGP': 0,
+      'SILVER_PRICE_EGP': 0,
+      'USD_TO_EGP': 50,
+      'SAR_TO_EGP': 13.3,
+      'RATES_TO_EGP': <String, dynamic>{'EGP': 1, 'USD': 50, 'SAR': 13.3},
+      'LAST_UPDATED': '2026-05-31T10:00:00Z',
+    };
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'zakatAppData': jsonEncode(seeded),
+    });
+    await tester.pumpWidget(_buildApp());
+    await tester.pumpAndSettle();
+
+    await _addIncome(tester, '1200');
+
+    expect(find.textContaining('E£ 1,200.00'), findsWidgets);
+    expect(find.text('Gold/silver price required'), findsWidgets);
+  });
 }

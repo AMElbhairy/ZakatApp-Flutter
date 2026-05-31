@@ -31,6 +31,8 @@ class _AccountScreenState extends State<AccountScreen> {
   final TextEditingController _qarController = TextEditingController();
   String _lastUpdated = '';
   bool _marketInitialized = false;
+  bool _isRefreshingMarket = false;
+  String _refreshMarketMessage = '';
 
   @override
   void dispose() {
@@ -290,6 +292,22 @@ class _AccountScreenState extends State<AccountScreen> {
                 onPressed: _saveMarketData,
                 child: const Text('Save Market Data'),
               ),
+              const SizedBox(height: 10),
+              FilledButton.tonal(
+                key: const Key('refreshMarketDataButton'),
+                onPressed: _isRefreshingMarket ? null : _refreshMarketData,
+                child: _isRefreshingMarket
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Refresh Market Data'),
+              ),
+              if (_refreshMarketMessage.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 8),
+                Text(_refreshMarketMessage),
+              ],
             ],
           ),
         ),
@@ -362,6 +380,22 @@ class _AccountScreenState extends State<AccountScreen> {
     await context.read<AppStateController>().updateMarketSnapshot(snapshot);
     if (!mounted) return;
     setState(() => _lastUpdated = lastUpdated);
+  }
+
+  Future<void> _refreshMarketData() async {
+    setState(() {
+      _isRefreshingMarket = true;
+      _refreshMarketMessage = '';
+    });
+    final result = await context.read<AppStateController>().refreshMarketData();
+    if (!mounted) return;
+    final MarketSnapshot updated = context.read<AppStateController>().currentMarketSnapshot;
+    setState(() {
+      _isRefreshingMarket = false;
+      _marketInitialized = false;
+      _syncMarketControllers(updated);
+      _refreshMarketMessage = result.message;
+    });
   }
 
   Future<void> _updateAnnualDate(int month, int day) {

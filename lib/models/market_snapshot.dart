@@ -160,4 +160,46 @@ class MarketSnapshot {
     if (value is num) return value.toDouble();
     return double.tryParse((value ?? '').toString()) ?? 0;
   }
+
+  MarketSnapshot copyWith({
+    double? gold24kPricePerGramEgp,
+    double? silverPricePerGramEgp,
+    double? usdToEgp,
+    double? sarToEgp,
+    double? aedToEgp,
+    double? kwdToEgp,
+    double? qarToEgp,
+    double? eurToEgp,
+    double? gbpToEgp,
+    double? bhdToEgp,
+    double? omrToEgp,
+    double? jodToEgp,
+    double? tryToEgp,
+    double? myrToEgp,
+    double? pkrToEgp,
+    double? idrToEgp,
+    String? lastUpdated,
+  }) {
+    return MarketSnapshot(
+      gold24kPricePerGramEgp:
+          gold24kPricePerGramEgp ?? this.gold24kPricePerGramEgp,
+      silverPricePerGramEgp:
+          silverPricePerGramEgp ?? this.silverPricePerGramEgp,
+      usdToEgp: usdToEgp ?? this.usdToEgp,
+      sarToEgp: sarToEgp ?? this.sarToEgp,
+      aedToEgp: aedToEgp ?? this.aedToEgp,
+      kwdToEgp: kwdToEgp ?? this.kwdToEgp,
+      qarToEgp: qarToEgp ?? this.qarToEgp,
+      eurToEgp: eurToEgp ?? this.eurToEgp,
+      gbpToEgp: gbpToEgp ?? this.gbpToEgp,
+      bhdToEgp: bhdToEgp ?? this.bhdToEgp,
+      omrToEgp: omrToEgp ?? this.omrToEgp,
+      jodToEgp: jodToEgp ?? this.jodToEgp,
+      tryToEgp: tryToEgp ?? this.tryToEgp,
+      myrToEgp: myrToEgp ?? this.myrToEgp,
+      pkrToEgp: pkrToEgp ?? this.pkrToEgp,
+      idrToEgp: idrToEgp ?? this.idrToEgp,
+      lastUpdated: lastUpdated ?? this.lastUpdated,
+    );
+  }
 }
