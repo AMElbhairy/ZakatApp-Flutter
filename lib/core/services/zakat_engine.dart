@@ -665,7 +665,7 @@ class ZakatEngineService {
     }
 
     final List<ZakatScheduleEntry> result = byMonth.values
-        .map((_) => _.toScheduleEntry())
+        .map((acc) => acc.toScheduleEntry())
         .toList()
       ..sort((ZakatScheduleEntry a, ZakatScheduleEntry b) =>
           a.monthKey.compareTo(b.monthKey));
@@ -746,7 +746,7 @@ class ZakatEngineService {
     }
 
     final List<ZakatScheduleEntry> result = byMonth.values
-        .map((_) => _.toScheduleEntry())
+        .map((acc) => acc.toScheduleEntry())
         .toList()
       ..sort((ZakatScheduleEntry a, ZakatScheduleEntry b) =>
           a.monthKey.compareTo(b.monthKey));

@@ -125,7 +125,7 @@ class InvestmentAsset {
     if (value is List) {
       return value
           .map((dynamic e) => e is Map
-              ? Map<String, dynamic>.from(e as Map)
+              ? Map<String, dynamic>.from(e)
               : <String, dynamic>{})
           .toList(growable: false);
     }

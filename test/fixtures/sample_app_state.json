@@ -1,0 +1,184 @@
+{
+  "transactions": [
+    {
+      "id": "tx_income_1",
+      "type": "income",
+      "date": "2024-01-01",
+      "amount": 10000,
+      "currency": "EGP",
+      "category": "Salary",
+      "description": "Monthly salary",
+      "createdAt": "2024-01-01T09:00:00.000Z",
+      "rolledOver": false,
+      "rolledAmount": 0,
+      "remainingAmount": 9000
+    },
+    {
+      "id": "tx_expense_1",
+      "type": "expense",
+      "date": "2024-01-15",
+      "amount": 1500,
+      "currency": "EGP",
+      "category": "Food & Dining",
+      "description": "Groceries",
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "rolledOver": false,
+      "sourceIncomeId": "tx_income_1"
+    }
+  ],
+  "savings": [
+    {
+      "id": "sav_cash_1",
+      "assetType": "cash",
+      "dateAcquired": "2024-02-01",
+      "amount": 5000,
+      "remainingAmount": 4000,
+      "unit": "EGP",
+      "description": "Cash reserve",
+      "linkedCashEntryId": null,
+      "purchaseCurrency": "",
+      "purchaseAmount": 0,
+      "createdAt": "2024-02-01T08:00:00.000Z",
+      "sourceIncomeId": "tx_income_1"
+    },
+    {
+      "id": "sav_gold_1",
+      "assetType": "gold",
+      "dateAcquired": "2024-02-15",
+      "amount": 10,
+      "remainingAmount": 10,
+      "unit": "24",
+      "description": "Gold bar",
+      "linkedCashEntryId": "sav_cash_1",
+      "purchaseCurrency": "EGP",
+      "purchaseAmount": 30000,
+      "createdAt": "2024-02-15T08:00:00.000Z"
+    },
+    {
+      "id": "sav_silver_1",
+      "assetType": "silver",
+      "dateAcquired": "2024-03-01",
+      "amount": 200,
+      "remainingAmount": 200,
+      "unit": "g",
+      "description": "Silver lot",
+      "purchaseCurrency": "EGP",
+      "purchaseAmount": 8000,
+      "createdAt": "2024-03-01T08:00:00.000Z"
+    }
+  ],
+  "recurringTransactions": [
+    {
+      "id": "rt_1",
+      "name": "Rent",
+      "type": "expense",
+      "amount": 2000,
+      "currency": "EGP",
+      "category": "Housing & Rent",
+      "description": "Monthly rent",
+      "dayOfMonth": 5,
+      "frequency": "monthly",
+      "lastProcessed": "2024-03-05",
+      "enabled": true,
+      "skipMonth": "",
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    }
+  ],
+  "investments": [
+    {
+      "id": "inv_1",
+      "investmentType": "real_estate",
+      "assetSubtype": "apartment",
+      "ownershipType": "fully_owned",
+      "valuationMode": "net_fair",
+      "currency": "EGP",
+      "originalPrice": 1000000,
+      "totalInterest": 0,
+      "totalPayable": 1000000,
+      "paidAmount": 1000000,
+      "remainingAmount": 0,
+      "installmentPlan": [],
+      "valuationDate": "2024-01-01",
+      "marketValue": 1200000,
+      "marketValueDate": "2024-03-01",
+      "valuationSource": "manual",
+      "loanBalance": 0,
+      "loanAsOfDate": "2024-03-01",
+      "paidAmountToDate": 1000000,
+      "ownershipSharePct": 100,
+      "country": "EG",
+      "location": "Cairo",
+      "inflationRateAnnual": 20,
+      "estimatedCurrentValue": 1200000,
+      "description": "Primary investment",
+      "noZakat": true,
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    }
+  ],
+  "financialPlans": [
+    {
+      "id": "fp_1",
+      "name": "Base plan",
+      "startDate": "2024-01-01",
+      "currency": "EGP",
+      "monthlyIncome": 10000,
+      "monthlyExpenses": 6000,
+      "includeInstallments": false,
+      "includeZakat": true,
+      "durationYears": 2,
+      "context": {
+        "snapshotDate": "2024-01-01"
+      },
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    }
+  ],
+  "lastRollover": "Mon Apr 01 2024",
+  "categories": {
+    "income": ["Salary", "Freelance"],
+    "expense": ["Food & Dining", "Housing & Rent"]
+  },
+  "zakatPaidMonths": ["2024-03"],
+  "processedExpenseIds": ["tx_expense_1"],
+  "mainCurrency": "EGP",
+  "defaultEntryCurrency": "EGP",
+  "zakatExpenseIds": {
+    "2024-03": "tx_zakat_1"
+  },
+  "zakatMethod": "hawl",
+  "zakatAnnualDate": "09-01",
+  "zakatScheduleFilter": "unpaid",
+  "marketData": {
+    "GOLD_PRICE_24K_EGP": 3000,
+    "SILVER_PRICE_EGP": 40,
+    "USD_TO_EGP": 50,
+    "SAR_TO_EGP": 13.5,
+    "RATES_TO_EGP": {
+      "EGP": 1,
+      "USD": 50,
+      "SAR": 13.5
+    }
+  },
+  "marketHistory": [
+    {
+      "date": "2024-03-01",
+      "goldPrice24kEGP": 3000,
+      "usdToEGP": 50,
+      "sarToEGP": 13.5,
+      "totalWealthEGP": 1500000,
+      "capturedAt": "2024-03-01T12:00:00.000Z"
+    }
+  ],
+  "syncHealth": {
+    "lastSuccessAt": "2024-03-02T12:00:00.000Z",
+    "lastFailureAt": "",
+    "lastError": "",
+    "pendingWrites": 0
+  },
+  "aiSettings": {
+    "keys": ["", ""],
+    "defaultKeyIndex": 0
+  },
+  "cloudHydrated": true,
+  "hasUnsyncedAuthChanges": false,
+  "_loadedUserId": "user_123"
+}
