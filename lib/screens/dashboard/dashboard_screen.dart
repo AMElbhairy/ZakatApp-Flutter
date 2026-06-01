@@ -157,7 +157,13 @@ class DashboardScreen extends StatelessWidget {
                     style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),
                 Text(
-                  _formatOrMissing(context, totalWealthEgp, hasMarketData),
+                  _formatOrMissing(
+                    context,
+                    totalWealthEgp,
+                    hasMarketData,
+                    state.mainCurrency,
+                    market,
+                  ),
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                         fontWeight: FontWeight.w800,
                       ),
@@ -165,7 +171,13 @@ class DashboardScreen extends StatelessWidget {
                 const SizedBox(height: 12),
                 MetricTile(
                   label: context.l10n.tr('net_position'),
-                  value: _formatOrMissing(context, netPositionEgp, hasMarketData),
+                  value: _formatOrMissing(
+                    context,
+                    netPositionEgp,
+                    hasMarketData,
+                    state.mainCurrency,
+                    market,
+                  ),
                 ),
               ],
             ),
@@ -178,12 +190,24 @@ class DashboardScreen extends StatelessWidget {
                 SectionHeader(title: context.l10n.tr('financial_summary'), bottomSpacing: 10),
                 MetricTile(
                   label: context.l10n.tr('total_income'),
-                  value: _formatOrMissing(context, totalIncomeEgp, hasFxData),
+                  value: _formatOrMissing(
+                    context,
+                    totalIncomeEgp,
+                    hasFxData,
+                    state.mainCurrency,
+                    market,
+                  ),
                 ),
                 const SizedBox(height: 10),
                 MetricTile(
                   label: context.l10n.tr('total_expenses'),
-                  value: _formatOrMissing(context, totalExpensesEgp, hasFxData),
+                  value: _formatOrMissing(
+                    context,
+                    totalExpensesEgp,
+                    hasFxData,
+                    state.mainCurrency,
+                    market,
+                  ),
                 ),
                 const SizedBox(height: 10),
                 MetricTile(
@@ -192,12 +216,20 @@ class DashboardScreen extends StatelessWidget {
                     context,
                     savingsTotals.totalSavingsWealthEgp,
                     hasMarketData,
+                    state.mainCurrency,
+                    market,
                   ),
                 ),
                 const SizedBox(height: 10),
                 MetricTile(
                   label: context.l10n.tr('investment_wealth'),
-                  value: _formatOrMissing(context, investmentsEgp, hasFxData),
+                  value: _formatOrMissing(
+                    context,
+                    investmentsEgp,
+                    hasFxData,
+                    state.mainCurrency,
+                    market,
+                  ),
                 ),
               ],
             ),
@@ -234,22 +266,46 @@ class DashboardScreen extends StatelessWidget {
                   label: context.l10n.tr('current_nisab_threshold'),
                   value: hasFxData && !hasMetalsData
                       ? context.l10n.tr('gold_silver_required')
-                      : _formatOrMissing(context, nisabThreshold, hasMarketData),
+                      : _formatOrMissing(
+                          context,
+                          nisabThreshold,
+                          hasMarketData,
+                          state.mainCurrency,
+                          market,
+                        ),
                 ),
                 const SizedBox(height: 10),
                 MetricTile(
                   label: context.l10n.tr('zakat_due_this_month'),
-                  value: _formatOrMissing(context, dues.thisMonth, hasMarketData),
+                  value: _formatOrMissing(
+                    context,
+                    dues.thisMonth,
+                    hasMarketData,
+                    state.mainCurrency,
+                    market,
+                  ),
                 ),
                 const SizedBox(height: 10),
                 MetricTile(
                   label: context.l10n.tr('zakat_due_next_month'),
-                  value: _formatOrMissing(context, dues.nextMonth, hasMarketData),
+                  value: _formatOrMissing(
+                    context,
+                    dues.nextMonth,
+                    hasMarketData,
+                    state.mainCurrency,
+                    market,
+                  ),
                 ),
                 const SizedBox(height: 10),
                 MetricTile(
                   label: context.l10n.tr('total_upcoming_dues'),
-                  value: _formatOrMissing(context, dues.totalUpcoming, hasMarketData),
+                  value: _formatOrMissing(
+                    context,
+                    dues.totalUpcoming,
+                    hasMarketData,
+                    state.mainCurrency,
+                    market,
+                  ),
                   bold: true,
                 ),
               ],
@@ -433,14 +489,28 @@ class DashboardScreen extends StatelessWidget {
     return out;
   }
 
-  static String _formatEgp(double value) {
+  static String _formatDisplay(double value, String currencyCode) {
     final NumberFormat formatter = NumberFormat('#,##0.00', 'en_US');
-    return 'E£ ${formatter.format(value)}';
+    if (currencyCode == 'EGP') {
+      return 'E£ ${formatter.format(value)}';
+    }
+    return '$currencyCode ${formatter.format(value)}';
   }
 
-  static String _formatOrMissing(BuildContext context, double value, bool hasMarketData) {
+  static String _formatOrMissing(
+    BuildContext context,
+    double valueEgp,
+    bool hasMarketData,
+    String mainCurrency,
+    MarketData marketData,
+  ) {
     if (!hasMarketData) return context.l10n.tr('market_data_required');
-    return _formatEgp(value);
+    final String displayCurrency =
+        mainCurrency.trim().isEmpty ? 'EGP' : mainCurrency.trim();
+    final double displayValue =
+        ZakatEngineService.convertFromEgp(valueEgp, displayCurrency, marketData);
+    if (displayValue.isNaN) return context.l10n.tr('market_data_required');
+    return _formatDisplay(displayValue, displayCurrency);
   }
 
   static String _formatPct(double value) {
