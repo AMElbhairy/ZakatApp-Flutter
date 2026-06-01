@@ -490,6 +490,117 @@ class ZakatEngineService {
     return walletEgp + totals.totalCashEgp + goldEgp + silverEgp + investmentsEgp;
   }
 
+  static double calculateTotalCashSavingsEgp({
+    required List<Saving> savings,
+    required MarketData marketData,
+  }) {
+    return savings
+        .where((Saving s) => normaliseAssetType(s.assetType) == 'cash')
+        .fold<double>(0, (double sum, Saving s) {
+      final double amount = s.remainingAmount.isFinite ? s.remainingAmount : s.amount;
+      return sum + convertToEgp(amount, s.unit, marketData);
+    });
+  }
+
+  static double calculateTotalGoldSavingsGrams({
+    required List<Saving> savings,
+  }) {
+    return savings
+        .where((Saving s) => normaliseAssetType(s.assetType) == 'gold')
+        .fold<double>(0, (double sum, Saving s) {
+      final double amount = s.remainingAmount.isFinite ? s.remainingAmount : s.amount;
+      return sum + convertToGold24k(amount, s.unit);
+    });
+  }
+
+  static double calculateTotalSilverSavingsGrams({
+    required List<Saving> savings,
+  }) {
+    return savings
+        .where((Saving s) => normaliseAssetType(s.assetType) == 'silver')
+        .fold<double>(0, (double sum, Saving s) {
+      final double amount = s.remainingAmount.isFinite ? s.remainingAmount : s.amount;
+      return sum + convertToSilverGrams(amount);
+    });
+  }
+
+  static double calculateTotalPropertyAssetsEgp({
+    required List<InvestmentAsset> investments,
+    required MarketData marketData,
+  }) {
+    return investments
+        .where((InvestmentAsset asset) => normaliseInvestmentType(asset.investmentType) != 'company_investment')
+        .fold<double>(0, (double sum, InvestmentAsset asset) {
+      return sum + calculateInvestmentEstimatedValueEgp(asset: asset, marketData: marketData);
+    });
+  }
+
+  static double calculateTotalCompanyInvestmentsEgp({
+    required List<InvestmentAsset> investments,
+    required MarketData marketData,
+  }) {
+    return investments
+        .where((InvestmentAsset asset) => normaliseInvestmentType(asset.investmentType) == 'company_investment')
+        .fold<double>(0, (double sum, InvestmentAsset asset) {
+      return sum + calculateInvestmentEstimatedValueEgp(asset: asset, marketData: marketData);
+    });
+  }
+
+  static double calculateTotalInvestmentLoanBalancesEgp({
+    required List<InvestmentAsset> investments,
+    required MarketData marketData,
+  }) {
+    return investments.fold<double>(0, (double sum, InvestmentAsset asset) {
+      final double nativeLoan = asset.loanBalance.isFinite ? asset.loanBalance : asset.remainingAmount;
+      return sum + convertToEgp(math.max(0, nativeLoan), asset.currency, marketData);
+    });
+  }
+
+  static double calculateTotalLiabilitiesEgp({
+    required List<Transaction> transactions,
+    required List<Saving> savings,
+    required List<InvestmentAsset> investments,
+    required MarketData marketData,
+  }) {
+    final double investmentDebt = calculateTotalInvestmentLoanBalancesEgp(
+        investments: investments, marketData: marketData);
+    final double walletBalance = calculateWalletBalance(
+        transactions: transactions, savings: savings, marketData: marketData);
+    final double walletOverdraft = math.max(0, -walletBalance);
+    return investmentDebt + walletOverdraft;
+  }
+
+  static double calculateTotalAssetsEgp({
+    required List<Transaction> transactions,
+    required List<Saving> savings,
+    required List<InvestmentAsset> investments,
+    required MarketData marketData,
+  }) {
+    return calculateTotalWealthEgp(
+        transactions: transactions,
+        savings: savings,
+        investments: investments,
+        marketData: marketData);
+  }
+
+  static double calculateNetWorthEgp({
+    required List<Transaction> transactions,
+    required List<Saving> savings,
+    required List<InvestmentAsset> investments,
+    required MarketData marketData,
+  }) {
+    return calculateTotalAssetsEgp(
+            transactions: transactions,
+            savings: savings,
+            investments: investments,
+            marketData: marketData) -
+        calculateTotalLiabilitiesEgp(
+            transactions: transactions,
+            savings: savings,
+            investments: investments,
+            marketData: marketData);
+  }
+
   static MarketData getMarketDataAtDate(MarketData marketData) {
     return MarketData(
       goldPrice24kEgp: marketData.goldPrice24kEgp,

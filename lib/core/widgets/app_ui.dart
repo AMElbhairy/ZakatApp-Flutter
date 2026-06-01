@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_component_tokens.dart';
+import '../theme/app_radii.dart';
+import '../theme/app_spacing.dart';
+
 class PremiumCard extends StatelessWidget {
   const PremiumCard({
     super.key,
     required this.child,
-    this.padding = const EdgeInsets.all(16),
+    this.padding = const EdgeInsets.all(AppSpacing.md),
     this.onTap,
     this.hero = false,
   });
@@ -16,29 +20,23 @@ class PremiumCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    final Widget card = Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(hero ? 24 : 20),
-        gradient: hero
-            ? LinearGradient(
-                colors: <Color>[
-                  scheme.primary.withValues(alpha: 0.15),
-                  scheme.surface,
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              )
-            : null,
-      ),
+    final BorderRadius borderRadius = hero ? AppRadii.hero : AppRadii.card;
+    final Widget content = Ink(
+      decoration: hero ? AppComponentTokens.heroCard(context) : AppComponentTokens.premiumCard(context),
       child: Padding(padding: padding, child: child),
     );
 
-    return Card(
+    return Material(
+      color: Colors.transparent,
+      borderRadius: borderRadius,
       clipBehavior: Clip.antiAlias,
       child: onTap == null
-          ? card
-          : InkWell(onTap: onTap, borderRadius: BorderRadius.circular(20), child: card),
+          ? content
+          : InkWell(
+              onTap: onTap,
+              borderRadius: borderRadius,
+              child: content,
+            ),
     );
   }
 }
@@ -48,7 +46,7 @@ class SectionHeader extends StatelessWidget {
     super.key,
     required this.title,
     this.trailing,
-    this.bottomSpacing = 12,
+    this.bottomSpacing = AppSpacing.sm,
   });
 
   final String title;
@@ -85,9 +83,7 @@ class MetricTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: <Widget>[
-        Expanded(
-          child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
-        ),
+        Expanded(child: Text(label, style: Theme.of(context).textTheme.bodyMedium)),
         Text(
           value,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -125,12 +121,12 @@ class EmptyStateCard extends StatelessWidget {
         children: <Widget>[
           if (icon != null) ...<Widget>[
             Icon(icon, size: 28, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(height: 10),
+            const SizedBox(height: AppSpacing.xs),
           ],
           Text(title, style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.xs),
           Text(message),
-          if (action != null) ...<Widget>[const SizedBox(height: 14), action!],
+          if (action != null) ...<Widget>[const SizedBox(height: AppSpacing.sm), action!],
         ],
       ),
     );

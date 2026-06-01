@@ -68,6 +68,7 @@ class ActivityScreenState extends State<ActivityScreen> {
       investments: state.investments.map((e) => e.toJson()).toList(growable: false),
       marketData: market,
     );
+    final Set<String> paidMonths = state.zakatPaidMonths.toSet();
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -96,7 +97,11 @@ class ActivityScreenState extends State<ActivityScreen> {
           Expanded(
             child: _section == _ActivitySection.transactions
                 ? _buildTransactionsView(context, filtered)
-                : _buildScheduleView(schedule),
+                : _buildScheduleView(
+                    context,
+                    schedule,
+                    paidMonths: paidMonths,
+                  ),
           ),
         ],
       ),
@@ -215,7 +220,11 @@ class ActivityScreenState extends State<ActivityScreen> {
     );
   }
 
-  Widget _buildScheduleView(List<Map<String, dynamic>> schedule) {
+  Widget _buildScheduleView(
+    BuildContext context,
+    List<Map<String, dynamic>> schedule, {
+    required Set<String> paidMonths,
+  }) {
     if (schedule.isEmpty) {
       return Center(
         child: EmptyStateCard(
@@ -247,6 +256,7 @@ class ActivityScreenState extends State<ActivityScreen> {
         final String monthKey = (row['monthKey'] ?? '').toString();
         final String paymentDate = (row['paymentDate'] ?? '').toString();
         final double totalZakat = ((row['totalZakat'] ?? 0) as num).toDouble();
+        final bool isPaid = paidMonths.contains(monthKey);
 
         return PremiumCard(
           child: ExpansionTile(
@@ -261,17 +271,41 @@ class ActivityScreenState extends State<ActivityScreen> {
                 Text(status, style: const TextStyle(fontSize: 12)),
               ],
             ),
-            children: entries.map((dynamic raw) {
-              final Map<String, dynamic> entry = Map<String, dynamic>.from(raw as Map);
-              final String type = (entry['type'] ?? 'entry').toString();
-              final double amount = ((entry['zakatAmount'] ?? 0) as num).toDouble();
-              return ListTile(
-                dense: true,
-                title: Text(type),
-                subtitle: Text((entry['dueDateRaw'] ?? '').toString()),
-                trailing: Text(_formatEgp(amount)),
-              );
-            }).toList(growable: false),
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: <Widget>[
+                    Text(isPaid ? context.l10n.tr('paid') : context.l10n.tr('not_paid')),
+                    TextButton(
+                      key: Key('toggleZakatPaid_$monthKey'),
+                      onPressed: () => context.read<AppStateController>().toggleZakatPaid(
+                            monthKey: monthKey,
+                            zakatAmountMainCurrency: totalZakat,
+                            paymentDate: paymentDate,
+                          ),
+                      child: Text(
+                        isPaid
+                            ? context.l10n.tr('undo_paid')
+                            : context.l10n.tr('mark_zakat_paid'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              ...entries.map((dynamic raw) {
+                final Map<String, dynamic> entry = Map<String, dynamic>.from(raw as Map);
+                final String type = (entry['type'] ?? 'entry').toString();
+                final double amount = ((entry['zakatAmount'] ?? 0) as num).toDouble();
+                return ListTile(
+                  dense: true,
+                  title: Text(type),
+                  subtitle: Text((entry['dueDateRaw'] ?? '').toString()),
+                  trailing: Text(_formatEgp(amount)),
+                );
+              }),
+            ],
           ),
         );
       },

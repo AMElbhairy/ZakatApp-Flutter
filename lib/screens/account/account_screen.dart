@@ -246,6 +246,15 @@ class _AccountScreenState extends State<AccountScreen> {
                   context.read<AppStateController>().updateDefaultEntryCurrency(value);
                 },
               ),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton(
+                  key: const Key('openCurrencyExchangeButton'),
+                  onPressed: () => _openCurrencyExchangeDialog(context),
+                  child: Text(context.l10n.tr('currency_exchange')),
+                ),
+              ),
             ],
           ),
         ),
@@ -757,6 +766,104 @@ class _AccountScreenState extends State<AccountScreen> {
     final String failure = health.lastFailureAt.isEmpty ? 'None' : health.lastFailureAt;
     final String error = health.lastError.isEmpty ? 'None' : health.lastError;
     return 'Last success: $success | Last failure: $failure | Pending writes: ${health.pendingWrites} | Last error: $error';
+  }
+
+  Future<void> _openCurrencyExchangeDialog(BuildContext context) async {
+    final TextEditingController sourceAmount = TextEditingController();
+    final TextEditingController targetAmount = TextEditingController();
+    String sourceCurrency = context.read<AppStateController>().state.mainCurrency;
+    if (sourceCurrency.trim().isEmpty) sourceCurrency = 'EGP';
+    String targetCurrency = _supportedCurrencies.firstWhere(
+      (String c) => c != sourceCurrency,
+      orElse: () => 'USD',
+    );
+    String sourceType = 'both';
+    final String date = DateTime.now().toUtc().toIso8601String().split('T').first;
+
+    final bool? ok = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => StatefulBuilder(
+        builder: (BuildContext ctx, void Function(void Function()) setDialogState) {
+          return AlertDialog(
+            title: Text(context.l10n.tr('currency_exchange')),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  DropdownButtonFormField<String>(
+                    initialValue: sourceType,
+                    decoration:
+                        InputDecoration(labelText: context.l10n.tr('exchange_source_type')),
+                    items: <DropdownMenuItem<String>>[
+                      DropdownMenuItem<String>(value: 'both', child: Text(context.l10n.tr('both'))),
+                      DropdownMenuItem<String>(value: 'savings', child: Text(context.l10n.tr('savings'))),
+                      DropdownMenuItem<String>(value: 'income', child: Text(context.l10n.tr('income'))),
+                    ],
+                    onChanged: (String? v) => setDialogState(() => sourceType = v ?? sourceType),
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    initialValue: sourceCurrency,
+                    decoration:
+                        InputDecoration(labelText: context.l10n.tr('source_currency')),
+                    items: _supportedCurrencies
+                        .map((String c) => DropdownMenuItem<String>(value: c, child: Text(c)))
+                        .toList(growable: false),
+                    onChanged: (String? v) => setDialogState(() => sourceCurrency = v ?? sourceCurrency),
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    initialValue: targetCurrency,
+                    decoration:
+                        InputDecoration(labelText: context.l10n.tr('target_currency')),
+                    items: _supportedCurrencies
+                        .where((String c) => c != sourceCurrency)
+                        .map((String c) => DropdownMenuItem<String>(value: c, child: Text(c)))
+                        .toList(growable: false),
+                    onChanged: (String? v) => setDialogState(() => targetCurrency = v ?? targetCurrency),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: sourceAmount,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: InputDecoration(labelText: context.l10n.tr('source_amount')),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: targetAmount,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: InputDecoration(labelText: context.l10n.tr('target_amount')),
+                  ),
+                ],
+              ),
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text(context.l10n.tr('cancel')),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text(context.l10n.tr('confirm')),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (ok != true || !context.mounted) return;
+    final double sAmount = double.tryParse(sourceAmount.text.trim()) ?? 0;
+    final double tAmount = double.tryParse(targetAmount.text.trim()) ?? 0;
+    if (sAmount <= 0 || tAmount <= 0 || sourceCurrency == targetCurrency) return;
+    await context.read<AppStateController>().executeCurrencyExchange(
+          date: date,
+          sourceType: sourceType,
+          sourceCurrency: sourceCurrency,
+          targetCurrency: targetCurrency,
+          sourceAmount: sAmount,
+          targetAmount: tAmount,
+        );
   }
 
   void _syncMarketControllers(MarketSnapshot snapshot) {

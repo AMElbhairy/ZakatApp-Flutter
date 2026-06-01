@@ -11,6 +11,7 @@ import '../models/transaction.dart';
 import '../repositories/app_state_repository.dart';
 import 'market_data_api_service.dart';
 import 'reconciliation_service.dart';
+import '../core/services/zakat_engine.dart';
 
 class AppStateController extends ChangeNotifier {
   AppStateController({
@@ -307,6 +308,60 @@ class AppStateController extends ChangeNotifier {
 
   Future<void> updateMarketSnapshot(MarketSnapshot snapshot) async {
     await updateState(_state.copyWith(marketData: snapshot.toAppStateJson()));
+  }
+
+  Future<void> toggleInstallmentPaid({
+    required String assetId,
+    required int installmentIndex,
+    required String paymentCategory,
+  }) async {
+    final MarketData market = MarketData.fromJson(_state.marketData);
+    final ReconciliationResult out = reconciliationService.toggleInstallmentPaid(
+      input: _state,
+      assetId: assetId,
+      installmentIndex: installmentIndex,
+      paymentCategory: paymentCategory,
+      marketData: market,
+    );
+    if (!out.modified) return;
+    await updateState(out.state);
+  }
+
+  Future<void> toggleZakatPaid({
+    required String monthKey,
+    required double zakatAmountMainCurrency,
+    required String paymentDate,
+  }) async {
+    final ReconciliationResult out = reconciliationService.toggleZakatPaid(
+      input: _state,
+      monthKey: monthKey,
+      zakatAmountMainCurrency: zakatAmountMainCurrency,
+      mainCurrency: _state.mainCurrency.trim().isEmpty ? 'EGP' : _state.mainCurrency,
+      paymentDate: paymentDate,
+    );
+    if (!out.modified) return;
+    await updateState(out.state);
+  }
+
+  Future<void> executeCurrencyExchange({
+    required String date,
+    required String sourceType,
+    required String sourceCurrency,
+    required String targetCurrency,
+    required double sourceAmount,
+    required double targetAmount,
+  }) async {
+    final ReconciliationResult out = reconciliationService.executeCurrencyExchange(
+      input: _state,
+      date: date,
+      sourceType: sourceType,
+      sourceCurrency: sourceCurrency,
+      targetCurrency: targetCurrency,
+      sourceAmount: sourceAmount,
+      targetAmount: targetAmount,
+    );
+    if (!out.modified) return;
+    await updateState(out.state);
   }
 
   Future<MarketRefreshResult> refreshMarketData({

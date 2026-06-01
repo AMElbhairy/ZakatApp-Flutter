@@ -31,14 +31,33 @@ class AssetsScreen extends StatelessWidget {
         .where((a) => ZakatEngineService.isCompanyInvestmentType(a.investmentType))
         .toList(growable: false);
 
-    final double totalCash = cash.fold<double>(0, (sum, s) => sum + s.remainingAmount);
-    final double totalGold = gold.fold<double>(0, (sum, s) => sum + s.remainingAmount);
-    final double totalSilver = silver.fold<double>(0, (sum, s) => sum + s.remainingAmount);
+    final String mainCurrency = controller.state.mainCurrency.trim().isEmpty
+        ? 'EGP'
+        : controller.state.mainCurrency.trim();
+
+    final NisabTotals savingsTotals = ZakatEngineService.computeNisabTotals(
+      savings: savings,
+      marketData: market,
+    );
+
+    final double totalCash = ZakatEngineService.convertFromEgp(
+      savingsTotals.totalCashEgp,
+      mainCurrency,
+      market,
+    );
+    final double totalGold = savingsTotals.totalGold24k;
+    final double totalSilver = savingsTotals.totalSilverGrams;
 
     final double totalInvestmentEgp = ZakatEngineService.calculateTotalInvestmentsEgp(
       investments: investments,
       marketData: market,
     );
+    final double totalInvestment = ZakatEngineService.convertFromEgp(
+      totalInvestmentEgp,
+      mainCurrency,
+      market,
+    );
+
     final double totalInvestmentNetEgp =
         investments.fold<double>(0, (double sum, InvestmentAsset asset) {
       final double share = (asset.ownershipSharePct / 100).clamp(0, 1);
@@ -48,8 +67,18 @@ class AssetsScreen extends StatelessWidget {
           ZakatEngineService.convertToEgp(asset.loanBalance, asset.currency, market);
       return sum + (gross - liability);
     });
+    final double totalInvestmentNet = ZakatEngineService.convertFromEgp(
+      totalInvestmentNetEgp,
+      mainCurrency,
+      market,
+    );
 
     final bool hasAnyAssets = savings.isNotEmpty || investments.isNotEmpty;
+
+    String formatValue(double val) {
+      if (mainCurrency == 'EGP') return 'E£ ${val.toStringAsFixed(2)}';
+      return '$mainCurrency ${val.toStringAsFixed(2)}';
+    }
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -63,7 +92,7 @@ class AssetsScreen extends StatelessWidget {
               children: <Widget>[
                 SectionHeader(title: context.l10n.tr('totals'), bottomSpacing: 8),
                 MetricTile(
-                    label: context.l10n.tr('total_cash'), value: totalCash.toStringAsFixed(2)),
+                    label: context.l10n.tr('total_cash'), value: formatValue(totalCash)),
                 const SizedBox(height: 8),
                 MetricTile(
                   label: context.l10n.tr('total_gold_grams'),
@@ -76,13 +105,13 @@ class AssetsScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 MetricTile(
-                  label: context.l10n.tr('total_investment_value_egp'),
-                  value: totalInvestmentEgp.toStringAsFixed(2),
+                  label: context.l10n.tr('total_investment_value_egp').replaceAll('(EGP)', '').replaceAll('EGP', '').trim(),
+                  value: formatValue(totalInvestment),
                 ),
                 const SizedBox(height: 8),
                 MetricTile(
-                  label: context.l10n.tr('total_investment_net_egp'),
-                  value: totalInvestmentNetEgp.toStringAsFixed(2),
+                  label: context.l10n.tr('total_investment_net_egp').replaceAll('(EGP)', '').replaceAll('EGP', '').trim(),
+                  value: formatValue(totalInvestmentNet),
                 ),
               ],
             ),
@@ -181,36 +210,89 @@ class AssetsScreen extends StatelessWidget {
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ...list.map(
-              (InvestmentAsset asset) => ListTile(
-                key: Key('investmentItem_${asset.id}'),
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => AddInvestmentScreen(initialInvestment: asset),
+              (InvestmentAsset asset) => Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  ListTile(
+                    key: Key('investmentItem_${asset.id}'),
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => AddInvestmentScreen(initialInvestment: asset),
+                        ),
+                      );
+                    },
+                    contentPadding: const EdgeInsets.symmetric(vertical: 2),
+                    title: Text(
+                      asset.location.isEmpty
+                          ? (ZakatEngineService.isCompanyInvestmentType(asset.investmentType)
+                              ? context.l10n.tr('company_shares')
+                              : context.l10n.tr('property'))
+                          : asset.location,
                     ),
-                  );
-                },
-                contentPadding: const EdgeInsets.symmetric(vertical: 2),
-                title: Text(
-                  asset.location.isEmpty
-                      ? (ZakatEngineService.isCompanyInvestmentType(asset.investmentType)
-                          ? context.l10n.tr('company_shares')
-                          : context.l10n.tr('property'))
-                      : asset.location,
-                ),
-                subtitle: Text('${asset.valuationDate} • ${asset.currency}'),
-                trailing: Wrap(
-                  spacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: <Widget>[
-                    Text(asset.marketValue.toStringAsFixed(2)),
-                    IconButton(
-                      tooltip: context.l10n.tr('delete_investment'),
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: () => _confirmDeleteInvestment(context, asset),
+                    subtitle: Text('${asset.valuationDate} • ${asset.currency}'),
+                    trailing: Wrap(
+                      spacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: <Widget>[
+                        Text(asset.marketValue.toStringAsFixed(2)),
+                        IconButton(
+                          tooltip: context.l10n.tr('delete_investment'),
+                          icon: const Icon(Icons.delete_outline),
+                          onPressed: () => _confirmDeleteInvestment(context, asset),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (asset.ownershipType == 'installment' &&
+                      asset.installmentPlan.isNotEmpty) ...<Widget>[
+                    const Divider(height: 1),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 6, 8, 10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            context.l10n.tr('installments'),
+                            style: Theme.of(context).textTheme.titleSmall,
+                          ),
+                          const SizedBox(height: 6),
+                          ...asset.installmentPlan.asMap().entries.map((entry) {
+                            final int index = entry.key;
+                            final Map<String, dynamic> item = entry.value;
+                            final bool isPaid = item['isPaid'] == true;
+                            final String date = (item['date'] ?? '').toString();
+                            final double amount = (item['amount'] as num?)?.toDouble() ?? 0;
+                            final String currency = (item['currency'] ?? asset.currency).toString();
+                            return ListTile(
+                              key: Key('installment_${asset.id}_$index'),
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              title: Text('$date • ${amount.toStringAsFixed(2)} $currency'),
+                              subtitle: Text(isPaid
+                                  ? context.l10n.tr('paid')
+                                  : context.l10n.tr('not_paid')),
+                              trailing: TextButton(
+                                key: Key('toggleInstallment_${asset.id}_$index'),
+                                onPressed: () => _toggleInstallmentPaid(
+                                  context,
+                                  asset: asset,
+                                  installmentIndex: index,
+                                  isPaid: isPaid,
+                                ),
+                                child: Text(
+                                  isPaid
+                                      ? context.l10n.tr('undo_paid')
+                                      : context.l10n.tr('mark_paid'),
+                                ),
+                              ),
+                            );
+                          }),
+                        ],
+                      ),
                     ),
                   ],
-                ),
+                ],
               ),
             ),
           ],
@@ -275,5 +357,57 @@ class AssetsScreen extends StatelessWidget {
     if (confirmed == true && context.mounted) {
       await context.read<AppStateController>().deleteInvestment(asset.id);
     }
+  }
+
+  Future<void> _toggleInstallmentPaid(
+    BuildContext context, {
+    required InvestmentAsset asset,
+    required int installmentIndex,
+    required bool isPaid,
+  }) async {
+    String category = '';
+    if (!isPaid) {
+      final List<String> expenseCategories =
+          context.read<AppStateController>().state.categories.expense;
+      category = await _pickInstallmentCategory(context, expenseCategories) ?? '';
+      if (category.isEmpty) return;
+    }
+    if (!context.mounted) return;
+    await context.read<AppStateController>().toggleInstallmentPaid(
+          assetId: asset.id,
+          installmentIndex: installmentIndex,
+          paymentCategory: category,
+        );
+  }
+
+  Future<String?> _pickInstallmentCategory(
+    BuildContext context,
+    List<String> categories,
+  ) async {
+    if (categories.isEmpty) return 'Other Expense';
+    String selected = categories.first;
+    return showDialog<String>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: Text(context.l10n.tr('select_payment_category')),
+        content: DropdownButtonFormField<String>(
+          initialValue: selected,
+          items: categories
+              .map((String c) => DropdownMenuItem<String>(value: c, child: Text(c)))
+              .toList(growable: false),
+          onChanged: (String? v) => selected = v ?? selected,
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(context.l10n.tr('cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(selected),
+            child: Text(context.l10n.tr('save')),
+          ),
+        ],
+      ),
+    );
   }
 }

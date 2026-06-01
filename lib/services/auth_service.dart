@@ -19,6 +19,7 @@ class GoogleAuthService implements AuthService {
             GoogleSignIn(
               clientId: _iosClientId.trim().isEmpty ? null : _iosClientId,
               scopes: const <String>[
+                'https://www.googleapis.com/auth/drive.appdata',
                 'https://www.googleapis.com/auth/drive.file',
                 'profile',
                 'email',

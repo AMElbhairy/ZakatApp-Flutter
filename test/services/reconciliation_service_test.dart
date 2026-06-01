@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zakatapp_flutter/core/services/zakat_engine.dart';
 import 'package:zakatapp_flutter/models/app_state.dart';
 import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
 import 'package:zakatapp_flutter/services/reconciliation_service.dart';
@@ -169,5 +170,183 @@ void main() {
     final before = state.savings.first.remainingAmount;
     final after = service.reconcileExpensesWithSavings(state).state.savings.first.remainingAmount;
     expect(after, lessThan(before));
+  });
+
+  test('mark installment paid creates transaction and reduces liability', () {
+    final AppStateModel base = AppStateDefaults.create();
+    final AppStateModel state = AppStateModel.fromJson(<String, dynamic>{
+      ...base.toJson(),
+      'investments': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'id': 'inv1',
+          'investmentType': 'real_estate',
+          'assetSubtype': 'property',
+          'ownershipType': 'installment',
+          'valuationMode': 'manual',
+          'currency': 'EGP',
+          'originalPrice': 1000,
+          'totalInterest': 0,
+          'totalPayable': 1000,
+          'paidAmount': 0,
+          'remainingAmount': 1000,
+          'installmentPlan': <Map<String, dynamic>>[
+            <String, dynamic>{'date': '2026-01-01', 'amount': 200, 'currency': 'EGP', 'isPaid': false},
+          ],
+          'valuationDate': '2026-01-01',
+          'marketValue': 1000,
+          'marketValueDate': '2026-01-01',
+          'valuationSource': 'manual',
+          'loanBalance': 1000,
+          'loanAsOfDate': '2026-01-01',
+          'paidAmountToDate': 0,
+          'ownershipSharePct': 100,
+          'country': '',
+          'location': 'Test',
+          'inflationRateAnnual': 0,
+          'estimatedCurrentValue': 1000,
+          'description': '',
+          'noZakat': false,
+          'createdAt': '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    });
+
+    final out = service.toggleInstallmentPaid(
+      input: state,
+      assetId: 'inv1',
+      installmentIndex: 0,
+      paymentCategory: 'Housing & Rent',
+      marketData: const MarketData(
+        goldPrice24kEgp: 0,
+        silverPriceEgp: 0,
+        usdToEgp: 50,
+        sarToEgp: 13,
+        ratesToEgp: <String, double>{'EGP': 1},
+      ),
+    ).state;
+
+    expect(out.transactions.where((t) => t.description.contains('Installment payment')).length, 1);
+    expect(out.investments.first.loanBalance, lessThan(1000));
+  });
+
+  test('duplicate installment payment prevented via toggle', () {
+    final base = AppStateDefaults.create();
+    final state = AppStateModel.fromJson(<String, dynamic>{
+      ...base.toJson(),
+      'investments': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'id': 'inv1',
+          'investmentType': 'company_investment',
+          'assetSubtype': 'company',
+          'ownershipType': 'installment',
+          'valuationMode': 'manual',
+          'currency': 'EGP',
+          'originalPrice': 1000,
+          'totalInterest': 0,
+          'totalPayable': 1000,
+          'paidAmount': 0,
+          'remainingAmount': 1000,
+          'installmentPlan': <Map<String, dynamic>>[
+            <String, dynamic>{'date': '2026-01-01', 'amount': 200, 'currency': 'EGP', 'isPaid': false},
+          ],
+          'valuationDate': '2026-01-01',
+          'marketValue': 1000,
+          'marketValueDate': '2026-01-01',
+          'valuationSource': 'manual',
+          'loanBalance': 1000,
+          'loanAsOfDate': '2026-01-01',
+          'paidAmountToDate': 0,
+          'ownershipSharePct': 100,
+          'country': '',
+          'location': 'Test',
+          'inflationRateAnnual': 0,
+          'estimatedCurrentValue': 1000,
+          'description': '',
+          'noZakat': false,
+          'createdAt': '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    });
+    final market = const MarketData(
+      goldPrice24kEgp: 0,
+      silverPriceEgp: 0,
+      usdToEgp: 50,
+      sarToEgp: 13,
+      ratesToEgp: <String, double>{'EGP': 1},
+    );
+
+    final once = service.toggleInstallmentPaid(
+      input: state,
+      assetId: 'inv1',
+      installmentIndex: 0,
+      paymentCategory: 'Housing & Rent',
+      marketData: market,
+    ).state;
+    final twice = service.toggleInstallmentPaid(
+      input: once,
+      assetId: 'inv1',
+      installmentIndex: 0,
+      paymentCategory: 'Housing & Rent',
+      marketData: market,
+    ).state;
+    expect(twice.transactions.where((t) => t.description.contains('Installment payment')), isEmpty);
+  });
+
+  test('mark zakat paid creates expense and duplicate prevented via toggle', () {
+    final state = AppStateDefaults.create();
+    final once = service.toggleZakatPaid(
+      input: state,
+      monthKey: '2026-06',
+      zakatAmountMainCurrency: 500,
+      mainCurrency: 'EGP',
+      paymentDate: '2026-06-01',
+    ).state;
+    expect(once.transactions.where((t) => t.category == 'Zakat').length, 1);
+    expect(once.zakatPaidMonths, contains('2026-06'));
+
+    final twice = service.toggleZakatPaid(
+      input: once,
+      monthKey: '2026-06',
+      zakatAmountMainCurrency: 500,
+      mainCurrency: 'EGP',
+      paymentDate: '2026-06-01',
+    ).state;
+    expect(twice.transactions.where((t) => t.category == 'Zakat'), isEmpty);
+    expect(twice.zakatPaidMonths, isNot(contains('2026-06')));
+  });
+
+  test('currency exchange creates linked pair and moves balances', () {
+    final AppStateModel base = AppStateDefaults.create();
+    final AppStateModel state = AppStateModel.fromJson(<String, dynamic>{
+      ...base.toJson(),
+      'transactions': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'id': 'i1',
+          'type': 'income',
+          'date': '2026-01-01',
+          'amount': 100,
+          'currency': 'USD',
+          'category': 'Salary',
+          'description': '',
+        },
+      ],
+    });
+
+    final out = service.executeCurrencyExchange(
+      input: state,
+      date: '2026-06-01',
+      sourceType: 'income',
+      sourceCurrency: 'USD',
+      targetCurrency: 'EGP',
+      sourceAmount: 40,
+      targetAmount: 2000,
+    ).state;
+
+    final expense = out.transactions.firstWhere((t) => t.type == 'expense');
+    final income = out.transactions.firstWhere((t) => t.type == 'income' && t.id != 'i1');
+    expect(expense.exchangePairId, isNotEmpty);
+    expect(income.exchangePairId, expense.exchangePairId);
+    expect(expense.amount, 40);
+    expect(income.amount, 2000);
   });
 }

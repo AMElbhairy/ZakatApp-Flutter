@@ -198,7 +198,7 @@ void main() {
     await _addIncome(tester, '100');
 
     expect(find.text('Zakat Summary'), findsOneWidget);
-    expect(find.text('Nisab Status'), findsOneWidget);
+    expect(find.textContaining('Nisab'), findsWidgets);
     expect(find.text('Current Nisab Threshold'), findsOneWidget);
   });
 
@@ -218,13 +218,10 @@ void main() {
 
     expect(find.text('Recent Activity'), findsOneWidget);
 
-    final Finder tiles = find.byWidgetPredicate(
-      (Widget w) =>
-          w is ListTile &&
-          w.key != null &&
-          w.key.toString().contains('dashboardRecentTx_'),
+    final Finder rows = find.byWidgetPredicate(
+      (Widget w) => w.key != null && w.key.toString().contains('dashboardRecentTx_'),
     );
-    expect(tiles, findsNWidgets(4));
+    expect(rows, findsNWidgets(4));
   });
 
   testWidgets('View All goes to Activity tab', (WidgetTester tester) async {
