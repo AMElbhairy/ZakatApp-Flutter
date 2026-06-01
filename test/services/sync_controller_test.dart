@@ -2,7 +2,6 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:zakatapp_flutter/models/app_state.dart';
 import 'package:zakatapp_flutter/models/user_profile.dart';
 import 'package:zakatapp_flutter/services/google_sheets_service.dart';
 import 'package:zakatapp_flutter/services/local_storage_service.dart';
@@ -83,7 +82,7 @@ void main() {
   test('signed out sync cannot create spreadsheet', () async {
     final ok = await syncController.createAndConnectSpreadsheet();
     expect(ok, isFalse);
-    expect(syncController.status.status, 'failed' ,'should fail when signed out');
+    expect(syncController.status.status, 'failed', reason: 'should fail when signed out');
   });
 
   test('create spreadsheet updates sync status when signed in', () async {
@@ -149,39 +148,59 @@ void main() {
     final Map<String, String>? created = await fakeSheets.createSpreadsheet('token');
     final String sid = created!['id']!;
     // cloud has different data
-    fakeSheets.store[sid] = <String, dynamic>{'transactions': <dynamic>[<String, dynamic>{'id': 'remote'}]};
+    fakeSheets.store[sid] = <String, dynamic>{
+      'transactions': <dynamic>[
+        <String, dynamic>{
+          'id': 'remote',
+          'type': 'expense',
+          'date': '2024-01-01',
+          'amount': 100.0,
+          'currency': 'EGP',
+          'category': 'Test',
+          'description': '',
+          'createdAt': DateTime.now().toIso8601String(),
+          'rolledOver': false,
+          'rolledAmount': 0.0,
+        }
+      ]
+    };
     // local has its existing state (likely empty)
     final ok = await syncController.connectSpreadsheetById(sid);
     expect(ok, isTrue);
-    expect(syncController.status.status, anyOf(['conflict','synced']));
+    // Since local is empty, it should hydrate and sync, not conflict.
+    expect(syncController.status.status, 'synced');
   });
 
   test('failed pull does not wipe local data', () async {
     final profile = UserProfile(id: '1', email: 'a@b', name: 'A', accessToken: 'token');
+    final localStorage = LocalStorageService();
     authController = AuthController(authService: _FakeAuthService(profile), localStorage: LocalStorageService());
     await authController.load();
     // make fakeSheets return null for reads
     final badSheets = _FakeSheets();
     badSheets.store.clear();
-    final sc = SyncController(appStateController: appStateController, authController: authController, googleSheetsService: badSheets);
-    sc.status; // initialize
-    // connect to non-existent sheet id
-    sc.status.copyWith(spreadsheetId: 'nope');
+    final initialStatus = const SyncStatus(status: 'synced', spreadsheetId: 'nope');
+    SharedPreferences.setMockInitialValues(<String, Object>{'sync_status_v1': jsonEncode(initialStatus.toJson())});
+    final sc = SyncController(appStateController: appStateController, authController: authController, googleSheetsService: badSheets, storage: localStorage);
+    await Future.delayed(Duration.zero);
+
     final before = appStateController.state.toJson();
     final pulled = await sc.pullFromCloud();
     expect(pulled, isFalse);
     final after = appStateController.state.toJson();
     expect(jsonEncode(before), jsonEncode(after));
   });
-
   test('failed push keeps local unchanged', () async {
     final profile = UserProfile(id: '1', email: 'a@b', name: 'A', accessToken: 'token');
+    final localStorage = LocalStorageService();
     authController = AuthController(authService: _FakeAuthService(profile), localStorage: LocalStorageService());
     await authController.load();
     final badSheets = _FakeSheets();
-    final sc = SyncController(appStateController: appStateController, authController: authController, googleSheetsService: badSheets);
-    // set a fake spreadsheet id but do not create it in store so writes fail
-    sc.status.copyWith(spreadsheetId: 'missing', cloudHydrated: true);
+    final initialStatus = const SyncStatus(status: 'synced', spreadsheetId: 'missing', cloudHydrated: true);
+    SharedPreferences.setMockInitialValues(<String, Object>{'sync_status_v1': jsonEncode(initialStatus.toJson())});
+    final sc = SyncController(appStateController: appStateController, authController: authController, googleSheetsService: badSheets, storage: localStorage);
+    await Future.delayed(Duration.zero);
+
     final before = appStateController.state.toJson();
     final pushed = await sc.pushToCloud();
     expect(pushed, isFalse);
