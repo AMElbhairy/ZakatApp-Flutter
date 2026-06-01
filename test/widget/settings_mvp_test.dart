@@ -132,7 +132,7 @@ void main() {
     expect(find.text('Settings'), findsOneWidget);
     expect(find.byKey(const Key('settingsMainCurrencyField')), findsOneWidget);
     expect(find.byKey(const Key('settingsZakatMethodField')), findsOneWidget);
-    await tester.drag(find.byType(ListView).first, const Offset(0, -1000));
+    await tester.drag(find.byType(SingleChildScrollView).first, const Offset(0, -1000));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Appearance'));
     await tester.pumpAndSettle();
@@ -247,7 +247,7 @@ void main() {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    await tester.drag(find.byType(ListView).first, const Offset(0, -800));
+    await tester.drag(find.byType(SingleChildScrollView).first, const Offset(0, -800));
     await tester.pumpAndSettle();
     await _expandManualOverride(tester);
 
@@ -269,7 +269,7 @@ void main() {
 
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
-    await tester.drag(find.byType(ListView).first, const Offset(0, -800));
+    await tester.drag(find.byType(SingleChildScrollView).first, const Offset(0, -800));
     await tester.pumpAndSettle();
     await _expandManualOverride(tester);
 
@@ -331,7 +331,7 @@ void main() {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    await tester.drag(find.byType(ListView).first, const Offset(0, -800));
+    await tester.drag(find.byType(SingleChildScrollView).first, const Offset(0, -800));
     await tester.pumpAndSettle();
 
     expect(find.textContaining('Last updated:'), findsOneWidget);
@@ -343,12 +343,56 @@ void main() {
     await tester.pumpWidget(_buildAppWithService(_FakeMarketDataApiService()));
     await tester.pumpAndSettle();
 
-    await tester.drag(find.byType(ListView).first, const Offset(0, -900));
+    await tester.drag(find.byType(SingleChildScrollView).first, const Offset(0, -900));
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const Key('refreshMarketDataButton')));
     await tester.pumpAndSettle();
 
     expect(find.text('Market data refreshed.'), findsOneWidget);
+  });
+
+  testWidgets('category add persists to app state', (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    await tester.pumpWidget(_buildApp());
+    await tester.pumpAndSettle();
+
+    await tester.drag(find.byType(SingleChildScrollView).first, const Offset(0, -350));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('settingsCategoriesTile')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('addCategory_income')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last, 'Consulting');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Consulting'), findsOneWidget);
+  });
+
+  testWidgets('delete all data cancel does nothing', (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    await tester.pumpWidget(_buildApp());
+    await tester.pumpAndSettle();
+
+    await tester.drag(find.byType(SingleChildScrollView).first, const Offset(0, -1700));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('settingsSecurityTile')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('deleteAllDataButton')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(find.text('Settings'), findsOneWidget);
+  });
+
+  testWidgets('backup section shows Drive not available label',
+      (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    await tester.pumpWidget(_buildApp());
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(SingleChildScrollView).first, const Offset(0, -1300));
+    await tester.pumpAndSettle();
+    expect(find.text('Google Drive backup not available yet.'), findsOneWidget);
   });
 }

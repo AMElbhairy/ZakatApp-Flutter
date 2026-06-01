@@ -170,10 +170,10 @@ void main() {
 
     await openAccountTab(tester);
     await tester.pumpAndSettle();
-    await tester.drag(find.byType(ListView).first, const Offset(0, -900));
+    await tester.drag(find.byType(SingleChildScrollView).first, const Offset(0, -900));
     await tester.pumpAndSettle();
 
-    expect(find.byType(ListView), findsWidgets);
+    expect(find.byType(SingleChildScrollView), findsWidgets);
     expect(find.text('بيانات السوق'), findsOneWidget);
     expect(find.text('المظهر'), findsOneWidget);
     expect(find.text('Backup & Sync'), findsNothing);

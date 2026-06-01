@@ -161,6 +161,110 @@ class AppStateController extends ChangeNotifier {
     ));
   }
 
+  Future<void> updateRecurringTransaction(RecurringTransaction recurring) async {
+    final List<RecurringTransaction> next = _state.recurringTransactions
+        .map((RecurringTransaction entry) =>
+            entry.id == recurring.id ? recurring : entry)
+        .toList(growable: false);
+    await updateState(_state.copyWith(recurringTransactions: next));
+  }
+
+  Future<void> deleteRecurringTransaction(String recurringId) async {
+    final List<RecurringTransaction> next = _state.recurringTransactions
+        .where((RecurringTransaction entry) => entry.id != recurringId)
+        .toList(growable: false);
+    await updateState(_state.copyWith(recurringTransactions: next));
+  }
+
+  Future<void> addCategory({
+    required String type,
+    required String name,
+  }) async {
+    final String clean = name.trim();
+    if (clean.isEmpty) return;
+    final bool income = type == 'income';
+    final List<String> source =
+        income ? _state.categories.income : _state.categories.expense;
+    if (source.any((String c) => c.toLowerCase() == clean.toLowerCase())) return;
+    final AppCategories nextCategories = AppCategories(
+      income: income ? <String>[...source, clean] : _state.categories.income,
+      expense: income ? _state.categories.expense : <String>[...source, clean],
+    );
+    await updateState(_state.copyWith(categories: nextCategories));
+  }
+
+  Future<void> renameCategory({
+    required String type,
+    required String from,
+    required String to,
+  }) async {
+    final String cleanFrom = from.trim();
+    final String cleanTo = to.trim();
+    if (cleanFrom.isEmpty || cleanTo.isEmpty || cleanFrom == cleanTo) return;
+    final bool income = type == 'income';
+    final List<String> source =
+        income ? _state.categories.income : _state.categories.expense;
+    if (!source.contains(cleanFrom)) return;
+    if (source.any((String c) => c.toLowerCase() == cleanTo.toLowerCase())) return;
+    final List<String> updatedCategories = source
+        .map((String c) => c == cleanFrom ? cleanTo : c)
+        .toList(growable: false);
+    final List<Transaction> updatedTransactions = _state.transactions
+        .map(
+          (Transaction tx) => tx.category == cleanFrom
+              ? Transaction(
+                  id: tx.id,
+                  type: tx.type,
+                  date: tx.date,
+                  amount: tx.amount,
+                  currency: tx.currency,
+                  category: cleanTo,
+                  description: tx.description,
+                  createdAt: tx.createdAt,
+                  rolledOver: tx.rolledOver,
+                  rolledAmount: tx.rolledAmount,
+                  sourceIncomeId: tx.sourceIncomeId,
+                  exchangePairId: tx.exchangePairId,
+                  exchangeSourceIncomeId: tx.exchangeSourceIncomeId,
+                  remainingAmount: tx.remainingAmount,
+                )
+              : tx,
+        )
+        .toList(growable: false);
+    final AppCategories nextCategories = AppCategories(
+      income: income ? updatedCategories : _state.categories.income,
+      expense: income ? _state.categories.expense : updatedCategories,
+    );
+    await updateState(
+      _state.copyWith(
+        categories: nextCategories,
+        transactions: updatedTransactions,
+      ),
+    );
+  }
+
+  Future<bool> deleteCategory({
+    required String type,
+    required String name,
+  }) async {
+    final String clean = name.trim();
+    final bool income = type == 'income';
+    final bool inUse = _state.transactions.any((Transaction tx) =>
+        tx.category == clean && (income ? tx.type == 'income' : tx.type == 'expense'));
+    if (inUse) return false;
+    final List<String> source =
+        income ? _state.categories.income : _state.categories.expense;
+    final List<String> updated = source
+        .where((String c) => c != clean)
+        .toList(growable: false);
+    final AppCategories nextCategories = AppCategories(
+      income: income ? updated : _state.categories.income,
+      expense: income ? _state.categories.expense : updated,
+    );
+    await updateState(_state.copyWith(categories: nextCategories));
+    return true;
+  }
+
   Future<void> addFinancialPlan(FinancialPlan plan) async {
     await updateState(_state.copyWith(
       financialPlans: <FinancialPlan>[..._state.financialPlans, plan],

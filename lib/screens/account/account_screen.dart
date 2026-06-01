@@ -3,7 +3,9 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/i18n/app_localizations.dart';
+import '../../models/app_state.dart';
 import '../../models/market_snapshot.dart';
+import '../../models/recurring_transaction.dart';
 import '../../services/app_state_controller.dart';
 import '../../services/auth_controller.dart';
 import '../../services/backup_restore_card.dart';
@@ -37,6 +39,10 @@ class _AccountScreenState extends State<AccountScreen> {
   bool _isRefreshingMarket = false;
   String _refreshMarketMessage = '';
   bool _manualOverrideExpanded = false;
+  bool _categoriesExpanded = false;
+  bool _recurringExpanded = false;
+  bool _securityExpanded = false;
+  bool _aiExpanded = false;
 
   @override
   void dispose() {
@@ -68,9 +74,11 @@ class _AccountScreenState extends State<AccountScreen> {
     final MarketSnapshot snapshot = controller.currentMarketSnapshot;
     _syncMarketControllers(snapshot);
 
-    return ListView(
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
-      children: <Widget>[
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
         Text(context.l10n.tr('settings'),
             style: Theme.of(context).textTheme.headlineSmall),
         const SizedBox(height: 16),
@@ -131,6 +139,8 @@ class _AccountScreenState extends State<AccountScreen> {
                 ),
                 Text(authController.currentUser?.email ?? '-'),
                 const SizedBox(height: 10),
+                Text(_syncHealthSummary(state.syncHealth)),
+                const SizedBox(height: 10),
                 FilledButton.tonalIcon(
                   key: const Key('googleSignOutButton'),
                   onPressed: authController.isLoading
@@ -140,6 +150,57 @@ class _AccountScreenState extends State<AccountScreen> {
                   label: Text(context.l10n.tr('sign_out')),
                 ),
               ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        _SectionCard(
+          title: context.l10n.tr('categories_section'),
+          child: ExpansionTile(
+            key: const Key('settingsCategoriesTile'),
+            title: Text(context.l10n.tr('categories_manage')),
+            initiallyExpanded: _categoriesExpanded,
+            onExpansionChanged: (bool v) => setState(() => _categoriesExpanded = v),
+            children: <Widget>[
+              _buildCategoryBlock(context, type: 'income'),
+              const SizedBox(height: 8),
+              _buildCategoryBlock(context, type: 'expense'),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        _SectionCard(
+          title: context.l10n.tr('recurring_section'),
+          child: ExpansionTile(
+            key: const Key('settingsRecurringTile'),
+            title: Text(context.l10n.tr('recurring_manage')),
+            initiallyExpanded: _recurringExpanded,
+            onExpansionChanged: (bool v) => setState(() => _recurringExpanded = v),
+            children: <Widget>[
+              ...state.recurringTransactions
+                  .map((RecurringTransaction item) => ListTile(
+                        dense: true,
+                        title: Text(item.name),
+                        subtitle: Text(
+                          '${item.type} • ${item.amount} ${item.currency} • ${context.l10n.tr('day_of_month')}: ${item.dayOfMonth}',
+                        ),
+                        trailing: IconButton(
+                          key: Key('deleteRecurring_${item.id}'),
+                          onPressed: () => context
+                              .read<AppStateController>()
+                              .deleteRecurringTransaction(item.id),
+                          icon: const Icon(Icons.delete_outline),
+                        ),
+                      ))
+                  ,
+              Align(
+                alignment: Alignment.centerLeft,
+                child: FilledButton(
+                  key: const Key('addRecurringButton'),
+                  onPressed: () => _showAddRecurringDialog(context),
+                  child: Text(context.l10n.tr('add_recurring')),
+                ),
+              ),
             ],
           ),
         ),
@@ -415,13 +476,59 @@ class _AccountScreenState extends State<AccountScreen> {
         ),
         const SizedBox(height: 12),
         _SectionCard(
-          title: context.l10n.tr('appearance_section'),
-          child: Text(context.l10n.tr('appearance_placeholder')),
+          title: context.l10n.tr('backup_sync_section'),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(_syncHealthSummary(state.syncHealth)),
+              const SizedBox(height: 8),
+              Text(context.l10n.tr('drive_backup_coming_soon')),
+              const SizedBox(height: 10),
+              BackupRestoreCard(controller: controller),
+            ],
+          ),
         ),
         const SizedBox(height: 12),
         _SectionCard(
-          title: context.l10n.tr('backup_sync_section'),
-          child: BackupRestoreCard(controller: controller),
+          title: context.l10n.tr('security_section'),
+          child: ExpansionTile(
+            key: const Key('settingsSecurityTile'),
+            title: Text(context.l10n.tr('danger_zone')),
+            initiallyExpanded: _securityExpanded,
+            onExpansionChanged: (bool v) => setState(() => _securityExpanded = v),
+            children: <Widget>[
+              Align(
+                alignment: Alignment.centerLeft,
+                child: FilledButton(
+                  key: const Key('deleteAllDataButton'),
+                  style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                  onPressed: () => _confirmDeleteAllData(context),
+                  child: Text(context.l10n.tr('delete_all_data')),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        _SectionCard(
+          title: context.l10n.tr('ai_section'),
+          child: ExpansionTile(
+            key: const Key('settingsAiTile'),
+            title: const Text('Gemini'),
+            initiallyExpanded: _aiExpanded,
+            onExpansionChanged: (bool v) => setState(() => _aiExpanded = v),
+            children: <Widget>[
+              ListTile(
+                title: Text(context.l10n.tr('coming_soon')),
+                subtitle: Text(context.l10n.tr('ai_coming_soon')),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        _SectionCard(
+          title: context.l10n.tr('appearance_section'),
+          child: Text(context.l10n.tr('appearance_placeholder')),
         ),
         const SizedBox(height: 12),
         _SectionCard(
@@ -437,8 +544,219 @@ class _AccountScreenState extends State<AccountScreen> {
             ],
           ),
         ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCategoryBlock(BuildContext context, {required String type}) {
+    final AppStateController controller = context.read<AppStateController>();
+    final List<String> categories = type == 'income'
+        ? controller.state.categories.income
+        : controller.state.categories.expense;
+    final bool income = type == 'income';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          income ? context.l10n.tr('income_categories') : context.l10n.tr('expense_categories'),
+          style: Theme.of(context).textTheme.titleSmall,
+        ),
+        ...categories.map(
+          (String category) => ListTile(
+            dense: true,
+            title: Text(category),
+            trailing: Wrap(
+              spacing: 8,
+              children: <Widget>[
+                TextButton(
+                  onPressed: () => _promptCategoryRename(context, type, category),
+                  child: Text(context.l10n.tr('edit')),
+                ),
+                TextButton(
+                  onPressed: () => _deleteCategory(context, type, category),
+                  child: Text(context.l10n.tr('delete')),
+                ),
+              ],
+            ),
+          ),
+        ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton(
+            key: Key('addCategory_$type'),
+            onPressed: () => _promptAddCategory(context, type),
+            child: Text(context.l10n.tr('add')),
+          ),
+        ),
       ],
     );
+  }
+
+  Future<void> _promptAddCategory(BuildContext context, String type) async {
+    final TextEditingController text = TextEditingController();
+    final String? value = await showDialog<String>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: Text(context.l10n.tr('add_category')),
+        content: TextField(controller: text),
+        actions: <Widget>[
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(context.l10n.tr('cancel'))),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, text.text.trim()),
+            child: Text(context.l10n.tr('save')),
+          ),
+        ],
+      ),
+    );
+    if (value == null || value.trim().isEmpty || !context.mounted) return;
+    await context.read<AppStateController>().addCategory(type: type, name: value.trim());
+  }
+
+  Future<void> _promptCategoryRename(
+    BuildContext context,
+    String type,
+    String currentName,
+  ) async {
+    final TextEditingController text = TextEditingController(text: currentName);
+    final String? value = await showDialog<String>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: Text(context.l10n.tr('edit')),
+        content: TextField(controller: text),
+        actions: <Widget>[
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(context.l10n.tr('cancel'))),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, text.text.trim()),
+            child: Text(context.l10n.tr('save')),
+          ),
+        ],
+      ),
+    );
+    if (value == null || value.trim().isEmpty || !context.mounted) return;
+    await context.read<AppStateController>().renameCategory(
+          type: type,
+          from: currentName,
+          to: value.trim(),
+        );
+  }
+
+  Future<void> _deleteCategory(BuildContext context, String type, String name) async {
+    final bool deleted = await context.read<AppStateController>().deleteCategory(
+          type: type,
+          name: name,
+        );
+    if (!deleted && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.tr('category_in_use'))),
+      );
+    }
+  }
+
+  Future<void> _showAddRecurringDialog(BuildContext context) async {
+    final TextEditingController name = TextEditingController();
+    final TextEditingController amount = TextEditingController();
+    final TextEditingController day = TextEditingController(text: '1');
+    String type = 'income';
+    String currency = context.read<AppStateController>().state.defaultEntryCurrency;
+    final String? result = await showDialog<String>(
+      context: context,
+      builder: (BuildContext dialogContext) => StatefulBuilder(
+        builder: (BuildContext dialogContext, void Function(void Function()) setDialogState) {
+          return AlertDialog(
+            title: Text(context.l10n.tr('add_recurring')),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  TextField(controller: name, decoration: InputDecoration(labelText: context.l10n.tr('name'))),
+                  TextField(controller: amount, decoration: InputDecoration(labelText: context.l10n.tr('amount'))),
+                  TextField(controller: day, decoration: InputDecoration(labelText: context.l10n.tr('day_of_month'))),
+                  DropdownButton<String>(
+                    value: type,
+                    items: const <DropdownMenuItem<String>>[
+                      DropdownMenuItem<String>(value: 'income', child: Text('income')),
+                      DropdownMenuItem<String>(value: 'expense', child: Text('expense')),
+                    ],
+                    onChanged: (String? v) => setDialogState(() => type = v ?? type),
+                  ),
+                  DropdownButton<String>(
+                    value: currency.isEmpty ? 'EGP' : currency,
+                    items: _supportedCurrencies
+                        .map((String c) => DropdownMenuItem<String>(value: c, child: Text(c)))
+                        .toList(growable: false),
+                    onChanged: (String? v) => setDialogState(() => currency = v ?? currency),
+                  ),
+                ],
+              ),
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: Text(context.l10n.tr('cancel')),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, 'ok'),
+                child: Text(context.l10n.tr('save')),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    if (result == null || !context.mounted) return;
+    final int parsedDay = int.tryParse(day.text.trim()) ?? 1;
+    final double parsedAmount = double.tryParse(amount.text.trim()) ?? 0;
+    if (name.text.trim().isEmpty || parsedAmount <= 0) return;
+    final List<String> categories = type == 'income'
+        ? context.read<AppStateController>().state.categories.income
+        : context.read<AppStateController>().state.categories.expense;
+    final String category = categories.isEmpty ? '' : categories.first;
+    await context.read<AppStateController>().addRecurringTransaction(
+          RecurringTransaction(
+            id: 'rt-${DateTime.now().microsecondsSinceEpoch}',
+            name: name.text.trim(),
+            type: type,
+            amount: parsedAmount,
+            currency: currency.isEmpty ? 'EGP' : currency,
+            category: category,
+            description: '',
+            dayOfMonth: parsedDay.clamp(1, 28),
+            frequency: 'monthly',
+            lastProcessed: null,
+            enabled: true,
+            skipMonth: '',
+            createdAt: DateTime.now().toUtc().toIso8601String(),
+          ),
+        );
+  }
+
+  Future<void> _confirmDeleteAllData(BuildContext context) async {
+    final bool? ok = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: Text(context.l10n.tr('delete_all_data')),
+        content: Text(context.l10n.tr('delete_all_confirm')),
+        actions: <Widget>[
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(context.l10n.tr('cancel'))),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(context.l10n.tr('delete')),
+          ),
+        ],
+      ),
+    );
+    if (ok == true && context.mounted) {
+      await context.read<AppStateController>().clearLocalData();
+    }
+  }
+
+  String _syncHealthSummary(SyncHealth health) {
+    final String success = health.lastSuccessAt.isEmpty ? 'None' : health.lastSuccessAt;
+    final String failure = health.lastFailureAt.isEmpty ? 'None' : health.lastFailureAt;
+    final String error = health.lastError.isEmpty ? 'None' : health.lastError;
+    return 'Last success: $success | Last failure: $failure | Pending writes: ${health.pendingWrites} | Last error: $error';
   }
 
   void _syncMarketControllers(MarketSnapshot snapshot) {
