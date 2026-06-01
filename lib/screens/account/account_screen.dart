@@ -313,7 +313,7 @@ class _AccountScreenState extends State<AccountScreen> {
                 onExpansionChanged: (bool expanded) {
                   setState(() => _manualOverrideExpanded = expanded);
                 },
-                childrenPadding: const EdgeInsets.only(bottom: 12),
+                childrenPadding: const EdgeInsets.symmetric(horizontal: 2, vertical: 12),
                 children: <Widget>[
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 2),
