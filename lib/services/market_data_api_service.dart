@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart' show debugPrint;
 
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -16,10 +17,9 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
   }
   // Log whether GOLD_API_KEY was provided at startup (do not print the key)
   // This helps debugging when running from Xcode where dart-define may be missing.
-  // ignore: avoid_print
   void _logApiKeyPresence() {
     try {
-      print('MarketDataApiService: GOLD_API_KEY configured: ${_goldApiKey.trim().isNotEmpty}');
+      debugPrint('MarketDataApiService: GOLD_API_KEY configured: ${_goldApiKey.trim().isNotEmpty}');
     } catch (_) {}
   }
 
@@ -36,16 +36,14 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
   Future<void> _cachePriceUsd(String symbol, double price) async {
     await _initPrefs();
     await _prefs?.setDouble('cached_price_usd_$symbol', price);
-    // ignore: avoid_print
-    print('MarketDataApiService: cached $symbol price USD $price');
+    debugPrint('MarketDataApiService: cached $symbol price USD $price');
   }
 
   Future<double?> _getCachedPriceUsd(String symbol) async {
     await _initPrefs();
     final double? cached = _prefs?.getDouble('cached_price_usd_$symbol');
-    if (cached != null && cached > 0) {
-      // ignore: avoid_print
-      print('MarketDataApiService: using cached $symbol price USD $cached');
+      if (cached != null && cached > 0) {
+      debugPrint('MarketDataApiService: using cached $symbol price USD $cached');
       return cached;
     }
     return null;
@@ -179,9 +177,8 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
     final String? lastSuccessRaw = _prefs?.getString(lastSuccessKey);
     if (lastSuccessRaw != null && lastSuccessRaw.isNotEmpty) {
       final DateTime? lastSuccess = DateTime.tryParse(lastSuccessRaw);
-      if (lastSuccess != null && DateTime.now().difference(lastSuccess) < _metalCooldown && cached != null) {
-        // ignore: avoid_print
-        print('MarketDataApiService: using cached $symbol (recent success)');
+        if (lastSuccess != null && DateTime.now().difference(lastSuccess) < _metalCooldown && cached != null) {
+        debugPrint('MarketDataApiService: using cached $symbol (recent success)');
         return cached;
       }
     }
@@ -214,8 +211,7 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
               try {
                 await _prefs?.setString(rateLimitKey, DateTime.now().toUtc().toIso8601String());
               } catch (_) {}
-              // ignore: avoid_print
-              print('MarketDataApiService: metals.live returned 429 for $symbol — using cached/manual value');
+              debugPrint('MarketDataApiService: metals.live returned 429 for $symbol — using cached/manual value');
             }
             return null;
           }
@@ -238,8 +234,7 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
           } catch (_) {}
           return priceUsd;
         } catch (error) {
-          // ignore: avoid_print
-          print('MarketDataApiService: metals.live request failed for $symbol: $error');
+          debugPrint('MarketDataApiService: metals.live request failed for $symbol: $error');
           return null;
         }
       }
@@ -276,13 +271,11 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
           if (response.statusCode != 200) {
             if (response.statusCode == 429) {
               try {
-                await _prefs?.setString(rateLimitKey, DateTime.now().toUtc().toIso8601String());
-              } catch (_) {}
-              // ignore: avoid_print
-              print('MarketDataApiService: gold-api returned 429 for $symbol — using last saved value due to rate limit');
+                  await _prefs?.setString(rateLimitKey, DateTime.now().toUtc().toIso8601String());
+                } catch (_) {}
+                debugPrint('MarketDataApiService: gold-api returned 429 for $symbol — using last saved value due to rate limit');
             } else {
-              // ignore: avoid_print
-              print('MarketDataApiService: gold-api returned ${response.statusCode} for $symbol');
+              debugPrint('MarketDataApiService: gold-api returned ${response.statusCode} for $symbol');
             }
             return null;
           }
@@ -297,8 +290,7 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
           } catch (_) {}
           return value;
         } catch (error) {
-          // ignore: avoid_print
-          print('MarketDataApiService: gold-api request failed for $symbol: $error');
+          debugPrint('MarketDataApiService: gold-api request failed for $symbol: $error');
           return null;
         }
       }
@@ -379,8 +371,7 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
       final String body = response.body;
       return jsonDecode(body);
     } catch (error) {
-      // ignore: avoid_print
-      print('MarketDataApiService: request error ${uri.toString()}: $error');
+      debugPrint('MarketDataApiService: request error ${uri.toString()}: $error');
       return null;
     }
   }

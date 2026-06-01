@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
@@ -231,12 +230,12 @@ void main() {
   test('duplicate concurrent refresh only triggers one network call', () async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     // ensure no leftover cached values
-    final _prefs = await SharedPreferences.getInstance();
-    await _prefs.clear();
-    await _prefs.remove('cached_price_usd_XAU');
-    await _prefs.remove('last_success_metal_fetch_XAU');
-    await _prefs.remove('last_rate_limit_metalslive_XAU');
-    await _prefs.remove('last_rate_limit_goldapi_XAU');
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
+    await prefs.remove('cached_price_usd_XAU');
+    await prefs.remove('last_success_metal_fetch_XAU');
+    await prefs.remove('last_rate_limit_metalslive_XAU');
+    await prefs.remove('last_rate_limit_goldapi_XAU');
     final counting = _CountingFakeHttpClient(<String, _FakeHttpClientResponse>{
       'https://api.metals.live/v1/spot/gold': _FakeHttpClientResponse(200, jsonEncode([{'gold': 2400}])),
     });
@@ -255,8 +254,8 @@ void main() {
 
   test('metals.live success avoids gold-api call and returns correct value', () async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
-    final _prefs = await SharedPreferences.getInstance();
-    await _prefs.clear();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
     final counting = _CountingFakeHttpClient(<String, _FakeHttpClientResponse>{
       'https://api.metals.live/v1/spot/gold': _FakeHttpClientResponse(200, jsonEncode([{'gold': 2400}])),
       'https://api.gold-api.com/price/XAU': _FakeHttpClientResponse(200, jsonEncode(<String, dynamic>{'price': 9999})),
@@ -270,8 +269,8 @@ void main() {
 
   test('gold-api fallback works when metals.live fails', () async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
-    final _prefs = await SharedPreferences.getInstance();
-    await _prefs.clear();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
     final counting = _CountingFakeHttpClient(<String, _FakeHttpClientResponse>{
       'https://api.metals.live/v1/spot/gold': _FakeHttpClientResponse(500, '{}'),
       'https://api.gold-api.com/price/XAU': _FakeHttpClientResponse(200, jsonEncode(<String, dynamic>{'price': 2400})),
