@@ -9,6 +9,8 @@ import 'screens/app_shell.dart';
 import 'services/app_state_controller.dart';
 import 'services/auth_controller.dart';
 import 'services/auth_service.dart';
+import 'services/google_sheets_service.dart';
+import 'services/sync_controller.dart';
 import 'services/local_storage_service.dart';
 
 void main() {
@@ -25,6 +27,13 @@ void main() {
           create: (_) => AuthController(
             authService: GoogleAuthService(),
             localStorage: localStorage,
+          ),
+        ),
+        ChangeNotifierProvider<SyncController>(
+          create: (BuildContext ctx) => SyncController(
+            appStateController: ctx.read<AppStateController>(),
+            authController: ctx.read<AuthController>(),
+            googleSheetsService: GoogleSheetsService(),
           ),
         ),
       ],
