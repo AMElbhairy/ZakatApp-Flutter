@@ -10,17 +10,22 @@ import '../models/saving.dart';
 import '../models/transaction.dart';
 import '../repositories/app_state_repository.dart';
 import 'market_data_api_service.dart';
+import 'reconciliation_service.dart';
 
 class AppStateController extends ChangeNotifier {
   AppStateController({
     required this.repository,
     MarketDataApiService? marketDataApiService,
+    ReconciliationService? reconciliationService,
   })  : _state = AppStateDefaults.create(),
         marketDataApiService =
-            marketDataApiService ?? MarketDataApiServiceImpl();
+            marketDataApiService ?? MarketDataApiServiceImpl(),
+        reconciliationService =
+            reconciliationService ?? ReconciliationService();
 
   final AppStateRepository repository;
   final MarketDataApiService marketDataApiService;
+  final ReconciliationService reconciliationService;
   AppStateModel _state;
   Timer? _marketRefreshTimer;
   bool _marketAutoRefreshStarted = false;
@@ -41,6 +46,12 @@ class AppStateController extends ChangeNotifier {
       );
       debugPrintStack(stackTrace: stackTrace);
       _state = AppStateDefaults.create();
+    }
+    final ReconciliationResult reconciled =
+        reconciliationService.reconcileExpensesWithSavings(_state);
+    _state = reconciled.state;
+    if (reconciled.modified) {
+      await save();
     }
     notifyListeners();
   }
@@ -73,7 +84,9 @@ class AppStateController extends ChangeNotifier {
   }
 
   Future<void> updateState(AppStateModel newState) async {
-    _state = newState;
+    final ReconciliationResult reconciled =
+        reconciliationService.reconcileExpensesWithSavings(newState);
+    _state = reconciled.state;
     await save();
     notifyListeners();
   }
