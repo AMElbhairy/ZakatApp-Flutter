@@ -397,7 +397,7 @@ class DashboardScreen extends StatelessWidget {
         asset: asset,
         marketData: marketData,
       );
-      if (asset.investmentType == 'company_share') {
+      if (ZakatEngineService.isCompanyInvestmentType(asset.investmentType)) {
         company += value;
       } else {
         property += value;

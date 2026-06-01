@@ -70,6 +70,19 @@ void main() {
     expect(status.zakatDue, greaterThanOrEqualTo(0));
   });
 
+  test('investment type normalization matches old app semantics', () {
+    expect(ZakatEngineService.normaliseInvestmentType('real_estate'), 'real_estate');
+    expect(ZakatEngineService.normaliseInvestmentType('property'), 'real_estate');
+    expect(ZakatEngineService.normaliseInvestmentType('company_investment'),
+        'company_investment');
+    expect(ZakatEngineService.normaliseInvestmentType('company_share'),
+        'company_investment');
+
+    expect(ZakatEngineService.isCompanyInvestmentType('company_share'), isTrue);
+    expect(ZakatEngineService.isCompanyInvestmentType('company_investment'), isTrue);
+    expect(ZakatEngineService.isCompanyInvestmentType('real_estate'), isFalse);
+  });
+
   test('total wealth calculation', () {
     final wealth = ZakatEngineService.calculateTotalWealthEgp(
       transactions: appState.transactions,

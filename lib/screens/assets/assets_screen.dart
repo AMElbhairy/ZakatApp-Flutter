@@ -24,10 +24,12 @@ class AssetsScreen extends StatelessWidget {
     final List<Saving> gold = savings.where((s) => s.assetType == 'gold').toList();
     final List<Saving> silver = savings.where((s) => s.assetType == 'silver').toList();
 
-    final List<InvestmentAsset> properties =
-        investments.where((a) => a.investmentType == 'property').toList(growable: false);
-    final List<InvestmentAsset> companyShares =
-        investments.where((a) => a.investmentType == 'company_share').toList(growable: false);
+    final List<InvestmentAsset> properties = investments
+        .where((a) => !ZakatEngineService.isCompanyInvestmentType(a.investmentType))
+        .toList(growable: false);
+    final List<InvestmentAsset> companyShares = investments
+        .where((a) => ZakatEngineService.isCompanyInvestmentType(a.investmentType))
+        .toList(growable: false);
 
     final double totalCash = cash.fold<double>(0, (sum, s) => sum + s.remainingAmount);
     final double totalGold = gold.fold<double>(0, (sum, s) => sum + s.remainingAmount);
@@ -191,7 +193,7 @@ class AssetsScreen extends StatelessWidget {
                 contentPadding: const EdgeInsets.symmetric(vertical: 2),
                 title: Text(
                   asset.location.isEmpty
-                      ? (asset.investmentType == 'company_share'
+                      ? (ZakatEngineService.isCompanyInvestmentType(asset.investmentType)
                           ? context.l10n.tr('company_shares')
                           : context.l10n.tr('property'))
                       : asset.location,

@@ -38,7 +38,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
   void initState() {
     super.initState();
     final InvestmentAsset? initial = widget.initialInvestment;
-    _assetType = initial?.investmentType == 'company_share'
+    _assetType = ZakatEngineService.isCompanyInvestmentType(initial?.investmentType)
         ? 'company_share'
         : 'property';
     _currency = initial?.currency.isNotEmpty == true ? initial!.currency : 'EGP';
@@ -267,7 +267,9 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
 
     final InvestmentAsset asset = InvestmentAsset(
       id: original?.id ?? _uuid.v4(),
-      investmentType: _assetType,
+      investmentType: _assetType == 'company_share'
+          ? 'company_investment'
+          : 'real_estate',
       assetSubtype: _assetType,
       ownershipType: liability > 0 ? 'installment' : 'fully_owned',
       valuationMode: 'net_fair',

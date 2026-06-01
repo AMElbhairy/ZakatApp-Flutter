@@ -163,6 +163,21 @@ class ZakatEngineService {
     return (assetType ?? '').trim().toLowerCase();
   }
 
+  static String normaliseInvestmentType(String? investmentType) {
+    final String raw = (investmentType ?? '').trim().toLowerCase();
+    if (raw == 'company_investment' || raw == 'company_share') {
+      return 'company_investment';
+    }
+    if (raw == 'real_estate' || raw == 'property' || raw.isEmpty) {
+      return 'real_estate';
+    }
+    return raw;
+  }
+
+  static bool isCompanyInvestmentType(String? investmentType) {
+    return normaliseInvestmentType(investmentType) == 'company_investment';
+  }
+
   static bool isCurrencyConversionAvailable(
       String? currency, MarketData marketData) {
     final String cur = (currency ?? '').trim();
