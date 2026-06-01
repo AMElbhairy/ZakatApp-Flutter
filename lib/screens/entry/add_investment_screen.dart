@@ -38,10 +38,14 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
   void initState() {
     super.initState();
     final InvestmentAsset? initial = widget.initialInvestment;
+    final String defaultEntryCurrency =
+        context.read<AppStateController>().state.defaultEntryCurrency;
     _assetType = ZakatEngineService.isCompanyInvestmentType(initial?.investmentType)
         ? 'company_share'
         : 'property';
-    _currency = initial?.currency.isNotEmpty == true ? initial!.currency : 'EGP';
+    _currency = initial?.currency.isNotEmpty == true
+        ? initial!.currency
+        : (defaultEntryCurrency.trim().isEmpty ? 'EGP' : defaultEntryCurrency);
     _selectedDate = _tryParseDate(initial?.valuationDate) ?? DateTime.now();
 
     if (initial != null) {
@@ -69,6 +73,13 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final String defaultEntryCurrency =
+        context.watch<AppStateController>().state.defaultEntryCurrency.trim().isEmpty
+            ? 'EGP'
+            : context.watch<AppStateController>().state.defaultEntryCurrency;
+    if (!widget.isEditMode && _currency == 'EGP' && defaultEntryCurrency != 'EGP') {
+      _currency = defaultEntryCurrency;
+    }
     return Scaffold(
       appBar: AppBar(
         title: Text(

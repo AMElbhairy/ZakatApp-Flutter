@@ -122,4 +122,5 @@ void main() {
     expect(find.text('Total Income'), findsOneWidget);
     expect(find.text('E£ 250.00'), findsWidgets);
   });
+
 }

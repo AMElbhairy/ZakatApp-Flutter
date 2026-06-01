@@ -7,6 +7,7 @@ import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
 import 'package:zakatapp_flutter/services/app_state_controller.dart';
 import 'package:zakatapp_flutter/services/local_storage_service.dart';
 
+
 Widget _buildApp() {
   const LocalStorageService localStorage = LocalStorageService();
   final AppStateRepository repository =
@@ -124,4 +125,5 @@ void main() {
 
     expect(find.byKey(const Key('assetsEmptyState')), findsOneWidget);
   });
+
 }

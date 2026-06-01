@@ -35,6 +35,8 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
   void initState() {
     super.initState();
     final Saving? initial = widget.initialSaving;
+    final String defaultEntryCurrency =
+        context.read<AppStateController>().state.defaultEntryCurrency;
     _assetType = initial?.assetType ?? 'cash';
     _selectedDate = _tryParseDate(initial?.dateAcquired) ?? DateTime.now();
 
@@ -53,7 +55,8 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
         _goldPurity = '24';
       }
     } else {
-      _cashCurrency = 'EGP';
+      _cashCurrency =
+          defaultEntryCurrency.trim().isEmpty ? 'EGP' : defaultEntryCurrency;
       _goldPurity = '24';
     }
   }
@@ -67,6 +70,14 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final String defaultEntryCurrency =
+        context.watch<AppStateController>().state.defaultEntryCurrency.trim().isEmpty
+            ? 'EGP'
+            : context.watch<AppStateController>().state.defaultEntryCurrency;
+    if (!widget.isEditMode && _assetType == 'cash' && _cashCurrency == 'EGP' &&
+        defaultEntryCurrency != 'EGP') {
+      _cashCurrency = defaultEntryCurrency;
+    }
     return Scaffold(
       appBar: AppBar(
         title: Text(

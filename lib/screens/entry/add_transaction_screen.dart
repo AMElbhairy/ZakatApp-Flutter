@@ -35,8 +35,11 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   void initState() {
     super.initState();
     final Transaction? tx = widget.initialTransaction;
+    final String defaultEntryCurrency =
+        context.read<AppStateController>().state.defaultEntryCurrency;
     _type = tx?.type ?? 'income';
-    _currency = tx?.currency ?? 'EGP';
+    _currency = tx?.currency ??
+        (defaultEntryCurrency.trim().isEmpty ? 'EGP' : defaultEntryCurrency);
     _category = tx?.category;
     _selectedDate = _tryParseDate(tx?.date) ?? DateTime.now();
     if (tx != null) {
@@ -56,6 +59,13 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   @override
   Widget build(BuildContext context) {
     final AppStateController controller = context.watch<AppStateController>();
+    final String defaultEntryCurrency =
+        controller.state.defaultEntryCurrency.trim().isEmpty
+            ? 'EGP'
+            : controller.state.defaultEntryCurrency;
+    if (!widget.isEditMode && _currency == 'EGP' && defaultEntryCurrency != 'EGP') {
+      _currency = defaultEntryCurrency;
+    }
     final List<String> categories = _type == 'income'
         ? controller.state.categories.income
         : controller.state.categories.expense;
