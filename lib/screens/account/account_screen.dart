@@ -6,6 +6,7 @@ import '../../core/i18n/app_localizations.dart';
 import '../../models/market_snapshot.dart';
 import '../../services/app_state_controller.dart';
 import '../../services/auth_controller.dart';
+import '../../services/backup_restore_card.dart';
 
 class AccountScreen extends StatefulWidget {
   const AccountScreen({super.key});
@@ -420,7 +421,7 @@ class _AccountScreenState extends State<AccountScreen> {
         const SizedBox(height: 12),
         _SectionCard(
           title: context.l10n.tr('backup_sync_section'),
-          child: Text(context.l10n.tr('backup_placeholder')),
+          child: BackupRestoreCard(controller: controller),
         ),
         const SizedBox(height: 12),
         _SectionCard(

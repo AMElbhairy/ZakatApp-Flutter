@@ -5,45 +5,39 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
-import '../../models/backup_preview.dart';
-import '../../services/backup_service.dart';
+import '../models/backup_preview.dart';
+import 'app_state_controller.dart';
+import 'backup_restore_service.dart';
+import 'backup_service.dart';
 
 class BackupRestoreCard extends StatelessWidget {
   const BackupRestoreCard({
     super.key,
-    required this.currentAppStateJson,
-    required this.onRestore,
+    required this.controller,
   });
 
-  /// The current state of the app (used to perform exports or check for local data conflicts).
-  final Map<String, dynamic> currentAppStateJson;
-
-  /// Callback fired when the user commits to replacing local data with an imported backup.
-  final Future<void> Function(Map<String, dynamic> extractedState) onRestore;
+  final AppStateController controller;
 
   Future<void> _exportBackup(BuildContext context) async {
     try {
-      final String jsonStr = BackupService.exportBackup(currentAppStateJson);
+      final String jsonStr = BackupService.exportBackup(controller.state.toJson());
       final Directory dir = await getTemporaryDirectory();
       final String dateStamp = DateTime.now().toIso8601String().split('T').first;
       final File file = File('${dir.path}/zakatapp-backup-$dateStamp.json');
-      
       await file.writeAsString(jsonStr);
-      
-      if (context.mounted) {
-        final box = context.findRenderObject() as RenderBox?;
-        await Share.shareXFiles(
-          [XFile(file.path)],
-          subject: 'ZakatApp Backup',
-          sharePositionOrigin: box != null ? box.localToGlobal(Offset.zero) & box.size : null,
-        );
-      }
+
+      if (!context.mounted) return;
+      final RenderBox? box = context.findRenderObject() as RenderBox?;
+      await Share.shareXFiles(
+        <XFile>[XFile(file.path)],
+        subject: 'ZakatApp Backup',
+        sharePositionOrigin: box != null ? box.localToGlobal(Offset.zero) & box.size : null,
+      );
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to export backup: $e')),
-        );
-      }
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to export backup: $e')),
+      );
     }
   }
 
@@ -51,30 +45,23 @@ class BackupRestoreCard extends StatelessWidget {
     try {
       final FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['json'],
+        allowedExtensions: <String>['json'],
       );
-
       if (result == null || result.files.single.path == null) return;
-
-      final File file = File(result.files.single.path!);
-      final String jsonStr = await file.readAsString();
-
-      final BackupPreview preview = BackupService.parseBackup(jsonStr);
-
-      if (context.mounted) {
-        _showPreviewDialog(context, preview);
-      }
+      final String rawJson = await File(result.files.single.path!).readAsString();
+      final BackupPreview preview = BackupService.parseBackupPreview(rawJson);
+      if (!context.mounted) return;
+      _showPreviewDialog(context, preview);
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to read or parse backup file: $e')),
-        );
-      }
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: invalid backup file. $e')),
+      );
     }
   }
 
   void _showPreviewDialog(BuildContext context, BackupPreview preview) {
-    showDialog(
+    showDialog<void>(
       context: context,
       builder: (BuildContext ctx) => AlertDialog(
         title: const Text('Backup Preview'),
@@ -83,35 +70,45 @@ class BackupRestoreCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              if (preview.isLegacy)
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 12),
-                  child: Text(
-                    'Old ZakatApp backup format detected. Data will be converted.',
-                    style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold),
-                  ),
+              if (!preview.canRestore)
+                const Text(
+                  'This file is not a valid backup and cannot be restored.',
+                  style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
                 ),
-              Text('Date: ${preview.exportedAt.isEmpty ? "Unknown" : preview.exportedAt}'),
+              if (preview.isLegacy)
+                const Text(
+                  'Legacy backup detected. Migration will be applied before restore.',
+                  style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold),
+                ),
+              const SizedBox(height: 8),
+              Text('Source: ${preview.sourceType}'),
+              Text('Schema/Version: ${preview.schemaOrVersion}'),
+              Text('Exported At: ${preview.exportedAt.isEmpty ? 'Unknown' : preview.exportedAt}'),
               const Divider(),
               Text('Transactions: ${preview.transactionsCount}'),
               Text('Savings: ${preview.savingsCount}'),
               Text('Investments: ${preview.investmentsCount}'),
-              Text('Recurring: ${preview.recurringCount}'),
+              Text('Recurring: ${preview.recurringTransactionsCount}'),
               Text('Financial Plans: ${preview.financialPlansCount}'),
+              Text('Has Market Data: ${preview.hasMarketData ? 'Yes' : 'No'}'),
+              if (preview.warnings.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 8),
+                const Text('Warnings:', style: TextStyle(fontWeight: FontWeight.bold)),
+                ...preview.warnings.map((String w) => Text('• $w')),
+              ],
             ],
           ),
         ),
         actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _handleRestore(context, preview);
-            },
-            child: const Text('Restore Backup'),
+            onPressed: preview.canRestore
+                ? () {
+                    Navigator.pop(ctx);
+                    _handleRestore(context, preview);
+                  }
+                : null,
+            child: const Text('Continue'),
           ),
         ],
       ),
@@ -119,72 +116,102 @@ class BackupRestoreCard extends StatelessWidget {
   }
 
   void _handleRestore(BuildContext context, BackupPreview preview) {
-    final bool hasLocalData = BackupService.hasData(currentAppStateJson);
-
-    if (hasLocalData) {
-      showDialog(
+    if (BackupService.hasData(controller.state.toJson())) {
+      showDialog<void>(
         context: context,
         builder: (BuildContext ctx) => AlertDialog(
-          title: const Text('Backup Conflict Detected'),
-          content: const Text(
-            'Your local app already contains data. Restoring this backup will replace it entirely.\n\n'
-            'What would you like to do?',
-          ),
+          title: const Text('Local Data Conflict'),
+          content: const Text('Local data exists. Choose an explicit action.'),
           actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
             TextButton(
               onPressed: () {
                 Navigator.pop(ctx);
                 _exportBackup(context);
               },
-              child: const Text('Export Local Data First'),
+              child: const Text('Export Current Backup First'),
             ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            TextButton(
               onPressed: () async {
                 Navigator.pop(ctx);
-                await _executeRestore(context, preview);
+                await _executeRestore(context, preview, replace: true);
               },
-              child: const Text('Replace Local Data', style: TextStyle(color: Colors.white)),
+              child: const Text('Replace Everything'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                await _executeRestore(context, preview, replace: false);
+              },
+              child: const Text('Merge Import'),
             ),
           ],
         ),
       );
-    } else {
-      _executeRestore(context, preview);
+      return;
     }
+    _executeRestore(context, preview, replace: true);
   }
 
-  Future<void> _executeRestore(BuildContext context, BackupPreview preview) async {
-    final Map<String, dynamic> appStateToRestore = BackupService.extractAppState(preview.rawJson);
-    await onRestore(appStateToRestore);
-    
-    if (context.mounted) {
+  Future<void> _executeRestore(
+    BuildContext context,
+    BackupPreview preview, {
+    required bool replace,
+  }) async {
+    try {
+      final BackupRestoreService service = BackupRestoreService(controller: controller);
+      final RestoreResult result = replace
+          ? await service.restoreReplace(preview.rawJson, allowWhenLocalDataExists: true)
+          : await service.restoreMerge(preview.rawJson, allowWhenLocalDataExists: true);
+      if (!context.mounted) return;
+      final String counts =
+          'tx:${result.counts['transactions']} sav:${result.counts['savings']} inv:${result.counts['investments']}';
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Backup restored successfully!')),
+        SnackBar(content: Text('${result.mode.toUpperCase()} restore success. $counts')),
+      );
+      if (result.warnings.isNotEmpty) {
+        showDialog<void>(
+          context: context,
+          builder: (BuildContext ctx) => AlertDialog(
+            title: const Text('Restore Summary'),
+            content: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: result.warnings.map((String e) => Text('• $e')).toList(growable: false),
+              ),
+            ),
+            actions: <Widget>[
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to restore backup: $e')),
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            const Text('Manual Backup', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
-            ElevatedButton.icon(onPressed: () => _exportBackup(context), icon: const Icon(Icons.upload_file), label: const Text('Export Backup File')),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(onPressed: () => _importBackup(context), icon: const Icon(Icons.download), label: const Text('Import Backup File')),
-          ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        ElevatedButton.icon(
+          onPressed: () => _exportBackup(context),
+          icon: const Icon(Icons.upload_file),
+          label: const Text('Export Backup'),
         ),
-      ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: () => _importBackup(context),
+          icon: const Icon(Icons.download),
+          label: const Text('Import Backup'),
+        ),
+      ],
     );
   }
 }
