@@ -25,6 +25,7 @@ class AppStateModel {
     required this.marketHistory,
     required this.syncHealth,
     required this.languagePreference,
+    required this.themeMode,
     this.aiSettings,
     this.cloudHydrated,
     this.hasUnsyncedAuthChanges,
@@ -50,6 +51,7 @@ class AppStateModel {
   final List<Map<String, dynamic>> marketHistory;
   final SyncHealth syncHealth;
   final String languagePreference;
+  final String themeMode;
   final Map<String, dynamic>? aiSettings;
   final bool? cloudHydrated;
   final bool? hasUnsyncedAuthChanges;
@@ -92,6 +94,7 @@ class AppStateModel {
           .toList(growable: false),
       syncHealth: SyncHealth.fromJson(_asMap(json['syncHealth'])),
       languagePreference: (json['languagePreference'] ?? 'en').toString(),
+      themeMode: (json['themeMode'] ?? 'system').toString(),
       aiSettings: json['aiSettings'] is Map
           ? Map<String, dynamic>.from(json['aiSettings'] as Map)
           : null,
@@ -127,6 +130,7 @@ class AppStateModel {
       'marketHistory': marketHistory,
       'syncHealth': syncHealth.toJson(),
       'languagePreference': languagePreference,
+      'themeMode': themeMode,
       if (aiSettings != null) 'aiSettings': aiSettings,
       if (cloudHydrated != null) 'cloudHydrated': cloudHydrated,
       if (hasUnsyncedAuthChanges != null)

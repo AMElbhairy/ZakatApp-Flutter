@@ -306,6 +306,15 @@ class AppStateController extends ChangeNotifier {
     await updateState(_state.copyWith(languagePreference: languageCode));
   }
 
+  Future<void> updateThemeMode(String mode) async {
+    final String normalized = switch (mode) {
+      'light' => 'light',
+      'dark' => 'dark',
+      _ => 'system',
+    };
+    await updateState(_state.copyWith(themeMode: normalized));
+  }
+
   Future<void> updateMarketSnapshot(MarketSnapshot snapshot) async {
     await updateState(_state.copyWith(marketData: snapshot.toAppStateJson()));
   }
@@ -513,6 +522,7 @@ extension AppStateModelCopyWith on AppStateModel {
     String? zakatMethod,
     String? zakatAnnualDate,
     String? languagePreference,
+    String? themeMode,
     String? zakatScheduleFilter,
     Map<String, dynamic>? marketData,
     List<Map<String, dynamic>>? marketHistory,
@@ -538,6 +548,7 @@ extension AppStateModelCopyWith on AppStateModel {
       zakatMethod: zakatMethod ?? this.zakatMethod,
       zakatAnnualDate: zakatAnnualDate ?? this.zakatAnnualDate,
       languagePreference: languagePreference ?? this.languagePreference,
+      themeMode: themeMode ?? this.themeMode,
       zakatScheduleFilter: zakatScheduleFilter ?? this.zakatScheduleFilter,
       marketData: marketData ?? this.marketData,
       marketHistory: marketHistory ?? this.marketHistory,

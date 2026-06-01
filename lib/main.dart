@@ -47,8 +47,14 @@ class ZakatApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String languageCode =
-        context.watch<AppStateController>().state.languagePreference;
+    final AppStateController appStateController = context.watch<AppStateController>();
+    final String languageCode = appStateController.state.languagePreference;
+    final String themeModeRaw = appStateController.state.themeMode;
+    final ThemeMode themeMode = switch (themeModeRaw) {
+      'light' => ThemeMode.light,
+      'dark' => ThemeMode.dark,
+      _ => ThemeMode.system,
+    };
     final Locale locale = languageCode == 'ar'
         ? const Locale('ar')
         : const Locale('en');
@@ -57,6 +63,7 @@ class ZakatApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
+      themeMode: themeMode,
       locale: locale,
       supportedLocales: AppLocalizations.supportedLocales,
       localizationsDelegates: const <LocalizationsDelegate<dynamic>>[

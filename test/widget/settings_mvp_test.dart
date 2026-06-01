@@ -174,6 +174,30 @@ void main() {
     expect(find.text('USD'), findsWidgets);
   });
 
+  testWidgets('update theme mode persists', (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    await tester.pumpWidget(_buildApp());
+    await tester.pumpAndSettle();
+
+    await tester.drag(find.byType(SingleChildScrollView).first, const Offset(0, -1400));
+    await tester.pumpAndSettle();
+
+    await _setDropdownString(
+      tester,
+      fieldKey: const Key('settingsThemeModeField'),
+      value: 'Dark',
+    );
+
+    await tester.pumpWidget(_buildApp());
+    await tester.pumpAndSettle();
+
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String? raw = prefs.getString('zakatAppData');
+    expect(raw, isNotNull);
+    final Map<String, dynamic> json = jsonDecode(raw!) as Map<String, dynamic>;
+    expect(json['themeMode'], 'dark');
+  });
+
   testWidgets('update zakat method persists', (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     await tester.pumpWidget(_buildApp());

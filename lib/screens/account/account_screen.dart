@@ -69,6 +69,11 @@ class _AccountScreenState extends State<AccountScreen> {
     final String zakatMethod = state.zakatMethod == 'annual' ? 'annual' : 'hawl';
     final String languagePreference =
         state.languagePreference == 'ar' ? 'ar' : 'en';
+    final String themeMode = switch (state.themeMode) {
+      'light' => 'light',
+      'dark' => 'dark',
+      _ => 'system',
+    };
 
     final _AnnualDate annualDate = _AnnualDate.parse(state.zakatAnnualDate);
     final MarketSnapshot snapshot = controller.currentMarketSnapshot;
@@ -537,7 +542,32 @@ class _AccountScreenState extends State<AccountScreen> {
         const SizedBox(height: 12),
         _SectionCard(
           title: context.l10n.tr('appearance_section'),
-          child: Text(context.l10n.tr('appearance_placeholder')),
+          child: DropdownButtonFormField<String>(
+            key: const Key('settingsThemeModeField'),
+            initialValue: themeMode,
+            decoration: InputDecoration(
+              labelText: context.l10n.tr('theme_mode'),
+              border: OutlineInputBorder(),
+            ),
+            items: <DropdownMenuItem<String>>[
+              DropdownMenuItem<String>(
+                value: 'system',
+                child: Text(context.l10n.tr('theme_system')),
+              ),
+              DropdownMenuItem<String>(
+                value: 'light',
+                child: Text(context.l10n.tr('theme_light')),
+              ),
+              DropdownMenuItem<String>(
+                value: 'dark',
+                child: Text(context.l10n.tr('theme_dark')),
+              ),
+            ],
+            onChanged: (String? value) {
+              if (value == null) return;
+              context.read<AppStateController>().updateThemeMode(value);
+            },
+          ),
         ),
         const SizedBox(height: 12),
         _SectionCard(

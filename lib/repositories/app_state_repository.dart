@@ -106,6 +106,7 @@ class AppStateDefaults {
         pendingWrites: 0,
       ),
       languagePreference: 'en',
+      themeMode: 'system',
       aiSettings: <String, dynamic>{
         'keys': <String>['', ''],
         'defaultKeyIndex': 0,

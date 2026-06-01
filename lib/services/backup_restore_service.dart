@@ -75,6 +75,7 @@ class BackupRestoreService {
         (incoming['zakatAnnualDate'] ?? current['zakatAnnualDate']).toString();
     merged['languagePreference'] =
         (incoming['languagePreference'] ?? current['languagePreference']).toString();
+    merged['themeMode'] = (incoming['themeMode'] ?? current['themeMode'] ?? 'system').toString();
     merged['marketData'] = incoming['marketData'] is Map
         ? Map<String, dynamic>.from(incoming['marketData'] as Map)
         : current['marketData'];
