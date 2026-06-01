@@ -111,7 +111,7 @@ Future<void> _seedState(Map<String, dynamic> state) async {
 }
 
 Future<void> _openScheduleTab(WidgetTester tester) async {
-  await tester.tap(find.byIcon(Icons.receipt_long_outlined).first);
+  await tester.tap(find.text('Activity').last);
   await tester.pumpAndSettle();
   await tester.tap(find.text('Zakat Schedule'));
   await tester.pumpAndSettle();
@@ -123,7 +123,7 @@ void main() {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byIcon(Icons.receipt_long_outlined).first);
+    await tester.tap(find.text('Activity').last);
     await tester.pumpAndSettle();
 
     expect(find.text('Transactions'), findsOneWidget);
@@ -224,7 +224,7 @@ void main() {
     await tester.pumpAndSettle();
 
     if (find.byKey(const Key('activitySectionSegment')).evaluate().isEmpty) {
-      await tester.tap(find.byIcon(Icons.receipt_long_outlined).first);
+      await tester.tap(find.text('Activity').last);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Zakat Schedule').last);
       await tester.pumpAndSettle();
