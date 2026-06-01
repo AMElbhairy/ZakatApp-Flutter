@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:zakatapp_flutter/models/sync_status.dart';
+import 'package:zakatapp_flutter/services/market_data_api_service.dart';
 import 'package:zakatapp_flutter/models/user_profile.dart';
 import 'package:zakatapp_flutter/services/google_sheets_service.dart';
 import 'package:zakatapp_flutter/services/local_storage_service.dart';
@@ -20,6 +22,38 @@ class _FakeAuthService implements AuthService {
   Future<UserProfile?> restoreSession() async => user;
   @override
   Future<void> signOut() async {}
+}
+
+class _FakeMarketDataApiService implements MarketDataApiService {
+  @override
+  Future<Map<String, double>?> fetchFxRatesToEgp() async {
+    return <String, double>{
+      'USD': 50.0,
+      'SAR': 13.0,
+      'AED': 14.0,
+      'KWD': 165.0,
+      'QAR': 13.5,
+      'EUR': 57.0,
+      'GBP': 63.0,
+      'BHD': 132.0,
+      'OMR': 130.0,
+      'JOD': 70.0,
+      'TRY': 2.6,
+      'MYR': 11.0,
+      'PKR': 0.16,
+      'IDR': 0.003,
+    };
+  }
+
+  @override
+  Future<double?> fetchGold24kPerGramEgp({required double usdToEgp}) async {
+    return 3700.0;
+  }
+
+  @override
+  Future<double?> fetchSilverPerGramEgp({required double usdToEgp}) async {
+    return 40.0;
+  }
 }
 
 class _FakeSheets extends GoogleSheetsService {
@@ -65,7 +99,10 @@ void main() {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     final localStorage = LocalStorageService();
     final repo = AppStateRepository(localStorage: localStorage);
-    appStateController = AppStateController(repository: repo);
+    appStateController = AppStateController(
+      repository: repo,
+      marketDataApiService: _FakeMarketDataApiService(),
+    );
     await appStateController.load();
 
     authController = AuthController(authService: _FakeAuthService(null), localStorage: localStorage);
@@ -82,7 +119,7 @@ void main() {
   test('signed out sync cannot create spreadsheet', () async {
     final ok = await syncController.createAndConnectSpreadsheet();
     expect(ok, isFalse);
-    expect(syncController.status.status, 'failed', reason: 'should fail when signed out');
+    expect(syncController.status.status, 'localOnly', reason: 'should remain localOnly when signed out');
   });
 
   test('create spreadsheet updates sync status when signed in', () async {
@@ -179,7 +216,7 @@ void main() {
     // make fakeSheets return null for reads
     final badSheets = _FakeSheets();
     badSheets.store.clear();
-    final initialStatus = const SyncStatus(status: 'synced', spreadsheetId: 'nope');
+    final initialStatus = SyncStatus(status: 'synced', spreadsheetId: 'nope');
     SharedPreferences.setMockInitialValues(<String, Object>{'sync_status_v1': jsonEncode(initialStatus.toJson())});
     final sc = SyncController(appStateController: appStateController, authController: authController, googleSheetsService: badSheets, storage: localStorage);
     await Future.delayed(Duration.zero);
@@ -196,7 +233,7 @@ void main() {
     authController = AuthController(authService: _FakeAuthService(profile), localStorage: LocalStorageService());
     await authController.load();
     final badSheets = _FakeSheets();
-    final initialStatus = const SyncStatus(status: 'synced', spreadsheetId: 'missing', cloudHydrated: true);
+    final initialStatus = SyncStatus(status: 'synced', spreadsheetId: 'missing', cloudHydrated: true);
     SharedPreferences.setMockInitialValues(<String, Object>{'sync_status_v1': jsonEncode(initialStatus.toJson())});
     final sc = SyncController(appStateController: appStateController, authController: authController, googleSheetsService: badSheets, storage: localStorage);
     await Future.delayed(Duration.zero);

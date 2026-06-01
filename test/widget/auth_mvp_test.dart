@@ -9,6 +9,7 @@ import 'package:zakatapp_flutter/services/app_state_controller.dart';
 import 'package:zakatapp_flutter/services/auth_controller.dart';
 import 'package:zakatapp_flutter/services/auth_service.dart';
 import 'package:zakatapp_flutter/services/local_storage_service.dart';
+import 'package:zakatapp_flutter/services/market_data_api_service.dart';
 
 class _FakeAuthService implements AuthService {
   UserProfile? _user;
@@ -34,6 +35,21 @@ class _FakeAuthService implements AuthService {
   Future<UserProfile?> restoreSession() async => _user;
 }
 
+class _FakeMarketDataApiService implements MarketDataApiService {
+  @override
+  Future<Map<String, double>?> fetchFxRatesToEgp() async {
+    return <String, double>{'USD': 50.0, 'SAR': 13.0, 'EGP': 1.0};
+  }
+  @override
+  Future<double?> fetchGold24kPerGramEgp({required double usdToEgp}) async {
+    return 3700.0;
+  }
+  @override
+  Future<double?> fetchSilverPerGramEgp({required double usdToEgp}) async {
+    return 40.0;
+  }
+}
+
 Widget _buildApp({AuthService? authService}) {
   const LocalStorageService localStorage = LocalStorageService();
   final AppStateRepository repository =
@@ -42,7 +58,10 @@ Widget _buildApp({AuthService? authService}) {
   return MultiProvider(
     providers: [
       ChangeNotifierProvider<AppStateController>(
-        create: (_) => AppStateController(repository: repository),
+        create: (_) => AppStateController(
+          repository: repository,
+          marketDataApiService: _FakeMarketDataApiService(),
+        ),
       ),
       ChangeNotifierProvider<AuthController>(
         create: (_) => AuthController(

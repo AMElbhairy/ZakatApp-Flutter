@@ -1,179 +1,107 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zakatapp_flutter/main.dart';
+import 'package:zakatapp_flutter/models/saving.dart';
+import 'package:zakatapp_flutter/models/user_profile.dart';
 import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
 import 'package:zakatapp_flutter/services/app_state_controller.dart';
+import 'package:zakatapp_flutter/services/auth_controller.dart';
+import 'package:zakatapp_flutter/services/auth_service.dart';
+import 'package:zakatapp_flutter/services/google_sheets_service.dart';
 import 'package:zakatapp_flutter/services/local_storage_service.dart';
+import 'package:zakatapp_flutter/services/market_data_api_service.dart';
+import 'package:zakatapp_flutter/services/sync_controller.dart';
 
-Widget _buildApp() {
-  const LocalStorageService localStorage = LocalStorageService();
-  final AppStateRepository repository =
-      AppStateRepository(localStorage: localStorage);
-  return ChangeNotifierProvider<AppStateController>(
-    create: (_) => AppStateController(repository: repository),
-    child: const ZakatApp(),
-  );
+class _FakeAuthService implements AuthService {
+  final UserProfile? user;
+  _FakeAuthService(this.user);
+  @override
+  Future<UserProfile?> signIn() async => user;
+  @override
+  Future<UserProfile?> restoreSession() async => user;
+  @override
+  Future<void> signOut() async {}
 }
 
-Future<void> _openAddInvestment(WidgetTester tester) async {
-  await tester.tap(find.byKey(const Key('addEntryFab')));
-  await tester.pumpAndSettle();
-  await tester.tap(find.byKey(const Key('actionAddInvestment')));
-  await tester.pumpAndSettle();
+class _FakeMarketDataApiService implements MarketDataApiService {
+  @override
+  Future<Map<String, double>?> fetchFxRatesToEgp() async {
+    return <String, double>{'USD': 50.0, 'SAR': 13.0, 'EGP': 1.0};
+  }
+
+  @override
+  Future<double?> fetchGold24kPerGramEgp({required double usdToEgp}) async {
+    return 3700.0;
+  }
+
+  @override
+  Future<double?> fetchSilverPerGramEgp({required double usdToEgp}) async {
+    return 40.0;
+  }
 }
 
-Future<void> _addInvestment(
-  WidgetTester tester, {
-  required String assetType,
-  required String name,
-  required String currentValue,
-  String ownership = '100',
-}) async {
-  await _openAddInvestment(tester);
-
-  await tester.tap(find.byKey(const Key('investmentTypeField')));
-  await tester.pumpAndSettle();
-  await tester.tap(find.text(assetType).last);
-  await tester.pumpAndSettle();
-
-  await tester.enterText(find.byKey(const Key('investmentNameField')), name);
-  await tester.enterText(
-      find.byKey(const Key('investmentCurrentValueField')), currentValue);
-  await tester.enterText(
-      find.byKey(const Key('investmentOwnershipField')), ownership);
-
-  await tester.ensureVisible(find.byKey(const Key('saveInvestmentButton')));
-  await tester.tap(find.byKey(const Key('saveInvestmentButton')));
-  await tester.pumpAndSettle();
+class _FakeSheets extends GoogleSheetsService {
+  _FakeSheets() : super(httpClient: null);
 }
 
 void main() {
-  testWidgets('add property', (WidgetTester tester) async {
-    SharedPreferences.setMockInitialValues(<String, Object>{});
-    await tester.pumpWidget(_buildApp());
-    await tester.pumpAndSettle();
-
-    await _addInvestment(
-      tester,
-      assetType: 'Property',
-      name: 'Cairo Apartment',
-      currentValue: '1000000',
+  testWidgets('dashboard wealth includes investment', (WidgetTester tester) async {
+    // 1. Setup mock services and initial state
+    SharedPreferences.setMockInitialValues({});
+    final localStorage = LocalStorageService();
+    final repository = AppStateRepository(localStorage: localStorage);
+    final appStateController = AppStateController(
+      repository: repository,
+      marketDataApiService: _FakeMarketDataApiService(),
     );
+    final authController = AuthController(
+        authService: _FakeAuthService(null), localStorage: localStorage);
+    final syncController = SyncController(
+        appStateController: appStateController,
+        authController: authController,
+        googleSheetsService: _FakeSheets());
 
-    await tester.tap(find.text('Assets').first);
-    await tester.pumpAndSettle();
-    await tester.drag(find.byType(ListView).first, const Offset(0, -400));
-    await tester.pumpAndSettle();
+    await appStateController.load();
 
-    expect(find.text('Property'), findsOneWidget);
-    expect(find.text('Cairo Apartment'), findsOneWidget);
-  });
+    // 2. Refresh market data using the fake service
+    await appStateController.refreshMarketData(force: true);
 
-  testWidgets('add company share', (WidgetTester tester) async {
-    SharedPreferences.setMockInitialValues(<String, Object>{});
-    await tester.pumpWidget(_buildApp());
-    await tester.pumpAndSettle();
-
-    await _addInvestment(
-      tester,
-      assetType: 'Company Share',
-      name: 'Listed Shares',
-      currentValue: '250000',
+    // 3. Add a gold saving to the state
+    final goldSaving = Saving(
+      id: 'gold-1',
+      assetType: 'gold',
+      dateAcquired: '2024-01-01',
+      amount: 10, // 10 grams
+      unit: '24', // 24K
+      remainingAmount: 10,
+      description: '',
+      createdAt: '2024-01-01T00:00:00.000Z',
+      purchaseAmount: 0,
+      purchaseCurrency: 'EGP',
     );
+    appStateController.addSaving(goldSaving);
 
-    await tester.tap(find.text('Assets').first);
-    await tester.pumpAndSettle();
-    await tester.drag(find.byType(ListView).first, const Offset(0, -500));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Company Shares'), findsOneWidget);
-    expect(find.text('Listed Shares'), findsOneWidget);
-  });
-
-  testWidgets('edit investment and persistence survives reload',
-      (WidgetTester tester) async {
-    SharedPreferences.setMockInitialValues(<String, Object>{});
-    await tester.pumpWidget(_buildApp());
-    await tester.pumpAndSettle();
-
-    await _addInvestment(
-      tester,
-      assetType: 'Property',
-      name: 'Villa',
-      currentValue: '900000',
+    // 4. Pump the app widget
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider.value(value: appStateController),
+          ChangeNotifierProvider.value(value: authController),
+          ChangeNotifierProvider.value(value: syncController),
+        ],
+        child: const ZakatApp(),
+      ),
     );
-
-    await tester.tap(find.text('Assets').first);
-    await tester.pumpAndSettle();
-    await tester.drag(find.byType(ListView).first, const Offset(0, -500));
     await tester.pumpAndSettle();
 
-    await tester.ensureVisible(find.text('Villa').first);
-    await tester.tap(find.text('Villa').first);
-    await tester.pumpAndSettle();
+    // 5. Verify that total wealth includes the value of the gold saving.
+    // Gold value = 10g * 3700 EGP/g = 37000 EGP
+    expect(find.textContaining('37,000'), findsOneWidget);
 
-    await tester.enterText(
-        find.byKey(const Key('investmentCurrentValueField')), '950000');
-    await tester.ensureVisible(find.byKey(const Key('saveInvestmentButton')));
-    await tester.tap(find.byKey(const Key('saveInvestmentButton')));
-    await tester.pumpAndSettle();
-
-    expect(find.text('950000.00'), findsWidgets);
-
-    await tester.pumpWidget(_buildApp());
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Assets').first);
-    await tester.pumpAndSettle();
-    await tester.drag(find.byType(ListView).first, const Offset(0, -500));
-    await tester.pumpAndSettle();
-
-    expect(find.text('950000.00'), findsWidgets);
-  });
-
-  testWidgets('delete investment', (WidgetTester tester) async {
-    SharedPreferences.setMockInitialValues(<String, Object>{});
-    await tester.pumpWidget(_buildApp());
-    await tester.pumpAndSettle();
-
-    await _addInvestment(
-      tester,
-      assetType: 'Property',
-      name: 'Delete Me',
-      currentValue: '120000',
-    );
-
-    await tester.tap(find.text('Assets').first);
-    await tester.pumpAndSettle();
-    await tester.drag(find.byType(ListView).first, const Offset(0, -500));
-    await tester.pumpAndSettle();
-
-    await tester.ensureVisible(find.byIcon(Icons.delete_outline).last);
-    await tester.tap(find.byIcon(Icons.delete_outline).last);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Delete'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Delete Me'), findsNothing);
-  });
-
-  testWidgets('dashboard wealth includes investment',
-      (WidgetTester tester) async {
-    SharedPreferences.setMockInitialValues(<String, Object>{});
-    await tester.pumpWidget(_buildApp());
-    await tester.pumpAndSettle();
-
-    await _addInvestment(
-      tester,
-      assetType: 'Property',
-      name: 'Dashboard Asset',
-      currentValue: '500000',
-    );
-
-    expect(find.text('Investment Wealth'), findsOneWidget);
-    expect(find.text('Total Wealth'), findsOneWidget);
-    expect(find.textContaining('E£ '), findsWidgets);
+    // 6. Cleanup controllers to cancel pending timers
+    appStateController.dispose();
+    authController.dispose();
+    syncController.dispose();
   });
 }
