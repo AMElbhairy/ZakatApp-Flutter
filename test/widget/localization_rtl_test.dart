@@ -108,7 +108,7 @@ Map<String, dynamic> _arabicSeededState({bool withTransaction = false}) {
 
 void main() {
   Future<void> openAccountTab(WidgetTester tester) async {
-    final Finder navBar = find.byType(NavigationBar);
+    final Finder navBar = find.byKey(const Key('premiumBottomNav'));
     expect(navBar, findsOneWidget);
     final Finder accountLabel = find.descendant(
       of: navBar,

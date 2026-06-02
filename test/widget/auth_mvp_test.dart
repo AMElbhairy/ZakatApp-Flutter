@@ -125,6 +125,6 @@ void main() {
     await tester.pumpWidget(_buildApp(authService: _FakeAuthService()));
     await tester.pumpAndSettle();
 
-    expect(find.byType(NavigationBar), findsOneWidget);
+    expect(find.byKey(const Key('premiumBottomNav')), findsOneWidget);
   });
 }

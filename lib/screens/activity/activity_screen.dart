@@ -35,6 +35,7 @@ class ActivityScreenState extends State<ActivityScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final double navSafeBottomPadding = 112 + MediaQuery.paddingOf(context).bottom;
     final controller = context.watch<AppStateController>();
     final state = controller.state;
     final List<Transaction> transactions = state.transactions;
@@ -101,6 +102,7 @@ class ActivityScreenState extends State<ActivityScreen> {
                     context,
                     schedule,
                     paidMonths: paidMonths,
+                    navSafeBottomPadding: navSafeBottomPadding,
                   ),
           ),
         ],
@@ -109,6 +111,7 @@ class ActivityScreenState extends State<ActivityScreen> {
   }
 
   Widget _buildTransactionsView(BuildContext context, List<Transaction> filtered) {
+    final double navSafeBottomPadding = 112 + MediaQuery.paddingOf(context).bottom;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -146,6 +149,7 @@ class ActivityScreenState extends State<ActivityScreen> {
                   ),
                 )
               : ListView.separated(
+                  padding: EdgeInsets.only(bottom: navSafeBottomPadding),
                   itemCount: filtered.length,
                   separatorBuilder: (_, index) => const SizedBox(height: 10),
                   itemBuilder: (BuildContext context, int index) {
@@ -224,6 +228,7 @@ class ActivityScreenState extends State<ActivityScreen> {
     BuildContext context,
     List<Map<String, dynamic>> schedule, {
     required Set<String> paidMonths,
+    required double navSafeBottomPadding,
   }) {
     if (schedule.isEmpty) {
       return Center(
@@ -243,6 +248,7 @@ class ActivityScreenState extends State<ActivityScreen> {
 
     return ListView.separated(
       key: const Key('zakatScheduleList'),
+      padding: EdgeInsets.only(bottom: navSafeBottomPadding),
       itemCount: sorted.length,
       separatorBuilder: (BuildContext context, int index) => const SizedBox(height: 10),
       itemBuilder: (_, int index) {

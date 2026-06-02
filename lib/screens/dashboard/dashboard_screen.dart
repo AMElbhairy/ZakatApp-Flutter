@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../core/i18n/app_localizations.dart';
 import '../../core/services/zakat_engine.dart';
 import '../../core/services/zakat_schedule_service.dart';
+import '../../core/theme/app_theme_extensions.dart';
 import '../../core/widgets/app_ui.dart';
 import '../../models/investment_asset.dart';
 import '../../models/market_snapshot.dart';
@@ -29,7 +30,6 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  static const Color _bg = Color(0xFFF8F6EF);
   static const Color _deepEmerald = Color(0xFF073B3A);
   static const Color _richEmerald = Color(0xFF0F766E);
   bool _animateIn = false;
@@ -141,10 +141,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     final bool hasAnyData = transactions.isNotEmpty || savings.isNotEmpty || investments.isNotEmpty;
 
+    final tokens = context.premiumTokens;
+    final double navSafeBottomPadding = 112 + MediaQuery.paddingOf(context).bottom;
     return Container(
-      color: _bg,
+      color: tokens.colors.background,
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
+        padding: EdgeInsets.fromLTRB(16, 20, 16, navSafeBottomPadding),
         children: <Widget>[
           SectionHeader(title: context.l10n.tr('dashboard'), bottomSpacing: 16),
           if (!hasAnyData)
@@ -736,15 +738,16 @@ class _ActionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
     return InkWell(
       borderRadius: BorderRadius.circular(14),
       onTap: onTap,
       child: Ink(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: dark ? const Color(0xFF0F1720) : Colors.white,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: const Color(0xFFDCE4DF)),
+          border: Border.all(color: dark ? const Color(0xFF1F2A37) : const Color(0xFFDCE4DF)),
         ),
         child: Column(
           children: <Widget>[
@@ -781,12 +784,13 @@ class _PremiumSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
     final Widget body = Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: dark ? const Color(0xFF0F1720) : Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFDCE4DF)),
+        border: Border.all(color: dark ? const Color(0xFF1F2A37) : const Color(0xFFDCE4DF)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -798,7 +802,7 @@ class _PremiumSection extends StatelessWidget {
                   title,
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.w800,
-                        color: const Color(0xFF111827),
+                        color: dark ? Colors.white : const Color(0xFF111827),
                       ),
                 ),
               ),
@@ -830,12 +834,13 @@ class _InsightPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFFBF1),
+        color: dark ? const Color(0xFF1A222E) : const Color(0xFFFFFBF1),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE8DFC3)),
+        border: Border.all(color: dark ? const Color(0xFF2B3441) : const Color(0xFFE8DFC3)),
       ),
       child: Row(
         children: <Widget>[
@@ -876,19 +881,22 @@ class _MetricRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 10),
       decoration: BoxDecoration(
         border: isLast
             ? null
-            : const Border(bottom: BorderSide(color: Color(0xFFE7E7E7), width: 1)),
+            : Border(bottom: BorderSide(color: dark ? const Color(0xFF273241) : const Color(0xFFE7E7E7), width: 1)),
       ),
       child: Row(
         children: <Widget>[
           Expanded(
             child: Text(
               label,
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: const Color(0xFF4B5563)),
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    color: dark ? const Color(0xFFA8B0BD) : const Color(0xFF4B5563),
+                  ),
             ),
           ),
           const SizedBox(width: 12),
@@ -897,7 +905,7 @@ class _MetricRow extends StatelessWidget {
               value,
               textAlign: TextAlign.end,
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: valueColor ?? const Color(0xFF111827),
+                    color: valueColor ?? (dark ? Colors.white : const Color(0xFF111827)),
                     fontWeight: FontWeight.w700,
                   ),
             ),
@@ -916,6 +924,7 @@ class _MiniZakatJourney extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
     final String text = hasMarketData
         ? (isMet ? context.l10n.tr('above_nisab') : context.l10n.tr('below_nisab'))
         : context.l10n.tr('market_data_required');
@@ -923,7 +932,7 @@ class _MiniZakatJourney extends StatelessWidget {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(14),
-        color: const Color(0xFFF4F7F6),
+        color: dark ? const Color(0xFF18242B) : const Color(0xFFF4F7F6),
       ),
       child: Row(
         children: <Widget>[
@@ -1013,7 +1022,7 @@ class _RingPainter extends CustomPainter {
     final Paint bg = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = stroke
-      ..color = const Color(0xFFE5E7EB);
+      ..color = const Color(0xFF344153);
     canvas.drawArc(rect.deflate(stroke / 2), 0, 6.28318, false, bg);
 
     double start = -1.5708;
@@ -1052,14 +1061,15 @@ class _ActivityRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool isExpense = tx.type == 'expense';
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       key: Key('dashboardRecentTx_${tx.id}'),
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFFFAFAFA),
+        color: dark ? const Color(0xFF111925) : const Color(0xFFFAFAFA),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE8E8E8)),
+        border: Border.all(color: dark ? const Color(0xFF253243) : const Color(0xFFE8E8E8)),
       ),
       child: Row(
         children: <Widget>[

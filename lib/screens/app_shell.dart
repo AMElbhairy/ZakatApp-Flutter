@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../core/i18n/app_localizations.dart';
 import '../core/theme/app_icons.dart';
 import '../core/theme/app_radii.dart';
-import '../core/theme/app_spacing.dart';
 import '../core/theme/app_theme_extensions.dart';
 import '../core/widgets/app_ui.dart';
 
@@ -30,6 +29,8 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.premiumTokens;
+    final double bottomInset = MediaQuery.paddingOf(context).bottom;
     final List<Widget> tabs = <Widget>[
       const AssetsScreen(),
       ActivityScreen(key: _activityKey),
@@ -52,137 +53,297 @@ class _AppShellState extends State<AppShell> {
       const AccountScreen(),
     ];
 
-    final tokens = context.premiumTokens;
+    final double navTouchBlockHeight = 90 + bottomInset;
     return Scaffold(
+      backgroundColor: tokens.colors.background,
       resizeToAvoidBottomInset: false,
       extendBody: true,
-      body: SafeArea(
-        bottom: true,
-        child: IndexedStack(index: _index, children: tabs),
-      ),
-      bottomNavigationBar: SafeArea(
-        top: false,
-        minimum: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-        child: SizedBox(
-          height: 110,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: <Widget>[
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                  decoration: BoxDecoration(
-                    borderRadius: AppRadii.pill,
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: <Color>[
-                        tokens.colors.hero,
-                        tokens.colors.emerald,
-                      ],
-                    ),
-                    border: Border.all(color: tokens.colors.gold.withValues(alpha: 0.25)),
-                    boxShadow: tokens.mediumShadow,
-                  ),
-                  child: NavigationBarTheme(
-                    data: NavigationBarThemeData(
-                      backgroundColor: Colors.transparent,
-                      shadowColor: Colors.transparent,
-                      indicatorColor: tokens.colors.gold.withValues(alpha: 0.22),
-                      labelTextStyle: WidgetStateProperty.resolveWith<TextStyle?>((states) {
-                        final bool selected = states.contains(WidgetState.selected);
-                        return Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: selected
-                                  ? tokens.colors.gold
-                                  : Colors.white.withValues(alpha: 0.84),
-                              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                            );
-                      }),
-                    ),
-                    child: NavigationBar(
-                      selectedIndex: _index,
-                      onDestinationSelected: (int i) => setState(() => _index = i),
-                      backgroundColor: Colors.transparent,
-                      labelBehavior:
-                          NavigationDestinationLabelBehavior.alwaysShow,
-                      destinations: <NavigationDestination>[
-                        NavigationDestination(
-                          icon: Icon(
-                            AppIcons.assets,
-                            color: Colors.white.withValues(alpha: 0.84),
-                          ),
-                          selectedIcon: Icon(AppIcons.assets, color: tokens.colors.gold),
-                          label: context.l10n.tr('assets'),
-                        ),
-                        NavigationDestination(
-                          icon: Icon(
-                            AppIcons.activity,
-                            color: Colors.white.withValues(alpha: 0.84),
-                          ),
-                          selectedIcon: Icon(AppIcons.activity, color: tokens.colors.gold),
-                          label: context.l10n.tr('activity'),
-                        ),
-                        NavigationDestination(
-                          icon: Icon(
-                            AppIcons.dashboard,
-                            color: Colors.white.withValues(alpha: 0.84),
-                          ),
-                          selectedIcon: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: AppSpacing.md,
-                              vertical: AppSpacing.xs,
+      body: Stack(
+        clipBehavior: Clip.none,
+        children: <Widget>[
+          SafeArea(
+            bottom: false,
+            child: IndexedStack(index: _index, children: tabs),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: navTouchBlockHeight,
+            child: const AbsorbPointer(
+              absorbing: true,
+              child: SizedBox.expand(),
+            ),
+          ),
+          Positioned(
+            left: 14,
+            right: 14,
+            bottom: 2 + bottomInset,
+            child: SizedBox(
+              key: const Key('premiumBottomNav'),
+              height: 86,
+              child: LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints constraints) {
+                  const double unselectedAlpha = 0.62;
+                  final List<_NavItemData> items = <_NavItemData>[
+                    _NavItemData(icon: AppIcons.assets, label: context.l10n.tr('assets')),
+                    _NavItemData(icon: AppIcons.activity, label: context.l10n.tr('activity')),
+                    _NavItemData(icon: AppIcons.dashboard, label: context.l10n.tr('dashboard')),
+                    _NavItemData(icon: AppIcons.plans, label: context.l10n.tr('plans')),
+                    _NavItemData(icon: AppIcons.account, label: context.l10n.tr('account')),
+                  ];
+                  const double navHeight = 58;
+                  const double dashboardRaisedHeight = 66;
+                  const double dashboardRaisedWidth = 82;
+                  final double slotWidth = constraints.maxWidth / items.length;
+                  const int dashboardIndex = 2;
+                  final double selectedLeft =
+                      (slotWidth * dashboardIndex) + ((slotWidth - dashboardRaisedWidth) / 2);
+
+                  return Stack(
+                    clipBehavior: Clip.none,
+                    children: <Widget>[
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: Container(
+                          height: navHeight,
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            borderRadius: AppRadii.pill,
+                            color: const Color(0xFF043B34),
+                            border: Border.all(
+                              color: const Color(0xFFC8A75B).withValues(alpha: 0.34),
                             ),
-                            decoration: BoxDecoration(
-                              borderRadius: AppRadii.pill,
-                              color: Colors.black.withValues(alpha: 0.18),
-                              border: Border.all(
-                                color: tokens.colors.gold.withValues(alpha: 0.7),
+                            boxShadow: <BoxShadow>[
+                              BoxShadow(
+                                color: const Color(0xFFC8A75B).withValues(alpha: 0.12),
+                                blurRadius: 10,
+                                spreadRadius: 0.5,
+                                offset: const Offset(0, 1),
                               ),
-                              boxShadow: tokens.softShadow,
-                            ),
-                            child: Icon(AppIcons.dashboard, color: tokens.colors.gold, size: 22),
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.12),
+                                blurRadius: 12,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
                           ),
-                          label: context.l10n.tr('dashboard'),
-                        ),
-                        NavigationDestination(
-                          icon: Icon(
-                            AppIcons.plans,
-                            color: Colors.white.withValues(alpha: 0.84),
+                          child: Row(
+                            children: List<Widget>.generate(items.length, (int i) {
+                              final bool selected = i == _index;
+                              final _NavItemData item = items[i];
+                              return Expanded(
+                                child: Padding(
+                                  padding: EdgeInsets.only(
+                                    right: i == 1 ? 12 : 0,
+                                    left: i == 3 ? 12 : 0,
+                                  ),
+                                  child: GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap: () => setState(() => _index = i),
+                                    child: i == dashboardIndex
+                                        ? const SizedBox.shrink()
+                                        : Column(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            children: <Widget>[
+                                              Container(
+                                                decoration: selected
+                                                    ? BoxDecoration(
+                                                        shape: BoxShape.circle,
+                                                        boxShadow: <BoxShadow>[
+                                                          BoxShadow(
+                                                            color: const Color(0xFFC8A75B)
+                                                                .withValues(alpha: 0.18),
+                                                            blurRadius: 8,
+                                                            spreadRadius: 0.2,
+                                                          ),
+                                                        ],
+                                                      )
+                                                    : null,
+                                                child: Icon(
+                                                  item.icon,
+                                                  size: 18,
+                                                  color: selected
+                                                      ? const Color(0xFFC8A75B)
+                                                      : Colors.white.withValues(alpha: unselectedAlpha),
+                                                ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                item.label,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                                      fontSize: 10.5,
+                                                      fontWeight:
+                                                          selected ? FontWeight.w700 : FontWeight.w500,
+                                                      color: selected
+                                                          ? const Color(0xFFC8A75B)
+                                                          : Colors.white.withValues(alpha: unselectedAlpha),
+                                                      shadows: selected
+                                                          ? <Shadow>[
+                                                              Shadow(
+                                                                color: const Color(0xFFC8A75B)
+                                                                    .withValues(alpha: 0.28),
+                                                                blurRadius: 8,
+                                                              ),
+                                                            ]
+                                                          : null,
+                                                    ),
+                                              ),
+                                            ],
+                                          ),
+                                  ),
+                                ),
+                              );
+                            }),
                           ),
-                          selectedIcon: Icon(AppIcons.plans, color: tokens.colors.gold),
-                          label: context.l10n.tr('plans'),
                         ),
-                        NavigationDestination(
-                          icon: Icon(
-                            AppIcons.account,
-                            color: Colors.white.withValues(alpha: 0.84),
+                      ),
+                      Positioned(
+                        left: selectedLeft,
+                        bottom: -4,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () => setState(() => _index = dashboardIndex),
+                          child: _dashboardRaisedItem(
+                            item: items[dashboardIndex],
+                            selected: _index == dashboardIndex,
+                            width: dashboardRaisedWidth,
+                            height: dashboardRaisedHeight,
                           ),
-                          selectedIcon: Icon(AppIcons.account, color: tokens.colors.gold),
-                          label: context.l10n.tr('account'),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
+          PositionedDirectional(
+            end: 22,
+            bottom: 88 + bottomInset,
+            child: SizedBox(
+              width: 64,
+              height: 64,
+              child: FloatingActionButton(
+                key: const Key('addEntryFab'),
+                onPressed: () => _showAddActions(context),
+                backgroundColor: const Color(0xFF063B35),
+                foregroundColor: const Color(0xFFC8A75B),
+                elevation: 0,
+                shape: CircleBorder(
+                  side: BorderSide(
+                    color: const Color(0xFFC8A75B).withValues(alpha: 0.45),
+                    width: 1.2,
                   ),
                 ),
-              ),
-              Positioned(
-                right: AppSpacing.md,
-                bottom: 74,
-                child: FloatingActionButton(
-                  key: const Key('addEntryFab'),
-                  onPressed: () => _showAddActions(context),
-                  backgroundColor: tokens.colors.hero,
-                  foregroundColor: tokens.colors.gold,
-                  shape: const CircleBorder(),
+                child: Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    boxShadow: <BoxShadow>[
+                      BoxShadow(
+                        color: const Color(0xFFC8A75B).withValues(alpha: 0.16),
+                        blurRadius: 10,
+                        spreadRadius: 0.4,
+                        offset: const Offset(0, 1),
+                      ),
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.2),
+                        blurRadius: 12,
+                        offset: const Offset(0, 5),
+                      ),
+                    ],
+                  ),
+                  alignment: Alignment.center,
                   child: const Icon(AppIcons.add, size: 28),
                 ),
               ),
-            ],
+            ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _dashboardRaisedItem({
+    required _NavItemData item,
+    required bool selected,
+    required double width,
+    required double height,
+  }) {
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(23),
+        color: const Color(0xFF083832),
+        border: Border.all(
+          color: selected
+              ? const Color(0xFFC8A75B).withValues(alpha: 0.9)
+              : const Color(0xFF0B4A43).withValues(alpha: 0.85),
+          width: 1.0,
         ),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: const Color(0xFF0C6B5A).withValues(alpha: selected ? 0.18 : 0.0),
+            blurRadius: selected ? 14 : 0,
+            spreadRadius: selected ? 0.6 : 0,
+            offset: const Offset(0, 2),
+          ),
+          BoxShadow(
+            color: selected
+                ? const Color(0xFFC8A75B).withValues(alpha: 0.12)
+                : Colors.black.withValues(alpha: 0.12),
+            blurRadius: selected ? 6 : 6,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: <Widget>[
+          Container(
+            decoration: selected
+                ? BoxDecoration(
+                    shape: BoxShape.circle,
+                    boxShadow: <BoxShadow>[
+                      BoxShadow(
+                        color: const Color(0xFFC8A75B).withValues(alpha: 0.12),
+                        blurRadius: 6,
+                        spreadRadius: 0.15,
+                      ),
+                    ],
+                  )
+                : null,
+            child: Icon(
+              item.icon,
+              color: selected ? const Color(0xFFC8A75B) : Colors.white.withValues(alpha: 0.72),
+              size: 23,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            item.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  fontSize: 10.5,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  color: selected ? const Color(0xFFC8A75B) : Colors.white.withValues(alpha: 0.72),
+                  shadows: selected
+                      ? <Shadow>[
+                          Shadow(
+                            color: const Color(0xFFC8A75B).withValues(alpha: 0.18),
+                            blurRadius: 5,
+                          ),
+                        ]
+                      : null,
+                ),
+          ),
+        ],
       ),
     );
   }
@@ -263,4 +424,11 @@ class _AppShellState extends State<AppShell> {
       },
     );
   }
+}
+
+class _NavItemData {
+  const _NavItemData({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
 }

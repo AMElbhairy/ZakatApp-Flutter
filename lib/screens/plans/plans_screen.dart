@@ -12,6 +12,7 @@ class PlansScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final double navSafeBottomPadding = 112 + MediaQuery.paddingOf(context).bottom;
     final List<FinancialPlan> plans =
         context.watch<AppStateController>().state.financialPlans;
 
@@ -46,6 +47,7 @@ class PlansScreen extends StatelessWidget {
                     ),
                   )
                 : ListView.separated(
+                    padding: EdgeInsets.only(bottom: navSafeBottomPadding),
                     itemCount: plans.length,
                     separatorBuilder: (BuildContext context, int index) =>
                         const SizedBox(height: 12),

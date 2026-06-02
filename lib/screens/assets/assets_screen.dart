@@ -15,6 +15,7 @@ class AssetsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final double navSafeBottomPadding = 112 + MediaQuery.paddingOf(context).bottom;
     final AppStateController controller = context.watch<AppStateController>();
     final List<Saving> savings = controller.state.savings;
     final List<InvestmentAsset> investments = controller.state.investments;
@@ -128,6 +129,7 @@ class AssetsScreen extends StatelessWidget {
                     ),
                   )
                 : ListView(
+                    padding: EdgeInsets.only(bottom: navSafeBottomPadding),
                     children: <Widget>[
                       _savingSection(context, context.l10n.tr('cash'), cash),
                       _savingSection(context, context.l10n.tr('gold'), gold),

@@ -79,8 +79,9 @@ class _AccountScreenState extends State<AccountScreen> {
     final MarketSnapshot snapshot = controller.currentMarketSnapshot;
     _syncMarketControllers(snapshot);
 
+    final double navSafeBottomPadding = 112 + MediaQuery.paddingOf(context).bottom;
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.fromLTRB(16, 16, 16, navSafeBottomPadding),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
