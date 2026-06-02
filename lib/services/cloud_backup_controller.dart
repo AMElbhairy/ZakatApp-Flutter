@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 
 import '../models/backup_preview.dart';
 import 'app_state_controller.dart';
@@ -10,7 +11,7 @@ import 'backup_restore_service.dart';
 import 'backup_service.dart';
 import 'google_drive_service.dart';
 
-class CloudBackupController extends ChangeNotifier {
+class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
   CloudBackupController({
     required this.appStateController,
     required this.authController,
@@ -21,9 +22,10 @@ class CloudBackupController extends ChangeNotifier {
   })  : _googleDriveService = googleDriveService ?? GoogleDriveService(),
         _backupRestoreService =
             backupRestoreService ?? BackupRestoreService(controller: appStateController),
-        _autoBackupDelay = autoBackupDelay ?? const Duration(seconds: 4) {
+        _autoBackupDelay = autoBackupDelay ?? const Duration(minutes: 3) {
     appStateController.addListener(_onAppStateChanged);
     authController.addListener(_onAuthChanged);
+    WidgetsBinding.instance.addObserver(this);
     _onAuthChanged();
   }
 
@@ -40,6 +42,7 @@ class CloudBackupController extends ChangeNotifier {
   bool _isBackingUp = false;
   bool _isRestoring = false;
   bool _pendingRestorePrompt = false;
+  bool _hasPendingAutoBackup = false;
   bool _cloudBackupNewerThanLocal = false;
   String? _lastObservedStateHash;
   String? _lastSignedInUserId;
@@ -51,11 +54,13 @@ class CloudBackupController extends ChangeNotifier {
   bool get isBackingUp => _isBackingUp;
   bool get isRestoring => _isRestoring;
   bool get hasCloudBackup => _latestBackup != null;
+  bool get hasPendingAutoBackup => _hasPendingAutoBackup;
   bool get shouldPromptRestore => _pendingRestorePrompt;
   bool get cloudBackupNewerThanLocal => _cloudBackupNewerThanLocal;
   String get statusMessage => _statusMessage;
   String get lastError => _lastError;
   DriveBackupFile? get latestBackup => _latestBackup;
+  Duration get autoBackupDelay => _autoBackupDelay;
 
   Future<void> refreshCloudState({bool evaluatePrompt = true}) async {
     final String? accessToken = _accessToken;
@@ -142,6 +147,8 @@ class CloudBackupController extends ChangeNotifier {
       }
 
       _latestBackup = uploaded;
+      _hasPendingAutoBackup = false;
+      _autoBackupTimer?.cancel();
       _cloudBackupNewerThanLocal = false;
       _statusMessage = automatic ? 'Auto backup complete.' : 'Cloud backup completed.';
       return true;
@@ -200,6 +207,8 @@ class CloudBackupController extends ChangeNotifier {
         allowWhenLocalDataExists: allowOverwrite,
       );
       _pendingRestorePrompt = false;
+      _hasPendingAutoBackup = false;
+      _autoBackupTimer?.cancel();
       _cloudBackupNewerThanLocal = false;
       _statusMessage = 'Cloud restore completed.';
       _lastObservedStateHash = _stateHash(appStateController.state.toJson());
@@ -225,6 +234,7 @@ class CloudBackupController extends ChangeNotifier {
     _autoBackupTimer?.cancel();
     appStateController.removeListener(_onAppStateChanged);
     authController.removeListener(_onAuthChanged);
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
@@ -239,10 +249,12 @@ class CloudBackupController extends ChangeNotifier {
     final String hash = _stateHash(stateJson);
     if (hash == _lastObservedStateHash) return;
     _lastObservedStateHash = hash;
+    _hasPendingAutoBackup = true;
     _autoBackupTimer?.cancel();
     _autoBackupTimer = Timer(_autoBackupDelay, () {
       unawaited(backupNow(automatic: true));
     });
+    notifyListeners();
   }
 
   void _onAuthChanged() {
@@ -251,6 +263,7 @@ class CloudBackupController extends ChangeNotifier {
     _lastSignedInUserId = currentUserId;
     if (currentUserId == null || currentUserId.isEmpty) {
       _autoBackupTimer?.cancel();
+      _hasPendingAutoBackup = false;
       _latestBackup = null;
       _pendingRestorePrompt = false;
       _cloudBackupNewerThanLocal = false;
@@ -259,6 +272,17 @@ class CloudBackupController extends ChangeNotifier {
       return;
     }
     unawaited(refreshCloudState(evaluatePrompt: true));
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!_hasPendingAutoBackup) return;
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      _autoBackupTimer?.cancel();
+      unawaited(backupNow(automatic: true));
+    }
   }
 
   bool _shouldPromptRestoreAfterSignIn(DriveBackupFile? latest) {

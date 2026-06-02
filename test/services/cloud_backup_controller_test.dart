@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zakatapp_flutter/models/user_profile.dart';
@@ -87,7 +88,7 @@ Future<({AppStateController appState, AuthController auth, CloudBackupController
     _buildControllers({
   required _FakeGoogleDriveService driveService,
   UserProfile? user,
-  Duration autoBackupDelay = const Duration(milliseconds: 25),
+  Duration? autoBackupDelay,
 }) async {
   SharedPreferences.setMockInitialValues(<String, Object>{});
   const LocalStorageService localStorage = LocalStorageService();
@@ -109,6 +110,15 @@ Future<({AppStateController appState, AuthController auth, CloudBackupController
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('default auto-backup debounce is 3 minutes', () async {
+    final _FakeGoogleDriveService driveService = _FakeGoogleDriveService();
+    final controllers = await _buildControllers(driveService: driveService);
+
+    expect(controllers.cloud.autoBackupDelay, const Duration(minutes: 3));
+  });
+
   test('backup JSON generation includes cloud metadata', () async {
     final _FakeGoogleDriveService driveService = _FakeGoogleDriveService();
     final UserProfile user = const UserProfile(
@@ -254,5 +264,32 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 80));
 
     expect(driveService.uploadCalls, 1);
+  });
+
+  test('background pause uploads immediately when pending changes exist', () async {
+    final _FakeGoogleDriveService driveService = _FakeGoogleDriveService();
+    final UserProfile user = const UserProfile(
+      id: 'u1',
+      email: 'a@example.com',
+      name: 'User',
+      accessToken: 'token',
+    );
+    final controllers = await _buildControllers(
+      driveService: driveService,
+      user: user,
+      autoBackupDelay: const Duration(minutes: 3),
+    );
+
+    await controllers.auth.signIn();
+    await controllers.appState.addTransaction(_tx('tx1'));
+
+    expect(controllers.cloud.hasPendingAutoBackup, isTrue);
+    expect(driveService.uploadCalls, 0);
+
+    controllers.cloud.didChangeAppLifecycleState(AppLifecycleState.paused);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    expect(driveService.uploadCalls, 1);
+    expect(controllers.cloud.hasPendingAutoBackup, isFalse);
   });
 }
