@@ -7,15 +7,22 @@ class BackupService {
   static const String _appName = 'ZakatApp';
   static const int _schemaVersion = 1;
 
-  static String exportBackup(Map<String, dynamic> appStateJson) {
+  static String exportBackup(
+    Map<String, dynamic> appStateJson, {
+    Map<String, dynamic>? cloudBackupMetadata,
+  }) {
     final Map<String, dynamic> counts = _getCounts(appStateJson);
-    return jsonEncode(<String, dynamic>{
+    final Map<String, dynamic> root = <String, dynamic>{
       'appName': _appName,
       'schemaVersion': _schemaVersion,
       'exportedAt': DateTime.now().toUtc().toIso8601String(),
       'counts': counts,
       'appState': appStateJson,
-    });
+    };
+    if (cloudBackupMetadata != null && cloudBackupMetadata.isNotEmpty) {
+      root['cloudBackupMetadata'] = cloudBackupMetadata;
+    }
+    return jsonEncode(root);
   }
 
   static BackupPreview parseBackupPreview(String rawJson) {

@@ -24,6 +24,7 @@ class AppStateModel {
     required this.marketData,
     required this.marketHistory,
     required this.syncHealth,
+    required this.lastModifiedAt,
     required this.languagePreference,
     required this.themeMode,
     this.aiSettings,
@@ -50,6 +51,7 @@ class AppStateModel {
   final Map<String, dynamic> marketData;
   final List<Map<String, dynamic>> marketHistory;
   final SyncHealth syncHealth;
+  final String lastModifiedAt;
   final String languagePreference;
   final String themeMode;
   final Map<String, dynamic>? aiSettings;
@@ -93,6 +95,7 @@ class AppStateModel {
           .map((dynamic e) => _asMap(e))
           .toList(growable: false),
       syncHealth: SyncHealth.fromJson(_asMap(json['syncHealth'])),
+      lastModifiedAt: (json['lastModifiedAt'] ?? '').toString(),
       languagePreference: (json['languagePreference'] ?? 'en').toString(),
       themeMode: (json['themeMode'] ?? 'system').toString(),
       aiSettings: json['aiSettings'] is Map
@@ -129,6 +132,7 @@ class AppStateModel {
       'marketData': marketData,
       'marketHistory': marketHistory,
       'syncHealth': syncHealth.toJson(),
+      'lastModifiedAt': lastModifiedAt,
       'languagePreference': languagePreference,
       'themeMode': themeMode,
       if (aiSettings != null) 'aiSettings': aiSettings,

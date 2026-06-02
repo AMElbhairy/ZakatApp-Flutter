@@ -410,13 +410,14 @@ void main() {
     expect(find.text('Settings'), findsOneWidget);
   });
 
-  testWidgets('backup section shows Drive not available label',
+  testWidgets('backup section shows Drive backup actions',
       (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
     await tester.drag(find.byType(SingleChildScrollView).first, const Offset(0, -1300));
     await tester.pumpAndSettle();
-    expect(find.text('Google Drive backup not available yet.'), findsOneWidget);
+    expect(find.byKey(const Key('driveBackupNowButton')), findsOneWidget);
+    expect(find.byKey(const Key('driveRestoreFromCloudButton')), findsOneWidget);
   });
 }

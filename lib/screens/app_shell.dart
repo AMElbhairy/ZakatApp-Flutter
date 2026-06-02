@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../core/i18n/app_localizations.dart';
 import '../core/theme/app_icons.dart';
 import '../core/theme/app_radii.dart';
 import '../core/theme/app_theme_extensions.dart';
 import '../core/widgets/app_ui.dart';
+import '../services/cloud_backup_controller.dart';
 
 import 'account/account_screen.dart';
 import 'activity/activity_screen.dart';
@@ -26,11 +28,15 @@ class _AppShellState extends State<AppShell> {
   int _index = 2;
   final GlobalKey<ActivityScreenState> _activityKey =
       GlobalKey<ActivityScreenState>();
+  bool _restorePromptVisible = false;
 
   @override
   Widget build(BuildContext context) {
     final tokens = context.premiumTokens;
     final double bottomInset = MediaQuery.paddingOf(context).bottom;
+    final CloudBackupController? cloudBackupController =
+        context.watch<CloudBackupController?>();
+    _maybeShowRestorePrompt(context, cloudBackupController);
     final List<Widget> tabs = <Widget>[
       const AssetsScreen(),
       ActivityScreen(key: _activityKey),
@@ -54,17 +60,24 @@ class _AppShellState extends State<AppShell> {
     ];
 
     final double navTouchBlockHeight = 90 + bottomInset;
-    return Scaffold(
-      backgroundColor: tokens.colors.background,
-      resizeToAvoidBottomInset: false,
-      extendBody: true,
-      body: Stack(
-        clipBehavior: Clip.none,
-        children: <Widget>[
-          SafeArea(
-            bottom: false,
-            child: IndexedStack(index: _index, children: tabs),
-          ),
+    return PopScope<void>(
+      canPop: _index == 2,
+      onPopInvokedWithResult: (bool didPop, void _) {
+        if (!didPop && _index != 2) {
+          setState(() => _index = 2);
+        }
+      },
+      child: Scaffold(
+        backgroundColor: tokens.colors.background,
+        resizeToAvoidBottomInset: false,
+        extendBody: true,
+        body: Stack(
+          clipBehavior: Clip.none,
+          children: <Widget>[
+            SafeArea(
+              bottom: false,
+              child: IndexedStack(index: _index, children: tabs),
+            ),
           Positioned(
             left: 0,
             right: 0,
@@ -94,7 +107,7 @@ class _AppShellState extends State<AppShell> {
                   ];
                   const double navHeight = 58;
                   const double dashboardRaisedHeight = 66;
-                  const double dashboardRaisedWidth = 82;
+                  const double dashboardRaisedWidth = 97;
                   final double slotWidth = constraints.maxWidth / items.length;
                   const int dashboardIndex = 2;
                   final double selectedLeft =
@@ -263,9 +276,59 @@ class _AppShellState extends State<AppShell> {
               ),
             ),
           ),
-        ],
+          ],
+        ),
       ),
     );
+  }
+
+  void _maybeShowRestorePrompt(
+    BuildContext context,
+    CloudBackupController? cloudBackupController,
+  ) {
+    if (_restorePromptVisible || cloudBackupController == null) return;
+    if (!cloudBackupController.shouldPromptRestore) return;
+    _restorePromptVisible = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final bool? restore = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext dialogContext) => AlertDialog(
+          title: const Text('Cloud backup found'),
+          content: Text(
+            cloudBackupController.latestBackup?.effectiveUpdatedAt == null
+                ? 'A Google Drive backup was found. Restore now?'
+                : 'A Google Drive backup was found from '
+                    '${cloudBackupController.latestBackup!.effectiveUpdatedAt!.toLocal()}. Restore now?',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Later'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Restore'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted) return;
+      if (restore == true) {
+        final bool ok = await cloudBackupController.restoreLatestBackup();
+        if (!mounted) return;
+        ScaffoldMessenger.of(this.context).showSnackBar(
+          SnackBar(
+            content: Text(
+              ok ? 'Cloud restore completed.' : cloudBackupController.statusMessage,
+            ),
+          ),
+        );
+      } else {
+        cloudBackupController.dismissRestorePrompt();
+      }
+      _restorePromptVisible = false;
+    });
   }
 
   Widget _dashboardRaisedItem({

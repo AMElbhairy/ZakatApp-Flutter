@@ -1,30 +1,75 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:zakatapp_flutter/main.dart';
+import 'package:zakatapp_flutter/core/i18n/app_localizations.dart';
+import 'package:zakatapp_flutter/core/theme/app_theme.dart';
+import 'package:zakatapp_flutter/models/user_profile.dart';
+import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
+import 'package:zakatapp_flutter/screens/app_shell.dart';
+import 'package:zakatapp_flutter/services/app_state_controller.dart';
+import 'package:zakatapp_flutter/services/auth_controller.dart';
+import 'package:zakatapp_flutter/services/auth_service.dart';
+import 'package:zakatapp_flutter/services/local_storage_service.dart';
+
+class _FakeAuthService implements AuthService {
+  @override
+  Future<UserProfile?> restoreSession() async => null;
+
+  @override
+  Future<UserProfile?> signIn() async => null;
+
+  @override
+  Future<void> signOut() async {}
+}
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  TestWidgetsFlutterBinding.ensureInitialized();
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+  testWidgets('App shell renders locked navigation', (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
+    const LocalStorageService localStorage = LocalStorageService();
+    final AppStateController appStateController = AppStateController(
+      repository: AppStateRepository(localStorage: localStorage),
+    );
+    final AuthController authController = AuthController(
+      authService: _FakeAuthService(),
+      localStorage: localStorage,
+    );
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AppStateController>.value(value: appStateController),
+          ChangeNotifierProvider<AuthController>.value(value: authController),
+        ],
+        child: MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.light,
+          darkTheme: AppTheme.dark,
+          supportedLocales: AppLocalizations.supportedLocales,
+          localizationsDelegates: const <LocalizationsDelegate<dynamic>>[
+            AppLocalizationsDelegate(),
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          home: const AppShell(),
+        ),
+      ),
+    );
+
     await tester.pump();
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(find.byKey(const Key('premiumBottomNav')), findsOneWidget);
+    expect(find.byKey(const Key('addEntryFab')), findsOneWidget);
+    expect(find.text('Assets'), findsOneWidget);
+    expect(find.text('Activity'), findsOneWidget);
+    expect(find.text('Dashboard'), findsWidgets);
+    expect(find.text('Plans'), findsOneWidget);
+    expect(find.text('Account'), findsOneWidget);
   });
 }

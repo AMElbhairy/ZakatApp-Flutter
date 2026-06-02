@@ -4,11 +4,13 @@ import 'package:intl/intl.dart';
 
 import '../../core/i18n/app_localizations.dart';
 import '../../models/app_state.dart';
+import '../../models/backup_preview.dart';
 import '../../models/market_snapshot.dart';
 import '../../models/recurring_transaction.dart';
 import '../../services/app_state_controller.dart';
 import '../../services/auth_controller.dart';
 import '../../services/backup_restore_card.dart';
+import '../../services/cloud_backup_controller.dart';
 
 class AccountScreen extends StatefulWidget {
   const AccountScreen({super.key});
@@ -60,6 +62,7 @@ class _AccountScreenState extends State<AccountScreen> {
   Widget build(BuildContext context) {
     final controller = context.watch<AppStateController>();
     final authController = context.watch<AuthController?>();
+    final cloudBackupController = context.watch<CloudBackupController?>();
     final state = controller.state;
 
     final String mainCurrency =
@@ -497,7 +500,68 @@ class _AccountScreenState extends State<AccountScreen> {
             children: <Widget>[
               Text(_syncHealthSummary(state.syncHealth)),
               const SizedBox(height: 8),
-              Text(context.l10n.tr('drive_backup_coming_soon')),
+              Text(_cloudBackupSummary(cloudBackupController, authController)),
+              if (cloudBackupController != null &&
+                  cloudBackupController.latestBackup?.effectiveUpdatedAt != null) ...<Widget>[
+                const SizedBox(height: 6),
+                Text(
+                  'Last cloud backup: ${_formatLastUpdatedForDisplay(cloudBackupController.latestBackup!.effectiveUpdatedAt!.toIso8601String())}',
+                ),
+              ],
+              if (cloudBackupController != null &&
+                  cloudBackupController.statusMessage.trim().isNotEmpty) ...<Widget>[
+                const SizedBox(height: 6),
+                Text(cloudBackupController.statusMessage),
+              ],
+              if (cloudBackupController != null &&
+                  cloudBackupController.lastError.trim().isNotEmpty) ...<Widget>[
+                const SizedBox(height: 6),
+                Text(
+                  cloudBackupController.lastError,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ],
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: <Widget>[
+                  FilledButton.tonal(
+                    key: const Key('driveBackupNowButton'),
+                    onPressed: authController == null ||
+                            !authController.isSignedIn ||
+                            cloudBackupController == null ||
+                            cloudBackupController.isBackingUp ||
+                            cloudBackupController.isRestoring
+                        ? null
+                        : () => _handleCloudBackup(context, cloudBackupController),
+                    child: cloudBackupController?.isBackingUp == true
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Backup Now'),
+                  ),
+                  OutlinedButton(
+                    key: const Key('driveRestoreFromCloudButton'),
+                    onPressed: authController == null ||
+                            !authController.isSignedIn ||
+                            cloudBackupController == null ||
+                            cloudBackupController.isBackingUp ||
+                            cloudBackupController.isRestoring
+                        ? null
+                        : () => _handleCloudRestore(context, cloudBackupController),
+                    child: cloudBackupController?.isRestoring == true
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Restore from Cloud'),
+                  ),
+                ],
+              ),
               const SizedBox(height: 10),
               BackupRestoreCard(controller: controller),
             ],
@@ -790,6 +854,121 @@ class _AccountScreenState extends State<AccountScreen> {
     if (ok == true && context.mounted) {
       await context.read<AppStateController>().clearLocalData();
     }
+  }
+
+  String _cloudBackupSummary(
+    CloudBackupController? cloudBackupController,
+    AuthController? authController,
+  ) {
+    if (authController == null || !authController.isSignedIn) {
+      return 'Sign in with Google to enable hidden Google Drive backup.';
+    }
+    if (cloudBackupController == null) {
+      return 'Google Drive backup is unavailable in this build.';
+    }
+    if (cloudBackupController.isChecking) {
+      return 'Checking Google Drive backup...';
+    }
+    if (!cloudBackupController.hasCloudBackup) {
+      return 'No cloud backup found yet.';
+    }
+    if (cloudBackupController.cloudBackupNewerThanLocal) {
+      return 'A newer cloud backup is available.';
+    }
+    return 'Google Drive backup is connected.';
+  }
+
+  Future<void> _handleCloudBackup(
+    BuildContext context,
+    CloudBackupController cloudBackupController,
+  ) async {
+    bool force = false;
+    if (cloudBackupController.cloudBackupNewerThanLocal) {
+      final bool? overwrite = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext dialogContext) => AlertDialog(
+          title: const Text('Overwrite newer cloud backup?'),
+          content: const Text(
+            'The cloud backup is newer than the local data on this device. '
+            'Backup Now will replace the newer cloud copy.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Overwrite'),
+            ),
+          ],
+        ),
+      );
+      if (overwrite != true || !mounted) return;
+      force = true;
+    }
+
+    final bool ok = await cloudBackupController.backupNow(
+      forceIfCloudNewer: force,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(this.context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ok ? 'Cloud backup completed.' : cloudBackupController.statusMessage,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _handleCloudRestore(
+    BuildContext context,
+    CloudBackupController cloudBackupController,
+  ) async {
+    final BackupPreview? preview = await cloudBackupController.previewLatestBackup();
+    if (!mounted) return;
+    if (preview == null) {
+      ScaffoldMessenger.of(this.context).showSnackBar(
+        const SnackBar(content: Text('No cloud backup found.')),
+      );
+      return;
+    }
+
+    final bool? restore = await showDialog<bool>(
+      context: this.context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: const Text('Restore from Cloud'),
+        content: Text(
+          'Restore the latest Google Drive backup?\n\n'
+          'Transactions: ${preview.transactionsCount}\n'
+          'Savings: ${preview.savingsCount}\n'
+          'Investments: ${preview.investmentsCount}\n'
+          'Plans: ${preview.financialPlansCount}\n'
+          'Exported: ${preview.exportedAt.isEmpty ? '-' : _formatLastUpdatedForDisplay(preview.exportedAt)}',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Restore'),
+          ),
+        ],
+      ),
+    );
+    if (restore != true || !mounted) return;
+
+    final bool ok = await cloudBackupController.restoreLatestBackup();
+    if (!mounted) return;
+    ScaffoldMessenger.of(this.context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ok ? 'Cloud restore completed.' : cloudBackupController.statusMessage,
+        ),
+      ),
+    );
   }
 
   String _syncHealthSummary(SyncHealth health) {

@@ -87,7 +87,9 @@ class AppStateController extends ChangeNotifier {
   Future<void> updateState(AppStateModel newState) async {
     final ReconciliationResult reconciled =
         reconciliationService.reconcileExpensesWithSavings(newState);
-    _state = reconciled.state;
+    _state = reconciled.state.copyWith(
+      lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+    );
     await save();
     notifyListeners();
   }
@@ -527,6 +529,7 @@ extension AppStateModelCopyWith on AppStateModel {
     Map<String, dynamic>? marketData,
     List<Map<String, dynamic>>? marketHistory,
     SyncHealth? syncHealth,
+    String? lastModifiedAt,
     Map<String, dynamic>? aiSettings,
     bool? cloudHydrated,
     bool? hasUnsyncedAuthChanges,
@@ -553,6 +556,7 @@ extension AppStateModelCopyWith on AppStateModel {
       marketData: marketData ?? this.marketData,
       marketHistory: marketHistory ?? this.marketHistory,
       syncHealth: syncHealth ?? this.syncHealth,
+      lastModifiedAt: lastModifiedAt ?? this.lastModifiedAt,
       aiSettings: aiSettings ?? this.aiSettings,
       cloudHydrated: cloudHydrated ?? this.cloudHydrated,
       hasUnsyncedAuthChanges:

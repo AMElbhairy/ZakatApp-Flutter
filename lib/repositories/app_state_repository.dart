@@ -105,6 +105,7 @@ class AppStateDefaults {
         lastError: '',
         pendingWrites: 0,
       ),
+      lastModifiedAt: '',
       languagePreference: 'en',
       themeMode: 'system',
       aiSettings: <String, dynamic>{
