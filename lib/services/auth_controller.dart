@@ -98,6 +98,24 @@ class AuthController extends ChangeNotifier {
     }
   }
 
+  Future<bool> ensureSession() async {
+    if (!isSignedIn) return false;
+    final bool isValid = await authService.ensureSession();
+    if (!isValid) {
+      // Session is stale/invalid, try restoring it (signInSilently).
+      final UserProfile? restored = await authService.restoreSession();
+      if (restored != null) {
+        _currentUser = restored;
+        await _persistCurrentUser();
+        return true;
+      } else {
+        await signOut();
+        return false;
+      }
+    }
+    return true;
+  }
+
   Future<void> _persistCurrentUser() async {
     final UserProfile? user = _currentUser;
     if (user == null) return;

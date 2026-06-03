@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../core/widgets/app_ui.dart';
 import '../models/backup_preview.dart';
 import 'app_state_controller.dart';
 import 'backup_restore_service.dart';
@@ -35,9 +36,7 @@ class BackupRestoreCard extends StatelessWidget {
       );
     } catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to export backup: $e')),
-      );
+      showTopSnackBar(context, 'Failed to export backup: $e');
     }
   }
 
@@ -54,9 +53,7 @@ class BackupRestoreCard extends StatelessWidget {
       _showPreviewDialog(context, preview);
     } catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: invalid backup file. $e')),
-      );
+      showTopSnackBar(context, 'Error: invalid backup file. $e');
     }
   }
 
@@ -166,9 +163,7 @@ class BackupRestoreCard extends StatelessWidget {
       if (!context.mounted) return;
       final String counts =
           'tx:${result.counts['transactions']} sav:${result.counts['savings']} inv:${result.counts['investments']}';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${result.mode.toUpperCase()} restore success. $counts')),
-      );
+      showTopSnackBar(context, '${result.mode.toUpperCase()} restore success. $counts');
       if (result.warnings.isNotEmpty) {
         showDialog<void>(
           context: context,
@@ -189,9 +184,7 @@ class BackupRestoreCard extends StatelessWidget {
       }
     } catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to restore backup: $e')),
-      );
+      showTopSnackBar(context, 'Failed to restore backup: $e');
     }
   }
 

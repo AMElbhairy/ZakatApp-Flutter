@@ -12,6 +12,9 @@ import 'package:zakatapp_flutter/services/local_storage_service.dart';
 import 'package:zakatapp_flutter/services/market_data_api_service.dart';
 
 class _FakeAuthService implements AuthService {
+  @override
+  Future<bool> ensureSession() async => true;
+
   UserProfile? _user;
 
   @override

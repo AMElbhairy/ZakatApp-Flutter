@@ -29,6 +29,9 @@ class _NoopMarketDataApiService implements MarketDataApiService {
 
 class _FakeAuthService implements AuthService {
   @override
+  Future<bool> ensureSession() async => true;
+
+  @override
   Future<UserProfile?> restoreSession() async => null;
 
   @override
@@ -219,8 +222,8 @@ void main() {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    await tester.ensureVisible(find.text('Zakat Summary').first);
-    await tester.tap(find.text('Zakat Summary').first, warnIfMissed: false);
+    await tester.ensureVisible(find.text('Zakat').first);
+    await tester.tap(find.text('Zakat').first, warnIfMissed: false);
     await tester.pumpAndSettle();
 
     if (find.byKey(const Key('activitySectionSegment')).evaluate().isEmpty) {

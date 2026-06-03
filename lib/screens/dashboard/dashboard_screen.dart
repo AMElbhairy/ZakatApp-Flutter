@@ -1,17 +1,23 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
+import 'package:intl/intl.dart' hide TextDirection;
 import 'package:provider/provider.dart';
 
 import '../../core/i18n/app_localizations.dart';
 import '../../core/services/zakat_engine.dart';
+import '../../core/theme/app_spacing.dart';
 import '../../core/services/zakat_schedule_service.dart';
 import '../../core/theme/app_theme_extensions.dart';
+import '../../core/theme/app_radii.dart';
 import '../../core/widgets/app_ui.dart';
+import '../../models/app_state.dart';
 import '../../models/investment_asset.dart';
 import '../../models/market_snapshot.dart';
 import '../../models/saving.dart';
 import '../../models/transaction.dart';
 import '../../services/app_state_controller.dart';
+import '../../services/auth_controller.dart';
+import 'obligations_list_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({
@@ -19,32 +25,41 @@ class DashboardScreen extends StatefulWidget {
     this.onViewAllActivity,
     this.onOpenAddActions,
     this.onOpenZakatSchedule,
+    this.onOpenAddTransaction,
+    this.onOpenAddAsset,
+    this.onViewAssets,
   });
 
   final VoidCallback? onViewAllActivity;
   final VoidCallback? onOpenAddActions;
   final VoidCallback? onOpenZakatSchedule;
+  final ValueChanged<String>? onOpenAddTransaction;
+  final VoidCallback? onOpenAddAsset;
+  final VoidCallback? onViewAssets;
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  static const Color _deepEmerald = Color(0xFF073B3A);
-  static const Color _richEmerald = Color(0xFF0F766E);
   bool _animateIn = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(() => _animateIn = true);
+      if (mounted) {
+        setState(() => _animateIn = true);
+      }
     });
   }
 
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<AppStateController>();
+    final authController = context.watch<AuthController>();
+    final user = authController.currentUser;
+    final String? firstName = _extractFirstName(user?.name);
     final state = controller.state;
     final transactions = state.transactions;
     final savings = state.savings;
@@ -63,8 +78,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final bool hasMetalsData = snapshot.hasRequiredData;
     final bool hasMarketData = hasFxData && hasMetalsData;
 
-    double totalIncomeEgp = 0;
-    double totalExpensesEgp = 0;
     NisabTotals savingsTotals = const NisabTotals(
       totalCashEgp: 0,
       totalGold24k: 0,
@@ -73,30 +86,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
       totalSilverEgp: 0,
       totalSavingsWealthEgp: 0,
     );
-    double investmentsEgp = 0;
     double totalWealthEgp = 0;
     double investmentLiabilityEgp = 0;
     double netPositionEgp = 0;
     double nisabThreshold = 0;
     bool nisabMet = false;
 
-    if (hasFxData) {
-      for (final tx in transactions) {
-        final double egpAmount = ZakatEngineService.convertToEgp(tx.amount, tx.currency, market);
-        if (tx.type == 'income') {
-          totalIncomeEgp += egpAmount;
-        } else if (tx.type == 'expense') {
-          totalExpensesEgp += egpAmount;
-        }
-      }
-      investmentsEgp = ZakatEngineService.calculateTotalInvestmentsEgp(
-        investments: investments,
+    if (hasMarketData) {
+      savingsTotals = ZakatEngineService.computeNisabTotals(
+        savings: savings,
         marketData: market,
       );
-    }
-
-    if (hasMarketData) {
-      savingsTotals = ZakatEngineService.computeNisabTotals(savings: savings, marketData: market);
       totalWealthEgp = ZakatEngineService.calculateTotalWealthEgp(
         transactions: transactions,
         savings: savings,
@@ -107,11 +107,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
       investmentLiabilityEgp = investments.fold<double>(
         0,
         (double sum, InvestmentAsset asset) =>
-            sum + ZakatEngineService.convertToEgp(asset.loanBalance, asset.currency, market),
+            sum +
+            ZakatEngineService.convertToEgp(
+              asset.loanBalance,
+              asset.currency,
+              market,
+            ),
       );
       netPositionEgp = totalWealthEgp - investmentLiabilityEgp;
 
-      nisabThreshold = ZakatEngineService.defaultConfig.nisabGoldGrams * market.goldPrice24kEgp;
+      nisabThreshold =
+          ZakatEngineService.defaultConfig.nisabGoldGrams *
+          market.goldPrice24kEgp;
       nisabMet = ZakatEngineService.checkCashNisab(totalWealthEgp, market);
     }
 
@@ -125,30 +132,66 @@ class _DashboardScreenState extends State<DashboardScreen> {
             marketData: market,
           )
         : const <Map<String, dynamic>>[];
-    final _Dues dues = _computeDues(schedule);
+    final _Dues dues = _computeDues(
+      schedule: schedule,
+      zakatPaidMonths: state.zakatPaidMonths,
+      investments: investments,
+      marketData: market,
+    );
     final String? nextZakatDate = _findNextZakatDate(schedule);
+
+    final double rawWallet = hasFxData
+        ? ZakatEngineService.calculateWalletBalance(
+            transactions: transactions,
+            savings: savings,
+            marketData: market,
+          )
+        : 0.0;
+    final double walletEgp = rawWallet > 0 ? rawWallet : 0.0;
 
     final _Allocation allocation = _computeAllocation(
       savingsTotals: savingsTotals,
       investments: investments,
       marketData: market,
       totalWealthEgp: totalWealthEgp,
+      walletEgp: walletEgp,
+    );
+    final bool balancesHidden = _isBalanceHidden(state);
+    final _HeroGrowthData? heroGrowth = _computeHeroGrowth(
+      transactions: transactions,
+      savings: savings,
+      investments: investments,
+      marketData: market,
+      marketHistory: state.marketHistory,
+      totalWealthEgp: totalWealthEgp,
+      hasMarketData: hasMarketData,
     );
 
     final List<Transaction> recent = List<Transaction>.from(transactions)
       ..sort((a, b) => _parseDate(b.date).compareTo(_parseDate(a.date)));
     final List<Transaction> recent4 = recent.take(4).toList(growable: false);
 
-    final bool hasAnyData = transactions.isNotEmpty || savings.isNotEmpty || investments.isNotEmpty;
+    final bool hasAnyData =
+        transactions.isNotEmpty || savings.isNotEmpty || investments.isNotEmpty;
 
     final tokens = context.premiumTokens;
-    final double navSafeBottomPadding = 112 + MediaQuery.paddingOf(context).bottom;
+    final double navSafeBottomPadding =
+        112 + MediaQuery.paddingOf(context).bottom;
     return Container(
       color: tokens.colors.background,
       child: ListView(
         padding: EdgeInsets.fromLTRB(16, 20, 16, navSafeBottomPadding),
         children: <Widget>[
-          SectionHeader(title: context.l10n.tr('dashboard'), bottomSpacing: 16),
+          _DashboardHeader(
+            title: context.l10n.tr('dashboard'),
+            firstName: firstName,
+            balancesHidden: balancesHidden,
+            onTogglePrivacy: () => controller.togglePrivacyMode(),
+            hasNotifications:
+                false, // You can update this based on actual state if available
+            onTapNotifications: () {}, // No-op for now
+          ),
+          const SizedBox(height: 18),
           if (!hasAnyData)
             EmptyStateCard(
               cardKey: const Key('dashboardEmptyCard'),
@@ -175,100 +218,161 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 state: state,
                 market: market,
                 nextZakatDate: nextZakatDate,
+                balancesHidden: balancesHidden,
+                heroGrowth: heroGrowth,
               ),
             ),
             const SizedBox(height: 16),
             _stagger(
               order: 1,
               child: _QuickActionsRow(
-                onOpenAddActions: widget.onOpenAddActions,
+                onOpenAddTransaction: widget.onOpenAddTransaction,
+                onOpenAddAsset: widget.onOpenAddAsset,
                 onOpenZakatSchedule: widget.onOpenZakatSchedule,
               ),
             ),
             const SizedBox(height: 16),
             _stagger(
               order: 2,
-              child: _InsightPanel(
-                title: context.l10n.tr('current_nisab_threshold'),
-                value: hasFxData && !hasMetalsData
-                    ? context.l10n.tr('gold_silver_required')
-                    : _formatOrMissing(context, nisabThreshold, hasMarketData, state.mainCurrency, market),
+              child: _PremiumSection(
+                title: context.l10n.tr('asset_allocation'),
+                trailing: TextButton(
+                  key: const Key('dashboardViewAssetAllocationDetailsButton'),
+                  onPressed: widget.onViewAssets,
+                  style: TextButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    foregroundColor: const Color(0xFF0F766E),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text(
+                        context.l10n.tr('view_details'),
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.arrow_forward_ios_rounded, size: 11),
+                    ],
+                  ),
+                ),
+                child: _AllocationRing(
+                  allocation: allocation,
+                  hasMarketData: hasMarketData,
+                  mainCurrency: state.mainCurrency,
+                  market: market,
+                  balancesHidden: balancesHidden,
+                ),
               ),
             ),
             const SizedBox(height: 16),
             _stagger(
               order: 3,
-              child: _PremiumSection(
-                title: context.l10n.tr('financial_summary'),
-                child: Column(
-                  children: <Widget>[
-                    _MetricRow(
-                      label: context.l10n.tr('total_income'),
-                      value: _formatOrMissing(context, totalIncomeEgp, hasFxData, state.mainCurrency, market),
-                    ),
-                    _MetricRow(
-                      label: context.l10n.tr('total_expenses'),
-                      value: _formatOrMissing(context, totalExpensesEgp, hasFxData, state.mainCurrency, market),
-                    ),
-                    _MetricRow(
-                      label: context.l10n.tr('total_savings_wealth'),
-                      value: _formatOrMissing(
-                        context,
-                        savingsTotals.totalSavingsWealthEgp,
-                        hasMarketData,
-                        state.mainCurrency,
-                        market,
-                      ),
-                    ),
-                    _MetricRow(
-                      label: context.l10n.tr('investment_wealth'),
-                      value: _formatOrMissing(context, investmentsEgp, hasFxData, state.mainCurrency, market),
-                      isLast: true,
-                    ),
-                  ],
-                ),
+              child: _NisabStatusCard(
+                nisabThreshold: nisabThreshold,
+                nisabMet: nisabMet,
+                hasMarketData: hasMarketData,
+                hasFxData: hasFxData,
+                hasMetalsData: hasMetalsData,
+                mainCurrency: state.mainCurrency,
+                market: market,
+                zakatAnnualDate: state.zakatAnnualDate,
+                transactions: transactions,
+                savings: savings,
               ),
             ),
             const SizedBox(height: 16),
             _stagger(
               order: 4,
               child: _PremiumSection(
-                key: const Key('dashboardZakatSummaryCard'),
-                title: context.l10n.tr('zakat_summary'),
-                onTap: widget.onOpenZakatSchedule,
+                key: const Key('dashboardUpcomingObligationsCard'),
+                title: context.l10n.tr('upcoming_obligations'),
                 child: Column(
                   children: <Widget>[
-                    _MetricRow(
-                      label: context.l10n.tr('nisab_status'),
-                      value: hasMarketData
-                          ? (nisabMet ? context.l10n.tr('above_nisab') : context.l10n.tr('below_nisab'))
-                          : (hasFxData
-                              ? context.l10n.tr('gold_silver_required')
-                              : context.l10n.tr('market_data_required')),
-                      valueColor: nisabMet ? _richEmerald : const Color(0xFF8A6A2A),
+                    _ObligationSummaryTile(
+                      title: context.l10n.tr('obligations_this_month'),
+                      value: balancesHidden
+                          ? '••••••'
+                          : _formatOrMissing(
+                              context,
+                              dues.thisMonth,
+                              hasMarketData,
+                              state.mainCurrency,
+                              market,
+                            ),
+                      icon: Icons.calendar_today_outlined,
+                      iconBgColor: const Color(
+                        0xFF10B981,
+                      ).withValues(alpha: 0.12),
+                      iconColor: const Color(0xFF10B981),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const ObligationsListScreen(
+                              filterMode: 'this_month',
+                            ),
+                          ),
+                        );
+                      },
                     ),
-                    _MetricRow(
-                      label: context.l10n.tr('current_nisab_threshold'),
-                      value: hasFxData && !hasMetalsData
-                          ? context.l10n.tr('gold_silver_required')
-                          : _formatOrMissing(context, nisabThreshold, hasMarketData, state.mainCurrency, market),
+                    const Divider(height: 1, indent: 8, endIndent: 8),
+                    _ObligationSummaryTile(
+                      title: context.l10n.tr('obligations_next_month'),
+                      value: balancesHidden
+                          ? '••••••'
+                          : _formatOrMissing(
+                              context,
+                              dues.nextMonth,
+                              hasMarketData,
+                              state.mainCurrency,
+                              market,
+                            ),
+                      icon: Icons.calendar_month_outlined,
+                      iconBgColor: const Color(
+                        0xFFF59E0B,
+                      ).withValues(alpha: 0.12),
+                      iconColor: const Color(0xFFD97706),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const ObligationsListScreen(
+                              filterMode: 'next_month',
+                            ),
+                          ),
+                        );
+                      },
                     ),
-                    _MetricRow(
-                      label: context.l10n.tr('zakat_due_this_month'),
-                      value: _formatOrMissing(context, dues.thisMonth, hasMarketData, state.mainCurrency, market),
+                    const Divider(height: 1, indent: 8, endIndent: 8),
+                    _ObligationSummaryTile(
+                      title: context.l10n.tr('total_upcoming_obligations'),
+                      value: balancesHidden
+                          ? '••••••'
+                          : _formatOrMissing(
+                              context,
+                              dues.totalUpcoming,
+                              hasMarketData,
+                              state.mainCurrency,
+                              market,
+                            ),
+                      icon: Icons.date_range_outlined,
+                      iconBgColor: const Color(
+                        0xFF8B5CF6,
+                      ).withValues(alpha: 0.12),
+                      iconColor: const Color(0xFF8B5CF6),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const ObligationsListScreen(
+                              filterMode: 'total',
+                            ),
+                          ),
+                        );
+                      },
                     ),
-                    _MetricRow(
-                      label: context.l10n.tr('zakat_due_next_month'),
-                      value: _formatOrMissing(context, dues.nextMonth, hasMarketData, state.mainCurrency, market),
-                    ),
-                    _MetricRow(
-                      label: context.l10n.tr('total_upcoming_dues'),
-                      value: _formatOrMissing(context, dues.totalUpcoming, hasMarketData, state.mainCurrency, market),
-                      valueColor: _deepEmerald,
-                      isLast: true,
-                    ),
-                    const SizedBox(height: 14),
-                    _MiniZakatJourney(isMet: nisabMet, hasMarketData: hasMarketData),
                   ],
                 ),
               ),
@@ -276,14 +380,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
             const SizedBox(height: 16),
             _stagger(
               order: 5,
-              child: _PremiumSection(
-                title: context.l10n.tr('asset_allocation'),
-                child: _AllocationRing(allocation: allocation),
-              ),
-            ),
-            const SizedBox(height: 16),
-            _stagger(
-              order: 6,
               child: _PremiumSection(
                 title: context.l10n.tr('recent_activity_title'),
                 trailing: TextButton(
@@ -298,14 +394,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         alignment: Alignment.centerLeft,
                         child: Text(
                           context.l10n.tr('no_recent_transactions'),
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodyLarge
+                          style: Theme.of(context).textTheme.bodyLarge
                               ?.copyWith(color: const Color(0xFF6B7280)),
                         ),
                       )
                     else
-                      ...recent4.map((Transaction tx) => _ActivityRow(tx: tx)),
+                      ...recent4.map(
+                        (Transaction tx) => _ActivityRow(
+                          tx: tx,
+                          balancesHidden: balancesHidden,
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -318,20 +417,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _stagger({required int order, required Widget child}) {
     final int base = 280 + (order * 80);
-    return TweenAnimationBuilder<double>(
-      tween: Tween<double>(begin: 0, end: _animateIn ? 1 : 0),
-      duration: Duration(milliseconds: base),
-      curve: Curves.easeOutCubic,
-      builder: (_, double value, Widget? built) {
-        return Opacity(
-          opacity: value,
-          child: Transform.translate(
-            offset: Offset(0, (1 - value) * 12),
-            child: built,
-          ),
-        );
-      },
-      child: child,
+    return _KeepAliveWrapper(
+      child: TweenAnimationBuilder<double>(
+        tween: Tween<double>(begin: 0, end: _animateIn ? 1 : 0),
+        duration: Duration(milliseconds: base),
+        curve: Curves.easeOutCubic,
+        builder: (_, double value, Widget? built) {
+          return Opacity(
+            opacity: value,
+            child: Transform.translate(
+              offset: Offset(0, (1 - value) * 12),
+              child: built,
+            ),
+          );
+        },
+        child: child,
+      ),
     );
   }
 
@@ -346,55 +447,113 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (zakatMethod == 'annual') {
       return ZakatScheduleService.calculateAnnualZakatSchedule(
         zakatAnnualDate: zakatAnnualDate,
-        transactions: transactions.map((e) => e.toJson()).toList(growable: false),
+        transactions: transactions
+            .map((e) => e.toJson())
+            .toList(growable: false),
         savings: savings.map((e) => e.toJson()).toList(growable: false),
         investments: investments.map((e) => e.toJson()).toList(growable: false),
         marketData: marketData,
       );
     }
 
-    final List<Map<String, dynamic>> incomeSchedule = ZakatScheduleService.calculateMonthlyZakatSchedule(
-      transactions: transactions.map((e) => e.toJson()).toList(growable: false),
-      marketData: marketData,
-    );
-    final List<Map<String, dynamic>> savingsSchedule = ZakatScheduleService.calculateSavingsZakatSchedule(
-      savings: savings.map((e) => e.toJson()).toList(growable: false),
-      marketData: marketData,
-    );
+    final List<Map<String, dynamic>> transactionJson = transactions
+        .map((e) => e.toJson())
+        .toList(growable: false);
+    final List<Map<String, dynamic>> savingsJson = savings
+        .map((e) => e.toJson())
+        .toList(growable: false);
+
+    final List<Map<String, dynamic>> incomeSchedule =
+        ZakatScheduleService.calculateMonthlyZakatSchedule(
+          transactions: transactionJson,
+          savings: savingsJson,
+          marketData: marketData,
+        );
+    final List<Map<String, dynamic>> savingsSchedule =
+        ZakatScheduleService.calculateSavingsZakatSchedule(
+          savings: savingsJson,
+          transactions: transactionJson,
+          marketData: marketData,
+        );
 
     return <Map<String, dynamic>>[...incomeSchedule, ...savingsSchedule];
   }
 
-  static _Dues _computeDues(List<Map<String, dynamic>> schedule) {
+  static _Dues _computeDues({
+    required List<Map<String, dynamic>> schedule,
+    required List<String> zakatPaidMonths,
+    required List<InvestmentAsset> investments,
+    required MarketData marketData,
+  }) {
     final DateTime now = DateTime.now();
-    final String thisMonthKey = '${now.year}-${now.month.toString().padLeft(2, '0')}';
+    final String thisMonthKey =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}';
     final DateTime nextMonthDate = DateTime(now.year, now.month + 1, 1);
-    final String nextMonthKey = '${nextMonthDate.year}-${nextMonthDate.month.toString().padLeft(2, '0')}';
+    final String nextMonthKey =
+        '${nextMonthDate.year}-${nextMonthDate.month.toString().padLeft(2, '0')}';
 
     double thisMonth = 0;
     double nextMonth = 0;
-    double upcoming = 0;
 
+    // 1. Zakat dues from the schedule (excluding paid months)
     for (final item in schedule) {
       final String monthKey = (item['monthKey'] ?? '').toString();
+      final String paymentDateRaw = (item['paymentDate'] ?? '').toString();
+      final DateTime? paymentDate = DateTime.tryParse(paymentDateRaw);
+      final String scheduleMonthKey = paymentDate == null
+          ? monthKey.length >= 7
+                ? monthKey.substring(0, 7)
+                : monthKey
+          : '${paymentDate.year}-${paymentDate.month.toString().padLeft(2, '0')}';
       final double value = ((item['totalZakat'] ?? 0) as num).toDouble();
-      if (monthKey == thisMonthKey) thisMonth += value;
-      if (monthKey == nextMonthKey) nextMonth += value;
-
-      DateTime? paymentDate;
-      try {
-        paymentDate = DateTime.parse((item['paymentDate'] ?? '').toString());
-      } catch (_) {
-        paymentDate = null;
+      if (scheduleMonthKey == thisMonthKey) {
+        if (!zakatPaidMonths.contains(monthKey)) {
+          thisMonth += value;
+        }
       }
-      if (paymentDate != null &&
-          !DateTime(paymentDate.year, paymentDate.month, 1)
-              .isBefore(DateTime(now.year, now.month, 1))) {
-        upcoming += value;
+      if (scheduleMonthKey == nextMonthKey) {
+        if (!zakatPaidMonths.contains(monthKey)) {
+          nextMonth += value;
+        }
       }
     }
 
-    return _Dues(thisMonth: thisMonth, nextMonth: nextMonth, totalUpcoming: upcoming);
+    // 2. Unpaid installments for this month and next month
+    for (final asset in investments) {
+      for (final installment in asset.installmentPlan) {
+        final bool isPaid = installment['isPaid'] == true;
+        if (isPaid) continue;
+
+        final String rawDate = (installment['date'] ?? '').toString();
+        final DateTime? parsedDate = DateTime.tryParse(rawDate);
+        if (parsedDate == null) continue;
+
+        final String installmentMonthKey =
+            '${parsedDate.year}-${parsedDate.month.toString().padLeft(2, '0')}';
+
+        final double amount =
+            (installment['amount'] as num?)?.toDouble() ?? 0.0;
+        final String currency = (installment['currency'] ?? asset.currency)
+            .toString();
+        final double amountEgp = ZakatEngineService.convertToEgp(
+          amount,
+          currency,
+          marketData,
+        );
+
+        if (installmentMonthKey == thisMonthKey) {
+          thisMonth += amountEgp;
+        } else if (installmentMonthKey == nextMonthKey) {
+          nextMonth += amountEgp;
+        }
+      }
+    }
+
+    return _Dues(
+      thisMonth: thisMonth,
+      nextMonth: nextMonth,
+      totalUpcoming: thisMonth + nextMonth,
+    );
   }
 
   static _Allocation _computeAllocation({
@@ -402,21 +561,36 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required List<InvestmentAsset> investments,
     required MarketData marketData,
     required double totalWealthEgp,
+    required double walletEgp,
   }) {
-    if (totalWealthEgp <= 0 || totalWealthEgp.isNaN || totalWealthEgp.isInfinite) {
-      return const _Allocation(cashPct: 0, metalsPct: 0, propertyPct: 0, companyPct: 0);
+    if (totalWealthEgp <= 0 ||
+        totalWealthEgp.isNaN ||
+        totalWealthEgp.isInfinite) {
+      return const _Allocation(
+        cashPct: 0,
+        metalsPct: 0,
+        propertyPct: 0,
+        companyPct: 0,
+        cashVal: 0,
+        metalsVal: 0,
+        propertyVal: 0,
+        companyVal: 0,
+        totalVal: 0,
+      );
     }
 
-    final double cash = savingsTotals.totalCashEgp;
-    final double metals = savingsTotals.totalGoldEgp + savingsTotals.totalSilverEgp;
+    final double cash = savingsTotals.totalCashEgp + walletEgp;
+    final double metals =
+        savingsTotals.totalGoldEgp + savingsTotals.totalSilverEgp;
 
     double property = 0;
     double company = 0;
     for (final asset in investments) {
-      final double value = ZakatEngineService.calculateInvestmentEstimatedValueEgp(
-        asset: asset,
-        marketData: marketData,
-      );
+      final double value =
+          ZakatEngineService.calculateInvestmentEstimatedValueEgp(
+            asset: asset,
+            marketData: marketData,
+          );
       if (ZakatEngineService.isCompanyInvestmentType(asset.investmentType)) {
         company += value;
       } else {
@@ -429,6 +603,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       metalsPct: (metals / totalWealthEgp) * 100,
       propertyPct: (property / totalWealthEgp) * 100,
       companyPct: (company / totalWealthEgp) * 100,
+      cashVal: cash,
+      metalsVal: metals,
+      propertyVal: property,
+      companyVal: company,
+      totalVal: totalWealthEgp,
     );
   }
 
@@ -453,12 +632,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return out;
   }
 
-  static String _formatDisplay(double value, String currencyCode) {
-    final NumberFormat formatter = NumberFormat('#,##0.00', 'en_US');
-    if (currencyCode == 'EGP') {
-      return 'E£ ${formatter.format(value)}';
-    }
-    return '$currencyCode ${formatter.format(value)}';
+  static bool _isArabic(BuildContext context) {
+    return Localizations.localeOf(context).languageCode.toLowerCase() == 'ar';
+  }
+
+  static String _formatDisplay(
+    BuildContext context,
+    double value,
+    String currencyCode,
+  ) {
+    return ZakatEngineService.formatCurrency(
+      value,
+      currencyCode,
+      isArabic: _isArabic(context),
+    );
+  }
+
+  static String _formatCompactDisplay(
+    BuildContext context,
+    double value,
+    String currencyCode,
+  ) {
+    return ZakatEngineService.formatCurrency(
+      value,
+      currencyCode,
+      isArabic: _isArabic(context),
+      compact: true,
+    );
   }
 
   static String _formatOrMissing(
@@ -469,10 +669,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
     MarketData marketData,
   ) {
     if (!hasMarketData) return context.l10n.tr('market_data_required');
-    final String displayCurrency = mainCurrency.trim().isEmpty ? 'EGP' : mainCurrency.trim();
-    final double displayValue = ZakatEngineService.convertFromEgp(valueEgp, displayCurrency, marketData);
+    final String displayCurrency = mainCurrency.trim().isEmpty
+        ? 'EGP'
+        : mainCurrency.trim();
+    final double displayValue = ZakatEngineService.convertFromEgp(
+      valueEgp,
+      displayCurrency,
+      marketData,
+    );
     if (displayValue.isNaN) return context.l10n.tr('market_data_required');
-    return _formatDisplay(displayValue, displayCurrency);
+    return _formatDisplay(context, displayValue, displayCurrency);
   }
 
   static String _formatPct(double value) {
@@ -487,13 +693,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (raw.isEmpty) continue;
       final DateTime? parsed = DateTime.tryParse(raw);
       if (parsed == null) continue;
-      if (parsed.isBefore(DateTime(today.year, today.month, today.day))) continue;
+      if (parsed.isBefore(DateTime(today.year, today.month, today.day))) {
+        continue;
+      }
       if (best == null || parsed.isBefore(best)) {
         best = parsed;
       }
     }
     if (best == null) return null;
-    return DateFormat('yyyy-MM-dd').format(best);
+    return DateFormat('dd MMM yyyy', 'en_US').format(best);
   }
 
   static DateTime _parseDate(String value) {
@@ -502,6 +710,296 @@ class _DashboardScreenState extends State<DashboardScreen> {
     } catch (_) {
       return DateTime.fromMillisecondsSinceEpoch(0);
     }
+  }
+
+  static bool _isBalanceHidden(AppStateModel state) {
+    final Map<String, dynamic> json = state.toJson();
+    final Map<String, dynamic> aiSettings = Map<String, dynamic>.from(
+      state.aiSettings ?? const <String, dynamic>{},
+    );
+    const List<String> keys = <String>[
+      'hideBalances',
+      'balancesHidden',
+      'balanceHidden',
+      'isBalanceHidden',
+      'privacyMode',
+    ];
+    for (final String key in keys) {
+      final dynamic value = json[key];
+      final dynamic aiValue = aiSettings[key];
+      if (_truthy(value) || _truthy(aiValue)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static bool _truthy(dynamic value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    final String raw = (value ?? '').toString().trim().toLowerCase();
+    return raw == 'true' || raw == '1';
+  }
+
+  static String? _extractFirstName(String? name) {
+    final String trimmed = (name ?? '').trim();
+    if (trimmed.isEmpty) return null;
+    return trimmed.split(RegExp(r'\s+')).first;
+  }
+
+  static _HeroGrowthData? _computeHeroGrowth({
+    required List<Transaction> transactions,
+    required List<Saving> savings,
+    required List<InvestmentAsset> investments,
+    required MarketData marketData,
+    required List<Map<String, dynamic>> marketHistory,
+    required double totalWealthEgp,
+    required bool hasMarketData,
+  }) {
+    final DateTime now = DateTime.now();
+    if (!hasMarketData || totalWealthEgp < 0 || !totalWealthEgp.isFinite) {
+      return null;
+    }
+
+    final DateTime startOfYear = DateTime(now.year, 1, 1);
+    final double startOfYearWealth =
+        ZakatEngineService.calculateTotalWealthEgpAt(
+          asOf: startOfYear,
+          transactions: transactions,
+          savings: savings,
+          investments: investments,
+          marketData: marketData,
+        );
+    if (startOfYearWealth <= 0 || !startOfYearWealth.isFinite) return null;
+
+    final double changePct =
+        ((totalWealthEgp - startOfYearWealth) / startOfYearWealth) * 100;
+    if (!changePct.isFinite) return null;
+
+    final List<_WealthHistoryPoint> realHistory = <_WealthHistoryPoint>[];
+    for (final Map<String, dynamic> item in marketHistory) {
+      final dynamic rawWealth =
+          item['totalWealthEgp'] ??
+          item['wealthEgp'] ??
+          item['total_wealth_egp'];
+      final double? wealth = _asDouble(rawWealth);
+      if (wealth == null || wealth <= 0) continue;
+
+      final String rawDate =
+          (item['recordedAt'] ??
+                  item['timestamp'] ??
+                  item['updatedAt'] ??
+                  item['date'] ??
+                  item['LAST_UPDATED'] ??
+                  '')
+              .toString();
+      final DateTime? recordedAt = DateTime.tryParse(rawDate);
+      if (recordedAt == null) continue;
+      if (recordedAt.isBefore(startOfYear)) continue;
+
+      realHistory.add(_WealthHistoryPoint(recordedAt.toLocal(), wealth));
+    }
+
+    final List<double> sparklinePoints = realHistory.length >= 2
+        ? (realHistory..sort((a, b) => a.at.compareTo(b.at)))
+              .map((point) => point.value)
+              .toList(growable: false)
+        : _buildMonthlyWealthPoints(
+            startOfYear: startOfYear,
+            now: now,
+            transactions: transactions,
+            savings: savings,
+            investments: investments,
+            marketData: marketData,
+          );
+
+    return _HeroGrowthData(changePct: changePct, points: sparklinePoints);
+  }
+
+  static List<double> _buildMonthlyWealthPoints({
+    required DateTime startOfYear,
+    required DateTime now,
+    required List<Transaction> transactions,
+    required List<Saving> savings,
+    required List<InvestmentAsset> investments,
+    required MarketData marketData,
+  }) {
+    final List<double> points = <double>[];
+    DateTime cursor = DateTime(startOfYear.year, startOfYear.month, 1);
+    while (!cursor.isAfter(now)) {
+      final DateTime monthEnd = DateTime(cursor.year, cursor.month + 1, 0);
+      final DateTime asOf = monthEnd.isAfter(now) ? now : monthEnd;
+      final double value = ZakatEngineService.calculateTotalWealthEgpAt(
+        asOf: asOf,
+        transactions: transactions,
+        savings: savings,
+        investments: investments,
+        marketData: marketData,
+      );
+      if (value.isFinite && value > 0) {
+        points.add(value);
+      }
+      cursor = DateTime(cursor.year, cursor.month + 1, 1);
+    }
+    return points.length >= 2 ? points : const <double>[];
+  }
+
+  static double? _asDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse((value ?? '').toString());
+  }
+}
+
+class _DashboardHeader extends StatelessWidget {
+  const _DashboardHeader({
+    required this.title,
+    this.firstName,
+    required this.balancesHidden,
+    required this.onTogglePrivacy,
+    required this.hasNotifications,
+    required this.onTapNotifications,
+  });
+
+  final String title;
+  final String? firstName;
+  final bool balancesHidden;
+  final VoidCallback onTogglePrivacy;
+  final bool hasNotifications;
+  final VoidCallback onTapNotifications;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.premiumTokens;
+    final textTheme = Theme.of(context).textTheme;
+    final String languageCode = Localizations.localeOf(
+      context,
+    ).languageCode.toLowerCase();
+
+    final String greetingBase = languageCode == 'ar'
+        ? 'السلام عليكم'
+        : 'Assalamu alaikum';
+    final String greetingText =
+        firstName != null && firstName!.trim().isNotEmpty
+        ? (languageCode == 'ar'
+              ? '$greetingBase، $firstName'
+              : '$greetingBase, $firstName')
+        : greetingBase;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                title,
+                style: textTheme.headlineMedium?.copyWith(
+                  color: tokens.colors.textPrimary,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: <Widget>[
+                  _RubElHizbIcon(color: tokens.colors.gold, size: 14),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      greetingText,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: textTheme.bodyLarge?.copyWith(
+                        color: tokens.colors.textPrimary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            _HeaderCircleButton(
+              icon: balancesHidden
+                  ? Icons.visibility_off_outlined
+                  : Icons.visibility_outlined,
+              iconColor: tokens.colors.textPrimary,
+              onPressed: onTogglePrivacy,
+            ),
+            const SizedBox(width: 10),
+            Stack(
+              clipBehavior: Clip.none,
+              children: <Widget>[
+                _HeaderCircleButton(
+                  icon: Icons.notifications_none_rounded,
+                  iconColor: tokens.colors.textPrimary,
+                  onPressed: onTapNotifications,
+                ),
+                if (hasNotifications)
+                  PositionedDirectional(
+                    end: 7,
+                    top: 6,
+                    child: Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: tokens.colors.gold,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: tokens.colors.background,
+                          width: 1.5,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _HeaderCircleButton extends StatelessWidget {
+  const _HeaderCircleButton({
+    required this.icon,
+    required this.iconColor,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final Color iconColor;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+    return Material(
+      color: dark
+          ? Colors.white.withValues(alpha: 0.03)
+          : Colors.white.withValues(alpha: 0.74),
+      shape: const CircleBorder(),
+      elevation: dark ? 0 : 5,
+      shadowColor: Colors.black.withValues(alpha: 0.08),
+      child: SizedBox(
+        width: 52,
+        height: 52,
+        child: IconButton(
+          onPressed: onPressed,
+          icon: Icon(icon, color: iconColor, size: 24),
+          splashRadius: 24,
+        ),
+      ),
+    );
   }
 }
 
@@ -516,6 +1014,8 @@ class _PremiumHeroCard extends StatelessWidget {
     required this.state,
     required this.market,
     required this.nextZakatDate,
+    required this.balancesHidden,
+    required this.heroGrowth,
   });
 
   final double totalWealthEgp;
@@ -527,102 +1027,244 @@ class _PremiumHeroCard extends StatelessWidget {
   final dynamic state;
   final MarketData market;
   final String? nextZakatDate;
+  final bool balancesHidden;
+  final _HeroGrowthData? heroGrowth;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(26),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: <Color>[Color(0xFF073B3A), Color(0xFF0F766E)],
-        ),
+    final textTheme = Theme.of(context).textTheme;
+    final bool isRtl = Directionality.of(context) == TextDirection.rtl;
+    final Alignment gradientBegin = isRtl
+        ? Alignment.centerLeft
+        : Alignment.centerRight;
+    final Alignment gradientEnd = isRtl
+        ? Alignment.centerRight
+        : Alignment.centerLeft;
+    final String nisabLabel = hasMarketData
+        ? (nisabMet
+              ? context.l10n.tr('above_nisab')
+              : context.l10n.tr('below_nisab'))
+        : (hasFxData
+              ? context.l10n.tr('gold_silver_required')
+              : context.l10n.tr('market_data_required'));
+    final String hiddenValue = '••••••';
+    final bool showGrowth = heroGrowth != null && !balancesHidden;
+
+    final List<_HeroSupportItem> supportItems = <_HeroSupportItem>[
+      _HeroSupportItem(
+        label: context.l10n.tr('net_position').toUpperCase(),
+        icon: Icons.verified_user_outlined,
+        value: balancesHidden
+            ? hiddenValue
+            : _DashboardScreenState._formatOrMissing(
+                context,
+                netPositionEgp,
+                hasMarketData,
+                state.mainCurrency,
+                market,
+              ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(
-            context.l10n.tr('total_wealth'),
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: Colors.white.withValues(alpha: 0.88),
-                  fontWeight: FontWeight.w600,
+      _HeroSupportItem(
+        label: context.l10n.tr('upcoming_dues').toUpperCase(),
+        icon: Icons.calendar_today_outlined,
+        value: balancesHidden
+            ? hiddenValue
+            : _DashboardScreenState._formatOrMissing(
+                context,
+                dues.totalUpcoming,
+                hasMarketData,
+                state.mainCurrency,
+                market,
+              ),
+      ),
+    ];
+
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color borderColor = isDark
+        ? const Color(0xFFFFC928).withValues(alpha: 0.45)
+        : const Color(0xFFC5A059).withValues(alpha: 0.65);
+
+    return PremiumCard(
+      key: const Key('dashboardHeroCard'),
+      hero: true,
+      padding: EdgeInsets.zero,
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final bool compact = constraints.maxWidth < 380;
+          final bool tablet = constraints.maxWidth >= 700;
+          final double heroHeight = tablet ? 284 : (compact ? 249 : 264);
+          final double artworkWidth =
+              constraints.maxWidth * (tablet ? 0.44 : 0.51);
+
+          return SizedBox(
+            height: heroHeight,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: AppRadii.hero,
+                border: Border.all(color: borderColor, width: 1.5),
+                gradient: const LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  colors: <Color>[Color(0xFF01332B), Color(0xFF00221C)],
                 ),
-          ),
-          const SizedBox(height: 8),
-          _AnimatedAmountText(
-            valueEgp: totalWealthEgp,
-            hasMarketData: hasMarketData,
-            mainCurrency: state.mainCurrency,
-            marketData: market,
-          ),
-          const SizedBox(height: 14),
-          Text(
-            hasMarketData
-                ? (nisabMet ? context.l10n.tr('above_nisab') : context.l10n.tr('below_nisab'))
-                : (hasFxData ? context.l10n.tr('gold_silver_required') : context.l10n.tr('market_data_required')),
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: const Color(0xFFC8A75B),
-                  fontWeight: FontWeight.w700,
-                ),
-          ),
-          const SizedBox(height: 10),
-          _HeroMetricLine(
-            label: context.l10n.tr('net_position'),
-            value: _DashboardScreenState._formatOrMissing(
-              context,
-              netPositionEgp,
-              hasMarketData,
-              state.mainCurrency,
-              market,
+              ),
+              child: Column(
+                children: [
+                  Expanded(
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: <Widget>[
+                        PositionedDirectional(
+                          top: 0,
+                          start: 0,
+                          end: 0,
+                          bottom: 0,
+                          child: IgnorePointer(
+                            child: ShaderMask(
+                              shaderCallback: (Rect bounds) {
+                                return LinearGradient(
+                                  begin: gradientBegin,
+                                  end: gradientEnd,
+                                  colors: <Color>[
+                                    Colors.white.withValues(
+                                      alpha: isDark ? 0.20 : 0.38,
+                                    ),
+                                    Colors.white.withValues(
+                                      alpha: isDark ? 0.01 : 0.05,
+                                    ),
+                                  ],
+                                  stops: const <double>[0.0, 1.0],
+                                ).createShader(bounds);
+                              },
+                              blendMode: BlendMode.dstIn,
+                              child: Image.asset(
+                                'assets/images/hero_pattern_watermark.png',
+                                fit: BoxFit.cover,
+                                alignment: AlignmentDirectional.topEnd,
+                              ),
+                            ),
+                          ),
+                        ),
+                        PositionedDirectional(
+                          top: 8,
+                          end: 0,
+                          bottom: 8,
+                          width: artworkWidth,
+                          child: IgnorePointer(
+                            child: _HeroArtwork(width: artworkWidth),
+                          ),
+                        ),
+                        PositionedDirectional(
+                          start: 22,
+                          top: 19,
+                          end: artworkWidth + 12,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: <Widget>[
+                                  Text(
+                                    context.l10n
+                                        .tr('total_wealth')
+                                        .toUpperCase(),
+                                    style: textTheme.titleSmall?.copyWith(
+                                      color: const Color(0xFFFFC928),
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 1.0,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 3),
+                              FractionallySizedBox(
+                                widthFactor: compact ? 1.0 : 0.96,
+                                alignment: AlignmentDirectional.centerStart,
+                                child: _AnimatedAmountText(
+                                  valueEgp: totalWealthEgp,
+                                  hasMarketData: hasMarketData,
+                                  mainCurrency: state.mainCurrency,
+                                  marketData: market,
+                                  hidden: balancesHidden,
+                                ),
+                              ),
+                              if (showGrowth) ...<Widget>[
+                                const SizedBox(height: 8),
+                                _HeroGrowthRow(growth: heroGrowth!),
+                              ],
+                              const SizedBox(height: 11),
+                              _HeroStatusPanel(
+                                label: nisabLabel,
+                                subtitle: hasMarketData
+                                    ? (nisabMet
+                                          ? context.l10n.tr('zakat_applicable')
+                                          : context.l10n.tr('no_zakat_due'))
+                                    : null,
+                              ),
+                              if (nextZakatDate != null && !balancesHidden) ...[
+                                const SizedBox(height: 8),
+                                _HeroNextZakatBadge(date: nextZakatDate!),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  _HeroMetricsBar(items: supportItems),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          _HeroMetricLine(
-            label: context.l10n.tr('total_upcoming_dues'),
-            value: _DashboardScreenState._formatOrMissing(
-              context,
-              dues.totalUpcoming,
-              hasMarketData,
-              state.mainCurrency,
-              market,
-            ),
-          ),
-          if (nextZakatDate != null) ...<Widget>[
-            const SizedBox(height: 8),
-            _HeroMetricLine(label: context.l10n.tr('next_zakat_date'), value: nextZakatDate!),
-          ],
-        ],
+          );
+        },
       ),
     );
   }
 }
 
-class _HeroMetricLine extends StatelessWidget {
-  const _HeroMetricLine({required this.label, required this.value});
+class _HeroSupportItem {
+  const _HeroSupportItem({
+    required this.label,
+    required this.value,
+    required this.icon,
+  });
 
   final String label;
   final String value;
+  final IconData icon;
+}
+
+class _HeroGrowthData {
+  const _HeroGrowthData({required this.changePct, required this.points});
+
+  final double changePct;
+  final List<double> points;
+}
+
+class _WealthHistoryPoint {
+  const _WealthHistoryPoint(this.at, this.value);
+
+  final DateTime at;
+  final double value;
+}
+
+class _HeroArtwork extends StatelessWidget {
+  const _HeroArtwork({required this.width});
+
+  final double width;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: <Widget>[
-        Expanded(
-          child: Text(
-            label,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.white70),
-          ),
+    return SizedBox(
+      width: width,
+      child: Opacity(
+        opacity: 0.94,
+        child: Image.asset(
+          'assets/images/hero_mosque_watermark.png',
+          fit: BoxFit.contain,
+          alignment: AlignmentDirectional.centerEnd,
         ),
-        Text(
-          value,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-              ),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -633,27 +1275,39 @@ class _AnimatedAmountText extends StatelessWidget {
     required this.hasMarketData,
     required this.mainCurrency,
     required this.marketData,
+    required this.hidden,
   });
 
   final double valueEgp;
   final bool hasMarketData;
   final String mainCurrency;
   final MarketData marketData;
+  final bool hidden;
 
   @override
   Widget build(BuildContext context) {
     if (!hasMarketData) {
       return Text(
         context.l10n.tr('market_data_required'),
-        style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Colors.white),
+        style: Theme.of(
+          context,
+        ).textTheme.titleLarge?.copyWith(color: Colors.white),
       );
     }
-    final String currency = mainCurrency.trim().isEmpty ? 'EGP' : mainCurrency.trim();
-    final double displayValue = ZakatEngineService.convertFromEgp(valueEgp, currency, marketData);
+    final String currency = mainCurrency.trim().isEmpty
+        ? 'EGP'
+        : mainCurrency.trim();
+    final double displayValue = ZakatEngineService.convertFromEgp(
+      valueEgp,
+      currency,
+      marketData,
+    );
     if (displayValue.isNaN) {
       return Text(
         context.l10n.tr('market_data_required'),
-        style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Colors.white),
+        style: Theme.of(
+          context,
+        ).textTheme.titleLarge?.copyWith(color: Colors.white),
       );
     }
     return TweenAnimationBuilder<double>(
@@ -661,26 +1315,446 @@ class _AnimatedAmountText extends StatelessWidget {
       duration: const Duration(milliseconds: 900),
       curve: Curves.easeOutCubic,
       builder: (_, double value, Widget? child) {
-        return Text(
-          _DashboardScreenState._formatDisplay(value, currency),
-          style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                fontWeight: FontWeight.w800,
-                color: Colors.white,
-                letterSpacing: -0.2,
-              ),
+        final String displayText = hidden
+            ? '••••••'
+            : _DashboardScreenState._formatCompactDisplay(
+                context,
+                value,
+                currency,
+              );
+        return FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: AlignmentDirectional.centerStart,
+          child: Text(
+            displayText,
+            maxLines: 1,
+            style: Theme.of(context).textTheme.displayLarge?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+              letterSpacing: hidden ? 0 : -0.5,
+            ),
+          ),
         );
       },
     );
   }
 }
 
+class _HeroSupportMetric extends StatelessWidget {
+  const _HeroSupportMetric({required this.item});
+
+  final _HeroSupportItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color iconColor = item.icon == Icons.calendar_today_outlined
+        ? const Color(0xFFFFC928)
+        : const Color(0xFF21D99B);
+    return Padding(
+      padding: const EdgeInsetsDirectional.only(
+        start: 16.0,
+        end: 2.0,
+        top: 8.0,
+        bottom: 8.0,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: <Widget>[
+          Icon(item.icon, size: 20, color: iconColor),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: AlignmentDirectional.centerStart,
+                  child: Text(
+                    item.label,
+                    maxLines: 1,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.white.withValues(alpha: 0.6),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 9.0,
+                      letterSpacing: 0,
+                      height: 1.05,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: AlignmentDirectional.centerStart,
+                  child: Text(
+                    item.value,
+                    maxLines: 1,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeroGrowthRow extends StatelessWidget {
+  const _HeroGrowthRow({required this.growth});
+
+  final _HeroGrowthData growth;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isPositive = growth.changePct >= 0;
+    final tokens = context.premiumTokens;
+
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: AlignmentDirectional.centerStart,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(
+            isPositive
+                ? Icons.arrow_upward_rounded
+                : Icons.arrow_downward_rounded,
+            size: 14,
+            color: isPositive ? const Color(0xFF21D99B) : tokens.colors.danger,
+          ),
+          const SizedBox(width: 6),
+          Text.rich(
+            TextSpan(
+              children: <TextSpan>[
+                TextSpan(
+                  text:
+                      '${_DashboardScreenState._formatPct(growth.changePct.abs())} ',
+                  style: TextStyle(
+                    color: isPositive
+                        ? const Color(0xFF21D99B)
+                        : tokens.colors.danger,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                TextSpan(
+                  text: context.l10n.tr('this_year'),
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.76),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          if (growth.points.length >= 2) ...<Widget>[
+            const SizedBox(width: 10),
+            SizedBox(
+              width: 55,
+              height: 14,
+              child: _HeroSparkline(points: growth.points),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _HeroSparkline extends StatelessWidget {
+  const _HeroSparkline({required this.points});
+
+  final List<double> points;
+
+  @override
+  Widget build(BuildContext context) {
+    final double min = points.reduce((a, b) => a < b ? a : b);
+    final double max = points.reduce((a, b) => a > b ? a : b);
+    final double spread = (max - min).abs();
+    final List<Offset> offsets = <Offset>[];
+
+    for (int i = 0; i < points.length; i++) {
+      final double x = points.length == 1 ? 0 : i / (points.length - 1);
+      final double normalizedY = spread == 0
+          ? 0.5
+          : ((points[i] - min) / spread);
+      offsets.add(Offset(x, 1 - normalizedY));
+    }
+
+    return CustomPaint(
+      painter: _HeroSparklinePainter(
+        points: offsets,
+        color: const Color(0xFF21D99B),
+      ),
+    );
+  }
+}
+
+class _HeroSparklinePainter extends CustomPainter {
+  const _HeroSparklinePainter({required this.points, required this.color});
+
+  final List<Offset> points;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (points.length < 2) return;
+
+    final Paint paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+    final Path path = Path();
+
+    for (int i = 0; i < points.length; i++) {
+      final Offset point = Offset(
+        points[i].dx * size.width,
+        points[i].dy * size.height,
+      );
+      if (i == 0) {
+        path.moveTo(point.dx, point.dy);
+      } else {
+        path.lineTo(point.dx, point.dy);
+      }
+    }
+
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _HeroSparklinePainter oldDelegate) {
+    return oldDelegate.points != points || oldDelegate.color != color;
+  }
+}
+
+class _RubElHizbIcon extends StatelessWidget {
+  const _RubElHizbIcon({required this.color, required this.size});
+
+  final Color color;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        alignment: Alignment.center,
+        children: <Widget>[
+          Transform.rotate(
+            angle: 0,
+            child: Container(
+              width: size * 0.76,
+              height: size * 0.76,
+              decoration: BoxDecoration(
+                border: Border.all(color: color, width: 1.1),
+              ),
+            ),
+          ),
+          Transform.rotate(
+            angle: 3.14159 / 4,
+            child: Container(
+              width: size * 0.76,
+              height: size * 0.76,
+              decoration: BoxDecoration(
+                border: Border.all(color: color, width: 1.1),
+              ),
+            ),
+          ),
+          Container(
+            width: size * 0.44,
+            height: size * 0.44,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: color, width: 1.1),
+            ),
+          ),
+          Container(
+            width: size * 0.16,
+            height: size * 0.16,
+            decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeroStatusPanel extends StatelessWidget {
+  const _HeroStatusPanel({required this.label, this.subtitle});
+
+  final String label;
+  final String? subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: AlignmentDirectional.centerStart,
+      child: SizedBox(
+        width: 145,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: const Color(0xFFC5A059).withValues(alpha: 0.35),
+              width: 1.0,
+            ),
+            color: const Color(0xFF032F2A).withValues(alpha: 0.44),
+          ),
+          child: Row(
+            children: <Widget>[
+              const _RubElHizbIcon(color: Color(0xFFFFC928), size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: const Color(0xFFFFC928),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11.5,
+                      ),
+                    ),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 1),
+                      Text(
+                        subtitle!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelMedium
+                            ?.copyWith(
+                              color: const Color(0xFFFFC928),
+                              fontWeight: FontWeight.w600,
+                              fontSize: 9.5,
+                            ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HeroNextZakatBadge extends StatelessWidget {
+  const _HeroNextZakatBadge({required this.date});
+
+  final String date;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.1),
+          width: 1,
+        ),
+      ),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: AlignmentDirectional.centerStart,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            const Icon(
+              Icons.nightlight_round,
+              color: Color(0xFF21D99B),
+              size: 12,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              '${context.l10n.tr('next_zakat').toUpperCase()}: ',
+              style: textTheme.bodySmall?.copyWith(
+                color: Colors.white.withValues(alpha: 0.54),
+                fontWeight: FontWeight.w700,
+                fontSize: 8.5,
+                letterSpacing: 0.2,
+              ),
+            ),
+            Text(
+              date,
+              style: textTheme.bodySmall?.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+                fontSize: 10.0,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HeroMetricsBar extends StatelessWidget {
+  const _HeroMetricsBar({required this.items});
+
+  final List<_HeroSupportItem> items;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          child: Container(
+            height: 1.0,
+            color: Colors.white.withValues(alpha: 0.08),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6.0),
+          child: Row(
+            children: List<Widget>.generate(items.length * 2 - 1, (int index) {
+              if (index.isOdd) {
+                return Container(
+                  width: 1,
+                  height: 42,
+                  color: Colors.white.withValues(alpha: 0.1),
+                );
+              }
+
+              final _HeroSupportItem item = items[index ~/ 2];
+              return Expanded(child: _HeroSupportMetric(item: item));
+            }),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _QuickActionsRow extends StatelessWidget {
   const _QuickActionsRow({
-    required this.onOpenAddActions,
-    required this.onOpenZakatSchedule,
+    this.onOpenAddTransaction,
+    this.onOpenAddAsset,
+    this.onOpenZakatSchedule,
   });
 
-  final VoidCallback? onOpenAddActions;
+  final ValueChanged<String>? onOpenAddTransaction;
+  final VoidCallback? onOpenAddAsset;
   final VoidCallback? onOpenZakatSchedule;
 
   @override
@@ -688,14 +1762,31 @@ class _QuickActionsRow extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        SectionHeader(title: context.l10n.tr('quick_actions'), bottomSpacing: 10),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: <Widget>[
+            Text(
+              context.l10n.tr('quick_actions'),
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(width: 5),
+            const Text(
+              '✦',
+              style: TextStyle(color: Color(0xFFD4AF37), fontSize: 16),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
         Row(
           children: <Widget>[
             Expanded(
               child: _ActionTile(
                 icon: Icons.south_west_rounded,
                 label: context.l10n.tr('expense'),
-                onTap: onOpenAddActions,
+                iconColor: const Color(0xFF14B8A6),
+                onTap: () => onOpenAddTransaction?.call('expense'),
               ),
             ),
             const SizedBox(width: 10),
@@ -703,7 +1794,8 @@ class _QuickActionsRow extends StatelessWidget {
               child: _ActionTile(
                 icon: Icons.north_east_rounded,
                 label: context.l10n.tr('income'),
-                onTap: onOpenAddActions,
+                iconColor: const Color(0xFF14B8A6),
+                onTap: () => onOpenAddTransaction?.call('income'),
               ),
             ),
             const SizedBox(width: 10),
@@ -711,14 +1803,16 @@ class _QuickActionsRow extends StatelessWidget {
               child: _ActionTile(
                 icon: Icons.account_balance_wallet_rounded,
                 label: context.l10n.tr('assets'),
-                onTap: onOpenAddActions,
+                iconColor: const Color(0xFF14B8A6),
+                onTap: onOpenAddAsset,
               ),
             ),
             const SizedBox(width: 10),
             Expanded(
               child: _ActionTile(
                 icon: Icons.mosque_rounded,
-                label: context.l10n.tr('zakat_summary'),
+                label: context.l10n.tr('zakat'),
+                iconColor: const Color(0xFFC5A059),
                 onTap: onOpenZakatSchedule,
               ),
             ),
@@ -730,38 +1824,64 @@ class _QuickActionsRow extends StatelessWidget {
 }
 
 class _ActionTile extends StatelessWidget {
-  const _ActionTile({required this.icon, required this.label, this.onTap});
+  const _ActionTile({
+    required this.icon,
+    required this.label,
+    required this.iconColor,
+    this.onTap,
+  });
 
   final IconData icon;
   final String label;
+  final Color iconColor;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
-    return InkWell(
-      borderRadius: BorderRadius.circular(14),
-      onTap: onTap,
-      child: Ink(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-        decoration: BoxDecoration(
-          color: dark ? const Color(0xFF0F1720) : Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: dark ? const Color(0xFF1F2A37) : const Color(0xFFDCE4DF)),
-        ),
-        child: Column(
-          children: <Widget>[
-            Icon(icon, color: const Color(0xFF0F766E), size: 20),
-            const SizedBox(height: 6),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+    final tokens = context.premiumTokens;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+          decoration: BoxDecoration(
+            color: dark ? tokens.colors.card : Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: dark ? tokens.colors.divider : const Color(0xFFDCE4DF),
+              width: 1.0,
             ),
-          ],
+            boxShadow: dark
+                ? null
+                : <BoxShadow>[
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.03),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(icon, color: iconColor, size: 22),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: dark ? Colors.white : const Color(0xFF0C2E26),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -774,23 +1894,24 @@ class _PremiumSection extends StatelessWidget {
     required this.title,
     required this.child,
     this.trailing,
-    this.onTap,
   });
 
   final String title;
   final Widget child;
   final Widget? trailing;
-  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
-    final Widget body = Container(
+    final tokens = context.premiumTokens;
+    return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: dark ? const Color(0xFF0F1720) : Colors.white,
+        color: dark ? tokens.colors.card : Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: dark ? const Color(0xFF1F2A37) : const Color(0xFFDCE4DF)),
+        border: Border.all(
+          color: dark ? tokens.colors.divider : const Color(0xFFDCE4DF),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -801,14 +1922,12 @@ class _PremiumSection extends StatelessWidget {
                 child: Text(
                   title,
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: dark ? Colors.white : const Color(0xFF111827),
-                      ),
+                    fontWeight: FontWeight.w800,
+                    color: dark ? Colors.white : const Color(0xFF111827),
+                  ),
                 ),
               ),
               if (trailing case final Widget t) t,
-              if (onTap != null && trailing == null)
-                const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Color(0xFF0F766E)),
             ],
           ),
           const SizedBox(height: 12),
@@ -816,133 +1935,494 @@ class _PremiumSection extends StatelessWidget {
         ],
       ),
     );
-
-    if (onTap == null) return body;
-    return InkWell(
-      borderRadius: BorderRadius.circular(20),
-      onTap: onTap,
-      child: body,
-    );
   }
 }
 
-class _InsightPanel extends StatelessWidget {
-  const _InsightPanel({required this.title, required this.value});
+class _ShieldPainter extends CustomPainter {
+  const _ShieldPainter({required this.fillColor, required this.borderColor});
 
-  final String title;
-  final String value;
+  final Color fillColor;
+  final Color borderColor;
 
   @override
-  Widget build(BuildContext context) {
-    final bool dark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: dark ? const Color(0xFF1A222E) : const Color(0xFFFFFBF1),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: dark ? const Color(0xFF2B3441) : const Color(0xFFE8DFC3)),
-      ),
-      child: Row(
-        children: <Widget>[
-          const Icon(Icons.workspace_premium_rounded, color: Color(0xFFC8A75B), size: 18),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              title,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              value,
-              textAlign: TextAlign.end,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
-            ),
-          ),
-        ],
-      ),
-    );
+  void paint(Canvas canvas, Size size) {
+    final Paint fillPaint = Paint()
+      ..color = fillColor
+      ..style = PaintingStyle.fill;
+
+    final Paint borderPaint = Paint()
+      ..color = borderColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+
+    final double w = size.width;
+    final double h = size.height;
+
+    final Path path = Path();
+    path.moveTo(w * 0.15, 0);
+    path.lineTo(w * 0.85, 0);
+    path.quadraticBezierTo(w, 0, w, h * 0.15);
+    path.lineTo(w, h * 0.45);
+    path.quadraticBezierTo(w, h * 0.75, w * 0.5, h);
+    path.quadraticBezierTo(0, h * 0.75, 0, h * 0.45);
+    path.lineTo(0, h * 0.15);
+    path.quadraticBezierTo(0, 0, w * 0.15, 0);
+    path.close();
+
+    canvas.drawPath(path, fillPaint);
+    canvas.drawPath(path, borderPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _ShieldPainter oldDelegate) {
+    return oldDelegate.fillColor != fillColor ||
+        oldDelegate.borderColor != borderColor;
   }
 }
 
-class _MetricRow extends StatelessWidget {
-  const _MetricRow({
-    required this.label,
-    required this.value,
-    this.valueColor,
-    this.isLast = false,
+class _NisabStatusCard extends StatelessWidget {
+  const _NisabStatusCard({
+    required this.nisabThreshold,
+    required this.nisabMet,
+    required this.hasMarketData,
+    required this.hasFxData,
+    required this.hasMetalsData,
+    required this.mainCurrency,
+    required this.market,
+    required this.zakatAnnualDate,
+    required this.transactions,
+    required this.savings,
   });
 
-  final String label;
-  final String value;
-  final Color? valueColor;
-  final bool isLast;
-
-  @override
-  Widget build(BuildContext context) {
-    final bool dark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      decoration: BoxDecoration(
-        border: isLast
-            ? null
-            : Border(bottom: BorderSide(color: dark ? const Color(0xFF273241) : const Color(0xFFE7E7E7), width: 1)),
-      ),
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: Text(
-              label,
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: dark ? const Color(0xFFA8B0BD) : const Color(0xFF4B5563),
-                  ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Flexible(
-            child: Text(
-              value,
-              textAlign: TextAlign.end,
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: valueColor ?? (dark ? Colors.white : const Color(0xFF111827)),
-                    fontWeight: FontWeight.w700,
-                  ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MiniZakatJourney extends StatelessWidget {
-  const _MiniZakatJourney({required this.isMet, required this.hasMarketData});
-
-  final bool isMet;
+  final double nisabThreshold;
+  final bool nisabMet;
   final bool hasMarketData;
+  final bool hasFxData;
+  final bool hasMetalsData;
+  final String mainCurrency;
+  final MarketData market;
+  final String zakatAnnualDate;
+  final List<Transaction> transactions;
+  final List<Saving> savings;
+
+  static String _getHijriMonthName(int month, bool isArabic) {
+    if (isArabic) {
+      switch (month) {
+        case 1:
+          return 'محرم';
+        case 2:
+          return 'صفر';
+        case 3:
+          return 'ربيع الأول';
+        case 4:
+          return 'ربيع الآخر';
+        case 5:
+          return 'جمادى الأولى';
+        case 6:
+          return 'جمادى الآخرة';
+        case 7:
+          return 'رجب';
+        case 8:
+          return 'شعبان';
+        case 9:
+          return 'رمضان';
+        case 10:
+          return 'شوال';
+        case 11:
+          return 'ذو القعدة';
+        case 12:
+          return 'ذو الحجة';
+        default:
+          return '';
+      }
+    } else {
+      switch (month) {
+        case 1:
+          return 'Muharram';
+        case 2:
+          return 'Safar';
+        case 3:
+          return 'Rabi\' al-Awwal';
+        case 4:
+          return 'Rabi\' al-Thani';
+        case 5:
+          return 'Jumada al-Awwal';
+        case 6:
+          return 'Jumada al-Thani';
+        case 7:
+          return 'Rajab';
+        case 8:
+          return 'Sha\'ban';
+        case 9:
+          return 'Ramadan';
+        case 10:
+          return 'Shawwal';
+        case 11:
+          return 'Dhu al-Qadah';
+        case 12:
+          return 'Dhu al-Hijjah';
+        default:
+          return '';
+      }
+    }
+  }
+
+  static String _formatNumber(int val, bool isArabic) {
+    if (!isArabic) return val.toString();
+    const Map<String, String> digits = {
+      '0': '٠',
+      '1': '١',
+      '2': '٢',
+      '3': '٣',
+      '4': '٤',
+      '5': '٥',
+      '6': '٦',
+      '7': '٧',
+      '8': '٨',
+      '9': '٩',
+    };
+    return val.toString().split('').map((char) => digits[char] ?? char).join();
+  }
+
+  static double _calculateWealthAt(
+    String dateStr,
+    List<Transaction> transactions,
+    List<Saving> savings,
+    MarketData marketData,
+  ) {
+    final Map<String, double> cashAmounts = {};
+    for (final tx in transactions) {
+      if (tx.date.compareTo(dateStr) <= 0) {
+        final String cur = tx.currency;
+        double val = 0;
+        if (tx.type == 'income') {
+          if (tx.rolledOver && tx.rolledAmount != null) {
+            val = tx.amount - tx.rolledAmount!;
+          } else {
+            val = tx.amount;
+          }
+        } else if (tx.type == 'expense') {
+          val = -tx.amount;
+        }
+        cashAmounts[cur] = (cashAmounts[cur] ?? 0) + val;
+      }
+    }
+
+    for (final s in savings) {
+      if (s.dateAcquired.compareTo(dateStr) <= 0 &&
+          ZakatEngineService.normaliseAssetType(s.assetType) == 'cash') {
+        final String cur = s.unit;
+        cashAmounts[cur] = (cashAmounts[cur] ?? 0) + s.amount;
+      }
+    }
+
+    double totalCashEgp = 0;
+    cashAmounts.forEach((currency, amount) {
+      if (amount > 0) {
+        totalCashEgp += ZakatEngineService.convertToEgp(
+          amount,
+          currency,
+          marketData,
+        );
+      }
+    });
+
+    double totalGold24k = 0;
+    double totalSilverGrams = 0;
+    for (final s in savings) {
+      if (s.dateAcquired.compareTo(dateStr) <= 0) {
+        final String type = ZakatEngineService.normaliseAssetType(s.assetType);
+        if (type == 'gold') {
+          totalGold24k += ZakatEngineService.convertToGold24k(s.amount, s.unit);
+        } else if (type == 'silver') {
+          totalSilverGrams += ZakatEngineService.convertToSilverGrams(s.amount);
+        }
+      }
+    }
+
+    final double goldEgp = totalGold24k * marketData.goldPrice24kEgp;
+    final double silverEgp = totalSilverGrams * marketData.silverPriceEgp;
+
+    return totalCashEgp + goldEgp + silverEgp;
+  }
+
+  static DateTime? _calculateCrossingDate(
+    List<Transaction> transactions,
+    List<Saving> savings,
+    double nisabThreshold,
+    MarketData market,
+  ) {
+    final Set<String> dateSet = {};
+    for (final tx in transactions) {
+      dateSet.add(tx.date);
+    }
+    for (final s in savings) {
+      dateSet.add(s.dateAcquired);
+    }
+    final List<String> sortedDates = dateSet.toList()..sort();
+
+    DateTime? crossingDate;
+    for (int i = sortedDates.length - 1; i >= 0; i--) {
+      final String d = sortedDates[i];
+      final double wealth = _calculateWealthAt(
+        d,
+        transactions,
+        savings,
+        market,
+      );
+      if (wealth >= nisabThreshold) {
+        crossingDate = DateTime.tryParse(d);
+      } else {
+        break;
+      }
+    }
+    return crossingDate;
+  }
+
+  HijriDate _getAnniversaryHijriDateObject() {
+    final DateTime today = DateTime.now();
+    final HijriDate todayH = ZakatEngineService.gregorianToHijri(today);
+
+    int hm = todayH.month;
+    int hd = todayH.day;
+    int hy = todayH.year;
+
+    if (zakatAnnualDate.isNotEmpty && zakatAnnualDate.contains('-')) {
+      final List<String> parts = zakatAnnualDate.split('-');
+      final int? parsedMonth = int.tryParse(parts[0]);
+      final int? parsedDay = int.tryParse(parts[1]);
+
+      if (parsedMonth != null &&
+          parsedDay != null &&
+          parsedMonth >= 1 &&
+          parsedMonth <= 12 &&
+          parsedDay >= 1 &&
+          parsedDay <= ZakatEngineService.hijriMonthLength(parsedMonth)) {
+        hm = parsedMonth;
+        hd = parsedDay;
+        final bool hasPassed =
+            todayH.month > hm || (todayH.month == hm && todayH.day >= hd);
+        hy = hasPassed ? todayH.year : todayH.year - 1;
+      }
+    }
+    return HijriDate(year: hy, month: hm, day: hd);
+  }
+
+  String _getAnniversaryHijriDate(bool isArabic) {
+    final DateTime? crossing = _calculateCrossingDate(
+      transactions,
+      savings,
+      nisabThreshold,
+      market,
+    );
+    final HijriDate targetH = crossing != null
+        ? ZakatEngineService.gregorianToHijri(crossing)
+        : _getAnniversaryHijriDateObject();
+
+    final String dayStr = _formatNumber(targetH.day, isArabic);
+    final String monthStr = _getHijriMonthName(targetH.month, isArabic);
+    final String yearStr = _formatNumber(targetH.year, isArabic);
+
+    return '$dayStr $monthStr $yearStr';
+  }
 
   @override
   Widget build(BuildContext context) {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
-    final String text = hasMarketData
-        ? (isMet ? context.l10n.tr('above_nisab') : context.l10n.tr('below_nisab'))
-        : context.l10n.tr('market_data_required');
+    final tokens = context.premiumTokens;
+    final bool isRtl = Directionality.of(context) == TextDirection.rtl;
+
+    final Color bgColor = dark ? tokens.colors.card : const Color(0xFFFFFBF1);
+    final Color borderColor = dark
+        ? tokens.colors.divider
+        : const Color(0xFFE8DFC3);
+    final Color textColor = dark ? Colors.white : const Color(0xFF111827);
+    final Color labelColor = dark
+        ? const Color(0xFF9CA3AF)
+        : const Color(0xFF4B5563);
+
+    final Color statusColor = nisabMet
+        ? (dark ? const Color(0xFF10B981) : const Color(0xFF0F766E))
+        : (dark ? const Color(0xFFE0A53A) : const Color(0xFFB7791F));
+
+    final Alignment gradientBegin = isRtl
+        ? Alignment.centerLeft
+        : Alignment.centerRight;
+    final Alignment gradientEnd = isRtl
+        ? Alignment.centerRight
+        : Alignment.centerLeft;
+
+    final String thresholdValue = hasFxData && !hasMetalsData
+        ? context.l10n.tr('gold_silver_required')
+        : _DashboardScreenState._formatOrMissing(
+            context,
+            nisabThreshold,
+            hasMarketData,
+            mainCurrency,
+            market,
+          );
+
+    final String statusLabel = hasMarketData
+        ? (nisabMet
+              ? context.l10n.tr('above_nisab')
+              : context.l10n.tr('below_nisab'))
+        : (hasFxData
+              ? context.l10n.tr('gold_silver_required')
+              : context.l10n.tr('market_data_required'));
+
+    final String subtitleText = nisabMet
+        ? '${context.l10n.tr('protected_since')} ${_getAnniversaryHijriDate(isRtl)}'
+        : context.l10n.tr('no_zakat_due');
+
     return Container(
-      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        color: dark ? const Color(0xFF18242B) : const Color(0xFFF4F7F6),
+        color: bgColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: borderColor, width: 1.0),
       ),
-      child: Row(
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
         children: <Widget>[
-          Icon(
-            isMet ? Icons.check_circle_outline_rounded : Icons.info_outline_rounded,
-            size: 18,
-            color: const Color(0xFF0F766E),
+          PositionedDirectional(
+            top: 0,
+            end: 0,
+            bottom: 0,
+            width: 110,
+            child: IgnorePointer(
+              child: ShaderMask(
+                shaderCallback: (Rect bounds) {
+                  return LinearGradient(
+                    begin: gradientBegin,
+                    end: gradientEnd,
+                    colors: <Color>[
+                      Colors.white.withValues(alpha: dark ? 0.30 : 0.40),
+                      Colors.white.withValues(alpha: 0.0),
+                    ],
+                    stops: const <double>[0.0, 1.0],
+                  ).createShader(bounds);
+                },
+                blendMode: BlendMode.dstIn,
+                child: Image.asset(
+                  'assets/images/hero_pattern_watermark.png',
+                  fit: BoxFit.cover,
+                  alignment: AlignmentDirectional.centerEnd,
+                ),
+              ),
+            ),
           ),
-          const SizedBox(width: 8),
-          Expanded(child: Text(text)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: <Widget>[
+                CustomPaint(
+                  size: const Size(34, 40),
+                  painter: const _ShieldPainter(
+                    fillColor: Color(0xFF032F2A),
+                    borderColor: Color(0xFFC5A059),
+                  ),
+                  child: const SizedBox(
+                    width: 34,
+                    height: 40,
+                    child: Center(
+                      child: Padding(
+                        padding: EdgeInsets.only(bottom: 2),
+                        child: _RubElHizbIcon(
+                          color: Color(0xFFFFC928),
+                          size: 15,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text(
+                        context.l10n
+                            .tr('current_nisab_threshold')
+                            .toUpperCase(),
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.6,
+                          color: labelColor,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: AlignmentDirectional.centerStart,
+                        child: Text(
+                          thresholdValue,
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.bold,
+                            color: textColor,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  width: 1.0,
+                  height: 34,
+                  margin: const EdgeInsets.symmetric(horizontal: 12),
+                  color: dark
+                      ? const Color(0xFF181E24)
+                      : const Color(0xFFE6E3D9),
+                ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text(
+                        context.l10n.tr('status').toUpperCase(),
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.6,
+                          color: labelColor,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: AlignmentDirectional.centerStart,
+                        child: Text(
+                          statusLabel,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: statusColor,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: AlignmentDirectional.centerStart,
+                        child: Text(
+                          subtitleText,
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
+                            color: dark
+                                ? const Color(0xFF9CA3BF)
+                                : const Color(0xFF4B5563),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -950,53 +2430,280 @@ class _MiniZakatJourney extends StatelessWidget {
 }
 
 class _AllocationRing extends StatelessWidget {
-  const _AllocationRing({required this.allocation});
+  const _AllocationRing({
+    required this.allocation,
+    required this.hasMarketData,
+    required this.mainCurrency,
+    required this.market,
+    required this.balancesHidden,
+  });
 
   final _Allocation allocation;
+  final bool hasMarketData;
+  final String mainCurrency;
+  final MarketData market;
+  final bool balancesHidden;
 
   @override
   Widget build(BuildContext context) {
-    final List<_AllocSeg> segs = <_AllocSeg>[
-      _AllocSeg(_safePct(allocation.cashPct), const Color(0xFF0F766E), context.l10n.tr('cash_pct')),
-      _AllocSeg(_safePct(allocation.metalsPct), const Color(0xFFC8A75B), context.l10n.tr('metals_pct')),
-      _AllocSeg(_safePct(allocation.propertyPct), const Color(0xFF456E85), context.l10n.tr('property_pct')),
-      _AllocSeg(_safePct(allocation.companyPct), const Color(0xFF6B5A95), context.l10n.tr('company_pct')),
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+    final String currency = mainCurrency.trim().isEmpty
+        ? 'EGP'
+        : mainCurrency.trim();
+    final double displayTotalVal = ZakatEngineService.convertFromEgp(
+      allocation.totalVal,
+      currency,
+      market,
+    );
+    final String formattedTotal = balancesHidden
+        ? '••••••'
+        : _DashboardScreenState._formatCompactDisplay(
+            context,
+            displayTotalVal,
+            currency,
+          );
+
+    final List<Map<String, dynamic>> items = <Map<String, dynamic>>[
+      <String, dynamic>{
+        'label': context.l10n.tr('cash_pct'),
+        'value': allocation.cashVal,
+        'pct': allocation.cashPct,
+        'icon': Icons.account_balance_wallet_rounded,
+        'iconColor': const Color(0xFF14B8A6),
+        'bg': dark ? const Color(0xFF0C2E26) : const Color(0xFFE2F0EC),
+      },
+      <String, dynamic>{
+        'label': context.l10n.tr('metals_pct'),
+        'value': allocation.metalsVal,
+        'pct': allocation.metalsPct,
+        'icon': Icons.layers_rounded,
+        'iconColor': const Color(0xFFC8A75B),
+        'bg': dark ? const Color(0xFF382D16) : const Color(0xFFF9F0DB),
+      },
+      <String, dynamic>{
+        'label': context.l10n.tr('property_pct'),
+        'value': allocation.propertyVal,
+        'pct': allocation.propertyPct,
+        'icon': Icons.home_rounded,
+        'iconColor': const Color(0xFF456E85),
+        'bg': dark ? const Color(0xFF1B313F) : const Color(0xFFE1EFF6),
+      },
+      <String, dynamic>{
+        'label': context.l10n.tr('company_pct'),
+        'value': allocation.companyVal,
+        'pct': allocation.companyPct,
+        'icon': Icons.business_rounded,
+        'iconColor': const Color(0xFF6B5A95),
+        'bg': dark ? const Color(0xFF281C3F) : const Color(0xFFF0EBF9),
+      },
     ];
 
-    return Column(
+    final List<_AllocSeg> segs = items.map((item) {
+      return _AllocSeg(
+        _safePct(item['pct'] as double),
+        item['iconColor'] as Color,
+        item['label'] as String,
+      );
+    }).toList();
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: <Widget>[
+        // Ring chart on the left
         SizedBox(
-          height: 150,
-          width: 150,
-          child: TweenAnimationBuilder<double>(
-            tween: Tween<double>(begin: 0, end: 1),
-            duration: const Duration(milliseconds: 900),
-            curve: Curves.easeOutCubic,
-            builder: (_, double value, Widget? child) {
-              return CustomPaint(
-                painter: _RingPainter(segs: segs, progress: value),
-                child: child,
-              );
-            },
-            child: const SizedBox.expand(),
+          height: 140,
+          width: 140,
+          child: Stack(
+            alignment: Alignment.center,
+            children: <Widget>[
+              Positioned.fill(
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween<double>(begin: 0, end: 1),
+                  duration: const Duration(milliseconds: 900),
+                  curve: Curves.easeOutCubic,
+                  builder: (_, double value, Widget? child) {
+                    return CustomPaint(
+                      painter: _RingPainter(
+                        segs: segs,
+                        progress: value,
+                        isDark: dark,
+                      ),
+                      child: child,
+                    );
+                  },
+                  child: const SizedBox.expand(),
+                ),
+              ),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 14.0),
+                      child: Text(
+                        formattedTotal,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 18,
+                          color: dark ? Colors.white : const Color(0xFF0F2E28),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    context.l10n.tr('total_assets'),
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: dark
+                          ? const Color(0xFFA3B8B5)
+                          : const Color(0xFF6B7280),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  SizedBox(
+                    width: 74,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: <Widget>[
+                        Expanded(
+                          child: Container(
+                            height: 1.0,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: <Color>[
+                                  const Color(
+                                    0xFFD4AF37,
+                                  ).withValues(alpha: 0.0),
+                                  const Color(
+                                    0xFFD4AF37,
+                                  ).withValues(alpha: 0.6),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 6.0),
+                          child: Text(
+                            '✦',
+                            style: TextStyle(
+                              color: Color(0xFFD4AF37),
+                              fontSize: 10,
+                              height: 1.0,
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: Container(
+                            height: 1.0,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: <Color>[
+                                  const Color(
+                                    0xFFD4AF37,
+                                  ).withValues(alpha: 0.6),
+                                  const Color(
+                                    0xFFD4AF37,
+                                  ).withValues(alpha: 0.0),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 12),
-        ...segs.map(
-          (_AllocSeg seg) => Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Row(
-              children: <Widget>[
-                Container(
-                  width: 10,
-                  height: 10,
-                  decoration: BoxDecoration(color: seg.color, shape: BoxShape.circle),
-                ),
-                const SizedBox(width: 8),
-                Expanded(child: Text(seg.label)),
-                Text(_DashboardScreenState._formatPct(seg.value), style: const TextStyle(fontWeight: FontWeight.w700)),
-              ],
-            ),
+        const SizedBox(width: 16),
+        // Legend on the right
+        Expanded(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: items
+                .map((Map<String, dynamic> item) {
+                  final double valueEgp = item['value'] as double;
+                  final double pct = item['pct'] as double;
+                  final String formattedValue = balancesHidden
+                      ? '••••••'
+                      : _DashboardScreenState._formatOrMissing(
+                          context,
+                          valueEgp,
+                          hasMarketData,
+                          mainCurrency,
+                          market,
+                        );
+
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6.0),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: <Widget>[
+                        Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: item['bg'] as Color,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          alignment: Alignment.center,
+                          child: Icon(
+                            item['icon'] as IconData,
+                            color: item['iconColor'] as Color,
+                            size: 18,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              Text(
+                                item['label'] as String,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: dark
+                                      ? Colors.white
+                                      : const Color(0xFF0F2E28),
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                formattedValue,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: dark
+                                      ? const Color(0xFFA3B8B5)
+                                      : const Color(0xFF6B7280),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          _DashboardScreenState._formatPct(pct),
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w700,
+                            color: item['iconColor'] as Color,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                })
+                .toList(growable: false),
           ),
         ),
       ],
@@ -1010,38 +2717,91 @@ class _AllocationRing extends StatelessWidget {
 }
 
 class _RingPainter extends CustomPainter {
-  _RingPainter({required this.segs, required this.progress});
+  _RingPainter({
+    required this.segs,
+    required this.progress,
+    required this.isDark,
+  });
 
   final List<_AllocSeg> segs;
   final double progress;
+  final bool isDark;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final double stroke = 16;
+    final double stroke = 18;
     final Rect rect = Offset.zero & size;
     final Paint bg = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = stroke
-      ..color = const Color(0xFF344153);
+      ..color = isDark ? const Color(0xFF052A22) : const Color(0xFFEBE8E0);
     canvas.drawArc(rect.deflate(stroke / 2), 0, 6.28318, false, bg);
+
+    final double R = size.width / 2 - stroke / 2;
+    final Offset C = Offset(size.width / 2, size.height / 2);
 
     double start = -1.5708;
     for (final _AllocSeg seg in segs) {
       final double sweep = (seg.value / 100) * 6.28318 * progress;
       if (sweep <= 0) continue;
-      final Paint paint = Paint()
+
+      final double startAngle = start;
+      final double endAngle = start + sweep;
+
+      final Offset pStart = Offset(
+        C.dx + R * math.cos(startAngle),
+        C.dy + R * math.sin(startAngle),
+      );
+      final Offset pEnd = Offset(
+        C.dx + R * math.cos(endAngle),
+        C.dy + R * math.sin(endAngle),
+      );
+
+      final Paint strokePaint = Paint()
         ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round
         ..strokeWidth = stroke
+        ..strokeCap = StrokeCap.butt
         ..color = seg.color;
-      canvas.drawArc(rect.deflate(stroke / 2), start, sweep, false, paint);
+
+      final Paint fillPaint = Paint()
+        ..style = PaintingStyle.fill
+        ..color = seg.color;
+
+      // 1. Save canvas and clip out the start circle (concave cap)
+      canvas.save();
+      final Path clipPath = Path()
+        ..addRect(Rect.fromLTWH(0, 0, size.width, size.height));
+      final Path startCircle = Path()
+        ..addOval(Rect.fromCircle(center: pStart, radius: stroke / 2));
+      final Path finalClip = Path.combine(
+        PathOperation.difference,
+        clipPath,
+        startCircle,
+      );
+      canvas.clipPath(finalClip);
+
+      // 2. Draw the flat-ended arc
+      canvas.drawArc(
+        rect.deflate(stroke / 2),
+        startAngle,
+        sweep,
+        false,
+        strokePaint,
+      );
+      canvas.restore();
+
+      // 3. Draw the convex cap at the end of the arc
+      canvas.drawCircle(pEnd, stroke / 2, fillPaint);
+
       start += sweep;
     }
   }
 
   @override
   bool shouldRepaint(covariant _RingPainter oldDelegate) {
-    return oldDelegate.progress != progress || oldDelegate.segs != segs;
+    return oldDelegate.progress != progress ||
+        oldDelegate.segs != segs ||
+        oldDelegate.isDark != isDark;
   }
 }
 
@@ -1054,9 +2814,10 @@ class _AllocSeg {
 }
 
 class _ActivityRow extends StatelessWidget {
-  const _ActivityRow({required this.tx});
+  const _ActivityRow({required this.tx, required this.balancesHidden});
 
   final Transaction tx;
+  final bool balancesHidden;
 
   @override
   Widget build(BuildContext context) {
@@ -1069,7 +2830,9 @@ class _ActivityRow extends StatelessWidget {
       decoration: BoxDecoration(
         color: dark ? const Color(0xFF111925) : const Color(0xFFFAFAFA),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: dark ? const Color(0xFF253243) : const Color(0xFFE8E8E8)),
+        border: Border.all(
+          color: dark ? const Color(0xFF253243) : const Color(0xFFE8E8E8),
+        ),
       ),
       child: Row(
         children: <Widget>[
@@ -1077,12 +2840,16 @@ class _ActivityRow extends StatelessWidget {
             width: 34,
             height: 34,
             decoration: BoxDecoration(
-              color: isExpense ? const Color(0xFFFFF1F2) : const Color(0xFFF0FDF4),
+              color: isExpense
+                  ? const Color(0xFFFFF1F2)
+                  : const Color(0xFFF0FDF4),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(
               isExpense ? Icons.south_west_rounded : Icons.north_east_rounded,
-              color: isExpense ? const Color(0xFFDC2626) : const Color(0xFF16A34A),
+              color: isExpense
+                  ? const Color(0xFFDC2626)
+                  : const Color(0xFF16A34A),
               size: 18,
             ),
           ),
@@ -1095,7 +2862,9 @@ class _ActivityRow extends StatelessWidget {
                   tx.category,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w700),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 2),
                 Text(tx.date, style: Theme.of(context).textTheme.bodySmall),
@@ -1103,11 +2872,20 @@ class _ActivityRow extends StatelessWidget {
             ),
           ),
           Text(
-            '${isExpense ? '-' : '+'}${tx.amount.toStringAsFixed(2)} ${tx.currency}',
+            balancesHidden
+                ? '••••••'
+                : ZakatEngineService.formatCurrency(
+                    isExpense ? -tx.amount : tx.amount,
+                    tx.currency,
+                    isArabic: _DashboardScreenState._isArabic(context),
+                    showSign: true,
+                  ),
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: isExpense ? const Color(0xFFB91C1C) : const Color(0xFF047857),
-                ),
+              fontWeight: FontWeight.w800,
+              color: isExpense
+                  ? const Color(0xFFB91C1C)
+                  : const Color(0xFF047857),
+            ),
           ),
         ],
       ),
@@ -1116,7 +2894,11 @@ class _ActivityRow extends StatelessWidget {
 }
 
 class _Dues {
-  const _Dues({required this.thisMonth, required this.nextMonth, required this.totalUpcoming});
+  const _Dues({
+    required this.thisMonth,
+    required this.nextMonth,
+    required this.totalUpcoming,
+  });
 
   final double thisMonth;
   final double nextMonth;
@@ -1129,10 +2911,118 @@ class _Allocation {
     required this.metalsPct,
     required this.propertyPct,
     required this.companyPct,
+    required this.cashVal,
+    required this.metalsVal,
+    required this.propertyVal,
+    required this.companyVal,
+    required this.totalVal,
   });
 
   final double cashPct;
   final double metalsPct;
   final double propertyPct;
   final double companyPct;
+  final double cashVal;
+  final double metalsVal;
+  final double propertyVal;
+  final double companyVal;
+  final double totalVal;
+}
+
+class _ObligationSummaryTile extends StatelessWidget {
+  const _ObligationSummaryTile({
+    required this.title,
+    required this.value,
+    required this.icon,
+    required this.iconBgColor,
+    required this.iconColor,
+    required this.onTap,
+  });
+
+  final String title;
+  final String value;
+  final IconData icon;
+  final Color iconBgColor;
+  final Color iconColor;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.premiumTokens;
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+        child: Row(
+          children: <Widget>[
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: iconBgColor,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Center(child: Icon(icon, color: iconColor, size: 20)),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: dark
+                          ? const Color(0xFF9CA3AF)
+                          : const Color(0xFF4B5563),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    value,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: tokens.colors.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.chevron_right_rounded,
+              color: tokens.colors.textPrimary.withValues(alpha: 0.4),
+              size: 20,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _KeepAliveWrapper extends StatefulWidget {
+  const _KeepAliveWrapper({required this.child});
+  final Widget child;
+
+  @override
+  State<_KeepAliveWrapper> createState() => _KeepAliveWrapperState();
+}
+
+class _KeepAliveWrapperState extends State<_KeepAliveWrapper>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
+  }
 }

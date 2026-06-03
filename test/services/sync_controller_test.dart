@@ -14,6 +14,9 @@ import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
 import 'package:zakatapp_flutter/services/sync_controller.dart';
 
 class _FakeAuthService implements AuthService {
+  @override
+  Future<bool> ensureSession() async => true;
+
   final UserProfile? user;
   _FakeAuthService(this.user);
   @override

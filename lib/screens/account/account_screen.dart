@@ -3,10 +3,12 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/i18n/app_localizations.dart';
+import '../../core/widgets/app_ui.dart';
 import '../../models/app_state.dart';
 import '../../models/backup_preview.dart';
 import '../../models/market_snapshot.dart';
 import '../../models/recurring_transaction.dart';
+import '../../core/services/zakat_engine.dart';
 import '../../services/app_state_controller.dart';
 import '../../services/auth_controller.dart';
 import '../../services/backup_restore_card.dart';
@@ -228,8 +230,14 @@ class _AccountScreenState extends State<AccountScreen> {
                   border: OutlineInputBorder(),
                 ),
                 items: _supportedCurrencies
-                    .map((String c) =>
-                        DropdownMenuItem<String>(value: c, child: Text(c)))
+                    .map((String c) => DropdownMenuItem<String>(
+                          value: c,
+                          child: Text(ZakatEngineService.getCurrencySymbol(c,
+                              isArabic: Localizations.localeOf(context)
+                                      .languageCode
+                                      .toLowerCase() ==
+                                  'ar')),
+                        ))
                     .toList(growable: false),
                 onChanged: (String? value) {
                   if (value == null) return;
@@ -247,8 +255,14 @@ class _AccountScreenState extends State<AccountScreen> {
                   border: OutlineInputBorder(),
                 ),
                 items: _supportedCurrencies
-                    .map((String c) =>
-                        DropdownMenuItem<String>(value: c, child: Text(c)))
+                    .map((String c) => DropdownMenuItem<String>(
+                          value: c,
+                          child: Text(ZakatEngineService.getCurrencySymbol(c,
+                              isArabic: Localizations.localeOf(context)
+                                      .languageCode
+                                      .toLowerCase() ==
+                                  'ar')),
+                        ))
                     .toList(growable: false),
                 onChanged: (String? value) {
                   if (value == null) return;
@@ -787,7 +801,14 @@ class _AccountScreenState extends State<AccountScreen> {
                   DropdownButton<String>(
                     value: currency.isEmpty ? 'EGP' : currency,
                     items: _supportedCurrencies
-                        .map((String c) => DropdownMenuItem<String>(value: c, child: Text(c)))
+                        .map((String c) => DropdownMenuItem<String>(
+                              value: c,
+                              child: Text(ZakatEngineService.getCurrencySymbol(c,
+                                  isArabic: Localizations.localeOf(context)
+                                          .languageCode
+                                          .toLowerCase() ==
+                                      'ar')),
+                            ))
                         .toList(growable: false),
                     onChanged: (String? v) => setDialogState(() => currency = v ?? currency),
                   ),
@@ -912,12 +933,9 @@ class _AccountScreenState extends State<AccountScreen> {
       forceIfCloudNewer: force,
     );
     if (!mounted) return;
-    ScaffoldMessenger.of(this.context).showSnackBar(
-      SnackBar(
-        content: Text(
-          ok ? 'Cloud backup completed.' : cloudBackupController.statusMessage,
-        ),
-      ),
+    showTopSnackBar(
+      this.context,
+      ok ? 'Cloud backup completed.' : cloudBackupController.statusMessage,
     );
   }
 
@@ -928,9 +946,7 @@ class _AccountScreenState extends State<AccountScreen> {
     final BackupPreview? preview = await cloudBackupController.previewLatestBackup();
     if (!mounted) return;
     if (preview == null) {
-      ScaffoldMessenger.of(this.context).showSnackBar(
-        const SnackBar(content: Text('No cloud backup found.')),
-      );
+      showTopSnackBar(this.context, 'No cloud backup found.');
       return;
     }
 
@@ -962,12 +978,9 @@ class _AccountScreenState extends State<AccountScreen> {
 
     final bool ok = await cloudBackupController.restoreLatestBackup();
     if (!mounted) return;
-    ScaffoldMessenger.of(this.context).showSnackBar(
-      SnackBar(
-        content: Text(
-          ok ? 'Cloud restore completed.' : cloudBackupController.statusMessage,
-        ),
-      ),
+    showTopSnackBar(
+      this.context,
+      ok ? 'Cloud restore completed.' : cloudBackupController.statusMessage,
     );
   }
 
@@ -1017,7 +1030,14 @@ class _AccountScreenState extends State<AccountScreen> {
                     decoration:
                         InputDecoration(labelText: context.l10n.tr('source_currency')),
                     items: _supportedCurrencies
-                        .map((String c) => DropdownMenuItem<String>(value: c, child: Text(c)))
+                        .map((String c) => DropdownMenuItem<String>(
+                              value: c,
+                              child: Text(ZakatEngineService.getCurrencySymbol(c,
+                                  isArabic: Localizations.localeOf(context)
+                                          .languageCode
+                                          .toLowerCase() ==
+                                      'ar')),
+                            ))
                         .toList(growable: false),
                     onChanged: (String? v) => setDialogState(() => sourceCurrency = v ?? sourceCurrency),
                   ),
@@ -1028,7 +1048,14 @@ class _AccountScreenState extends State<AccountScreen> {
                         InputDecoration(labelText: context.l10n.tr('target_currency')),
                     items: _supportedCurrencies
                         .where((String c) => c != sourceCurrency)
-                        .map((String c) => DropdownMenuItem<String>(value: c, child: Text(c)))
+                        .map((String c) => DropdownMenuItem<String>(
+                              value: c,
+                              child: Text(ZakatEngineService.getCurrencySymbol(c,
+                                  isArabic: Localizations.localeOf(context)
+                                          .languageCode
+                                          .toLowerCase() ==
+                                      'ar')),
+                            ))
                         .toList(growable: false),
                     onChanged: (String? v) => setDialogState(() => targetCurrency = v ?? targetCurrency),
                   ),

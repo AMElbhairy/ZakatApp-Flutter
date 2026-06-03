@@ -12,6 +12,9 @@ import 'package:zakatapp_flutter/services/local_storage_service.dart';
 
 class _FakeAuthService implements AuthService {
   @override
+  Future<bool> ensureSession() async => true;
+
+  @override
   Future<UserProfile?> restoreSession() async => null;
 
   @override
@@ -113,9 +116,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Assets'));
+    await tester.tap(find.text('Assets').last);
     await tester.pumpAndSettle();
-    expect(find.text('Add savings and investments to track your wealth.'), findsOneWidget);
+    expect(find.text('Total Assets'), findsOneWidget);
 
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();

@@ -29,6 +29,7 @@ class _AppShellState extends State<AppShell> {
   final GlobalKey<ActivityScreenState> _activityKey =
       GlobalKey<ActivityScreenState>();
   bool _restorePromptVisible = false;
+  double? _dragStartX;
 
   @override
   Widget build(BuildContext context) {
@@ -38,7 +39,14 @@ class _AppShellState extends State<AppShell> {
         context.watch<CloudBackupController?>();
     _maybeShowRestorePrompt(context, cloudBackupController);
     final List<Widget> tabs = <Widget>[
-      const AssetsScreen(),
+      AssetsScreen(
+        onViewAllActivity: () {
+          setState(() => _index = 1);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _activityKey.currentState?.showTransactions();
+          });
+        },
+      ),
       ActivityScreen(key: _activityKey),
       DashboardScreen(
         onViewAllActivity: () {
@@ -54,6 +62,15 @@ class _AppShellState extends State<AppShell> {
             _activityKey.currentState?.showSchedule();
           });
         },
+        onOpenAddTransaction: (String type) {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => AddTransactionScreen(initialType: type),
+            ),
+          );
+        },
+        onOpenAddAsset: () => _showAddAssetActions(context),
+        onViewAssets: () => setState(() => _index = 0),
       ),
       const PlansScreen(),
       const AccountScreen(),
@@ -71,8 +88,37 @@ class _AppShellState extends State<AppShell> {
         backgroundColor: tokens.colors.background,
         resizeToAvoidBottomInset: false,
         extendBody: true,
-        body: Stack(
-          clipBehavior: Clip.none,
+        body: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onHorizontalDragStart: (DragStartDetails details) {
+            _dragStartX = details.globalPosition.dx;
+          },
+          onHorizontalDragUpdate: (DragUpdateDetails details) {
+            if (_dragStartX == null || _index == 2) return;
+            final double screenWidth = MediaQuery.sizeOf(context).width;
+            final bool isRtl = Directionality.of(context) == TextDirection.rtl;
+            final double delta = details.globalPosition.dx - _dragStartX!;
+
+            if (isRtl) {
+              if (_dragStartX! > screenWidth - 40 && delta < -50) {
+                setState(() => _index = 2);
+                _dragStartX = null;
+              }
+            } else {
+              if (_dragStartX! < 40 && delta > 50) {
+                setState(() => _index = 2);
+                _dragStartX = null;
+              }
+            }
+          },
+          onHorizontalDragEnd: (_) {
+            _dragStartX = null;
+          },
+          onHorizontalDragCancel: () {
+            _dragStartX = null;
+          },
+          child: Stack(
+            clipBehavior: Clip.none,
           children: <Widget>[
             SafeArea(
               bottom: false,
@@ -97,7 +143,6 @@ class _AppShellState extends State<AppShell> {
               height: 86,
               child: LayoutBuilder(
                 builder: (BuildContext context, BoxConstraints constraints) {
-                  const double unselectedAlpha = 0.62;
                   final List<_NavItemData> items = <_NavItemData>[
                     _NavItemData(icon: AppIcons.assets, label: context.l10n.tr('assets')),
                     _NavItemData(icon: AppIcons.activity, label: context.l10n.tr('activity')),
@@ -125,13 +170,13 @@ class _AppShellState extends State<AppShell> {
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
                             borderRadius: AppRadii.pill,
-                            color: const Color(0xFF043B34),
+                            color: const Color(0xFF02201A),
                             border: Border.all(
-                              color: const Color(0xFFC8A75B).withValues(alpha: 0.34),
+                              color: const Color(0xFFC5A059).withValues(alpha: 0.30),
                             ),
                             boxShadow: <BoxShadow>[
                               BoxShadow(
-                                color: const Color(0xFFC8A75B).withValues(alpha: 0.12),
+                                color: const Color(0xFFD4AF37).withValues(alpha: 0.12),
                                 blurRadius: 10,
                                 spreadRadius: 0.5,
                                 offset: const Offset(0, 1),
@@ -149,9 +194,9 @@ class _AppShellState extends State<AppShell> {
                               final _NavItemData item = items[i];
                               return Expanded(
                                 child: Padding(
-                                  padding: EdgeInsets.only(
-                                    right: i == 1 ? 12 : 0,
-                                    left: i == 3 ? 12 : 0,
+                                  padding: EdgeInsetsDirectional.only(
+                                    end: i == 1 ? 12 : 0,
+                                    start: i == 3 ? 12 : 0,
                                   ),
                                   child: GestureDetector(
                                     behavior: HitTestBehavior.opaque,
@@ -167,7 +212,7 @@ class _AppShellState extends State<AppShell> {
                                                         shape: BoxShape.circle,
                                                         boxShadow: <BoxShadow>[
                                                           BoxShadow(
-                                                            color: const Color(0xFFC8A75B)
+                                                            color: const Color(0xFFD4AF37)
                                                                 .withValues(alpha: 0.18),
                                                             blurRadius: 8,
                                                             spreadRadius: 0.2,
@@ -179,8 +224,8 @@ class _AppShellState extends State<AppShell> {
                                                   item.icon,
                                                   size: 18,
                                                   color: selected
-                                                      ? const Color(0xFFC8A75B)
-                                                      : Colors.white.withValues(alpha: unselectedAlpha),
+                                                      ? const Color(0xFFD4AF37)
+                                                      : const Color(0xFFA3B8B5),
                                                 ),
                                               ),
                                               const SizedBox(height: 2),
@@ -193,12 +238,12 @@ class _AppShellState extends State<AppShell> {
                                                       fontWeight:
                                                           selected ? FontWeight.w700 : FontWeight.w500,
                                                       color: selected
-                                                          ? const Color(0xFFC8A75B)
-                                                          : Colors.white.withValues(alpha: unselectedAlpha),
+                                                          ? const Color(0xFFD4AF37)
+                                                          : const Color(0xFFA3B8B5),
                                                       shadows: selected
                                                           ? <Shadow>[
                                                               Shadow(
-                                                                color: const Color(0xFFC8A75B)
+                                                                color: const Color(0xFFD4AF37)
                                                                     .withValues(alpha: 0.28),
                                                                 blurRadius: 8,
                                                               ),
@@ -236,20 +281,20 @@ class _AppShellState extends State<AppShell> {
             ),
           ),
           PositionedDirectional(
-            end: 22,
-            bottom: 88 + bottomInset,
+            start: 22,
+            bottom: 75 + bottomInset,
             child: SizedBox(
               width: 64,
               height: 64,
               child: FloatingActionButton(
                 key: const Key('addEntryFab'),
                 onPressed: () => _showAddActions(context),
-                backgroundColor: const Color(0xFF063B35),
-                foregroundColor: const Color(0xFFC8A75B),
+                backgroundColor: const Color(0xFF012E26),
+                foregroundColor: const Color(0xFFD4AF37),
                 elevation: 0,
                 shape: CircleBorder(
                   side: BorderSide(
-                    color: const Color(0xFFC8A75B).withValues(alpha: 0.45),
+                    color: const Color(0xFFC5A059).withValues(alpha: 0.45),
                     width: 1.2,
                   ),
                 ),
@@ -258,15 +303,9 @@ class _AppShellState extends State<AppShell> {
                     shape: BoxShape.circle,
                     boxShadow: <BoxShadow>[
                       BoxShadow(
-                        color: const Color(0xFFC8A75B).withValues(alpha: 0.16),
+                        color: Colors.black.withValues(alpha: 0.22),
                         blurRadius: 10,
-                        spreadRadius: 0.4,
-                        offset: const Offset(0, 1),
-                      ),
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.2),
-                        blurRadius: 12,
-                        offset: const Offset(0, 5),
+                        offset: const Offset(0, 4),
                       ),
                     ],
                   ),
@@ -279,6 +318,7 @@ class _AppShellState extends State<AppShell> {
           ],
         ),
       ),
+    ),
     );
   }
 
@@ -317,12 +357,9 @@ class _AppShellState extends State<AppShell> {
       if (restore == true) {
         final bool ok = await cloudBackupController.restoreLatestBackup();
         if (!mounted) return;
-        ScaffoldMessenger.of(this.context).showSnackBar(
-          SnackBar(
-            content: Text(
-              ok ? 'Cloud restore completed.' : cloudBackupController.statusMessage,
-            ),
-          ),
+        showTopSnackBar(
+          this.context,
+          ok ? 'Cloud restore completed.' : cloudBackupController.statusMessage,
         );
       } else {
         cloudBackupController.dismissRestorePrompt();
@@ -342,25 +379,24 @@ class _AppShellState extends State<AppShell> {
       height: height,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(23),
-        color: const Color(0xFF083832),
+        color: const Color(0xFF012E26),
         border: Border.all(
           color: selected
-              ? const Color(0xFFC8A75B).withValues(alpha: 0.9)
+              ? const Color(0xFFC5A059)
               : const Color(0xFF0B4A43).withValues(alpha: 0.85),
           width: 1.0,
         ),
         boxShadow: <BoxShadow>[
+          if (selected)
+            BoxShadow(
+              color: const Color(0xFFD4AF37).withValues(alpha: 0.22),
+              blurRadius: 12,
+              spreadRadius: 1.0,
+              offset: const Offset(0, 1),
+            ),
           BoxShadow(
-            color: const Color(0xFF0C6B5A).withValues(alpha: selected ? 0.18 : 0.0),
-            blurRadius: selected ? 14 : 0,
-            spreadRadius: selected ? 0.6 : 0,
-            offset: const Offset(0, 2),
-          ),
-          BoxShadow(
-            color: selected
-                ? const Color(0xFFC8A75B).withValues(alpha: 0.12)
-                : Colors.black.withValues(alpha: 0.12),
-            blurRadius: selected ? 6 : 6,
+            color: Colors.black.withValues(alpha: selected ? 0.25 : 0.12),
+            blurRadius: selected ? 8 : 6,
             offset: const Offset(0, 3),
           ),
         ],
@@ -374,7 +410,7 @@ class _AppShellState extends State<AppShell> {
                     shape: BoxShape.circle,
                     boxShadow: <BoxShadow>[
                       BoxShadow(
-                        color: const Color(0xFFC8A75B).withValues(alpha: 0.12),
+                        color: const Color(0xFFD4AF37).withValues(alpha: 0.12),
                         blurRadius: 6,
                         spreadRadius: 0.15,
                       ),
@@ -383,7 +419,7 @@ class _AppShellState extends State<AppShell> {
                 : null,
             child: Icon(
               item.icon,
-              color: selected ? const Color(0xFFC8A75B) : Colors.white.withValues(alpha: 0.72),
+              color: selected ? const Color(0xFFD4AF37) : const Color(0xFFA3B8B5),
               size: 23,
             ),
           ),
@@ -395,11 +431,11 @@ class _AppShellState extends State<AppShell> {
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
                   fontSize: 10.5,
                   fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                  color: selected ? const Color(0xFFC8A75B) : Colors.white.withValues(alpha: 0.72),
+                  color: selected ? const Color(0xFFD4AF37) : const Color(0xFFA3B8B5),
                   shadows: selected
                       ? <Shadow>[
                           Shadow(
-                            color: const Color(0xFFC8A75B).withValues(alpha: 0.18),
+                            color: const Color(0xFFD4AF37).withValues(alpha: 0.18),
                             blurRadius: 5,
                           ),
                         ]
@@ -424,20 +460,37 @@ class _AppShellState extends State<AppShell> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 SectionHeader(title: context.l10n.tr('add_entry'), bottomSpacing: 8),
+                // Add Income
                 ListTile(
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  key: const Key('actionAddTransaction'),
-                  leading: const Icon(Icons.swap_horiz),
-                  title: Text(context.l10n.tr('add_income_expense')),
+                  key: const Key('actionAddIncome'),
+                  leading: const Icon(Icons.trending_up_outlined),
+                  title: Text(context.l10n.tr('add_income')),
                   onTap: () {
                     Navigator.of(context).pop();
                     Navigator.of(this.context).push(
                       MaterialPageRoute<void>(
-                        builder: (_) => const AddTransactionScreen(),
+                        builder: (_) => const AddTransactionScreen(initialType: 'income'),
                       ),
                     );
                   },
                 ),
+                // Add Expense
+                ListTile(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  key: const Key('actionAddExpense'),
+                  leading: const Icon(Icons.trending_down_outlined),
+                  title: Text(context.l10n.tr('add_expense')),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    Navigator.of(this.context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const AddTransactionScreen(initialType: 'expense'),
+                      ),
+                    );
+                  },
+                ),
+                // Add Savings
                 ListTile(
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   key: const Key('actionAddSaving'),
@@ -452,6 +505,7 @@ class _AppShellState extends State<AppShell> {
                     );
                   },
                 ),
+                // Add Investment
                 ListTile(
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   key: const Key('actionAddInvestment'),
@@ -466,6 +520,7 @@ class _AppShellState extends State<AppShell> {
                     );
                   },
                 ),
+                // Add Plan
                 ListTile(
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   key: const Key('actionAddPlan'),
@@ -476,6 +531,53 @@ class _AppShellState extends State<AppShell> {
                     Navigator.of(this.context).push(
                       MaterialPageRoute<void>(
                         builder: (_) => const AddFinancialPlanScreen(),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showAddAssetActions(BuildContext context) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                SectionHeader(title: context.l10n.tr('add_asset'), bottomSpacing: 8),
+                ListTile(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  leading: const Icon(Icons.savings_outlined),
+                  title: Text(context.l10n.tr('add_saving')),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    Navigator.of(this.context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const AddSavingScreen(),
+                      ),
+                    );
+                  },
+                ),
+                ListTile(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  leading: const Icon(Icons.business_outlined),
+                  title: Text(context.l10n.tr('add_investment')),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    Navigator.of(this.context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const AddInvestmentScreen(),
                       ),
                     );
                   },

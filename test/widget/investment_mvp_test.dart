@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -14,6 +15,9 @@ import 'package:zakatapp_flutter/services/market_data_api_service.dart';
 import 'package:zakatapp_flutter/services/sync_controller.dart';
 
 class _FakeAuthService implements AuthService {
+  @override
+  Future<bool> ensureSession() async => true;
+
   final UserProfile? user;
   _FakeAuthService(this.user);
   @override
@@ -80,7 +84,7 @@ void main() {
       purchaseAmount: 0,
       purchaseCurrency: 'EGP',
     );
-    appStateController.addSaving(goldSaving);
+    await appStateController.addSaving(goldSaving);
 
     // 4. Pump the app widget
     await tester.pumpWidget(
@@ -97,7 +101,14 @@ void main() {
 
     // 5. Verify that total wealth includes the value of the gold saving.
     // Gold value = 10g * 3700 EGP/g = 37000 EGP
-    expect(find.textContaining('37,000'), findsOneWidget);
+    expect(find.text('TOTAL WEALTH'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('dashboardHeroCard')),
+        matching: find.textContaining('37K'),
+      ),
+      findsOneWidget,
+    );
 
     // 6. Cleanup controllers to cancel pending timers
     appStateController.dispose();

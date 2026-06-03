@@ -8,23 +8,33 @@ class ZakatScheduleService {
 
   static List<Map<String, dynamic>> calculateMonthlyZakatSchedule({
     required List<Map<String, dynamic>> transactions,
+    List<Map<String, dynamic>> savings = const <Map<String, dynamic>>[],
     required MarketData marketData,
     DateTime? now,
   }) {
     final DateTime today = now ?? DateTime.now();
-    final DateTime futureLimit =
-        DateTime(today.year + 3, today.month, today.day);
-    final double nisabValueEgp =
-        ZakatEngineService.defaultConfig.nisabGoldGrams *
-            marketData.goldPrice24kEgp;
-
-    final List<Map<String, dynamic>> lots =
-        ZakatEngineService.getNetIncomeLots(
-      transactions: transactions
-          .map((Map<String, dynamic> tx) => _transactionFromJson(tx))
-          .toList(growable: false),
+    final DateTime futureLimit = DateTime(
+      today.year + 3,
+      today.month,
+      today.day,
+    );
+    final List<Transaction> parsedTransactions = transactions
+        .map((Map<String, dynamic> tx) => _transactionFromJson(tx))
+        .toList(growable: false);
+    final List<Map<String, dynamic>> lots = ZakatEngineService.getNetIncomeLots(
+      transactions: parsedTransactions,
       marketData: marketData,
     );
+    final List<SavingLike> parsedSavings = savings
+        .map((Map<String, dynamic> s) => SavingLike.fromJson(s))
+        .toList(growable: false);
+    if (!_combinedPortfolioMeetsNisab(
+      lots: lots,
+      savings: parsedSavings,
+      marketData: marketData,
+    )) {
+      return <Map<String, dynamic>>[];
+    }
 
     final Map<String, Map<String, dynamic>> byMonth =
         <String, Map<String, dynamic>>{};
@@ -32,17 +42,20 @@ class ZakatScheduleService {
     for (final Map<String, dynamic> lot in lots) {
       final double remainingAmount = _asDouble(lot['remainingAmount']);
       if (remainingAmount < 0.01) continue;
-      if (remainingAmount < nisabValueEgp) continue;
 
       final DateTime lotDate = _dateOnly((lot['date'] ?? '').toString());
 
       for (int year = 1; year <= 30; year++) {
-        final int daysRequired = year * ZakatEngineService.defaultConfig.nisabDays;
+        final int daysRequired =
+            year * ZakatEngineService.defaultConfig.nisabDays;
         final DateTime dueDateRaw = lotDate.add(Duration(days: daysRequired));
         if (dueDateRaw.isAfter(futureLimit)) break;
 
-        final DateTime paymentDate =
-            DateTime(dueDateRaw.year, dueDateRaw.month, 1);
+        final DateTime paymentDate = DateTime(
+          dueDateRaw.year,
+          dueDateRaw.month,
+          1,
+        );
         final String monthKey = _monthKey(paymentDate);
 
         byMonth.putIfAbsent(monthKey, () {
@@ -52,7 +65,8 @@ class ZakatScheduleService {
             'totalZakat': 0.0,
             'isPast': paymentDate.isBefore(today),
             'isCurrentMonth':
-                paymentDate.year == today.year && paymentDate.month == today.month,
+                paymentDate.year == today.year &&
+                paymentDate.month == today.month,
             'entries': <Map<String, dynamic>>[],
           };
         });
@@ -62,24 +76,23 @@ class ZakatScheduleService {
 
         byMonth[monthKey]!['totalZakat'] =
             _asDouble(byMonth[monthKey]!['totalZakat']) + zakatAmount;
-        (byMonth[monthKey]!['entries'] as List<Map<String, dynamic>>).add(
-          <String, dynamic>{
-            'type': 'income',
-            'lotDate': lot['date'],
-            'lotAmount': remainingAmount,
-            'year': year,
-            'zakatAmount': zakatAmount,
-            'dueDateRaw': _yyyyMmDd(dueDateRaw),
-          },
-        );
+        (byMonth[monthKey]!['entries'] as List<Map<String, dynamic>>)
+            .add(<String, dynamic>{
+              'type': 'income',
+              'lotDate': lot['date'],
+              'lotAmount': remainingAmount,
+              'year': year,
+              'zakatAmount': zakatAmount,
+              'dueDateRaw': _yyyyMmDd(dueDateRaw),
+            });
       }
     }
 
     final List<Map<String, dynamic>> result = byMonth.values.toList()
       ..sort((Map<String, dynamic> a, Map<String, dynamic> b) {
-        return (a['monthKey'] ?? '')
-            .toString()
-            .compareTo((b['monthKey'] ?? '').toString());
+        return (a['monthKey'] ?? '').toString().compareTo(
+          (b['monthKey'] ?? '').toString(),
+        );
       });
 
     return result;
@@ -87,6 +100,7 @@ class ZakatScheduleService {
 
   static List<Map<String, dynamic>> calculateSavingsZakatSchedule({
     required List<Map<String, dynamic>> savings,
+    List<Map<String, dynamic>> transactions = const <Map<String, dynamic>>[],
     required MarketData marketData,
     DateTime? now,
   }) {
@@ -94,97 +108,113 @@ class ZakatScheduleService {
         .map((Map<String, dynamic> s) => SavingLike.fromJson(s))
         .toList(growable: false);
 
-    final NisabTotals totals = ZakatEngineService.computeNisabTotals(
-      savings: parsedSavings
-          .map((SavingLike s) => s.toSavingModel())
-          .toList(growable: false),
+    final List<Transaction> parsedTransactions = transactions
+        .map((Map<String, dynamic> tx) => _transactionFromJson(tx))
+        .toList(growable: false);
+    final List<Map<String, dynamic>> lots = ZakatEngineService.getNetIncomeLots(
+      transactions: parsedTransactions,
       marketData: marketData,
     );
-    final bool portfolioMeetsNisab =
-        ZakatEngineService.checkCashNisab(totals.totalSavingsWealthEgp, marketData);
-    if (!portfolioMeetsNisab) return <Map<String, dynamic>>[];
+    if (!_combinedPortfolioMeetsNisab(
+      lots: lots,
+      savings: parsedSavings,
+      marketData: marketData,
+    )) {
+      return <Map<String, dynamic>>[];
+    }
 
     final DateTime today = now ?? DateTime.now();
-    final DateTime futureLimit =
-        DateTime(today.year + 3, today.month, today.day);
+    final DateTime futureLimit = DateTime(
+      today.year + 3,
+      today.month,
+      today.day,
+    );
 
     final Map<String, Map<String, dynamic>> byMonth =
         <String, Map<String, dynamic>>{};
 
     for (final SavingLike saving in parsedSavings) {
-      final String assetType =
-          ZakatEngineService.normaliseAssetType(saving.assetType);
+      final String assetType = ZakatEngineService.normaliseAssetType(
+        saving.assetType,
+      );
 
-      double zakatValueEgp = 0;
-      if (assetType == 'cash') {
-        zakatValueEgp = ZakatEngineService.convertToEgp(
-              saving.remainingAmount,
-              saving.unit,
-              marketData,
-            ) *
-            ZakatEngineService.defaultConfig.zakatRate;
-      } else if (assetType == 'gold') {
-        zakatValueEgp = ZakatEngineService.convertToGold24k(
-                  saving.remainingAmount,
-                  saving.unit,
-                ) *
-                ZakatEngineService.defaultConfig.zakatRate *
-                marketData.goldPrice24kEgp;
-      } else if (assetType == 'silver') {
-        zakatValueEgp = ZakatEngineService.convertToSilverGrams(
-                  saving.remainingAmount,
-                ) *
-                ZakatEngineService.defaultConfig.zakatRate *
-                marketData.silverPriceEgp;
-      }
-      if (zakatValueEgp < 0.01) continue;
+      for (final SavingZakatSegment segment in saving.zakatSegments()) {
+        double zakatValueEgp = 0;
+        if (assetType == 'cash') {
+          zakatValueEgp =
+              ZakatEngineService.convertToEgp(
+                segment.amount,
+                saving.unit,
+                marketData,
+              ) *
+              ZakatEngineService.defaultConfig.zakatRate;
+        } else if (assetType == 'gold') {
+          zakatValueEgp =
+              ZakatEngineService.convertToGold24k(segment.amount, saving.unit) *
+              ZakatEngineService.defaultConfig.zakatRate *
+              marketData.goldPrice24kEgp;
+        } else if (assetType == 'silver') {
+          zakatValueEgp =
+              ZakatEngineService.convertToSilverGrams(segment.amount) *
+              ZakatEngineService.defaultConfig.zakatRate *
+              marketData.silverPriceEgp;
+        }
+        if (zakatValueEgp < 0.01) continue;
 
-      final DateTime savingDate = _dateOnly(saving.dateAcquired);
+        final DateTime savingDate = _dateOnly(segment.date);
 
-      for (int year = 1; year <= 30; year++) {
-        final int daysRequired = year * ZakatEngineService.defaultConfig.nisabDays;
-        final DateTime dueDateRaw = savingDate.add(Duration(days: daysRequired));
-        if (dueDateRaw.isAfter(futureLimit)) break;
+        for (int year = 1; year <= 30; year++) {
+          final int daysRequired =
+              year * ZakatEngineService.defaultConfig.nisabDays;
+          final DateTime dueDateRaw = savingDate.add(
+            Duration(days: daysRequired),
+          );
+          if (dueDateRaw.isAfter(futureLimit)) break;
 
-        final DateTime paymentDate =
-            DateTime(dueDateRaw.year, dueDateRaw.month, 1);
-        final String monthKey = _monthKey(paymentDate);
+          final DateTime paymentDate = DateTime(
+            dueDateRaw.year,
+            dueDateRaw.month,
+            1,
+          );
+          final String monthKey = _monthKey(paymentDate);
 
-        byMonth.putIfAbsent(monthKey, () {
-          return <String, dynamic>{
-            'monthKey': monthKey,
-            'paymentDate': _yyyyMmDd(paymentDate),
-            'totalZakat': 0.0,
-            'isPast': paymentDate.isBefore(today),
-            'isCurrentMonth':
-                paymentDate.year == today.year && paymentDate.month == today.month,
-            'entries': <Map<String, dynamic>>[],
-          };
-        });
+          byMonth.putIfAbsent(monthKey, () {
+            return <String, dynamic>{
+              'monthKey': monthKey,
+              'paymentDate': _yyyyMmDd(paymentDate),
+              'totalZakat': 0.0,
+              'isPast': paymentDate.isBefore(today),
+              'isCurrentMonth':
+                  paymentDate.year == today.year &&
+                  paymentDate.month == today.month,
+              'entries': <Map<String, dynamic>>[],
+            };
+          });
 
-        byMonth[monthKey]!['totalZakat'] =
-            _asDouble(byMonth[monthKey]!['totalZakat']) + zakatValueEgp;
-        (byMonth[monthKey]!['entries'] as List<Map<String, dynamic>>).add(
-          <String, dynamic>{
-            'type': 'savings',
-            'savingDate': saving.dateAcquired,
-            'assetType': assetType,
-            'amount': saving.remainingAmount,
-            'unit': saving.unit,
-            'description': saving.description,
-            'year': year,
-            'zakatAmount': zakatValueEgp,
-            'dueDateRaw': _yyyyMmDd(dueDateRaw),
-          },
-        );
+          byMonth[monthKey]!['totalZakat'] =
+              _asDouble(byMonth[monthKey]!['totalZakat']) + zakatValueEgp;
+          (byMonth[monthKey]!['entries'] as List<Map<String, dynamic>>)
+              .add(<String, dynamic>{
+                'type': 'savings',
+                'savingDate': segment.date,
+                'assetType': assetType,
+                'amount': segment.amount,
+                'unit': saving.unit,
+                'description': saving.description,
+                'fundingSourceId': segment.sourceId,
+                'year': year,
+                'zakatAmount': zakatValueEgp,
+                'dueDateRaw': _yyyyMmDd(dueDateRaw),
+              });
+        }
       }
     }
 
     final List<Map<String, dynamic>> result = byMonth.values.toList()
       ..sort((Map<String, dynamic> a, Map<String, dynamic> b) {
-        return (a['monthKey'] ?? '')
-            .toString()
-            .compareTo((b['monthKey'] ?? '').toString());
+        return (a['monthKey'] ?? '').toString().compareTo(
+          (b['monthKey'] ?? '').toString(),
+        );
       });
 
     return result;
@@ -218,7 +248,7 @@ class ZakatScheduleService {
     final HijriDate todayH = ZakatEngineService.gregorianToHijri(today);
     final double nisabValueEgp =
         ZakatEngineService.defaultConfig.nisabGoldGrams *
-            marketData.goldPrice24kEgp;
+        marketData.goldPrice24kEgp;
 
     final List<Transaction> txModels = transactions
         .map((Map<String, dynamic> tx) => _transactionFromJson(tx))
@@ -238,55 +268,62 @@ class ZakatScheduleService {
       if (hy < 1) continue;
 
       final DateTime dueGreg = ZakatEngineService.hijriToGregorian(hy, hm, hd);
-      final DateTime payDate = DateTime(dueGreg.year, dueGreg.month, 1);
-      final String monthKey = _monthKey(dueGreg);
+      final DateTime dueDate = DateTime(
+        dueGreg.year,
+        dueGreg.month,
+        dueGreg.day,
+      );
+      final DateTime todayDate = DateTime(today.year, today.month, today.day);
+      final String dateKey = _yyyyMmDd(dueDate);
+      final String hijriDate = _hijriDateKey(hy, hm, hd);
 
       final double totalWealthEgpAtDate =
           ZakatEngineService.calculateTotalWealthEgpAt(
-        asOf: payDate,
-        transactions: txModels,
-        savings: savingModels
-            .map((SavingLike s) => s.toSavingModel())
-            .toList(growable: false),
-        investments: invModels,
-        marketData: marketData,
-      );
+            asOf: dueDate,
+            transactions: txModels,
+            savings: savingModels
+                .map((SavingLike s) => s.toSavingModel())
+                .toList(growable: false),
+            investments: invModels,
+            marketData: marketData,
+          );
 
       if (totalWealthEgpAtDate < nisabValueEgp) continue;
 
       final double zakatAmount =
           totalWealthEgpAtDate * ZakatEngineService.defaultConfig.zakatRate;
 
-      byMonth[monthKey] = <String, dynamic>{
-        'monthKey': monthKey,
-        'paymentDate': _yyyyMmDd(payDate),
+      byMonth[dateKey] = <String, dynamic>{
+        'monthKey': dateKey,
+        'paymentDate': dateKey,
         'totalZakat': zakatAmount,
         'totalWealth': totalWealthEgpAtDate,
         'hijriYear': hy,
         'hijriMonth': hm,
         'hijriDay': hd,
-        'isPast': payDate.isBefore(today) &&
-            !(payDate.year == today.year && payDate.month == today.month),
-        'isCurrentMonth': payDate.year == today.year && payDate.month == today.month,
+        'hijriDate': hijriDate,
+        'isPast': dueDate.isBefore(todayDate),
+        'isCurrentMonth': dueDate.isAtSameMomentAs(todayDate),
         'entries': <Map<String, dynamic>>[
           <String, dynamic>{
             'type': 'annual',
             'totalWealth': totalWealthEgpAtDate,
             'zakatAmount': zakatAmount,
-            'dueDateRaw': _yyyyMmDd(dueGreg),
+            'dueDateRaw': dateKey,
             'hijriYear': hy,
             'hijriMonth': hm,
             'hijriDay': hd,
-          }
+            'hijriDate': hijriDate,
+          },
         ],
       };
     }
 
     final List<Map<String, dynamic>> result = byMonth.values.toList()
       ..sort((Map<String, dynamic> a, Map<String, dynamic> b) {
-        return (a['monthKey'] ?? '')
-            .toString()
-            .compareTo((b['monthKey'] ?? '').toString());
+        return (a['monthKey'] ?? '').toString().compareTo(
+          (b['monthKey'] ?? '').toString(),
+        );
       });
 
     return result;
@@ -334,6 +371,12 @@ class ZakatScheduleService {
     return '${date.year}-$mm-$dd';
   }
 
+  static String _hijriDateKey(int year, int month, int day) {
+    final String mm = month.toString().padLeft(2, '0');
+    final String dd = day.toString().padLeft(2, '0');
+    return '$year-$mm-$dd';
+  }
+
   static double _asDouble(dynamic value) {
     if (value is num) return value.toDouble();
     return double.tryParse(value?.toString() ?? '') ?? 0;
@@ -345,6 +388,28 @@ class ZakatScheduleService {
     final String raw = (value ?? '').toString().toLowerCase();
     return raw == 'true' || raw == '1';
   }
+
+  static bool _combinedPortfolioMeetsNisab({
+    required List<Map<String, dynamic>> lots,
+    required List<SavingLike> savings,
+    required MarketData marketData,
+  }) {
+    final NisabTotals totals = ZakatEngineService.computeNisabTotals(
+      savings: savings
+          .map((SavingLike s) => s.toSavingModel())
+          .toList(growable: false),
+      marketData: marketData,
+    );
+    final double incomeCashEgp = lots.fold<double>(
+      0,
+      (double sum, Map<String, dynamic> lot) =>
+          sum + _asDouble(lot['remainingAmount']),
+    );
+    return ZakatEngineService.checkCashNisab(
+      totals.totalSavingsWealthEgp + incomeCashEgp,
+      marketData,
+    );
+  }
 }
 
 class SavingLike {
@@ -355,6 +420,8 @@ class SavingLike {
     required this.remainingAmount,
     required this.unit,
     required this.description,
+    required this.purchaseAmount,
+    this.fundingAllocations = const <Map<String, dynamic>>[],
   });
 
   final String assetType;
@@ -363,11 +430,14 @@ class SavingLike {
   final double remainingAmount;
   final String unit;
   final String description;
+  final double purchaseAmount;
+  final List<Map<String, dynamic>> fundingAllocations;
 
   factory SavingLike.fromJson(Map<String, dynamic> json) {
     final double amount = _toDouble(json['amount']);
-    final double remainingAmount =
-        json['remainingAmount'] == null ? amount : _toDouble(json['remainingAmount']);
+    final double remainingAmount = json['remainingAmount'] == null
+        ? amount
+        : _toDouble(json['remainingAmount']);
 
     return SavingLike(
       assetType: (json['assetType'] ?? '').toString(),
@@ -376,6 +446,8 @@ class SavingLike {
       remainingAmount: remainingAmount,
       unit: (json['unit'] ?? '').toString(),
       description: (json['description'] ?? '').toString(),
+      purchaseAmount: _toDouble(json['purchaseAmount']),
+      fundingAllocations: _asMapList(json['fundingAllocations']),
     );
   }
 
@@ -397,11 +469,89 @@ class SavingLike {
       exchangeSourceIncomeId: null,
       internalTransfer: null,
       internalTransferType: null,
+      fundingAllocations: fundingAllocations,
     );
+  }
+
+  List<SavingZakatSegment> zakatSegments() {
+    final String type = ZakatEngineService.normaliseAssetType(assetType);
+    if ((type != 'gold' && type != 'silver') || fundingAllocations.isEmpty) {
+      return <SavingZakatSegment>[
+        SavingZakatSegment(
+          date: dateAcquired,
+          amount: remainingAmount,
+          sourceId: null,
+        ),
+      ];
+    }
+
+    final double totalFunding = fundingAllocations.fold<double>(
+      0,
+      (double sum, Map<String, dynamic> allocation) =>
+          sum + _toDouble(allocation['amount']),
+    );
+    if (totalFunding <= 0 || purchaseAmount <= 0) {
+      return <SavingZakatSegment>[
+        SavingZakatSegment(
+          date: dateAcquired,
+          amount: remainingAmount,
+          sourceId: null,
+        ),
+      ];
+    }
+
+    final List<SavingZakatSegment> segments = <SavingZakatSegment>[];
+    double allocatedMetal = 0;
+    for (final Map<String, dynamic> allocation in fundingAllocations) {
+      final double fundingAmount = _toDouble(allocation['amount']);
+      if (fundingAmount <= 0) continue;
+      final double metalAmount =
+          remainingAmount * (fundingAmount / totalFunding);
+      allocatedMetal += metalAmount;
+      segments.add(
+        SavingZakatSegment(
+          date: (allocation['sourceDate'] ?? dateAcquired).toString(),
+          amount: metalAmount,
+          sourceId: allocation['sourceId']?.toString(),
+        ),
+      );
+    }
+
+    final double residual = remainingAmount - allocatedMetal;
+    if (residual > 0.005) {
+      segments.add(
+        SavingZakatSegment(
+          date: dateAcquired,
+          amount: residual,
+          sourceId: null,
+        ),
+      );
+    }
+    return segments;
   }
 
   static double _toDouble(dynamic value) {
     if (value is num) return value.toDouble();
     return double.tryParse(value?.toString() ?? '') ?? 0;
   }
+
+  static List<Map<String, dynamic>> _asMapList(dynamic value) {
+    if (value is! List) return const <Map<String, dynamic>>[];
+    return value
+        .whereType<Map>()
+        .map((Map<dynamic, dynamic> item) => Map<String, dynamic>.from(item))
+        .toList(growable: false);
+  }
+}
+
+class SavingZakatSegment {
+  const SavingZakatSegment({
+    required this.date,
+    required this.amount,
+    required this.sourceId,
+  });
+
+  final String date;
+  final double amount;
+  final String? sourceId;
 }

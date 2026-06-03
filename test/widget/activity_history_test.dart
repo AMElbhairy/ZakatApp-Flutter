@@ -3,16 +3,40 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zakatapp_flutter/main.dart';
+import 'package:zakatapp_flutter/models/user_profile.dart';
 import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
 import 'package:zakatapp_flutter/services/app_state_controller.dart';
+import 'package:zakatapp_flutter/services/auth_controller.dart';
+import 'package:zakatapp_flutter/services/auth_service.dart';
 import 'package:zakatapp_flutter/services/local_storage_service.dart';
+
+class _FakeAuthService implements AuthService {
+  @override
+  Future<bool> ensureSession() async => true;
+  @override
+  Future<UserProfile?> restoreSession() async => null;
+  @override
+  Future<UserProfile?> signIn() async => null;
+  @override
+  Future<void> signOut() async {}
+}
 
 Widget _buildApp() {
   const LocalStorageService localStorage = LocalStorageService();
   final AppStateRepository repository =
       AppStateRepository(localStorage: localStorage);
-  return ChangeNotifierProvider<AppStateController>(
-    create: (_) => AppStateController(repository: repository),
+  return MultiProvider(
+    providers: <ChangeNotifierProvider<dynamic>>[
+      ChangeNotifierProvider<AppStateController>(
+        create: (_) => AppStateController(repository: repository),
+      ),
+      ChangeNotifierProvider<AuthController>(
+        create: (_) => AuthController(
+          authService: _FakeAuthService(),
+          localStorage: localStorage,
+        ),
+      ),
+    ],
     child: const ZakatApp(),
   );
 }
@@ -66,12 +90,12 @@ void main() {
     await tester.tap(find.text('Income').first);
     await tester.pumpAndSettle();
     expect(find.byType(ListTile), findsOneWidget);
-    expect(find.textContaining('+100.00 EGP'), findsOneWidget);
+    expect(find.textContaining('E£ +100.00'), findsOneWidget);
 
     await tester.tap(find.text('Expense').first);
     await tester.pumpAndSettle();
     expect(find.byType(ListTile), findsOneWidget);
-    expect(find.textContaining('-40.00 EGP'), findsOneWidget);
+    expect(find.textContaining('E£ -40.00'), findsOneWidget);
   });
 
   testWidgets('delete transaction with confirmation',
@@ -115,7 +139,7 @@ void main() {
     await tester.tap(find.byKey(const Key('saveTransactionButton')));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('+250.00 EGP'), findsOneWidget);
+    expect(find.textContaining('E£ +250.00'), findsOneWidget);
 
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
@@ -123,6 +147,6 @@ void main() {
     await tester.tap(find.text('Activity').first);
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('+250.00 EGP'), findsOneWidget);
+    expect(find.textContaining('E£ +250.00'), findsOneWidget);
   });
 }

@@ -4,14 +4,75 @@ import 'package:provider/provider.dart';
 import '../../core/i18n/app_localizations.dart';
 import '../../core/services/zakat_engine.dart';
 import '../../core/widgets/app_ui.dart';
+import '../../core/theme/app_theme_extensions.dart';
+import '../../core/theme/app_component_tokens.dart';
 import '../../models/investment_asset.dart';
 import '../../models/saving.dart';
+import '../../models/transaction.dart';
 import '../../services/app_state_controller.dart';
-import '../entry/add_investment_screen.dart';
-import '../entry/add_saving_screen.dart';
+import 'category_details_screen.dart';
 
-class AssetsScreen extends StatelessWidget {
-  const AssetsScreen({super.key});
+class AssetsScreen extends StatefulWidget {
+  const AssetsScreen({super.key, this.onViewAllActivity});
+
+  final VoidCallback? onViewAllActivity;
+
+  @override
+  State<AssetsScreen> createState() => _AssetsScreenState();
+}
+
+class _AssetsScreenState extends State<AssetsScreen> {
+  String _selectedDateFilter = 'All Time';
+  DateTimeRange? _customDateRange;
+
+  String _getFlagEmoji(String currency) {
+    switch (currency.trim().toUpperCase()) {
+      case 'USD': return '🇺🇸';
+      case 'EGP': return '🇪🇬';
+      case 'SAR': return '🇸🇦';
+      case 'AED': return '🇦🇪';
+      case 'KWD': return '🇰🇼';
+      case 'QAR': return '🇶🇦';
+      case 'EUR': return '🇪🇺';
+      case 'GBP': return '🇬🇧';
+      default: return '🏳️';
+    }
+  }
+
+  DateTime? _parseDate(String dateStr) {
+    if (dateStr.isEmpty) return null;
+    try {
+      return DateTime.parse(dateStr);
+    } catch (_) {
+      final parts = dateStr.split('-');
+      if (parts.length == 3) {
+        final y = int.tryParse(parts[0]) ?? DateTime.now().year;
+        final m = int.tryParse(parts[1]) ?? DateTime.now().month;
+        final d = int.tryParse(parts[2]) ?? DateTime.now().day;
+        return DateTime(y, m, d);
+      }
+      return null;
+    }
+  }
+
+  Future<void> _selectCustomRange(BuildContext context) async {
+    final DateTimeRange? picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+      initialDateRange: _customDateRange ??
+          DateTimeRange(
+            start: DateTime.now().subtract(const Duration(days: 30)),
+            end: DateTime.now(),
+          ),
+    );
+    if (picked != null) {
+      setState(() {
+        _customDateRange = picked;
+        _selectedDateFilter = 'Custom';
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -19,396 +80,856 @@ class AssetsScreen extends StatelessWidget {
     final AppStateController controller = context.watch<AppStateController>();
     final List<Saving> savings = controller.state.savings;
     final List<InvestmentAsset> investments = controller.state.investments;
+    final List<Transaction> transactions = controller.state.transactions;
     final MarketData market = MarketData.fromJson(controller.state.marketData);
-
-    final List<Saving> cash = savings.where((s) => s.assetType == 'cash').toList();
-    final List<Saving> gold = savings.where((s) => s.assetType == 'gold').toList();
-    final List<Saving> silver = savings.where((s) => s.assetType == 'silver').toList();
-
-    final List<InvestmentAsset> properties = investments
-        .where((a) => !ZakatEngineService.isCompanyInvestmentType(a.investmentType))
-        .toList(growable: false);
-    final List<InvestmentAsset> companyShares = investments
-        .where((a) => ZakatEngineService.isCompanyInvestmentType(a.investmentType))
-        .toList(growable: false);
 
     final String mainCurrency = controller.state.mainCurrency.trim().isEmpty
         ? 'EGP'
         : controller.state.mainCurrency.trim();
 
-    final NisabTotals savingsTotals = ZakatEngineService.computeNisabTotals(
+    final bool isArabic = Localizations.localeOf(context).languageCode.toLowerCase() == 'ar';
+
+    // Calculate balancesHidden globally
+    final bool balancesHidden = controller.state.aiSettings?['privacyMode'] == true ||
+        controller.state.aiSettings?['hideBalances'] == true ||
+        controller.state.aiSettings?['balancesHidden'] == true;
+
+    // Filter Items by Date for Categories
+    final DateTime now = DateTime.now();
+    List<Saving> filteredSavings = savings;
+    List<InvestmentAsset> filteredInvestments = investments;
+
+    if (_selectedDateFilter != 'All Time') {
+      filteredSavings = savings.where((s) {
+        final DateTime? date = _parseDate(s.dateAcquired);
+        if (date == null) return true;
+        if (_selectedDateFilter == '30D') {
+          return date.isAfter(now.subtract(const Duration(days: 30))) || date.isAtSameMomentAs(now.subtract(const Duration(days: 30)));
+        } else if (_selectedDateFilter == '90D') {
+          return date.isAfter(now.subtract(const Duration(days: 90))) || date.isAtSameMomentAs(now.subtract(const Duration(days: 90)));
+        } else if (_selectedDateFilter == 'YTD') {
+          return date.year == now.year;
+        } else if (_selectedDateFilter == 'Custom' && _customDateRange != null) {
+          return (date.isAfter(_customDateRange!.start) || date.isAtSameMomentAs(_customDateRange!.start)) &&
+              (date.isBefore(_customDateRange!.end) || date.isAtSameMomentAs(_customDateRange!.end));
+        }
+        return true;
+      }).toList();
+
+      filteredInvestments = investments.where((a) {
+        final DateTime? date = _parseDate(a.valuationDate);
+        if (date == null) return true;
+        if (_selectedDateFilter == '30D') {
+          return date.isAfter(now.subtract(const Duration(days: 30))) || date.isAtSameMomentAs(now.subtract(const Duration(days: 30)));
+        } else if (_selectedDateFilter == '90D') {
+          return date.isAfter(now.subtract(const Duration(days: 90))) || date.isAtSameMomentAs(now.subtract(const Duration(days: 90)));
+        } else if (_selectedDateFilter == 'YTD') {
+          return date.year == now.year;
+        } else if (_selectedDateFilter == 'Custom' && _customDateRange != null) {
+          return (date.isAfter(_customDateRange!.start) || date.isAtSameMomentAs(_customDateRange!.start)) &&
+              (date.isBefore(_customDateRange!.end) || date.isAtSameMomentAs(_customDateRange!.end));
+        }
+        return true;
+      }).toList();
+    }
+
+    // Totals calculations (Always overall, asnet worth is absolute)
+    final double totalWealthEgp = ZakatEngineService.calculateTotalWealthEgp(
+      transactions: transactions,
       savings: savings,
-      marketData: market,
-    );
-
-    final double totalCash = ZakatEngineService.convertFromEgp(
-      savingsTotals.totalCashEgp,
-      mainCurrency,
-      market,
-    );
-    final double totalGold = savingsTotals.totalGold24k;
-    final double totalSilver = savingsTotals.totalSilverGrams;
-
-    final double totalInvestmentEgp = ZakatEngineService.calculateTotalInvestmentsEgp(
       investments: investments,
       marketData: market,
     );
-    final double totalInvestment = ZakatEngineService.convertFromEgp(
-      totalInvestmentEgp,
+
+    final double totalWealthMain = ZakatEngineService.convertFromEgp(
+      totalWealthEgp,
       mainCurrency,
       market,
     );
 
-    final double totalInvestmentNetEgp =
-        investments.fold<double>(0, (double sum, InvestmentAsset asset) {
-      final double share = (asset.ownershipSharePct / 100).clamp(0, 1);
-      final double gross =
-          ZakatEngineService.convertToEgp(asset.marketValue * share, asset.currency, market);
-      final double liability =
-          ZakatEngineService.convertToEgp(asset.loanBalance, asset.currency, market);
-      return sum + (gross - liability);
-    });
-    final double totalInvestmentNet = ZakatEngineService.convertFromEgp(
-      totalInvestmentNetEgp,
-      mainCurrency,
+    // Alternative currency calculation
+    String altCurrency = 'USD';
+    if (mainCurrency == 'USD') altCurrency = 'SAR';
+    final double altCurrencyVal = ZakatEngineService.convertFromEgp(
+      totalWealthEgp,
+      altCurrency,
       market,
     );
 
-    final bool hasAnyAssets = savings.isNotEmpty || investments.isNotEmpty;
+    // Dynamic Growth calculation
+    final DateTime startOfYear = DateTime(now.year, 1, 1);
+    final double startOfYearWealth = ZakatEngineService.calculateTotalWealthEgpAt(
+      asOf: startOfYear,
+      transactions: transactions,
+      savings: savings,
+      investments: investments,
+      marketData: market,
+    );
+    final double changePct = startOfYearWealth > 0
+        ? ((totalWealthEgp - startOfYearWealth) / startOfYearWealth) * 100
+        : 0.0;
 
-    String formatValue(double val) {
-      if (mainCurrency == 'EGP') return 'E£ ${val.toStringAsFixed(2)}';
-      return '$mainCurrency ${val.toStringAsFixed(2)}';
+    final int totalAssetsCount = savings.length + investments.length;
+
+    // Unique currencies count (Cash savings currencies + Income transaction currencies + Investment currencies + Main currency)
+    final Set<String> uniqueCurrencies = {
+      mainCurrency,
+      ...savings.where((s) => s.assetType == 'cash').map((s) => s.unit.trim().toUpperCase()),
+      ...transactions.where((t) => t.type == 'income').map((t) => t.currency.trim().toUpperCase()),
+      ...investments.map((a) => a.currency.trim().toUpperCase()),
+    }.where((c) => c.isNotEmpty).toSet();
+    final int uniqueCurrenciesCount = uniqueCurrencies.length;
+
+    // Category Values (Filtered)
+    // 1. Cash & Currencies — combines Saving(cash) + all income Transactions
+    final List<Saving> cashSavingList = filteredSavings.where((s) => s.assetType == 'cash').toList();
+
+    // Also filter transactions by date if needed
+    List<Transaction> filteredTransactions = transactions.where((t) => t.type == 'income').toList();
+    if (_selectedDateFilter != 'All Time') {
+      filteredTransactions = filteredTransactions.where((t) {
+        final DateTime? date = _parseDate(t.date);
+        if (date == null) return true;
+        if (_selectedDateFilter == '30D') {
+          return date.isAfter(now.subtract(const Duration(days: 30))) || date.isAtSameMomentAs(now.subtract(const Duration(days: 30)));
+        } else if (_selectedDateFilter == '90D') {
+          return date.isAfter(now.subtract(const Duration(days: 90))) || date.isAtSameMomentAs(now.subtract(const Duration(days: 90)));
+        } else if (_selectedDateFilter == 'YTD') {
+          return date.year == now.year;
+        } else if (_selectedDateFilter == 'Custom' && _customDateRange != null) {
+          return (date.isAfter(_customDateRange!.start) || date.isAtSameMomentAs(_customDateRange!.start)) &&
+              (date.isBefore(_customDateRange!.end) || date.isAtSameMomentAs(_customDateRange!.end));
+        }
+        return true;
+      }).toList();
     }
 
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    // Cash total from savings
+    final double cashSavingsEgp = cashSavingList.fold<double>(
+      0, (sum, s) => sum + ZakatEngineService.convertToEgp(s.remainingAmount, s.unit, market));
+    // Cash total from income transactions
+    final double cashTxEgp = filteredTransactions.fold<double>(
+      0, (sum, t) => sum + ZakatEngineService.convertToEgp(t.remainingAmount ?? t.amount, t.currency, market));
+    final double cashTotalEgp = cashSavingsEgp + cashTxEgp;
+    final double cashTotalMain = ZakatEngineService.convertFromEgp(cashTotalEgp, mainCurrency, market);
+
+    // Map currencies under Cash for Chips (savings + transactions)
+    final Map<String, double> cashByCurrency = {};
+    for (final s in cashSavingList) {
+      final String cur = s.unit.trim().toUpperCase();
+      if (cur.isNotEmpty) {
+        cashByCurrency[cur] = (cashByCurrency[cur] ?? 0.0) + s.remainingAmount;
+      }
+    }
+    for (final t in filteredTransactions) {
+      final String cur = t.currency.trim().toUpperCase();
+      if (cur.isNotEmpty) {
+        cashByCurrency[cur] = (cashByCurrency[cur] ?? 0.0) + (t.remainingAmount ?? t.amount);
+      }
+    }
+
+    // 2. Gold
+    final List<Saving> goldList = filteredSavings.where((s) => s.assetType == 'gold').toList();
+    final double gold24k = goldList.fold<double>(0, (sum, s) => sum + ZakatEngineService.convertToGold24k(s.remainingAmount, s.unit));
+    final double goldTotalEgp = gold24k * market.goldPrice24kEgp;
+    final double goldTotalMain = ZakatEngineService.convertFromEgp(goldTotalEgp, mainCurrency, market);
+
+    // 3. Silver
+    final List<Saving> silverList = filteredSavings.where((s) => s.assetType == 'silver').toList();
+    final double silverGrams = silverList.fold<double>(0, (sum, s) => sum + ZakatEngineService.convertToSilverGrams(s.remainingAmount));
+    final double silverTotalEgp = silverGrams * market.silverPriceEgp;
+    final double silverTotalMain = ZakatEngineService.convertFromEgp(silverTotalEgp, mainCurrency, market);
+
+    // 4. Investments
+    final List<InvestmentAsset> investmentList = filteredInvestments.where((a) => ZakatEngineService.isCompanyInvestmentType(a.investmentType)).toList();
+    final double investmentsTotalEgp = investmentList.fold<double>(0, (sum, a) {
+      final double share = (a.ownershipSharePct / 100).clamp(0, 1);
+      return sum + ZakatEngineService.convertToEgp(a.marketValue * share - a.loanBalance, a.currency, market);
+    });
+    final double investmentsTotalMain = ZakatEngineService.convertFromEgp(investmentsTotalEgp, mainCurrency, market);
+
+    // 5. Real Estate
+    final List<InvestmentAsset> propertyList = filteredInvestments.where((a) => !ZakatEngineService.isCompanyInvestmentType(a.investmentType)).toList();
+    final double propertyTotalEgp = propertyList.fold<double>(0, (sum, a) {
+      final double share = (a.ownershipSharePct / 100).clamp(0, 1);
+      return sum + ZakatEngineService.convertToEgp(a.marketValue * share - a.loanBalance, a.currency, market);
+    });
+    final double propertyTotalMain = ZakatEngineService.convertFromEgp(propertyTotalEgp, mainCurrency, market);
+
+    // 6. Other Assets (residual or 0.0)
+    const double otherTotalMain = 0.0;
+
+    // Percentages of total wealth
+    double pct(double catEgp) => totalWealthEgp > 0 ? ((catEgp / totalWealthEgp) * 100).clamp(0, 100) : 0.0;
+
+    // Recent transactions (Salary, Freelance, Gold Purchase etc.)
+    final List<Transaction> recentTransactions = List<Transaction>.from(transactions)
+      ..sort((a, b) => _parseDate(b.date)?.compareTo(_parseDate(a.date) ?? DateTime(2000)) ?? 0);
+    final List<Transaction> assetChanges = recentTransactions.take(5).toList();
+
+    final tokens = context.premiumTokens;
+
+    return Container(
+      color: tokens.colors.background,
+      child: ListView(
+        padding: EdgeInsets.fromLTRB(16, 20, 16, navSafeBottomPadding),
         children: <Widget>[
-          SectionHeader(title: context.l10n.tr('assets'), bottomSpacing: 14),
-          PremiumCard(
-            child: Column(
+          _AssetsHeader(
+            title: context.l10n.tr('assets'),
+            balancesHidden: balancesHidden,
+            onTogglePrivacy: () => controller.togglePrivacyMode(),
+            hasNotifications: false,
+            onTapNotifications: () {},
+          ),
+          const SizedBox(height: 18),
+
+          // Redesigned Green Hero Card
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: AppComponentTokens.heroCard(context),
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                SectionHeader(title: context.l10n.tr('totals'), bottomSpacing: 8),
-                MetricTile(
-                    label: context.l10n.tr('total_cash'), value: formatValue(totalCash)),
-                const SizedBox(height: 8),
-                MetricTile(
-                  label: context.l10n.tr('total_gold_grams'),
-                  value: totalGold.toStringAsFixed(2),
+                // Left Column
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        context.l10n.tr('total_assets'),
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        balancesHidden
+                            ? '••••••'
+                            : ZakatEngineService.formatCurrency(
+                                totalWealthMain,
+                                mainCurrency,
+                                isArabic: isArabic,
+                              ),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 26,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        balancesHidden
+                            ? '≈ ••••••'
+                            : '≈ ${ZakatEngineService.formatCurrency(altCurrencyVal, altCurrency, isArabic: isArabic)}',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 8),
-                MetricTile(
-                  label: context.l10n.tr('total_silver_grams'),
-                  value: totalSilver.toStringAsFixed(2),
-                ),
-                const SizedBox(height: 8),
-                MetricTile(
-                  label: context.l10n.tr('total_investment_value_egp').replaceAll('(EGP)', '').replaceAll('EGP', '').trim(),
-                  value: formatValue(totalInvestment),
-                ),
-                const SizedBox(height: 8),
-                MetricTile(
-                  label: context.l10n.tr('total_investment_net_egp').replaceAll('(EGP)', '').replaceAll('EGP', '').trim(),
-                  value: formatValue(totalInvestmentNet),
+
+                // Right Column
+                Container(
+                  padding: const EdgeInsetsDirectional.only(start: 12),
+                  decoration: const BoxDecoration(
+                    border: BorderDirectional(
+                      start: BorderSide(color: Colors.white24, width: 1),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      // Growth rate
+                      Row(
+                        children: <Widget>[
+                          Icon(
+                            changePct >= 0 ? Icons.trending_up : Icons.trending_down,
+                            color: changePct >= 0 ? Colors.greenAccent : Colors.redAccent,
+                            size: 16,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${changePct >= 0 ? '+' : ''}${changePct.toStringAsFixed(1)}%',
+                            style: TextStyle(
+                              color: changePct >= 0 ? Colors.greenAccent : Colors.redAccent,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Text(
+                        context.l10n.tr('this_year'),
+                        style: const TextStyle(color: Colors.white70, fontSize: 11),
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Assets count
+                      Row(
+                        children: <Widget>[
+                          const Icon(Icons.layers_outlined, color: Colors.white70, size: 14),
+                          const SizedBox(width: 6),
+                          Text(
+                            '$totalAssetsCount ${context.l10n.tr('assets')}',
+                            style: const TextStyle(color: Colors.white, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+
+                      // Currencies count
+                      Row(
+                        children: <Widget>[
+                          const Icon(Icons.public_outlined, color: Colors.white70, size: 14),
+                          const SizedBox(width: 6),
+                          Text(
+                            '$uniqueCurrenciesCount ${context.l10n.tr('currency')}',
+                            style: const TextStyle(color: Colors.white, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 12),
-          Expanded(
-            child: !hasAnyAssets
-                ? Center(
-                    child: EmptyStateCard(
-                      cardKey: const Key('assetsEmptyState'),
-                      icon: Icons.account_balance_wallet_outlined,
-                      title: context.l10n.tr('no_assets_yet'),
-                      message: context.l10n.tr('assets_empty_message'),
+          const SizedBox(height: 16),
+
+          // Date Filters Row
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: <Widget>[
+                Icon(Icons.calendar_month_outlined, size: 20, color: tokens.colors.textPrimary),
+                const SizedBox(width: 8),
+                ...<String>['All Time', '30D', '90D', 'YTD', 'Custom'].map((filter) {
+                  final bool isSelected = _selectedDateFilter == filter;
+                  String label = filter;
+                  if (filter == 'All Time') label = context.l10n.tr('all');
+                  if (filter == 'Custom' && _customDateRange != null && _selectedDateFilter == 'Custom') {
+                    final String startStr = '${_customDateRange!.start.day}/${_customDateRange!.start.month}';
+                    final String endStr = '${_customDateRange!.end.day}/${_customDateRange!.end.month}';
+                    label = '$startStr-$endStr';
+                  }
+
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: ChoiceChip(
+                      label: Text(label),
+                      selected: isSelected,
+                      onSelected: (bool selected) {
+                        if (filter == 'Custom') {
+                          _selectCustomRange(context);
+                        } else {
+                          setState(() {
+                            _selectedDateFilter = filter;
+                          });
+                        }
+                      },
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // 1. Cash Card
+          _buildCategoryCard(
+            context,
+            title: context.l10n.tr('cash'),
+            icon: Icons.account_balance_wallet_outlined,
+            iconColor: const Color(0xFF047857),
+            iconBg: const Color(0xFFD1FAE5),
+            subtitle: '${cashByCurrency.length} ${context.l10n.tr('currency')}',
+            value: cashTotalMain,
+            percentage: pct(cashTotalEgp),
+            balancesHidden: balancesHidden,
+            mainCurrency: mainCurrency,
+            isArabic: isArabic,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const CategoryDetailsScreen(categoryType: 'cash'),
+              ),
+            ),
+            extra: cashByCurrency.isNotEmpty
+                ? Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: <Widget>[
+                        ...cashByCurrency.entries.take(3).map((entry) {
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: tokens.colors.background,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(_getFlagEmoji(entry.key)),
+                                const SizedBox(width: 4),
+                                Text(
+                                  balancesHidden
+                                      ? '••'
+                                      : ZakatEngineService.formatCurrency(
+                                          entry.value,
+                                          entry.key,
+                                          isArabic: isArabic,
+                                        ),
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: tokens.colors.textPrimary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                        if (cashByCurrency.length > 3)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: tokens.colors.background,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              '+${cashByCurrency.length - 3}',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: tokens.colors.textSecondary,
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   )
-                : ListView(
-                    padding: EdgeInsets.only(bottom: navSafeBottomPadding),
+                : null,
+          ),
+
+          // 2. Gold Card
+          _buildCategoryCard(
+            context,
+            title: context.l10n.tr('gold'),
+            icon: Icons.auto_awesome,
+            iconColor: const Color(0xFFB7791F),
+            iconBg: const Color(0xFFFEF3C7),
+            subtitle: '${goldList.fold<double>(0, (sum, s) => sum + s.remainingAmount).toStringAsFixed(1)} g',
+            value: goldTotalMain,
+            percentage: pct(goldTotalEgp),
+            balancesHidden: balancesHidden,
+            mainCurrency: mainCurrency,
+            isArabic: isArabic,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const CategoryDetailsScreen(categoryType: 'gold'),
+              ),
+            ),
+          ),
+
+          // 3. Silver Card
+          _buildCategoryCard(
+            context,
+            title: context.l10n.tr('silver'),
+            icon: Icons.layers,
+            iconColor: const Color(0xFF4B5563),
+            iconBg: const Color(0xFFF3F4F6),
+            subtitle: '${silverList.fold<double>(0, (sum, s) => sum + s.remainingAmount).toStringAsFixed(1)} g',
+            value: silverTotalMain,
+            percentage: pct(silverTotalEgp),
+            balancesHidden: balancesHidden,
+            mainCurrency: mainCurrency,
+            isArabic: isArabic,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const CategoryDetailsScreen(categoryType: 'silver'),
+              ),
+            ),
+          ),
+
+          // 4. Investments Card
+          _buildCategoryCard(
+            context,
+            title: context.l10n.tr('company_shares'),
+            icon: Icons.show_chart,
+            iconColor: const Color(0xFF6B21A8),
+            iconBg: const Color(0xFFF3E8FF),
+            subtitle: 'Stocks, Funds, etc.',
+            value: investmentsTotalMain,
+            percentage: pct(investmentsTotalEgp),
+            balancesHidden: balancesHidden,
+            mainCurrency: mainCurrency,
+            isArabic: isArabic,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const CategoryDetailsScreen(categoryType: 'investments'),
+              ),
+            ),
+          ),
+
+          // 5. Real Estate Card
+          _buildCategoryCard(
+            context,
+            title: context.l10n.tr('property'),
+            icon: Icons.home_outlined,
+            iconColor: const Color(0xFFC2410C),
+            iconBg: const Color(0xFFFFEDD5),
+            subtitle: '${propertyList.length} Property',
+            value: propertyTotalMain,
+            percentage: pct(propertyTotalEgp),
+            balancesHidden: balancesHidden,
+            mainCurrency: mainCurrency,
+            isArabic: isArabic,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const CategoryDetailsScreen(categoryType: 'property'),
+              ),
+            ),
+          ),
+
+          // 6. Other Card
+          _buildCategoryCard(
+            context,
+            title: context.l10n.tr('other'),
+            icon: Icons.more_horiz,
+            iconColor: const Color(0xFF0369A1),
+            iconBg: const Color(0xFFE0F2FE),
+            subtitle: 'Other valuables',
+            value: otherTotalMain,
+            percentage: 0,
+            balancesHidden: balancesHidden,
+            mainCurrency: mainCurrency,
+            isArabic: isArabic,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const CategoryDetailsScreen(categoryType: 'other'),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Recent Asset Changes Section
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: <Widget>[
+              Text(
+                context.l10n.tr('recent_activity'),
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+              if (widget.onViewAllActivity != null)
+                TextButton(
+                  onPressed: widget.onViewAllActivity,
+                  child: Row(
+                    children: [
+                      Text(context.l10n.tr('view_all')),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.chevron_right, size: 16),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          assetChanges.isEmpty
+              ? Center(
+                  child: Text(
+                    context.l10n.tr('no_recent_transactions'),
+                    style: TextStyle(color: Theme.of(context).hintColor),
+                  ),
+                )
+              : SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: assetChanges.map((tx) {
+                      final double signedAmount = tx.type == 'income' ? tx.amount : -tx.amount;
+                      final String formattedChange = ZakatEngineService.formatCurrency(
+                        signedAmount,
+                        tx.currency,
+                        isArabic: isArabic,
+                        showSign: true,
+                      );
+
+                      return Container(
+                        width: 170,
+                        margin: const EdgeInsets.only(right: 12),
+                        child: PremiumCard(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 12,
+                                    backgroundColor: tx.type == 'income'
+                                        ? const Color(0xFFD1FAE5)
+                                        : const Color(0xFFFEE2E2),
+                                    child: Icon(
+                                      tx.type == 'income'
+                                          ? Icons.arrow_downward
+                                          : Icons.arrow_upward,
+                                      size: 12,
+                                      color: tx.type == 'income'
+                                          ? const Color(0xFF047857)
+                                          : const Color(0xFFB91C1C),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      tx.description.isNotEmpty ? tx.description : tx.category,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                balancesHidden ? '••••••' : formattedChange,
+                                style: TextStyle(
+                                  color: tx.type == 'income'
+                                      ? const Color(0xFF047857)
+                                      : const Color(0xFFB91C1C),
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                tx.date,
+                                style: TextStyle(
+                                  color: Theme.of(context).hintColor,
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCategoryCard(
+    BuildContext context, {
+    required String title,
+    required IconData icon,
+    required Color iconColor,
+    required Color iconBg,
+    required String subtitle,
+    required double value,
+    required double percentage,
+    required bool balancesHidden,
+    required String mainCurrency,
+    required bool isArabic,
+    required VoidCallback onTap,
+    Widget? extra,
+  }) {
+    final formattedValue = ZakatEngineService.formatCurrency(
+      value,
+      mainCurrency,
+      isArabic: isArabic,
+    );
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: PremiumCard(
+        onTap: onTap,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                CircleAvatar(
+                  backgroundColor: iconBg,
+                  radius: 20,
+                  child: Icon(icon, color: iconColor, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      _savingSection(context, context.l10n.tr('cash'), cash),
-                      _savingSection(context, context.l10n.tr('gold'), gold),
-                      _savingSection(context, context.l10n.tr('silver'), silver),
-                      _investmentSection(context, context.l10n.tr('property'), properties),
-                      _investmentSection(
-                        context,
-                        context.l10n.tr('company_shares'),
-                        companyShares,
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                      ),
+                      Text(
+                        subtitle,
+                        style: TextStyle(
+                          color: Theme.of(context).hintColor,
+                          fontSize: 12,
+                        ),
                       ),
                     ],
                   ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _savingSection(BuildContext context, String title, List<Saving> list) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: PremiumCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            SectionHeader(title: title, bottomSpacing: 8),
-            if (list.isEmpty)
-              Text(
-                context.l10n.trf('no_entries_for', <String, String>{'label': title}),
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ...list.map(
-              (Saving saving) => ListTile(
-                key: Key('savingItem_${saving.id}'),
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => AddSavingScreen(initialSaving: saving),
-                    ),
-                  );
-                },
-                contentPadding: const EdgeInsets.symmetric(vertical: 2),
-                title: Text(
-                  saving.description.isEmpty
-                      ? _titleForAssetType(context, saving.assetType)
-                      : saving.description,
                 ),
-                subtitle: Text('${saving.dateAcquired} • ${saving.unit}'),
-                trailing: Wrap(
-                  spacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: <Widget>[
-                    Text(saving.remainingAmount.toStringAsFixed(2)),
-                    IconButton(
-                      tooltip: context.l10n.tr('delete_saving'),
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: () => _confirmDeleteSaving(context, saving),
+                    Text(
+                      balancesHidden ? '••••••' : formattedValue,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
                     ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _investmentSection(BuildContext context, String title, List<InvestmentAsset> list) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: PremiumCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            SectionHeader(title: title, bottomSpacing: 8),
-            if (list.isEmpty)
-              Text(
-                context.l10n.trf('no_entries_for', <String, String>{'label': title}),
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ...list.map(
-              (InvestmentAsset asset) => Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  ListTile(
-                    key: Key('investmentItem_${asset.id}'),
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => AddInvestmentScreen(initialInvestment: asset),
-                        ),
-                      );
-                    },
-                    contentPadding: const EdgeInsets.symmetric(vertical: 2),
-                    title: Text(
-                      asset.location.isEmpty
-                          ? (ZakatEngineService.isCompanyInvestmentType(asset.investmentType)
-                              ? context.l10n.tr('company_shares')
-                              : context.l10n.tr('property'))
-                          : asset.location,
-                    ),
-                    subtitle: Text('${asset.valuationDate} • ${asset.currency}'),
-                    trailing: Wrap(
-                      spacing: 4,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: <Widget>[
-                        Text(asset.marketValue.toStringAsFixed(2)),
-                        IconButton(
-                          tooltip: context.l10n.tr('delete_investment'),
-                          icon: const Icon(Icons.delete_outline),
-                          onPressed: () => _confirmDeleteInvestment(context, asset),
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (asset.ownershipType == 'installment' &&
-                      asset.installmentPlan.isNotEmpty) ...<Widget>[
-                    const Divider(height: 1),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(8, 6, 8, 10),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Text(
-                            context.l10n.tr('installments'),
-                            style: Theme.of(context).textTheme.titleSmall,
-                          ),
-                          const SizedBox(height: 6),
-                          ...asset.installmentPlan.asMap().entries.map((entry) {
-                            final int index = entry.key;
-                            final Map<String, dynamic> item = entry.value;
-                            final bool isPaid = item['isPaid'] == true;
-                            final String date = (item['date'] ?? '').toString();
-                            final double amount = (item['amount'] as num?)?.toDouble() ?? 0;
-                            final String currency = (item['currency'] ?? asset.currency).toString();
-                            return ListTile(
-                              key: Key('installment_${asset.id}_$index'),
-                              dense: true,
-                              contentPadding: EdgeInsets.zero,
-                              title: Text('$date • ${amount.toStringAsFixed(2)} $currency'),
-                              subtitle: Text(isPaid
-                                  ? context.l10n.tr('paid')
-                                  : context.l10n.tr('not_paid')),
-                              trailing: TextButton(
-                                key: Key('toggleInstallment_${asset.id}_$index'),
-                                onPressed: () => _toggleInstallmentPaid(
-                                  context,
-                                  asset: asset,
-                                  installmentIndex: index,
-                                  isPaid: isPaid,
-                                ),
-                                child: Text(
-                                  isPaid
-                                      ? context.l10n.tr('undo_paid')
-                                      : context.l10n.tr('mark_paid'),
-                                ),
-                              ),
-                            );
-                          }),
-                        ],
+                    Text(
+                      '${percentage.toStringAsFixed(1)}% of total',
+                      style: TextStyle(
+                        color: Theme.of(context).hintColor,
+                        fontSize: 11,
                       ),
                     ),
                   ],
-                ],
-              ),
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  Icons.chevron_right,
+                  color: Theme.of(context).hintColor,
+                  size: 20,
+                ),
+              ],
             ),
+            // ignore: use_null_aware_elements
+            if (extra != null) extra,
           ],
         ),
       ),
     );
   }
+}
 
-  String _titleForAssetType(BuildContext context, String assetType) {
-    if (assetType == 'cash') return context.l10n.tr('cash');
-    if (assetType == 'gold') return context.l10n.tr('gold');
-    return context.l10n.tr('silver');
-  }
+class _AssetsHeader extends StatelessWidget {
+  const _AssetsHeader({
+    required this.title,
+    required this.balancesHidden,
+    required this.onTogglePrivacy,
+    required this.hasNotifications,
+    required this.onTapNotifications,
+  });
 
-  Future<void> _confirmDeleteSaving(BuildContext context, Saving saving) async {
-    final bool? confirmed = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text(context.l10n.tr('delete_saving')),
-          content: Text(context.l10n.tr('delete_saving_message')),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: Text(context.l10n.tr('cancel')),
+  final String title;
+  final bool balancesHidden;
+  final VoidCallback onTogglePrivacy;
+  final bool hasNotifications;
+  final VoidCallback onTapNotifications;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.premiumTokens;
+    final textTheme = Theme.of(context).textTheme;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: <Widget>[
+        Expanded(
+          child: Text(
+            title,
+            style: textTheme.headlineMedium?.copyWith(
+              color: tokens.colors.textPrimary,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0,
             ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: Text(context.l10n.tr('delete')),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (confirmed == true && context.mounted) {
-      await context.read<AppStateController>().deleteSaving(saving.id);
-    }
-  }
-
-  Future<void> _confirmDeleteInvestment(BuildContext context, InvestmentAsset asset) async {
-    final bool? confirmed = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text(context.l10n.tr('delete_investment')),
-          content: Text(context.l10n.tr('delete_investment_message')),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: Text(context.l10n.tr('cancel')),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: Text(context.l10n.tr('delete')),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (confirmed == true && context.mounted) {
-      await context.read<AppStateController>().deleteInvestment(asset.id);
-    }
-  }
-
-  Future<void> _toggleInstallmentPaid(
-    BuildContext context, {
-    required InvestmentAsset asset,
-    required int installmentIndex,
-    required bool isPaid,
-  }) async {
-    String category = '';
-    if (!isPaid) {
-      final List<String> expenseCategories =
-          context.read<AppStateController>().state.categories.expense;
-      category = await _pickInstallmentCategory(context, expenseCategories) ?? '';
-      if (category.isEmpty) return;
-    }
-    if (!context.mounted) return;
-    await context.read<AppStateController>().toggleInstallmentPaid(
-          assetId: asset.id,
-          installmentIndex: installmentIndex,
-          paymentCategory: category,
-        );
-  }
-
-  Future<String?> _pickInstallmentCategory(
-    BuildContext context,
-    List<String> categories,
-  ) async {
-    if (categories.isEmpty) return 'Other Expense';
-    String selected = categories.first;
-    return showDialog<String>(
-      context: context,
-      builder: (BuildContext ctx) => AlertDialog(
-        title: Text(context.l10n.tr('select_payment_category')),
-        content: DropdownButtonFormField<String>(
-          initialValue: selected,
-          items: categories
-              .map((String c) => DropdownMenuItem<String>(value: c, child: Text(c)))
-              .toList(growable: false),
-          onChanged: (String? v) => selected = v ?? selected,
+          ),
         ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(context.l10n.tr('cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(selected),
-            child: Text(context.l10n.tr('save')),
-          ),
-        ],
+        const SizedBox(width: 12),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            _HeaderCircleButton(
+              icon: balancesHidden
+                  ? Icons.visibility_off_outlined
+                  : Icons.visibility_outlined,
+              iconColor: tokens.colors.textPrimary,
+              onPressed: onTogglePrivacy,
+            ),
+            const SizedBox(width: 10),
+            Stack(
+              clipBehavior: Clip.none,
+              children: <Widget>[
+                _HeaderCircleButton(
+                  icon: Icons.notifications_none_rounded,
+                  iconColor: tokens.colors.textPrimary,
+                  onPressed: onTapNotifications,
+                ),
+                if (hasNotifications)
+                  PositionedDirectional(
+                    end: 7,
+                    top: 6,
+                    child: Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: tokens.colors.gold,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: tokens.colors.background,
+                          width: 1.5,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _HeaderCircleButton extends StatelessWidget {
+  const _HeaderCircleButton({
+    required this.icon,
+    required this.iconColor,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final Color iconColor;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+    return Material(
+      color: dark
+          ? Colors.white.withValues(alpha: 0.03)
+          : Colors.white.withValues(alpha: 0.74),
+      shape: const CircleBorder(),
+      elevation: dark ? 0 : 5,
+      shadowColor: Colors.black.withValues(alpha: 0.08),
+      child: SizedBox(
+        width: 52,
+        height: 52,
+        child: IconButton(
+          onPressed: onPressed,
+          icon: Icon(icon, color: iconColor, size: 24),
+          splashRadius: 24,
+        ),
       ),
     );
   }

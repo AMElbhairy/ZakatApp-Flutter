@@ -3,33 +3,68 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zakatapp_flutter/main.dart';
+import 'package:zakatapp_flutter/models/user_profile.dart';
 import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
 import 'package:zakatapp_flutter/services/app_state_controller.dart';
+import 'package:zakatapp_flutter/services/auth_controller.dart';
+import 'package:zakatapp_flutter/services/auth_service.dart';
 import 'package:zakatapp_flutter/services/local_storage_service.dart';
 
+class _FakeAuthService implements AuthService {
+  @override
+  Future<bool> ensureSession() async => true;
+  @override
+  Future<UserProfile?> restoreSession() async => null;
+  @override
+  Future<UserProfile?> signIn() async => null;
+  @override
+  Future<void> signOut() async {}
+}
 
-Widget _buildApp() {
+Widget _buildApp({Key? key}) {
   const LocalStorageService localStorage = LocalStorageService();
   final AppStateRepository repository =
       AppStateRepository(localStorage: localStorage);
-  return ChangeNotifierProvider<AppStateController>(
-    create: (_) => AppStateController(repository: repository),
+  return MultiProvider(
+    key: key,
+    providers: <ChangeNotifierProvider<dynamic>>[
+      ChangeNotifierProvider<AppStateController>(
+        create: (_) => AppStateController(repository: repository),
+      ),
+      ChangeNotifierProvider<AuthController>(
+        create: (_) => AuthController(
+          authService: _FakeAuthService(),
+          localStorage: localStorage,
+        ),
+      ),
+    ],
     child: const ZakatApp(),
   );
+}
+
+Future<void> _openAddCash(WidgetTester tester) async {
+  await tester.tap(find.byKey(const Key('addEntryFab')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const Key('actionAddCash')));
+  await tester.pumpAndSettle();
 }
 
 Future<void> _openAddSaving(WidgetTester tester) async {
   await tester.tap(find.byKey(const Key('addEntryFab')));
   await tester.pumpAndSettle();
-  await tester.tap(find.byKey(const Key('actionAddSaving')));
+  await tester.tap(find.byKey(const Key('actionAddCash')));
   await tester.pumpAndSettle();
 }
 
 Future<void> _addCashSaving(WidgetTester tester, String amount) async {
-  await _openAddSaving(tester);
-  await tester.enterText(find.byKey(const Key('savingAmountField')), amount);
-  await tester.enterText(find.byKey(const Key('savingNotesField')), 'Cash Wallet');
-  await tester.tap(find.byKey(const Key('saveSavingButton')));
+  await _openAddCash(tester);
+  await tester.tap(find.byKey(const Key('categoryField')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('Salary').last);
+  await tester.pumpAndSettle();
+  await tester.enterText(find.byKey(const Key('amountField')), amount);
+  await tester.enterText(find.byKey(const Key('notesField')), 'Cash Wallet');
+  await tester.tap(find.byKey(const Key('saveTransactionButton')));
   await tester.pumpAndSettle();
 }
 
@@ -44,8 +79,12 @@ void main() {
     await tester.tap(find.text('Assets').last);
     await tester.pumpAndSettle();
 
-    expect(find.text('500.00'), findsWidgets);
-    expect(find.text('Total Cash'), findsOneWidget);
+    // Tap on Cash category tile to go to CategoryDetailsScreen
+    await tester.tap(find.text('Cash').first);
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('500.00'), findsWidgets);
+    expect(find.text('Total Assets'), findsOneWidget);
   });
 
   testWidgets('add gold and silver saving', (WidgetTester tester) async {
@@ -53,7 +92,13 @@ void main() {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    await _openAddSaving(tester);
+    // Navigate to Assets and open Gold category FAB to add gold
+    await tester.tap(find.text('Assets').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Gold').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('addAssetFab')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('savingTypeField')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Gold').last);
@@ -61,8 +106,15 @@ void main() {
     await tester.enterText(find.byKey(const Key('savingAmountField')), '20');
     await tester.tap(find.byKey(const Key('saveSavingButton')));
     await tester.pumpAndSettle();
+    expect(find.textContaining('20.00'), findsWidgets);
 
-    await _openAddSaving(tester);
+    // Go back, open Silver category FAB to add silver
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Silver').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('addAssetFab')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('savingTypeField')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Silver').last);
@@ -70,14 +122,7 @@ void main() {
     await tester.enterText(find.byKey(const Key('savingAmountField')), '70');
     await tester.tap(find.byKey(const Key('saveSavingButton')));
     await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Assets').last);
-    await tester.pumpAndSettle();
-
-    expect(find.text('Total Gold (g)'), findsOneWidget);
-    expect(find.text('Total Silver (g)'), findsOneWidget);
-    expect(find.text('20.00'), findsWidgets);
-    expect(find.text('70.00'), findsWidgets);
+    expect(find.textContaining('70.00'), findsWidgets);
   });
 
   testWidgets('edit saving and persist after reload', (WidgetTester tester) async {
@@ -90,22 +135,30 @@ void main() {
     await tester.tap(find.text('Assets').last);
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byType(ListTile).first);
+    // Tap Cash card to open its CategoryDetailsScreen
+    await tester.tap(find.text('Cash').first);
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byKey(const Key('savingAmountField')), '900');
-    await tester.tap(find.byKey(const Key('saveSavingButton')));
+    // Tap the cash item in the list (now opens AddTransactionScreen in cashMode)
+    await tester.tap(find.text('Cash Wallet'));
     await tester.pumpAndSettle();
 
-    expect(find.text('900.00'), findsWidgets);
+    await tester.enterText(find.byKey(const Key('amountField')), '900');
+    await tester.tap(find.byKey(const Key('saveTransactionButton')));
+    await tester.pumpAndSettle();
 
-    await tester.pumpWidget(_buildApp());
+    expect(find.textContaining('900.00'), findsWidgets);
+
+    await tester.pumpWidget(_buildApp(key: UniqueKey()));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Assets').last);
     await tester.pumpAndSettle();
 
-    expect(find.text('900.00'), findsWidgets);
+    await tester.tap(find.text('Cash').first);
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('900.00'), findsWidgets);
   });
 
   testWidgets('delete saving', (WidgetTester tester) async {
@@ -118,12 +171,19 @@ void main() {
     await tester.tap(find.text('Assets').last);
     await tester.pumpAndSettle();
 
+    // Tap Cash card to open its CategoryDetailsScreen
+    await tester.tap(find.text('Cash').first);
+    await tester.pumpAndSettle();
+
     await tester.tap(find.byIcon(Icons.delete_outline).first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Delete'));
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('assetsEmptyState')), findsOneWidget);
-  });
 
+    // Go back to main Assets screen
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+  });
 }

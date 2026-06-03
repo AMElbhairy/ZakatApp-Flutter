@@ -31,10 +31,7 @@ class SavingDeduction {
 }
 
 class ReconciliationResult {
-  const ReconciliationResult({
-    required this.state,
-    required this.modified,
-  });
+  const ReconciliationResult({required this.state, required this.modified});
 
   final AppStateModel state;
   final bool modified;
@@ -45,51 +42,110 @@ class ReconciliationService {
 
   ReconciliationResult reconcileExpensesWithSavings(AppStateModel input) {
     final Map<String, dynamic> state = input.toJson();
-    final List<Map<String, dynamic>> transactions = _asMapList(state['transactions']);
+    final List<Map<String, dynamic>> transactions = _asMapList(
+      state['transactions'],
+    );
     final List<Map<String, dynamic>> savings = _asMapList(state['savings']);
 
     final List<Map<String, dynamic>> normalizedTransactions = transactions
         .asMap()
         .entries
         .map((MapEntry<int, Map<String, dynamic>> entry) {
-      final Map<String, dynamic> tx = Map<String, dynamic>.from(entry.value);
-      tx['createdAt'] = _stableCreatedAt(tx['createdAt'], tx['date'], entry.key);
-      tx['rolledOver'] = _asBool(tx['rolledOver']);
-      return tx;
-    }).toList(growable: false);
+          final Map<String, dynamic> tx = Map<String, dynamic>.from(
+            entry.value,
+          );
+          tx['createdAt'] = _stableCreatedAt(
+            tx['createdAt'],
+            tx['date'],
+            entry.key,
+          );
+          tx['rolledOver'] = _asBool(tx['rolledOver']);
+          return tx;
+        })
+        .toList(growable: false);
 
     final List<Map<String, dynamic>> normalizedSavings = savings
         .asMap()
         .entries
         .map((MapEntry<int, Map<String, dynamic>> entry) {
-      final Map<String, dynamic> s = Map<String, dynamic>.from(entry.value);
-      s['createdAt'] = _stableCreatedAt(s['createdAt'], s['dateAcquired'], entry.key);
-      final double amount = _asDouble(s['amount']);
-      s['remainingAmount'] = amount;
-      return s;
-    }).toList(growable: false);
+          final Map<String, dynamic> s = Map<String, dynamic>.from(entry.value);
+          s['createdAt'] = _stableCreatedAt(
+            s['createdAt'],
+            s['dateAcquired'],
+            entry.key,
+          );
+          final double amount = _asDouble(s['amount']);
+          s['remainingAmount'] = amount;
+          return s;
+        })
+        .toList(growable: false);
 
     final Set<String> currencies = <String>{
-      ...normalizedTransactions.map((Map<String, dynamic> e) => (e['currency'] ?? '').toString()),
-      ...normalizedSavings.map((Map<String, dynamic> e) => (e['unit'] ?? '').toString()),
+      ...normalizedTransactions.map(
+        (Map<String, dynamic> e) => (e['currency'] ?? '').toString(),
+      ),
+      ...normalizedSavings.map(
+        (Map<String, dynamic> e) => (e['unit'] ?? '').toString(),
+      ),
     }..removeWhere((String e) => e.trim().isEmpty);
 
     final Set<String> processedExpenseIds = <String>{};
 
+    for (final Map<String, dynamic> metalSaving in normalizedSavings.where((
+      Map<String, dynamic> s,
+    ) {
+      final String type = _normalizeAssetType(s['assetType']);
+      return type == 'gold' || type == 'silver';
+    })) {
+      final List<Map<String, dynamic>> allocations = _asMapList(
+        metalSaving['fundingAllocations'],
+      );
+      for (final Map<String, dynamic> allocation in allocations) {
+        if ((allocation['sourceType'] ?? '').toString() != 'savings') continue;
+        final String sourceId = (allocation['sourceId'] ?? '').toString();
+        if (sourceId.isEmpty) continue;
+        final Map<String, dynamic>? source = normalizedSavings
+            .cast<Map<String, dynamic>?>()
+            .firstWhere(
+              (Map<String, dynamic>? s) =>
+                  (s?['id'] ?? '').toString() == sourceId,
+              orElse: () => null,
+            );
+        if (source == null ||
+            _normalizeAssetType(source['assetType']) != 'cash') {
+          continue;
+        }
+        final double deduction = _min(
+          _asDouble(source['remainingAmount']),
+          _asDouble(allocation['amount']),
+        );
+        source['remainingAmount'] = _round6(
+          _asDouble(source['remainingAmount']) - deduction,
+        );
+      }
+    }
+
     for (final String currency in currencies) {
       double runningBalance = 0;
-      final List<Map<String, dynamic>> txForCurrency = _sortTransactionsForLotMatching(
-        normalizedTransactions
-            .where((Map<String, dynamic> tx) => (tx['currency'] ?? '').toString() == currency)
-            .toList(growable: false),
-      );
+      final List<Map<String, dynamic>> txForCurrency =
+          _sortTransactionsForLotMatching(
+            normalizedTransactions
+                .where(
+                  (Map<String, dynamic> tx) =>
+                      (tx['currency'] ?? '').toString() == currency,
+                )
+                .toList(growable: false),
+          );
 
       for (final Map<String, dynamic> tx in txForCurrency) {
         final String type = (tx['type'] ?? '').toString();
         final double amount = _asDouble(tx['amount']);
         if (type == 'income') {
           if (_asBool(tx['rolledOver']) && _asDouble(tx['rolledAmount']) > 0) {
-            runningBalance += (amount - _asDouble(tx['rolledAmount'])).clamp(0, double.infinity);
+            runningBalance += (amount - _asDouble(tx['rolledAmount'])).clamp(
+              0,
+              double.infinity,
+            );
           } else {
             runningBalance += amount;
           }
@@ -136,13 +192,22 @@ class ReconciliationService {
       transactions
           .asMap()
           .entries
-          .where((MapEntry<int, Map<String, dynamic>> entry) =>
-              (entry.value['currency'] ?? '').toString() == currency)
+          .where(
+            (MapEntry<int, Map<String, dynamic>> entry) =>
+                (entry.value['currency'] ?? '').toString() == currency,
+          )
           .map((MapEntry<int, Map<String, dynamic>> entry) {
-        final Map<String, dynamic> tx = Map<String, dynamic>.from(entry.value);
-        tx['createdAt'] = _stableCreatedAt(tx['createdAt'], tx['date'], entry.key);
-        return tx;
-      }).toList(growable: false),
+            final Map<String, dynamic> tx = Map<String, dynamic>.from(
+              entry.value,
+            );
+            tx['createdAt'] = _stableCreatedAt(
+              tx['createdAt'],
+              tx['date'],
+              entry.key,
+            );
+            return tx;
+          })
+          .toList(growable: false),
     );
 
     final List<Map<String, dynamic>> lots = <Map<String, dynamic>>[];
@@ -170,28 +235,44 @@ class ReconciliationService {
         double toDeduct = amount;
         final String sourceIncomeId = (tx['sourceIncomeId'] ?? '').toString();
         if (sourceIncomeId.isNotEmpty) {
-          final Map<String, dynamic>? linked = lots.cast<Map<String, dynamic>?>().firstWhere(
-                (Map<String, dynamic>? l) => (l?['id'] ?? '').toString() == sourceIncomeId,
+          final Map<String, dynamic>? linked = lots
+              .cast<Map<String, dynamic>?>()
+              .firstWhere(
+                (Map<String, dynamic>? l) =>
+                    (l?['id'] ?? '').toString() == sourceIncomeId,
                 orElse: () => null,
               );
           if (linked != null) {
-            final double linkedDeduction =
-                _min(_asDouble(linked['remainingAmount']), toDeduct);
-            linked['remainingAmount'] = _round6(_asDouble(linked['remainingAmount']) - linkedDeduction);
+            final double linkedDeduction = _min(
+              _asDouble(linked['remainingAmount']),
+              toDeduct,
+            );
+            linked['remainingAmount'] = _round6(
+              _asDouble(linked['remainingAmount']) - linkedDeduction,
+            );
             toDeduct = _round6(toDeduct - linkedDeduction);
           }
         }
 
-        for (final Map<String, dynamic> lot in lots) {
+        for (int i = lots.length - 1; i >= 0 && toDeduct > 0; i--) {
+          final Map<String, dynamic> lot = lots[i];
           if (toDeduct <= 0) break;
-          final double deduction = _min(_asDouble(lot['remainingAmount']), toDeduct);
-          lot['remainingAmount'] = _round6(_asDouble(lot['remainingAmount']) - deduction);
+          final double deduction = _min(
+            _asDouble(lot['remainingAmount']),
+            toDeduct,
+          );
+          lot['remainingAmount'] = _round6(
+            _asDouble(lot['remainingAmount']) - deduction,
+          );
           toDeduct = _round6(toDeduct - deduction);
         }
       }
     }
 
-    final double transactionBalance = sorted.fold<double>(0, (double sum, Map<String, dynamic> tx) {
+    final double transactionBalance = sorted.fold<double>(0, (
+      double sum,
+      Map<String, dynamic> tx,
+    ) {
       final String type = (tx['type'] ?? '').toString();
       final double amount = _asDouble(tx['amount']);
       if (type == 'income') {
@@ -206,36 +287,47 @@ class ReconciliationService {
 
     final double lotsTotal = lots.fold<double>(
       0,
-      (double sum, Map<String, dynamic> lot) => sum + _asDouble(lot['remainingAmount']),
+      (double sum, Map<String, dynamic> lot) =>
+          sum + _asDouble(lot['remainingAmount']),
     );
 
     double delta = _round6(transactionBalance - lotsTotal);
     if (delta > minAmount) {
       for (int i = lots.length - 1; i >= 0 && delta > minAmount; i--) {
-        lots[i]['remainingAmount'] = _round6(_asDouble(lots[i]['remainingAmount']) + delta);
+        lots[i]['remainingAmount'] = _round6(
+          _asDouble(lots[i]['remainingAmount']) + delta,
+        );
         delta = 0;
       }
     } else if (delta < -minAmount) {
       double toReduce = delta.abs();
-      for (final Map<String, dynamic> lot in lots) {
+      for (int i = lots.length - 1; i >= 0 && toReduce > minAmount; i--) {
+        final Map<String, dynamic> lot = lots[i];
         if (toReduce <= minAmount) break;
-        final double deduction = _min(_asDouble(lot['remainingAmount']), toReduce);
-        lot['remainingAmount'] = _round6(_asDouble(lot['remainingAmount']) - deduction);
+        final double deduction = _min(
+          _asDouble(lot['remainingAmount']),
+          toReduce,
+        );
+        lot['remainingAmount'] = _round6(
+          _asDouble(lot['remainingAmount']) - deduction,
+        );
         toReduce = _round6(toReduce - deduction);
       }
     }
 
     return lots
-        .map((Map<String, dynamic> lot) => IncomeLot(
-              id: (lot['id'] ?? '').toString(),
-              date: (lot['date'] ?? '').toString(),
-              originalAmount: _asDouble(lot['originalAmount']),
-              remainingAmount: _asDouble(lot['remainingAmount']),
-              rolledOver: _asBool(lot['rolledOver']),
-              currency: (lot['currency'] ?? '').toString(),
-              category: lot['category']?.toString(),
-              description: lot['description']?.toString(),
-            ))
+        .map(
+          (Map<String, dynamic> lot) => IncomeLot(
+            id: (lot['id'] ?? '').toString(),
+            date: (lot['date'] ?? '').toString(),
+            originalAmount: _asDouble(lot['originalAmount']),
+            remainingAmount: _asDouble(lot['remainingAmount']),
+            rolledOver: _asBool(lot['rolledOver']),
+            currency: (lot['currency'] ?? '').toString(),
+            category: lot['category']?.toString(),
+            description: lot['description']?.toString(),
+          ),
+        )
         .toList(growable: false);
   }
 
@@ -247,21 +339,37 @@ class ReconciliationService {
     required MarketData marketData,
   }) {
     final Map<String, dynamic> state = input.toJson();
-    final List<Map<String, dynamic>> investments = _asMapList(state['investments']);
-    final List<Map<String, dynamic>> transactions = _asMapList(state['transactions']);
-    final List<String> processedExpenseIds = _asStringList(state['processedExpenseIds']);
+    final List<Map<String, dynamic>> investments = _asMapList(
+      state['investments'],
+    );
+    final List<Map<String, dynamic>> transactions = _asMapList(
+      state['transactions'],
+    );
+    final List<String> processedExpenseIds = _asStringList(
+      state['processedExpenseIds'],
+    );
 
-    final int assetIdx = investments.indexWhere((Map<String, dynamic> a) => a['id'] == assetId);
-    if (assetIdx == -1) return ReconciliationResult(state: input, modified: false);
+    final int assetIdx = investments.indexWhere(
+      (Map<String, dynamic> a) => a['id'] == assetId,
+    );
+    if (assetIdx == -1) {
+      return ReconciliationResult(state: input, modified: false);
+    }
 
-    final Map<String, dynamic> asset = Map<String, dynamic>.from(investments[assetIdx]);
-    final List<Map<String, dynamic>> plan = _asMapList(asset['installmentPlan']);
+    final Map<String, dynamic> asset = Map<String, dynamic>.from(
+      investments[assetIdx],
+    );
+    final List<Map<String, dynamic>> plan = _asMapList(
+      asset['installmentPlan'],
+    );
 
     if (installmentIndex < 0 || installmentIndex >= plan.length) {
       return ReconciliationResult(state: input, modified: false);
     }
 
-    final Map<String, dynamic> installment = Map<String, dynamic>.from(plan[installmentIndex]);
+    final Map<String, dynamic> installment = Map<String, dynamic>.from(
+      plan[installmentIndex],
+    );
     final bool isPaid = _asBool(installment['isPaid']);
 
     if (!isPaid) {
@@ -269,11 +377,16 @@ class ReconciliationService {
         throw Exception('Payment category is required to mark as paid.');
       }
 
-      final String installmentCurrency = (installment['currency']?.toString().isNotEmpty == true)
+      final String installmentCurrency =
+          (installment['currency']?.toString().isNotEmpty == true)
           ? installment['currency'].toString()
           : (asset['currency']?.toString() ?? 'EGP');
 
-      final String today = DateTime.now().toUtc().toIso8601String().split('T').first;
+      final String today = DateTime.now()
+          .toUtc()
+          .toIso8601String()
+          .split('T')
+          .first;
       final String assetLabel = asset['location']?.toString().isNotEmpty == true
           ? asset['location'].toString()
           : (asset['assetSubtype']?.toString() ?? 'Asset');
@@ -298,9 +411,12 @@ class ReconciliationService {
       installment['paymentCategory'] = paymentCategory;
       installment['paidExpenseId'] = txId;
     } else {
-      final String paidExpenseId = (installment['paidExpenseId'] ?? '').toString();
+      final String paidExpenseId = (installment['paidExpenseId'] ?? '')
+          .toString();
       if (paidExpenseId.isNotEmpty) {
-        transactions.removeWhere((Map<String, dynamic> tx) => tx['id'] == paidExpenseId);
+        transactions.removeWhere(
+          (Map<String, dynamic> tx) => tx['id'] == paidExpenseId,
+        );
         processedExpenseIds.removeWhere((String id) => id == paidExpenseId);
       }
 
@@ -323,9 +439,14 @@ class ReconciliationService {
     return ReconciliationResult(state: next, modified: true);
   }
 
-  void _syncAssetInstallmentProgress(Map<String, dynamic> asset, MarketData marketData) {
+  void _syncAssetInstallmentProgress(
+    Map<String, dynamic> asset,
+    MarketData marketData,
+  ) {
     if ((asset['ownershipType'] ?? '') != 'installment') return;
-    final List<Map<String, dynamic>> plan = _asMapList(asset['installmentPlan']);
+    final List<Map<String, dynamic>> plan = _asMapList(
+      asset['installmentPlan'],
+    );
     if (plan.isEmpty) return;
 
     final String assetCurrency = (asset['currency'] ?? 'EGP').toString();
@@ -333,13 +454,22 @@ class ReconciliationService {
     double paidInstallments = 0.0;
 
     for (final Map<String, dynamic> item in plan) {
-      final String itemCurrency = (item['currency']?.toString().isNotEmpty == true)
+      final String itemCurrency =
+          (item['currency']?.toString().isNotEmpty == true)
           ? item['currency'].toString()
           : assetCurrency;
       final double amount = _asDouble(item['amount']);
 
-      final double amountEgp = ZakatEngineService.convertToEgp(amount, itemCurrency, marketData);
-      final double inAssetCur = ZakatEngineService.convertFromEgp(amountEgp, assetCurrency, marketData);
+      final double amountEgp = ZakatEngineService.convertToEgp(
+        amount,
+        itemCurrency,
+        marketData,
+      );
+      final double inAssetCur = ZakatEngineService.convertFromEgp(
+        amountEgp,
+        assetCurrency,
+        marketData,
+      );
       final double normAmount = _round6(_max(0, inAssetCur));
 
       totalInstallments = _round6(totalInstallments + normAmount);
@@ -354,7 +484,10 @@ class ReconciliationService {
 
     asset['paidAmount'] = _max(0.0, paidTotal);
     asset['remainingAmount'] = _max(0.0, totalInstallments - paidInstallments);
-    asset['totalPayable'] = _max(0.0, paidTotal + _asDouble(asset['remainingAmount']));
+    asset['totalPayable'] = _max(
+      0.0,
+      paidTotal + _asDouble(asset['remainingAmount']),
+    );
     asset['paidAmountToDate'] = asset['paidAmount'];
     asset['loanBalance'] = asset['remainingAmount'];
   }
@@ -369,17 +502,23 @@ class ReconciliationService {
     required double targetAmount,
   }) {
     final Map<String, dynamic> state = input.toJson();
-    final List<Map<String, dynamic>> transactions = _asMapList(state['transactions']);
+    final List<Map<String, dynamic>> transactions = _asMapList(
+      state['transactions'],
+    );
     final List<Map<String, dynamic>> savings = _asMapList(state['savings']);
-    final List<String> processedExpenseIds = _asStringList(state['processedExpenseIds']);
+    final List<String> processedExpenseIds = _asStringList(
+      state['processedExpenseIds'],
+    );
 
     final List<Map<String, dynamic>> lots = <Map<String, dynamic>>[];
 
     if (sourceType == 'savings' || sourceType == 'both') {
-      final Iterable<Map<String, dynamic>> cashSavings = savings.where((Map<String, dynamic> s) =>
-          _normalizeAssetType(s['assetType']) == 'cash' &&
-          (s['unit'] ?? '').toString() == sourceCurrency &&
-          _asDouble(s['remainingAmount']) >= minAmount);
+      final Iterable<Map<String, dynamic>> cashSavings = savings.where(
+        (Map<String, dynamic> s) =>
+            _normalizeAssetType(s['assetType']) == 'cash' &&
+            (s['unit'] ?? '').toString() == sourceCurrency &&
+            _asDouble(s['remainingAmount']) >= minAmount,
+      );
       for (final Map<String, dynamic> s in cashSavings) {
         lots.add(<String, dynamic>{
           'sourceType': 'savings',
@@ -411,8 +550,12 @@ class ReconciliationService {
     }
 
     lots.sort((Map<String, dynamic> a, Map<String, dynamic> b) {
-      final DateTime da = DateTime.tryParse('${a['date']}') ?? DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
-      final DateTime db = DateTime.tryParse('${b['date']}') ?? DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+      final DateTime da =
+          DateTime.tryParse('${a['date']}') ??
+          DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+      final DateTime db =
+          DateTime.tryParse('${b['date']}') ??
+          DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
       final int comp = da.compareTo(db);
       if (comp != 0) return comp;
       final DateTime ca = DateTime.tryParse('${a['createdAt']}') ?? da;
@@ -420,7 +563,11 @@ class ReconciliationService {
       return ca.compareTo(cb);
     });
 
-    final double totalAvailable = lots.fold<double>(0, (double sum, Map<String, dynamic> l) => sum + _asDouble(l['availableAmount']));
+    final double totalAvailable = lots.fold<double>(
+      0,
+      (double sum, Map<String, dynamic> l) =>
+          sum + _asDouble(l['availableAmount']),
+    );
     if (sourceAmount <= 0 || sourceAmount - totalAvailable > minAmount) {
       throw Exception('Invalid exchange amount');
     }
@@ -431,10 +578,7 @@ class ReconciliationService {
       if (remaining <= minAmount) break;
       final double d = _min(_asDouble(lot['availableAmount']), remaining);
       if (d <= minAmount) continue;
-      deductions.add(<String, dynamic>{
-        ...lot,
-        'deductedAmount': _round6(d),
-      });
+      deductions.add(<String, dynamic>{...lot, 'deductedAmount': _round6(d)});
       remaining = _round6(remaining - d);
     }
 
@@ -442,17 +586,27 @@ class ReconciliationService {
       throw Exception('Not enough funds to exchange');
     }
 
-    final String exchangePairId = 'exch_${DateTime.now().millisecondsSinceEpoch}';
+    final String exchangePairId =
+        'exch_${DateTime.now().millisecondsSinceEpoch}';
 
     for (final Map<String, dynamic> d in deductions) {
       if (d['sourceType'] == 'savings') {
-        final Map<String, dynamic> s = savings.firstWhere((Map<String, dynamic> x) => x['id'] == d['id']);
-        s['amount'] = _round6(_asDouble(s['amount']) - _asDouble(d['deductedAmount']));
-        s['remainingAmount'] = _round6(_asDouble(s['remainingAmount']) - _asDouble(d['deductedAmount']));
+        final Map<String, dynamic> s = savings.firstWhere(
+          (Map<String, dynamic> x) => x['id'] == d['id'],
+        );
+        s['amount'] = _round6(
+          _asDouble(s['amount']) - _asDouble(d['deductedAmount']),
+        );
+        s['remainingAmount'] = _round6(
+          _asDouble(s['remainingAmount']) - _asDouble(d['deductedAmount']),
+        );
         if (_asDouble(s['amount']) < minAmount) s['amount'] = 0.0;
-        if (_asDouble(s['remainingAmount']) < minAmount) s['remainingAmount'] = 0.0;
+        if (_asDouble(s['remainingAmount']) < minAmount) {
+          s['remainingAmount'] = 0.0;
+        }
       } else {
-        final String outId = 'tx_${DateTime.now().millisecondsSinceEpoch}_${d['id']}_out';
+        final String outId =
+            'tx_${DateTime.now().millisecondsSinceEpoch}_${d['id']}_out';
         final Map<String, dynamic> outTx = <String, dynamic>{
           'id': outId,
           'type': 'expense',
@@ -460,7 +614,8 @@ class ReconciliationService {
           'amount': d['deductedAmount'],
           'currency': sourceCurrency,
           'category': 'Currency Exchange',
-          'description': 'Currency exchange out: ${d['deductedAmount']} $sourceCurrency → $targetCurrency',
+          'description':
+              'Currency exchange out: ${d['deductedAmount']} $sourceCurrency → $targetCurrency',
           'sourceIncomeId': d['id'],
           'exchangePairId': exchangePairId,
           'createdAt': DateTime.now().toUtc().toIso8601String(),
@@ -470,18 +625,22 @@ class ReconciliationService {
       }
     }
 
-    savings.removeWhere((Map<String, dynamic> s) =>
-        _normalizeAssetType(s['assetType']) == 'cash' &&
-        (s['unit'] ?? '').toString() == sourceCurrency &&
-        _asDouble(s['amount']) < minAmount &&
-        _asDouble(s['remainingAmount']) < minAmount);
+    savings.removeWhere(
+      (Map<String, dynamic> s) =>
+          _normalizeAssetType(s['assetType']) == 'cash' &&
+          (s['unit'] ?? '').toString() == sourceCurrency &&
+          _asDouble(s['amount']) < minAmount &&
+          _asDouble(s['remainingAmount']) < minAmount,
+    );
 
     double remainingTarget = _round6(targetAmount);
     for (int i = 0; i < deductions.length; i++) {
       final Map<String, dynamic> d = deductions[i];
       double alloc = (i == deductions.length - 1)
           ? remainingTarget
-          : _round6((targetAmount * _asDouble(d['deductedAmount'])) / sourceAmount);
+          : _round6(
+              (targetAmount * _asDouble(d['deductedAmount'])) / sourceAmount,
+            );
       if (alloc > remainingTarget) alloc = remainingTarget;
 
       if (d['sourceType'] == 'savings') {
@@ -492,12 +651,14 @@ class ReconciliationService {
           'amount': alloc,
           'remainingAmount': alloc,
           'unit': targetCurrency,
-          'description': 'Savings exchange: ${d['deductedAmount']} $sourceCurrency → $alloc $targetCurrency',
+          'description':
+              'Savings exchange: ${d['deductedAmount']} $sourceCurrency → $alloc $targetCurrency',
           'internalTransfer': true,
           'internalTransferType': 'savings_currency_exchange',
           'exchangeSourceSavingId': d['id'],
           'sourceIncomeId': d['ref']?['sourceIncomeId'],
-          'createdAt': d['createdAt'] ?? DateTime.now().toUtc().toIso8601String(),
+          'createdAt':
+              d['createdAt'] ?? DateTime.now().toUtc().toIso8601String(),
         };
         savings.add(ns);
       } else {
@@ -508,7 +669,8 @@ class ReconciliationService {
           'amount': alloc,
           'currency': targetCurrency,
           'category': 'Currency Exchange',
-          'description': 'Currency exchange in: ${d['deductedAmount']} $sourceCurrency → $alloc $targetCurrency',
+          'description':
+              'Currency exchange in: ${d['deductedAmount']} $sourceCurrency → $alloc $targetCurrency',
           'exchangeSourceIncomeId': d['id'],
           'exchangePairId': exchangePairId,
           'createdAt': DateTime.now().toUtc().toIso8601String(),
@@ -534,17 +696,31 @@ class ReconciliationService {
     required String paymentDate,
   }) {
     final Map<String, dynamic> state = input.toJson();
-    final List<Map<String, dynamic>> transactions = _asMapList(state['transactions']);
-    final List<String> zakatPaidMonths = _asStringList(state['zakatPaidMonths']);
-    final List<String> processedExpenseIds = _asStringList(state['processedExpenseIds']);
-    final Map<String, dynamic> zakatExpenseIds = Map<String, dynamic>.from(state['zakatExpenseIds'] ?? <String, dynamic>{});
+    final List<Map<String, dynamic>> transactions = _asMapList(
+      state['transactions'],
+    );
+    final List<String> zakatPaidMonths = _asStringList(
+      state['zakatPaidMonths'],
+    );
+    final List<String> processedExpenseIds = _asStringList(
+      state['processedExpenseIds'],
+    );
+    final Map<String, dynamic> zakatExpenseIds = Map<String, dynamic>.from(
+      state['zakatExpenseIds'] ?? <String, dynamic>{},
+    );
 
     final bool wasPaid = zakatPaidMonths.contains(monthKey);
 
     if (!wasPaid) {
       if (zakatAmountMainCurrency > 0) {
-        final String today = DateTime.now().toUtc().toIso8601String().split('T').first;
-        final String payDate = paymentDate.compareTo(today) > 0 ? today : paymentDate;
+        final String today = DateTime.now()
+            .toUtc()
+            .toIso8601String()
+            .split('T')
+            .first;
+        final String payDate = paymentDate.compareTo(today) > 0
+            ? today
+            : paymentDate;
 
         final String txId = 'tx_${DateTime.now().millisecondsSinceEpoch}_zakat';
 
@@ -567,7 +743,9 @@ class ReconciliationService {
     } else {
       final String expId = (zakatExpenseIds[monthKey] ?? '').toString();
       if (expId.isNotEmpty) {
-        transactions.removeWhere((Map<String, dynamic> tx) => tx['id'] == expId);
+        transactions.removeWhere(
+          (Map<String, dynamic> tx) => tx['id'] == expId,
+        );
         processedExpenseIds.removeWhere((String id) => id == expId);
         zakatExpenseIds.remove(monthKey);
       }
@@ -588,21 +766,32 @@ class ReconciliationService {
     required String currency,
     required double overflowAmount,
   }) {
-    final List<Map<String, dynamic>> cashSavings = savings
-        .where((Map<String, dynamic> s) =>
-            _normalizeAssetType(s['assetType']) == 'cash' &&
-            (s['unit'] ?? '').toString() == currency &&
-            _asDouble(s['remainingAmount']) > minAmount)
-        .toList(growable: false)
-      ..sort((Map<String, dynamic> a, Map<String, dynamic> b) {
-        final DateTime da = DateTime.tryParse('${a['dateAcquired'] ?? ''}') ?? DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
-        final DateTime db = DateTime.tryParse('${b['dateAcquired'] ?? ''}') ?? DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
-        final int dateComp = da.compareTo(db);
-        if (dateComp != 0) return dateComp;
-        final DateTime ca = DateTime.tryParse('${a['createdAt'] ?? ''}') ?? DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
-        final DateTime cb = DateTime.tryParse('${b['createdAt'] ?? ''}') ?? DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
-        return ca.compareTo(cb);
-      });
+    final List<Map<String, dynamic>> cashSavings =
+        savings
+            .where(
+              (Map<String, dynamic> s) =>
+                  _normalizeAssetType(s['assetType']) == 'cash' &&
+                  (s['unit'] ?? '').toString() == currency &&
+                  _asDouble(s['remainingAmount']) > minAmount,
+            )
+            .toList(growable: false)
+          ..sort((Map<String, dynamic> a, Map<String, dynamic> b) {
+            final DateTime da =
+                DateTime.tryParse('${a['dateAcquired'] ?? ''}') ??
+                DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+            final DateTime db =
+                DateTime.tryParse('${b['dateAcquired'] ?? ''}') ??
+                DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+            final int dateComp = da.compareTo(db);
+            if (dateComp != 0) return dateComp;
+            final DateTime ca =
+                DateTime.tryParse('${a['createdAt'] ?? ''}') ??
+                DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+            final DateTime cb =
+                DateTime.tryParse('${b['createdAt'] ?? ''}') ??
+                DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+            return ca.compareTo(cb);
+          });
 
     double remaining = overflowAmount;
     final List<SavingDeduction> deductions = <SavingDeduction>[];
@@ -638,18 +827,24 @@ class ReconciliationService {
   List<Map<String, dynamic>> _sortTransactionsForLotMatching(
     List<Map<String, dynamic>> transactions,
   ) {
-    final List<Map<String, dynamic>> list = List<Map<String, dynamic>>.from(transactions);
+    final List<Map<String, dynamic>> list = List<Map<String, dynamic>>.from(
+      transactions,
+    );
     list.sort((Map<String, dynamic> a, Map<String, dynamic> b) {
-      final DateTime ad = DateTime.tryParse((a['date'] ?? '').toString()) ??
+      final DateTime ad =
+          DateTime.tryParse((a['date'] ?? '').toString()) ??
           DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
-      final DateTime bd = DateTime.tryParse((b['date'] ?? '').toString()) ??
+      final DateTime bd =
+          DateTime.tryParse((b['date'] ?? '').toString()) ??
           DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
       final int dateComp = ad.compareTo(bd);
       if (dateComp != 0) return dateComp;
 
-      final DateTime ac = DateTime.tryParse((a['createdAt'] ?? '').toString()) ??
+      final DateTime ac =
+          DateTime.tryParse((a['createdAt'] ?? '').toString()) ??
           DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
-      final DateTime bc = DateTime.tryParse((b['createdAt'] ?? '').toString()) ??
+      final DateTime bc =
+          DateTime.tryParse((b['createdAt'] ?? '').toString()) ??
           DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
       final int createdComp = ac.compareTo(bc);
       if (createdComp != 0) return createdComp;
@@ -673,9 +868,15 @@ class ReconciliationService {
     final DateTime? baseParsed = DateTime.tryParse('${base}T00:00:00.000Z');
     final int seed = orderIdx < 0 ? 0 : orderIdx;
     if (baseParsed != null) {
-      return baseParsed.toUtc().add(Duration(milliseconds: seed)).toIso8601String();
+      return baseParsed
+          .toUtc()
+          .add(Duration(milliseconds: seed))
+          .toIso8601String();
     }
-    return DateTime.fromMillisecondsSinceEpoch(seed % 1000, isUtc: true).toIso8601String();
+    return DateTime.fromMillisecondsSinceEpoch(
+      seed % 1000,
+      isUtc: true,
+    ).toIso8601String();
   }
 
   bool _stateChanged(Map<String, dynamic> before, Map<String, dynamic> after) {
@@ -729,10 +930,7 @@ class ReconciliationService {
 }
 
 class DeductResult {
-  const DeductResult({
-    required this.savings,
-    required this.deductions,
-  });
+  const DeductResult({required this.savings, required this.deductions});
 
   final List<Map<String, dynamic>> savings;
   final List<SavingDeduction> deductions;

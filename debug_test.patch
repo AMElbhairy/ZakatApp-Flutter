@@ -1,0 +1,9 @@
+--- test/services/cloud_backup_controller_test.dart
++++ test/services/cloud_backup_controller_test.dart
+@@ -186,6 +186,8 @@
+     await controllers.auth.signIn();
+     await controllers.cloud.refreshCloudState();
+     final bool ok = await controllers.cloud.restoreLatestBackup();
++    print('ok: \$ok, lastError: \${controllers.cloud.lastError}, statusMessage: \${controllers.cloud.statusMessage}');
+ 
+     expect(ok, isTrue);

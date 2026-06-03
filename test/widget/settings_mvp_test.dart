@@ -16,6 +16,9 @@ import 'dart:convert';
 
 class _FakeAuthService implements AuthService {
   @override
+  Future<bool> ensureSession() async => true;
+
+  @override
   Future<UserProfile?> restoreSession() async => null;
 
   @override
@@ -149,12 +152,12 @@ void main() {
     await _setDropdownString(
       tester,
       fieldKey: const Key('settingsMainCurrencyField'),
-      value: 'SAR',
+      value: '⃁',
     );
 
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
-    expect(find.text('SAR'), findsWidgets);
+    expect(find.text('⃁'), findsWidgets);
   });
 
   testWidgets('update default entry currency persists',
@@ -166,12 +169,12 @@ void main() {
     await _setDropdownString(
       tester,
       fieldKey: const Key('settingsDefaultEntryCurrencyField'),
-      value: 'USD',
+      value: '\$',
     );
 
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
-    expect(find.text('USD'), findsWidgets);
+    expect(find.text('\$'), findsWidgets);
   });
 
   testWidgets('update theme mode persists', (WidgetTester tester) async {

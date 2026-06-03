@@ -16,6 +16,9 @@ import 'package:zakatapp_flutter/services/local_storage_service.dart';
 
 class _FakeAuthService implements AuthService {
   @override
+  Future<bool> ensureSession() async => true;
+
+  @override
   Future<UserProfile?> restoreSession() async => null;
 
   @override

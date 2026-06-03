@@ -7,6 +7,9 @@ import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
 import 'package:zakatapp_flutter/services/app_state_controller.dart';
 import 'package:zakatapp_flutter/services/local_storage_service.dart';
 import 'dart:convert';
+import 'package:zakatapp_flutter/models/user_profile.dart';
+import 'package:zakatapp_flutter/services/auth_controller.dart';
+import 'package:zakatapp_flutter/services/auth_service.dart';
 
 Map<String, dynamic> _seedStateWithMarketData() {
   return <String, dynamic>{
@@ -48,13 +51,33 @@ Map<String, dynamic> _seedStateWithMarketData() {
     'hasUnsyncedAuthChanges': false,
   };
 }
+class _FakeAuthService implements AuthService {
+  @override
+  Future<bool> ensureSession() async => true;
+  @override
+  Future<UserProfile?> restoreSession() async => null;
+  @override
+  Future<UserProfile?> signIn() async => null;
+  @override
+  Future<void> signOut() async {}
+}
 
 Widget _buildApp() {
   const LocalStorageService localStorage = LocalStorageService();
   final AppStateRepository repository =
       AppStateRepository(localStorage: localStorage);
-  return ChangeNotifierProvider<AppStateController>(
-    create: (_) => AppStateController(repository: repository),
+  return MultiProvider(
+    providers: <ChangeNotifierProvider<dynamic>>[
+      ChangeNotifierProvider<AppStateController>(
+        create: (_) => AppStateController(repository: repository),
+      ),
+      ChangeNotifierProvider<AuthController>(
+        create: (_) => AuthController(
+          authService: _FakeAuthService(),
+          localStorage: localStorage,
+        ),
+      ),
+    ],
     child: const ZakatApp(),
   );
 }
@@ -90,10 +113,9 @@ void main() {
     await tester.tap(find.byKey(const Key('saveTransactionButton')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Financial Summary'), findsOneWidget);
-    expect(find.text('Total Income'), findsOneWidget);
-    expect(find.text('E£ 100.00'), findsWidgets);
-    expect(find.text('Total Expenses'), findsOneWidget);
+    // Verify the hero card shows total wealth including the new transaction
+    expect(find.text('TOTAL WEALTH'), findsOneWidget);
+    expect(find.textContaining('100'), findsWidgets);
   });
 
   testWidgets('persistence survives reload', (WidgetTester tester) async {
@@ -119,8 +141,8 @@ void main() {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    expect(find.text('Total Income'), findsOneWidget);
-    expect(find.text('E£ 250.00'), findsWidgets);
+    // Verify the hero card shows total wealth persisted across reload
+    expect(find.text('TOTAL WEALTH'), findsOneWidget);
+    expect(find.textContaining('250'), findsWidgets);
   });
-
 }

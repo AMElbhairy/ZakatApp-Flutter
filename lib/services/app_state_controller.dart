@@ -18,11 +18,10 @@ class AppStateController extends ChangeNotifier {
     required this.repository,
     MarketDataApiService? marketDataApiService,
     ReconciliationService? reconciliationService,
-  })  : _state = AppStateDefaults.create(),
-        marketDataApiService =
-            marketDataApiService ?? MarketDataApiServiceImpl(),
-        reconciliationService =
-            reconciliationService ?? ReconciliationService();
+  }) : _state = AppStateDefaults.create(),
+       marketDataApiService =
+           marketDataApiService ?? MarketDataApiServiceImpl(),
+       reconciliationService = reconciliationService ?? ReconciliationService();
 
   final AppStateRepository repository;
   final MarketDataApiService marketDataApiService;
@@ -48,8 +47,8 @@ class AppStateController extends ChangeNotifier {
       debugPrintStack(stackTrace: stackTrace);
       _state = AppStateDefaults.create();
     }
-    final ReconciliationResult reconciled =
-        reconciliationService.reconcileExpensesWithSavings(_state);
+    final ReconciliationResult reconciled = reconciliationService
+        .reconcileExpensesWithSavings(_state);
     _state = reconciled.state;
     if (reconciled.modified) {
       await save();
@@ -85,8 +84,8 @@ class AppStateController extends ChangeNotifier {
   }
 
   Future<void> updateState(AppStateModel newState) async {
-    final ReconciliationResult reconciled =
-        reconciliationService.reconcileExpensesWithSavings(newState);
+    final ReconciliationResult reconciled = reconciliationService
+        .reconcileExpensesWithSavings(newState);
     _state = reconciled.state.copyWith(
       lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
     );
@@ -95,9 +94,11 @@ class AppStateController extends ChangeNotifier {
   }
 
   Future<void> addTransaction(Transaction transaction) async {
-    await updateState(_state.copyWith(
-      transactions: <Transaction>[..._state.transactions, transaction],
-    ));
+    await updateState(
+      _state.copyWith(
+        transactions: <Transaction>[..._state.transactions, transaction],
+      ),
+    );
   }
 
   Future<void> updateTransaction(Transaction transaction) async {
@@ -115,9 +116,45 @@ class AppStateController extends ChangeNotifier {
   }
 
   Future<void> addSaving(Saving saving) async {
-    await updateState(_state.copyWith(
-      savings: <Saving>[..._state.savings, saving],
-    ));
+    await updateState(
+      _state.copyWith(savings: <Saving>[..._state.savings, saving]),
+    );
+  }
+
+  Future<void> addSavingWithFundingAllocations(Saving saving) async {
+    final List<Transaction> fundingExpenses = saving.fundingAllocations
+        .where(
+          (Map<String, dynamic> allocation) =>
+              (allocation['sourceType'] ?? '').toString() == 'income',
+        )
+        .map((Map<String, dynamic> allocation) {
+          final String sourceId = (allocation['sourceId'] ?? '').toString();
+          final String currency = (allocation['currency'] ?? '').toString();
+          final double amount = _asDouble(allocation['amount']);
+          return Transaction(
+            id: 'tx_${DateTime.now().microsecondsSinceEpoch}_${sourceId}_metal',
+            type: 'expense',
+            date: saving.dateAcquired,
+            amount: amount,
+            currency: currency,
+            category: 'Precious Metals Purchase',
+            description:
+                '${saving.assetType} purchase funding from income $sourceId',
+            createdAt: DateTime.now().toUtc().toIso8601String(),
+            rolledOver: false,
+            sourceIncomeId: sourceId,
+            exchangePairId: saving.id,
+          );
+        })
+        .where((Transaction tx) => tx.amount > 0 && tx.sourceIncomeId != null)
+        .toList(growable: false);
+
+    await updateState(
+      _state.copyWith(
+        transactions: <Transaction>[..._state.transactions, ...fundingExpenses],
+        savings: <Saving>[..._state.savings, saving],
+      ),
+    );
   }
 
   Future<void> updateSaving(Saving saving) async {
@@ -127,23 +164,41 @@ class AppStateController extends ChangeNotifier {
     await updateState(_state.copyWith(savings: next));
   }
 
+  static double _asDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
   Future<void> deleteSaving(String savingId) async {
     final List<Saving> next = _state.savings
         .where((Saving entry) => entry.id != savingId)
         .toList(growable: false);
-    await updateState(_state.copyWith(savings: next));
+    final List<Transaction> nextTransactions = _state.transactions
+        .where(
+          (Transaction tx) =>
+              tx.exchangePairId != savingId ||
+              tx.category != 'Precious Metals Purchase',
+        )
+        .toList(growable: false);
+    await updateState(
+      _state.copyWith(savings: next, transactions: nextTransactions),
+    );
   }
 
   Future<void> addInvestment(InvestmentAsset investment) async {
-    await updateState(_state.copyWith(
-      investments: <InvestmentAsset>[..._state.investments, investment],
-    ));
+    await updateState(
+      _state.copyWith(
+        investments: <InvestmentAsset>[..._state.investments, investment],
+      ),
+    );
   }
 
   Future<void> updateInvestment(InvestmentAsset investment) async {
     final List<InvestmentAsset> next = _state.investments
-        .map((InvestmentAsset entry) =>
-            entry.id == investment.id ? investment : entry)
+        .map(
+          (InvestmentAsset entry) =>
+              entry.id == investment.id ? investment : entry,
+        )
         .toList(growable: false);
     await updateState(_state.copyWith(investments: next));
   }
@@ -156,18 +211,24 @@ class AppStateController extends ChangeNotifier {
   }
 
   Future<void> addRecurringTransaction(RecurringTransaction recurring) async {
-    await updateState(_state.copyWith(
-      recurringTransactions: <RecurringTransaction>[
-        ..._state.recurringTransactions,
-        recurring,
-      ],
-    ));
+    await updateState(
+      _state.copyWith(
+        recurringTransactions: <RecurringTransaction>[
+          ..._state.recurringTransactions,
+          recurring,
+        ],
+      ),
+    );
   }
 
-  Future<void> updateRecurringTransaction(RecurringTransaction recurring) async {
+  Future<void> updateRecurringTransaction(
+    RecurringTransaction recurring,
+  ) async {
     final List<RecurringTransaction> next = _state.recurringTransactions
-        .map((RecurringTransaction entry) =>
-            entry.id == recurring.id ? recurring : entry)
+        .map(
+          (RecurringTransaction entry) =>
+              entry.id == recurring.id ? recurring : entry,
+        )
         .toList(growable: false);
     await updateState(_state.copyWith(recurringTransactions: next));
   }
@@ -179,16 +240,16 @@ class AppStateController extends ChangeNotifier {
     await updateState(_state.copyWith(recurringTransactions: next));
   }
 
-  Future<void> addCategory({
-    required String type,
-    required String name,
-  }) async {
+  Future<void> addCategory({required String type, required String name}) async {
     final String clean = name.trim();
     if (clean.isEmpty) return;
     final bool income = type == 'income';
-    final List<String> source =
-        income ? _state.categories.income : _state.categories.expense;
-    if (source.any((String c) => c.toLowerCase() == clean.toLowerCase())) return;
+    final List<String> source = income
+        ? _state.categories.income
+        : _state.categories.expense;
+    if (source.any((String c) => c.toLowerCase() == clean.toLowerCase())) {
+      return;
+    }
     final AppCategories nextCategories = AppCategories(
       income: income ? <String>[...source, clean] : _state.categories.income,
       expense: income ? _state.categories.expense : <String>[...source, clean],
@@ -205,10 +266,13 @@ class AppStateController extends ChangeNotifier {
     final String cleanTo = to.trim();
     if (cleanFrom.isEmpty || cleanTo.isEmpty || cleanFrom == cleanTo) return;
     final bool income = type == 'income';
-    final List<String> source =
-        income ? _state.categories.income : _state.categories.expense;
+    final List<String> source = income
+        ? _state.categories.income
+        : _state.categories.expense;
     if (!source.contains(cleanFrom)) return;
-    if (source.any((String c) => c.toLowerCase() == cleanTo.toLowerCase())) return;
+    if (source.any((String c) => c.toLowerCase() == cleanTo.toLowerCase())) {
+      return;
+    }
     final List<String> updatedCategories = source
         .map((String c) => c == cleanFrom ? cleanTo : c)
         .toList(growable: false);
@@ -252,11 +316,15 @@ class AppStateController extends ChangeNotifier {
   }) async {
     final String clean = name.trim();
     final bool income = type == 'income';
-    final bool inUse = _state.transactions.any((Transaction tx) =>
-        tx.category == clean && (income ? tx.type == 'income' : tx.type == 'expense'));
+    final bool inUse = _state.transactions.any(
+      (Transaction tx) =>
+          tx.category == clean &&
+          (income ? tx.type == 'income' : tx.type == 'expense'),
+    );
     if (inUse) return false;
-    final List<String> source =
-        income ? _state.categories.income : _state.categories.expense;
+    final List<String> source = income
+        ? _state.categories.income
+        : _state.categories.expense;
     final List<String> updated = source
         .where((String c) => c != clean)
         .toList(growable: false);
@@ -269,9 +337,11 @@ class AppStateController extends ChangeNotifier {
   }
 
   Future<void> addFinancialPlan(FinancialPlan plan) async {
-    await updateState(_state.copyWith(
-      financialPlans: <FinancialPlan>[..._state.financialPlans, plan],
-    ));
+    await updateState(
+      _state.copyWith(
+        financialPlans: <FinancialPlan>[..._state.financialPlans, plan],
+      ),
+    );
   }
 
   Future<void> updateFinancialPlan(FinancialPlan plan) async {
@@ -317,6 +387,18 @@ class AppStateController extends ChangeNotifier {
     await updateState(_state.copyWith(themeMode: normalized));
   }
 
+  Future<void> togglePrivacyMode() async {
+    final Map<String, dynamic> aiSettings = Map<String, dynamic>.from(
+      _state.aiSettings ?? <String, dynamic>{},
+    );
+    final bool isCurrentlyHidden =
+        aiSettings['privacyMode'] == true ||
+        aiSettings['hideBalances'] == true ||
+        aiSettings['balancesHidden'] == true;
+    aiSettings['privacyMode'] = !isCurrentlyHidden;
+    await updateState(_state.copyWith(aiSettings: aiSettings));
+  }
+
   Future<void> updateMarketSnapshot(MarketSnapshot snapshot) async {
     await updateState(_state.copyWith(marketData: snapshot.toAppStateJson()));
   }
@@ -327,13 +409,14 @@ class AppStateController extends ChangeNotifier {
     required String paymentCategory,
   }) async {
     final MarketData market = MarketData.fromJson(_state.marketData);
-    final ReconciliationResult out = reconciliationService.toggleInstallmentPaid(
-      input: _state,
-      assetId: assetId,
-      installmentIndex: installmentIndex,
-      paymentCategory: paymentCategory,
-      marketData: market,
-    );
+    final ReconciliationResult out = reconciliationService
+        .toggleInstallmentPaid(
+          input: _state,
+          assetId: assetId,
+          installmentIndex: installmentIndex,
+          paymentCategory: paymentCategory,
+          marketData: market,
+        );
     if (!out.modified) return;
     await updateState(out.state);
   }
@@ -347,7 +430,9 @@ class AppStateController extends ChangeNotifier {
       input: _state,
       monthKey: monthKey,
       zakatAmountMainCurrency: zakatAmountMainCurrency,
-      mainCurrency: _state.mainCurrency.trim().isEmpty ? 'EGP' : _state.mainCurrency,
+      mainCurrency: _state.mainCurrency.trim().isEmpty
+          ? 'EGP'
+          : _state.mainCurrency,
       paymentDate: paymentDate,
     );
     if (!out.modified) return;
@@ -362,15 +447,16 @@ class AppStateController extends ChangeNotifier {
     required double sourceAmount,
     required double targetAmount,
   }) async {
-    final ReconciliationResult out = reconciliationService.executeCurrencyExchange(
-      input: _state,
-      date: date,
-      sourceType: sourceType,
-      sourceCurrency: sourceCurrency,
-      targetCurrency: targetCurrency,
-      sourceAmount: sourceAmount,
-      targetAmount: targetAmount,
-    );
+    final ReconciliationResult out = reconciliationService
+        .executeCurrencyExchange(
+          input: _state,
+          date: date,
+          sourceType: sourceType,
+          sourceCurrency: sourceCurrency,
+          targetCurrency: targetCurrency,
+          sourceAmount: sourceAmount,
+          targetAmount: targetAmount,
+        );
     if (!out.modified) return;
     await updateState(out.state);
   }
@@ -396,7 +482,9 @@ class AppStateController extends ChangeNotifier {
     required bool respectCooldown,
   }) async {
     final MarketSnapshot before = currentMarketSnapshot;
-    if (!force && respectCooldown && _isWithinMarketCooldown(before.lastUpdated)) {
+    if (!force &&
+        respectCooldown &&
+        _isWithinMarketCooldown(before.lastUpdated)) {
       return const MarketRefreshResult(
         success: true,
         updatedFields: 0,
@@ -408,7 +496,9 @@ class AppStateController extends ChangeNotifier {
     try {
       fxRates = await marketDataApiService.fetchFxRatesToEgp();
     } catch (error, stackTrace) {
-      debugPrint('AppStateController.refreshMarketData: FX refresh failed: $error');
+      debugPrint(
+        'AppStateController.refreshMarketData: FX refresh failed: $error',
+      );
       debugPrintStack(stackTrace: stackTrace);
       fxRates = null;
     }
@@ -436,8 +526,9 @@ class AppStateController extends ChangeNotifier {
       updated += fxRates.length;
     }
 
-    final double usdToEgpForMetals =
-        after.usdToEgp > 0 ? after.usdToEgp : before.usdToEgp;
+    final double usdToEgpForMetals = after.usdToEgp > 0
+        ? after.usdToEgp
+        : before.usdToEgp;
     double? goldPrice;
     double? silverPrice;
     try {
@@ -445,7 +536,9 @@ class AppStateController extends ChangeNotifier {
         usdToEgp: usdToEgpForMetals,
       );
     } catch (error, stackTrace) {
-      debugPrint('AppStateController.refreshMarketData: gold refresh failed: $error');
+      debugPrint(
+        'AppStateController.refreshMarketData: gold refresh failed: $error',
+      );
       debugPrintStack(stackTrace: stackTrace);
       goldPrice = null;
     }
@@ -471,7 +564,9 @@ class AppStateController extends ChangeNotifier {
     }
 
     if (updated > 0) {
-      after = after.copyWith(lastUpdated: DateTime.now().toUtc().toIso8601String());
+      after = after.copyWith(
+        lastUpdated: DateTime.now().toUtc().toIso8601String(),
+      );
       await updateMarketSnapshot(after);
       return MarketRefreshResult(
         success: true,
@@ -538,7 +633,8 @@ extension AppStateModelCopyWith on AppStateModel {
     return AppStateModel(
       transactions: transactions ?? this.transactions,
       savings: savings ?? this.savings,
-      recurringTransactions: recurringTransactions ?? this.recurringTransactions,
+      recurringTransactions:
+          recurringTransactions ?? this.recurringTransactions,
       investments: investments ?? this.investments,
       financialPlans: financialPlans ?? this.financialPlans,
       lastRollover: lastRollover ?? this.lastRollover,

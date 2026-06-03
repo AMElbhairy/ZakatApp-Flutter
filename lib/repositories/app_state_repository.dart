@@ -63,6 +63,7 @@ class AppStateDefaults {
           'Rental Income',
           'Gift',
           'Bonus',
+          'Savings',
           'Other Income'
         ],
         expense: <String>[

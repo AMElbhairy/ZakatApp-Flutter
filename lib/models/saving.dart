@@ -16,6 +16,7 @@ class Saving {
     this.exchangeSourceIncomeId,
     this.internalTransfer,
     this.internalTransferType,
+    this.fundingAllocations = const <Map<String, dynamic>>[],
   });
 
   final String id;
@@ -34,6 +35,7 @@ class Saving {
   final String? exchangeSourceIncomeId;
   final bool? internalTransfer;
   final String? internalTransferType;
+  final List<Map<String, dynamic>> fundingAllocations;
 
   factory Saving.fromJson(Map<String, dynamic> json) {
     return Saving(
@@ -57,6 +59,7 @@ class Saving {
           ? null
           : _asBool(json['internalTransfer']),
       internalTransferType: json['internalTransferType']?.toString(),
+      fundingAllocations: _asMapList(json['fundingAllocations']),
     );
   }
 
@@ -81,6 +84,8 @@ class Saving {
       if (internalTransfer != null) 'internalTransfer': internalTransfer,
       if (internalTransferType != null)
         'internalTransferType': internalTransferType,
+      if (fundingAllocations.isNotEmpty)
+        'fundingAllocations': fundingAllocations,
     };
   }
 
@@ -94,5 +99,13 @@ class Saving {
     if (value is num) return value != 0;
     final String raw = (value ?? '').toString().toLowerCase();
     return raw == 'true' || raw == '1';
+  }
+
+  static List<Map<String, dynamic>> _asMapList(dynamic value) {
+    if (value is! List) return const <Map<String, dynamic>>[];
+    return value
+        .whereType<Map>()
+        .map((Map<dynamic, dynamic> item) => Map<String, dynamic>.from(item))
+        .toList(growable: false);
   }
 }

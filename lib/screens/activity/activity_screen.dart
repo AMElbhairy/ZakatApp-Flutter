@@ -10,6 +10,7 @@ import '../../services/app_state_controller.dart';
 import '../entry/add_transaction_screen.dart';
 
 enum _ActivityFilter { all, income, expense }
+
 enum _ActivitySection { transactions, schedule }
 
 class ActivityScreen extends StatefulWidget {
@@ -35,7 +36,8 @@ class ActivityScreenState extends State<ActivityScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final double navSafeBottomPadding = 112 + MediaQuery.paddingOf(context).bottom;
+    final double navSafeBottomPadding =
+        112 + MediaQuery.paddingOf(context).bottom;
     final controller = context.watch<AppStateController>();
     final state = controller.state;
     final List<Transaction> transactions = state.transactions;
@@ -49,16 +51,18 @@ class ActivityScreenState extends State<ActivityScreen> {
         return b.createdAt.compareTo(a.createdAt);
       });
 
-    final List<Transaction> filtered = sorted.where((Transaction tx) {
-      switch (_filter) {
-        case _ActivityFilter.income:
-          return tx.type == 'income';
-        case _ActivityFilter.expense:
-          return tx.type == 'expense';
-        case _ActivityFilter.all:
-          return true;
-      }
-    }).toList(growable: false);
+    final List<Transaction> filtered = sorted
+        .where((Transaction tx) {
+          switch (_filter) {
+            case _ActivityFilter.income:
+              return tx.type == 'income';
+            case _ActivityFilter.expense:
+              return tx.type == 'expense';
+            case _ActivityFilter.all:
+              return true;
+          }
+        })
+        .toList(growable: false);
 
     final MarketData market = MarketData.fromJson(state.marketData);
     final List<Map<String, dynamic>> schedule = _buildSchedule(
@@ -66,7 +70,9 @@ class ActivityScreenState extends State<ActivityScreen> {
       zakatAnnualDate: state.zakatAnnualDate,
       transactions: state.transactions,
       savings: state.savings.map((e) => e.toJson()).toList(growable: false),
-      investments: state.investments.map((e) => e.toJson()).toList(growable: false),
+      investments: state.investments
+          .map((e) => e.toJson())
+          .toList(growable: false),
       marketData: market,
     );
     final Set<String> paidMonths = state.zakatPaidMonths.toSet();
@@ -110,8 +116,12 @@ class ActivityScreenState extends State<ActivityScreen> {
     );
   }
 
-  Widget _buildTransactionsView(BuildContext context, List<Transaction> filtered) {
-    final double navSafeBottomPadding = 112 + MediaQuery.paddingOf(context).bottom;
+  Widget _buildTransactionsView(
+    BuildContext context,
+    List<Transaction> filtered,
+  ) {
+    final double navSafeBottomPadding =
+        112 + MediaQuery.paddingOf(context).bottom;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -162,7 +172,8 @@ class ActivityScreenState extends State<ActivityScreen> {
                         onTap: () {
                           Navigator.of(context).push(
                             MaterialPageRoute<void>(
-                              builder: (_) => AddTransactionScreen(initialTransaction: tx),
+                              builder: (_) =>
+                                  AddTransactionScreen(initialTransaction: tx),
                             ),
                           );
                         },
@@ -185,7 +196,10 @@ class ActivityScreenState extends State<ActivityScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: <Widget>[
-                              Text('${tx.date} • ${tx.currency}'),
+                              Text(
+                                '${tx.date} • '
+                                '${ZakatEngineService.getCurrencySymbol(tx.currency, isArabic: Localizations.localeOf(context).languageCode.toLowerCase() == 'ar')}',
+                              ),
                               if (tx.description.trim().isNotEmpty)
                                 Text(
                                   tx.description,
@@ -200,7 +214,16 @@ class ActivityScreenState extends State<ActivityScreen> {
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: <Widget>[
                             Text(
-                              '${isIncome ? '+' : '-'}${tx.amount.toStringAsFixed(2)} ${tx.currency}',
+                              ZakatEngineService.formatCurrency(
+                                isIncome ? tx.amount : -tx.amount,
+                                tx.currency,
+                                isArabic:
+                                    Localizations.localeOf(
+                                      context,
+                                    ).languageCode.toLowerCase() ==
+                                    'ar',
+                                showSign: true,
+                              ),
                               style: TextStyle(
                                 color: isIncome
                                     ? Colors.green.shade700
@@ -241,26 +264,34 @@ class ActivityScreenState extends State<ActivityScreen> {
       );
     }
 
-    final List<Map<String, dynamic>> sorted = List<Map<String, dynamic>>.from(schedule)
-      ..sort((a, b) => (a['monthKey'] ?? '')
-          .toString()
-          .compareTo((b['monthKey'] ?? '').toString()));
+    final List<Map<String, dynamic>> sorted =
+        List<Map<String, dynamic>>.from(schedule)..sort(
+          (a, b) => (a['monthKey'] ?? '').toString().compareTo(
+            (b['monthKey'] ?? '').toString(),
+          ),
+        );
 
     return ListView.separated(
       key: const Key('zakatScheduleList'),
       padding: EdgeInsets.only(bottom: navSafeBottomPadding),
       itemCount: sorted.length,
-      separatorBuilder: (BuildContext context, int index) => const SizedBox(height: 10),
+      separatorBuilder: (BuildContext context, int index) =>
+          const SizedBox(height: 10),
       itemBuilder: (_, int index) {
         final Map<String, dynamic> row = sorted[index];
         final bool isPast = row['isPast'] == true;
         final bool isCurrent = row['isCurrentMonth'] == true;
-        final List<dynamic> entries = (row['entries'] as List<dynamic>? ?? const []);
+        final List<dynamic> entries =
+            (row['entries'] as List<dynamic>? ?? const []);
         final String status = isCurrent
             ? context.l10n.tr('due_now')
             : (isPast ? context.l10n.tr('past') : context.l10n.tr('upcoming'));
         final String monthKey = (row['monthKey'] ?? '').toString();
         final String paymentDate = (row['paymentDate'] ?? '').toString();
+        final String hijriDate = (row['hijriDate'] ?? '').toString();
+        final String titleText = hijriDate.isEmpty
+            ? '$monthKey • $paymentDate'
+            : '$paymentDate • $hijriDate AH';
         final double totalZakat = ((row['totalZakat'] ?? 0) as num).toDouble();
         final bool isPaid = paidMonths.contains(monthKey);
 
@@ -268,12 +299,15 @@ class ActivityScreenState extends State<ActivityScreen> {
           child: ExpansionTile(
             key: Key('scheduleRow_$monthKey'),
             tilePadding: EdgeInsets.zero,
-            title: Text('$monthKey • $paymentDate'),
+            title: Text(titleText),
             subtitle: Text('${context.l10n.tr('entries')}: ${entries.length}'),
             trailing: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: <Widget>[
-                Text(_formatEgp(totalZakat), style: const TextStyle(fontWeight: FontWeight.w700)),
+                Text(
+                  _formatEgp(context, totalZakat),
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
                 Text(status, style: const TextStyle(fontSize: 12)),
               ],
             ),
@@ -283,10 +317,15 @@ class ActivityScreenState extends State<ActivityScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: <Widget>[
-                    Text(isPaid ? context.l10n.tr('paid') : context.l10n.tr('not_paid')),
+                    Text(
+                      isPaid
+                          ? context.l10n.tr('paid')
+                          : context.l10n.tr('not_paid'),
+                    ),
                     TextButton(
                       key: Key('toggleZakatPaid_$monthKey'),
-                      onPressed: () => context.read<AppStateController>().toggleZakatPaid(
+                      onPressed: () =>
+                          context.read<AppStateController>().toggleZakatPaid(
                             monthKey: monthKey,
                             zakatAmountMainCurrency: totalZakat,
                             paymentDate: paymentDate,
@@ -301,14 +340,17 @@ class ActivityScreenState extends State<ActivityScreen> {
                 ),
               ),
               ...entries.map((dynamic raw) {
-                final Map<String, dynamic> entry = Map<String, dynamic>.from(raw as Map);
+                final Map<String, dynamic> entry = Map<String, dynamic>.from(
+                  raw as Map,
+                );
                 final String type = (entry['type'] ?? 'entry').toString();
-                final double amount = ((entry['zakatAmount'] ?? 0) as num).toDouble();
+                final double amount = ((entry['zakatAmount'] ?? 0) as num)
+                    .toDouble();
                 return ListTile(
                   dense: true,
                   title: Text(type),
                   subtitle: Text((entry['dueDateRaw'] ?? '').toString()),
-                  trailing: Text(_formatEgp(amount)),
+                  trailing: Text(_formatEgp(context, amount)),
                 );
               }),
             ],
@@ -329,27 +371,36 @@ class ActivityScreenState extends State<ActivityScreen> {
     if (zakatMethod == 'annual') {
       return ZakatScheduleService.calculateAnnualZakatSchedule(
         zakatAnnualDate: zakatAnnualDate,
-        transactions: transactions.map((e) => e.toJson()).toList(growable: false),
+        transactions: transactions
+            .map((e) => e.toJson())
+            .toList(growable: false),
         savings: savings,
         investments: investments,
         marketData: marketData,
       );
     }
 
-    final List<Map<String, dynamic>> monthly = ZakatScheduleService.calculateMonthlyZakatSchedule(
-      transactions: transactions.map((e) => e.toJson()).toList(growable: false),
-      marketData: marketData,
-    );
+    final List<Map<String, dynamic>> transactionJson = transactions
+        .map((e) => e.toJson())
+        .toList(growable: false);
+    final List<Map<String, dynamic>> monthly =
+        ZakatScheduleService.calculateMonthlyZakatSchedule(
+          transactions: transactionJson,
+          savings: savings,
+          marketData: marketData,
+        );
     final List<Map<String, dynamic>> savingsSchedule =
         ZakatScheduleService.calculateSavingsZakatSchedule(
-      savings: savings,
-      marketData: marketData,
-    );
+          savings: savings,
+          transactions: transactionJson,
+          marketData: marketData,
+        );
     return <Map<String, dynamic>>[...monthly, ...savingsSchedule];
   }
 
   Future<void> _confirmDelete(BuildContext context, Transaction tx) async {
-    final bool confirmed = await showDialog<bool>(
+    final bool confirmed =
+        await showDialog<bool>(
           context: context,
           builder: (BuildContext context) {
             return AlertDialog(
@@ -382,8 +433,21 @@ class ActivityScreenState extends State<ActivityScreen> {
     }
   }
 
-  static String _formatEgp(double value) {
-    return 'E£ ${value.toStringAsFixed(2)}';
+  static String _formatEgp(BuildContext context, double value) {
+    return _formatDisplay(context, value, 'EGP');
+  }
+
+  static String _formatDisplay(
+    BuildContext context,
+    double value,
+    String currencyCode,
+  ) {
+    return ZakatEngineService.formatCurrency(
+      value,
+      currencyCode,
+      isArabic:
+          Localizations.localeOf(context).languageCode.toLowerCase() == 'ar',
+    );
   }
 }
 
@@ -395,8 +459,12 @@ class _TypeBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool isIncome = type == 'income';
-    final Color bg = isIncome ? const Color(0xFFE8F5E9) : const Color(0xFFFFEBEE);
-    final Color fg = isIncome ? const Color(0xFF1B5E20) : const Color(0xFFB71C1C);
+    final Color bg = isIncome
+        ? const Color(0xFFE8F5E9)
+        : const Color(0xFFFFEBEE);
+    final Color fg = isIncome
+        ? const Color(0xFF1B5E20)
+        : const Color(0xFFB71C1C);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),

@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'package:intl/intl.dart';
 
 import '../../models/investment_asset.dart';
 import '../../models/saving.dart';
@@ -98,11 +99,7 @@ class SavingStatus {
 }
 
 class HijriDate {
-  const HijriDate({
-    required this.year,
-    required this.month,
-    required this.day,
-  });
+  const HijriDate({required this.year, required this.month, required this.day});
 
   final int year;
   final int month;
@@ -140,6 +137,112 @@ class ZakatEngineService {
 
   static const ZakatConfig defaultConfig = ZakatConfig();
   static const double minAmount = 0.005;
+
+  static String getCurrencySymbol(
+    String currencyCode, {
+    bool isArabic = false,
+  }) {
+    final String cur = currencyCode.toUpperCase().trim();
+    if (isArabic) {
+      switch (cur) {
+        case 'EGP':
+          return 'ج.م';
+        case 'USD':
+          return r'$';
+        case 'SAR':
+          return '⃁';
+        case 'EUR':
+          return '€';
+        case 'GBP':
+          return '£';
+        case 'TRY':
+          return '₺';
+        case 'AED':
+          return 'د.إ';
+        case 'KWD':
+          return 'د.ك';
+        case 'QAR':
+          return 'ر.ق';
+        case 'BHD':
+          return 'د.ب';
+        case 'OMR':
+          return 'ر.ع';
+        case 'JOD':
+          return 'د.أ';
+        case 'MYR':
+          return 'ر.م';
+        case 'PKR':
+          return 'ر.ب';
+        case 'IDR':
+          return 'ر.إ';
+        default:
+          return cur;
+      }
+    } else {
+      switch (cur) {
+        case 'EGP':
+          return 'E£';
+        case 'USD':
+          return r'$';
+        case 'SAR':
+          return '⃁';
+        case 'EUR':
+          return '€';
+        case 'GBP':
+          return '£';
+        case 'TRY':
+          return '₺';
+        case 'MYR':
+          return 'RM';
+        case 'PKR':
+          return 'Rs';
+        case 'IDR':
+          return 'Rp';
+        default:
+          return cur;
+      }
+    }
+  }
+
+  static String formatCurrency(
+    double amount,
+    String currencyCode, {
+    bool isArabic = false,
+    bool compact = false,
+    bool showSign = false,
+  }) {
+    final String symbol = getCurrencySymbol(currencyCode, isArabic: isArabic);
+    final double absAmount = amount.abs();
+    final String formattedNumber;
+    if (compact) {
+      final NumberFormat compactFormatter = NumberFormat.compact(
+        locale: 'en_US',
+      );
+      formattedNumber = absAmount >= 10000
+          ? compactFormatter.format(absAmount)
+          : NumberFormat('#,##0.##', 'en_US').format(absAmount);
+    } else {
+      formattedNumber = NumberFormat('#,##0.00', 'en_US').format(absAmount);
+    }
+
+    if (isArabic) {
+      if (amount < 0) {
+        return '\u200E$symbol $formattedNumber-';
+      }
+      if (showSign && amount > 0) {
+        return '\u200E$symbol $formattedNumber+';
+      }
+      return '\u200E$symbol $formattedNumber';
+    } else {
+      if (amount < 0) {
+        return '\u200E$symbol -$formattedNumber';
+      }
+      if (showSign && amount > 0) {
+        return '\u200E$symbol +$formattedNumber';
+      }
+      return '\u200E$symbol $formattedNumber';
+    }
+  }
 
   static const List<String> supportedCurrencies = <String>[
     'EGP',
@@ -179,7 +282,9 @@ class ZakatEngineService {
   }
 
   static bool isCurrencyConversionAvailable(
-      String? currency, MarketData marketData) {
+    String? currency,
+    MarketData marketData,
+  ) {
     final String cur = (currency ?? '').trim();
     if (cur.isEmpty || cur == 'EGP') return true;
     final double? rate = _resolveRateToEgp(cur, marketData);
@@ -187,22 +292,35 @@ class ZakatEngineService {
   }
 
   static double? tryConvertToEgp(
-      double amount, String? currency, MarketData marketData) {
+    double amount,
+    String? currency,
+    MarketData marketData,
+  ) {
     final String cur = (currency ?? '').trim();
     if (cur.isEmpty || cur == 'EGP') return amount;
+    if (amount == 0) return 0;
     final double? rate = _resolveRateToEgp(cur, marketData);
     if (rate == null || rate <= 0) return null;
     return amount * rate;
   }
 
-  static double convertToEgp(double amount, String? currency, MarketData marketData) {
+  static double convertToEgp(
+    double amount,
+    String? currency,
+    MarketData marketData,
+  ) {
     final double? converted = tryConvertToEgp(amount, currency, marketData);
     return converted ?? double.nan;
   }
 
-  static double convertFromEgp(double amountEgp, String? currency, MarketData marketData) {
+  static double convertFromEgp(
+    double amountEgp,
+    String? currency,
+    MarketData marketData,
+  ) {
     final String cur = (currency ?? '').trim();
     if (cur.isEmpty || cur == 'EGP') return amountEgp;
+    if (amountEgp == 0) return 0;
     final double? rate = _resolveRateToEgp(cur, marketData);
     if (rate == null || rate <= 0) return double.nan;
     return amountEgp / rate;
@@ -211,13 +329,20 @@ class ZakatEngineService {
   static double? _resolveRateToEgp(String currency, MarketData marketData) {
     final double? fromMap = marketData.ratesToEgp[currency];
     if (fromMap != null && fromMap > 0) return fromMap;
-    if (currency == 'USD' && marketData.usdToEgp > 0) return marketData.usdToEgp;
-    if (currency == 'SAR' && marketData.sarToEgp > 0) return marketData.sarToEgp;
+    if (currency == 'USD' && marketData.usdToEgp > 0) {
+      return marketData.usdToEgp;
+    }
+    if (currency == 'SAR' && marketData.sarToEgp > 0) {
+      return marketData.sarToEgp;
+    }
     return null;
   }
 
-  static double convertToGold24k(double weight, String? karat,
-      [ZakatConfig config = defaultConfig]) {
+  static double convertToGold24k(
+    double weight,
+    String? karat, [
+    ZakatConfig config = defaultConfig,
+  ]) {
     final double purity = config.goldPurity[karat ?? ''] ?? 1.0;
     return weight * purity;
   }
@@ -249,11 +374,15 @@ class ZakatEngineService {
     final double totalSilverGrams = savings
         .where((Saving s) => normaliseAssetType(s.assetType) == 'silver')
         .fold<double>(
-            0, (double sum, Saving s) => sum + convertToSilverGrams(s.remainingAmount));
+          0,
+          (double sum, Saving s) =>
+              sum + convertToSilverGrams(s.remainingAmount),
+        );
 
     final double totalGoldEgp = totalGold24k * marketData.goldPrice24kEgp;
     final double totalSilverEgp = totalSilverGrams * marketData.silverPriceEgp;
-    final double totalSavingsWealthEgp = totalCashEgp + totalGoldEgp + totalSilverEgp;
+    final double totalSavingsWealthEgp =
+        totalCashEgp + totalGoldEgp + totalSilverEgp;
 
     return NisabTotals(
       totalCashEgp: totalCashEgp,
@@ -265,10 +394,7 @@ class ZakatEngineService {
     );
   }
 
-  static bool checkCashNisab(
-    double amountInEgp,
-    MarketData marketData,
-  ) {
+  static bool checkCashNisab(double amountInEgp, MarketData marketData) {
     final double nisabValueEgp =
         defaultConfig.nisabGoldGrams * marketData.goldPrice24kEgp;
     return amountInEgp >= nisabValueEgp;
@@ -306,12 +432,19 @@ class ZakatEngineService {
 
     final String assetType = normaliseAssetType(saving.assetType);
     final NisabTotals totals =
-        nisabTotals ?? computeNisabTotals(savings: savings, marketData: marketData);
+        nisabTotals ??
+        computeNisabTotals(savings: savings, marketData: marketData);
 
     if (assetType == 'cash') {
-      final double amountInEgp =
-          convertToEgp(saving.remainingAmount, saving.unit, marketData);
-      final bool meetsNisab = checkCashNisab(totals.totalSavingsWealthEgp, marketData);
+      final double amountInEgp = convertToEgp(
+        saving.remainingAmount,
+        saving.unit,
+        marketData,
+      );
+      final bool meetsNisab = checkCashNisab(
+        totals.totalSavingsWealthEgp,
+        marketData,
+      );
       if (!meetsNisab) {
         status = 'Nisab Not Met';
       } else if (!hasCompletedYear) {
@@ -322,8 +455,14 @@ class ZakatEngineService {
         zakatValueEgp = zakatDue;
       }
     } else if (assetType == 'gold') {
-      final double weight24k = convertToGold24k(saving.remainingAmount, saving.unit);
-      final bool meetsNisab = checkCashNisab(totals.totalSavingsWealthEgp, marketData);
+      final double weight24k = convertToGold24k(
+        saving.remainingAmount,
+        saving.unit,
+      );
+      final bool meetsNisab = checkCashNisab(
+        totals.totalSavingsWealthEgp,
+        marketData,
+      );
       if (!meetsNisab) {
         status = 'Nisab Not Met';
       } else if (!hasCompletedYear) {
@@ -336,7 +475,10 @@ class ZakatEngineService {
     } else if (assetType == 'silver') {
       final double silverGrams = convertToSilverGrams(saving.remainingAmount);
       final double silverEgp = silverGrams * marketData.silverPriceEgp;
-      final bool meetsNisab = checkCashNisab(totals.totalSavingsWealthEgp, marketData);
+      final bool meetsNisab = checkCashNisab(
+        totals.totalSavingsWealthEgp,
+        marketData,
+      );
       if (!meetsNisab) {
         status = 'Nisab Not Met';
       } else if (!hasCompletedYear) {
@@ -363,7 +505,11 @@ class ZakatEngineService {
     required MarketData marketData,
   }) {
     return investments.fold<double>(0, (double sum, InvestmentAsset asset) {
-      return sum + calculateInvestmentEstimatedValueEgp(asset: asset, marketData: marketData);
+      return sum +
+          calculateInvestmentEstimatedValueEgp(
+            asset: asset,
+            marketData: marketData,
+          );
     });
   }
 
@@ -380,8 +526,9 @@ class ZakatEngineService {
     );
 
     final double mv = asset.marketValue;
-    double effectiveMarketValue =
-        mv.isFinite ? math.max(0, mv) : math.max(0, fallbackMarketValue);
+    double effectiveMarketValue = mv.isFinite
+        ? math.max(0, mv)
+        : math.max(0, fallbackMarketValue);
 
     final double share = asset.ownershipSharePct.isFinite
         ? math.min(1, math.max(0, asset.ownershipSharePct / 100))
@@ -399,7 +546,9 @@ class ZakatEngineService {
     double? paidAmount,
   }) {
     final double basePrincipal = originalPrice;
-    final double paidPrincipal = paidAmount?.isFinite == true ? paidAmount! : basePrincipal;
+    final double paidPrincipal = paidAmount?.isFinite == true
+        ? paidAmount!
+        : basePrincipal;
     final double principal = ownershipType == 'installment'
         ? math.min(math.max(0, paidPrincipal), basePrincipal)
         : basePrincipal;
@@ -445,21 +594,23 @@ class ZakatEngineService {
     final double txnBalance = transactions
         .where((Transaction tx) => tx.currency == currency)
         .fold<double>(0, (double sum, Transaction tx) {
-      if (tx.type == 'income') {
-        if (tx.rolledOver && tx.rolledAmount != null) {
-          return sum + (tx.amount - tx.rolledAmount!);
-        }
-        return sum + tx.amount;
-      }
-      return sum - tx.amount;
-    });
+          if (tx.type == 'income') {
+            if (tx.rolledOver && tx.rolledAmount != null) {
+              return sum + (tx.amount - tx.rolledAmount!);
+            }
+            return sum + tx.amount;
+          }
+          return sum - tx.amount;
+        });
 
     final double savingsContribution = savings
-        .where((Saving s) =>
-            normaliseAssetType(s.assetType) == 'cash' && s.unit == currency)
+        .where(
+          (Saving s) =>
+              normaliseAssetType(s.assetType) == 'cash' && s.unit == currency,
+        )
         .fold<double>(0, (double sum, Saving s) {
-      return sum + math.max(0, s.amount - s.remainingAmount);
-    });
+          return sum + math.max(0, s.amount - s.remainingAmount);
+        });
 
     return txnBalance + savingsContribution;
   }
@@ -479,15 +630,24 @@ class ZakatEngineService {
       ),
     );
 
-    final NisabTotals totals =
-        computeNisabTotals(savings: savings, marketData: marketData);
+    final NisabTotals totals = computeNisabTotals(
+      savings: savings,
+      marketData: marketData,
+    );
 
     final double goldEgp = totals.totalGold24k * marketData.goldPrice24kEgp;
-    final double silverEgp = totals.totalSilverGrams * marketData.silverPriceEgp;
-    final double investmentsEgp =
-        calculateTotalInvestmentsEgp(investments: investments, marketData: marketData);
+    final double silverEgp =
+        totals.totalSilverGrams * marketData.silverPriceEgp;
+    final double investmentsEgp = calculateTotalInvestmentsEgp(
+      investments: investments,
+      marketData: marketData,
+    );
 
-    return walletEgp + totals.totalCashEgp + goldEgp + silverEgp + investmentsEgp;
+    return walletEgp +
+        totals.totalCashEgp +
+        goldEgp +
+        silverEgp +
+        investmentsEgp;
   }
 
   static double calculateTotalCashSavingsEgp({
@@ -497,9 +657,11 @@ class ZakatEngineService {
     return savings
         .where((Saving s) => normaliseAssetType(s.assetType) == 'cash')
         .fold<double>(0, (double sum, Saving s) {
-      final double amount = s.remainingAmount.isFinite ? s.remainingAmount : s.amount;
-      return sum + convertToEgp(amount, s.unit, marketData);
-    });
+          final double amount = s.remainingAmount.isFinite
+              ? s.remainingAmount
+              : s.amount;
+          return sum + convertToEgp(amount, s.unit, marketData);
+        });
   }
 
   static double calculateTotalGoldSavingsGrams({
@@ -508,9 +670,11 @@ class ZakatEngineService {
     return savings
         .where((Saving s) => normaliseAssetType(s.assetType) == 'gold')
         .fold<double>(0, (double sum, Saving s) {
-      final double amount = s.remainingAmount.isFinite ? s.remainingAmount : s.amount;
-      return sum + convertToGold24k(amount, s.unit);
-    });
+          final double amount = s.remainingAmount.isFinite
+              ? s.remainingAmount
+              : s.amount;
+          return sum + convertToGold24k(amount, s.unit);
+        });
   }
 
   static double calculateTotalSilverSavingsGrams({
@@ -519,9 +683,11 @@ class ZakatEngineService {
     return savings
         .where((Saving s) => normaliseAssetType(s.assetType) == 'silver')
         .fold<double>(0, (double sum, Saving s) {
-      final double amount = s.remainingAmount.isFinite ? s.remainingAmount : s.amount;
-      return sum + convertToSilverGrams(amount);
-    });
+          final double amount = s.remainingAmount.isFinite
+              ? s.remainingAmount
+              : s.amount;
+          return sum + convertToSilverGrams(amount);
+        });
   }
 
   static double calculateTotalPropertyAssetsEgp({
@@ -529,10 +695,18 @@ class ZakatEngineService {
     required MarketData marketData,
   }) {
     return investments
-        .where((InvestmentAsset asset) => normaliseInvestmentType(asset.investmentType) != 'company_investment')
+        .where(
+          (InvestmentAsset asset) =>
+              normaliseInvestmentType(asset.investmentType) !=
+              'company_investment',
+        )
         .fold<double>(0, (double sum, InvestmentAsset asset) {
-      return sum + calculateInvestmentEstimatedValueEgp(asset: asset, marketData: marketData);
-    });
+          return sum +
+              calculateInvestmentEstimatedValueEgp(
+                asset: asset,
+                marketData: marketData,
+              );
+        });
   }
 
   static double calculateTotalCompanyInvestmentsEgp({
@@ -540,10 +714,18 @@ class ZakatEngineService {
     required MarketData marketData,
   }) {
     return investments
-        .where((InvestmentAsset asset) => normaliseInvestmentType(asset.investmentType) == 'company_investment')
+        .where(
+          (InvestmentAsset asset) =>
+              normaliseInvestmentType(asset.investmentType) ==
+              'company_investment',
+        )
         .fold<double>(0, (double sum, InvestmentAsset asset) {
-      return sum + calculateInvestmentEstimatedValueEgp(asset: asset, marketData: marketData);
-    });
+          return sum +
+              calculateInvestmentEstimatedValueEgp(
+                asset: asset,
+                marketData: marketData,
+              );
+        });
   }
 
   static double calculateTotalInvestmentLoanBalancesEgp({
@@ -551,8 +733,11 @@ class ZakatEngineService {
     required MarketData marketData,
   }) {
     return investments.fold<double>(0, (double sum, InvestmentAsset asset) {
-      final double nativeLoan = asset.loanBalance.isFinite ? asset.loanBalance : asset.remainingAmount;
-      return sum + convertToEgp(math.max(0, nativeLoan), asset.currency, marketData);
+      final double nativeLoan = asset.loanBalance.isFinite
+          ? asset.loanBalance
+          : asset.remainingAmount;
+      return sum +
+          convertToEgp(math.max(0, nativeLoan), asset.currency, marketData);
     });
   }
 
@@ -563,9 +748,14 @@ class ZakatEngineService {
     required MarketData marketData,
   }) {
     final double investmentDebt = calculateTotalInvestmentLoanBalancesEgp(
-        investments: investments, marketData: marketData);
+      investments: investments,
+      marketData: marketData,
+    );
     final double walletBalance = calculateWalletBalance(
-        transactions: transactions, savings: savings, marketData: marketData);
+      transactions: transactions,
+      savings: savings,
+      marketData: marketData,
+    );
     final double walletOverdraft = math.max(0, -walletBalance);
     return investmentDebt + walletOverdraft;
   }
@@ -577,10 +767,11 @@ class ZakatEngineService {
     required MarketData marketData,
   }) {
     return calculateTotalWealthEgp(
-        transactions: transactions,
-        savings: savings,
-        investments: investments,
-        marketData: marketData);
+      transactions: transactions,
+      savings: savings,
+      investments: investments,
+      marketData: marketData,
+    );
   }
 
   static double calculateNetWorthEgp({
@@ -590,15 +781,17 @@ class ZakatEngineService {
     required MarketData marketData,
   }) {
     return calculateTotalAssetsEgp(
-            transactions: transactions,
-            savings: savings,
-            investments: investments,
-            marketData: marketData) -
+          transactions: transactions,
+          savings: savings,
+          investments: investments,
+          marketData: marketData,
+        ) -
         calculateTotalLiabilitiesEgp(
-            transactions: transactions,
-            savings: savings,
-            investments: investments,
-            marketData: marketData);
+          transactions: transactions,
+          savings: savings,
+          investments: investments,
+          marketData: marketData,
+        );
   }
 
   static MarketData getMarketDataAtDate(MarketData marketData) {
@@ -619,7 +812,8 @@ class ZakatEngineService {
     required MarketData marketData,
     MarketData? ratesOverride,
   }) {
-    final MarketData ratesAtDate = ratesOverride ?? getMarketDataAtDate(marketData);
+    final MarketData ratesAtDate =
+        ratesOverride ?? getMarketDataAtDate(marketData);
 
     double convertToEgpAt(double amount, String currency) {
       if (currency == 'USD') return amount * ratesAtDate.usdToEgp;
@@ -629,60 +823,88 @@ class ZakatEngineService {
 
     final DateTime asOfDate = _dateOnlyDateTime(asOf);
 
-    final double walletEgp = supportedCurrencies.fold<double>(0, (double sum, String currency) {
-      final double txnBalance = transactions.where((Transaction tx) {
-        return tx.currency == currency && _dateOnly(tx.date).compareTo(asOfDate) <= 0;
-      }).fold<double>(0, (double s, Transaction tx) {
-        if (tx.type == 'income') {
-          final double rolledAmount = tx.rolledAmount ?? 0;
-          final double effectiveIncome = tx.rolledOver ? math.max(0, tx.amount - rolledAmount) : tx.amount;
-          return s + effectiveIncome;
-        }
-        return s - tx.amount;
-      });
+    final double walletEgp = supportedCurrencies.fold<double>(0, (
+      double sum,
+      String currency,
+    ) {
+      final double txnBalance = transactions
+          .where((Transaction tx) {
+            return tx.currency == currency &&
+                _dateOnly(tx.date).compareTo(asOfDate) <= 0;
+          })
+          .fold<double>(0, (double s, Transaction tx) {
+            if (tx.type == 'income') {
+              final double rolledAmount = tx.rolledAmount ?? 0;
+              final double effectiveIncome = tx.rolledOver
+                  ? math.max(0, tx.amount - rolledAmount)
+                  : tx.amount;
+              return s + effectiveIncome;
+            }
+            return s - tx.amount;
+          });
       return sum + convertToEgpAt(txnBalance, currency);
     });
 
-    final double cashEgp = savings.where((Saving s) {
-      return normaliseAssetType(s.assetType) == 'cash' &&
-          _dateOnly(s.dateAcquired).compareTo(asOfDate) <= 0;
-    }).fold<double>(0, (double s, Saving sv) {
-      final double amount = sv.remainingAmount.isFinite ? sv.remainingAmount : sv.amount;
-      return s + convertToEgpAt(amount, sv.unit);
-    });
+    final double cashEgp = savings
+        .where((Saving s) {
+          return normaliseAssetType(s.assetType) == 'cash' &&
+              _dateOnly(s.dateAcquired).compareTo(asOfDate) <= 0;
+        })
+        .fold<double>(0, (double s, Saving sv) {
+          final double amount = sv.remainingAmount.isFinite
+              ? sv.remainingAmount
+              : sv.amount;
+          return s + convertToEgpAt(amount, sv.unit);
+        });
 
-    final double gold24k = savings.where((Saving s) {
-      return normaliseAssetType(s.assetType) == 'gold' &&
-          _dateOnly(s.dateAcquired).compareTo(asOfDate) <= 0;
-    }).fold<double>(0, (double s, Saving sv) {
-      final double amount = sv.remainingAmount.isFinite ? sv.remainingAmount : sv.amount;
-      return s + convertToGold24k(amount, sv.unit);
-    });
+    final double gold24k = savings
+        .where((Saving s) {
+          return normaliseAssetType(s.assetType) == 'gold' &&
+              _dateOnly(s.dateAcquired).compareTo(asOfDate) <= 0;
+        })
+        .fold<double>(0, (double s, Saving sv) {
+          final double amount = sv.remainingAmount.isFinite
+              ? sv.remainingAmount
+              : sv.amount;
+          return s + convertToGold24k(amount, sv.unit);
+        });
 
     final double goldEgp = gold24k * ratesAtDate.goldPrice24kEgp;
 
-    final double silverGrams = savings.where((Saving s) {
-      return normaliseAssetType(s.assetType) == 'silver' &&
-          _dateOnly(s.dateAcquired).compareTo(asOfDate) <= 0;
-    }).fold<double>(0, (double s, Saving sv) {
-      final double amount = sv.remainingAmount.isFinite ? sv.remainingAmount : sv.amount;
-      return s + convertToSilverGrams(amount);
-    });
+    final double silverGrams = savings
+        .where((Saving s) {
+          return normaliseAssetType(s.assetType) == 'silver' &&
+              _dateOnly(s.dateAcquired).compareTo(asOfDate) <= 0;
+        })
+        .fold<double>(0, (double s, Saving sv) {
+          final double amount = sv.remainingAmount.isFinite
+              ? sv.remainingAmount
+              : sv.amount;
+          return s + convertToSilverGrams(amount);
+        });
 
-    final double silverEgp = silverGrams *
+    final double silverEgp =
+        silverGrams *
         ((ratesAtDate.silverPriceEgp != 0)
             ? ratesAtDate.silverPriceEgp
             : marketData.silverPriceEgp);
 
-    final double investmentsEgp = investments.where((InvestmentAsset asset) {
-      if (asset.valuationDate.isEmpty) return false;
-      final DateTime? valuationDate = _tryDate(asset.valuationDate);
-      return valuationDate != null && valuationDate.compareTo(asOfDate) <= 0;
-    }).fold<double>(0, (double sum, InvestmentAsset asset) {
-      return sum + asset.estimatedCurrentValue;
-    });
+    final double investmentsEgp = investments
+        .where((InvestmentAsset asset) {
+          if (asset.valuationDate.isEmpty) return false;
+          final DateTime? valuationDate = _tryDate(asset.valuationDate);
+          return valuationDate != null &&
+              valuationDate.compareTo(asOfDate) <= 0;
+        })
+        .fold<double>(0, (double sum, InvestmentAsset asset) {
+          return sum + asset.estimatedCurrentValue;
+        });
 
-    return math.max(0, walletEgp) + cashEgp + goldEgp + silverEgp + investmentsEgp;
+    return math.max(0, walletEgp) +
+        cashEgp +
+        goldEgp +
+        silverEgp +
+        investmentsEgp;
   }
 
   static List<Map<String, dynamic>> getNetIncomeLots({
@@ -696,9 +918,11 @@ class ZakatEngineService {
         final int dateComp = ad.compareTo(bd);
         if (dateComp != 0) return dateComp;
 
-        final DateTime ac = _tryDateTime(a.createdAt) ??
+        final DateTime ac =
+            _tryDateTime(a.createdAt) ??
             DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
-        final DateTime bc = _tryDateTime(b.createdAt) ??
+        final DateTime bc =
+            _tryDateTime(b.createdAt) ??
             DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
         final int createdComp = ac.compareTo(bc);
         if (createdComp != 0) return createdComp;
@@ -714,8 +938,11 @@ class ZakatEngineService {
       if (tx.type == 'income') {
         double effectiveAmountEgp;
         if (tx.rolledOver && tx.rolledAmount != null) {
-          effectiveAmountEgp =
-              convertToEgp(tx.amount - tx.rolledAmount!, tx.currency, marketData);
+          effectiveAmountEgp = convertToEgp(
+            tx.amount - tx.rolledAmount!,
+            tx.currency,
+            marketData,
+          );
           if (effectiveAmountEgp < minAmount) continue;
         } else {
           effectiveAmountEgp = amountEgp;
@@ -732,23 +959,27 @@ class ZakatEngineService {
         double toDeduct = amountEgp;
 
         if (tx.sourceIncomeId != null && tx.sourceIncomeId!.isNotEmpty) {
-          final int idx =
-              lots.indexWhere((Map<String, dynamic> lot) => lot['id'] == tx.sourceIncomeId);
+          final int idx = lots.indexWhere(
+            (Map<String, dynamic> lot) => lot['id'] == tx.sourceIncomeId,
+          );
           if (idx != -1) {
             final Map<String, dynamic> linkedLot = lots[idx];
             final double linkedRemain = _asDouble(linkedLot['remainingAmount']);
             final double linkedDeduction = math.min(linkedRemain, toDeduct);
-            linkedLot['remainingAmount'] = _round6(linkedRemain - linkedDeduction);
+            linkedLot['remainingAmount'] = _round6(
+              linkedRemain - linkedDeduction,
+            );
             toDeduct = _round6(toDeduct - linkedDeduction);
           }
         }
 
-        for (final Map<String, dynamic> lot in lots) {
+        for (int i = lots.length - 1; i >= 0 && toDeduct > 0; i--) {
+          final Map<String, dynamic> lot = lots[i];
           if (toDeduct <= 0) break;
           final double lotRemaining = _asDouble(lot['remainingAmount']);
           final double deduction = math.min(lotRemaining, toDeduct);
-          lot['remainingAmount'] = lotRemaining - deduction;
-          toDeduct -= deduction;
+          lot['remainingAmount'] = _round6(lotRemaining - deduction);
+          toDeduct = _round6(toDeduct - deduction);
         }
       }
     }
@@ -758,21 +989,34 @@ class ZakatEngineService {
 
   static List<ZakatScheduleEntry> calculateMonthlyZakatSchedule({
     required List<Transaction> transactions,
+    List<Saving> savings = const <Saving>[],
     required MarketData marketData,
     DateTime? now,
   }) {
-    final List<Map<String, dynamic>> lots =
-        getNetIncomeLots(transactions: transactions, marketData: marketData);
-    final double nisabValueEgp = defaultConfig.nisabGoldGrams * marketData.goldPrice24kEgp;
+    final List<Map<String, dynamic>> lots = getNetIncomeLots(
+      transactions: transactions,
+      marketData: marketData,
+    );
+    if (!_combinedPortfolioMeetsNisab(
+      lots: lots,
+      savings: savings,
+      marketData: marketData,
+    )) {
+      return const <ZakatScheduleEntry>[];
+    }
     final DateTime today = now ?? DateTime.now();
-    final DateTime futureLimit = DateTime(today.year + 3, today.month, today.day);
+    final DateTime futureLimit = DateTime(
+      today.year + 3,
+      today.month,
+      today.day,
+    );
 
-    final Map<String, _ScheduleAccumulator> byMonth = <String, _ScheduleAccumulator>{};
+    final Map<String, _ScheduleAccumulator> byMonth =
+        <String, _ScheduleAccumulator>{};
 
     for (final Map<String, dynamic> lot in lots) {
       final double remainingAmount = _asDouble(lot['remainingAmount']);
       if (remainingAmount < 0.01) continue;
-      if (remainingAmount < nisabValueEgp) continue;
 
       final DateTime lotDate = _dateOnly(lot['date'].toString());
 
@@ -781,7 +1025,11 @@ class ZakatEngineService {
         final DateTime dueDateRaw = lotDate.add(Duration(days: daysRequired));
         if (dueDateRaw.isAfter(futureLimit)) break;
 
-        final DateTime paymentDate = DateTime(dueDateRaw.year, dueDateRaw.month, 1);
+        final DateTime paymentDate = DateTime(
+          dueDateRaw.year,
+          dueDateRaw.month,
+          1,
+        );
         final String monthKey = _monthKey(paymentDate);
 
         byMonth.putIfAbsent(
@@ -791,7 +1039,9 @@ class ZakatEngineService {
             paymentDate: _yyyyMmDd(paymentDate),
             totalZakat: 0,
             isPast: paymentDate.isBefore(today),
-            isCurrentMonth: paymentDate.year == today.year && paymentDate.month == today.month,
+            isCurrentMonth:
+                paymentDate.year == today.year &&
+                paymentDate.month == today.month,
             entries: <Map<String, dynamic>>[],
           ),
         );
@@ -810,92 +1060,118 @@ class ZakatEngineService {
       }
     }
 
-    final List<ZakatScheduleEntry> result = byMonth.values
-        .map((acc) => acc.toScheduleEntry())
-        .toList()
-      ..sort((ZakatScheduleEntry a, ZakatScheduleEntry b) =>
-          a.monthKey.compareTo(b.monthKey));
+    final List<ZakatScheduleEntry> result =
+        byMonth.values.map((acc) => acc.toScheduleEntry()).toList()..sort(
+          (ZakatScheduleEntry a, ZakatScheduleEntry b) =>
+              a.monthKey.compareTo(b.monthKey),
+        );
 
     return result;
   }
 
   static List<ZakatScheduleEntry> calculateSavingsZakatSchedule({
     required List<Saving> savings,
+    List<Transaction> transactions = const <Transaction>[],
     required MarketData marketData,
     DateTime? now,
   }) {
-    final NisabTotals nisabTotals =
-        computeNisabTotals(savings: savings, marketData: marketData);
-    final bool portfolioMeetsNisab =
-        checkCashNisab(nisabTotals.totalSavingsWealthEgp, marketData);
-    if (!portfolioMeetsNisab) return const <ZakatScheduleEntry>[];
+    final List<Map<String, dynamic>> lots = getNetIncomeLots(
+      transactions: transactions,
+      marketData: marketData,
+    );
+    if (!_combinedPortfolioMeetsNisab(
+      lots: lots,
+      savings: savings,
+      marketData: marketData,
+    )) {
+      return const <ZakatScheduleEntry>[];
+    }
 
     final DateTime today = now ?? DateTime.now();
-    final DateTime futureLimit = DateTime(today.year + 3, today.month, today.day);
+    final DateTime futureLimit = DateTime(
+      today.year + 3,
+      today.month,
+      today.day,
+    );
 
-    final Map<String, _ScheduleAccumulator> byMonth = <String, _ScheduleAccumulator>{};
+    final Map<String, _ScheduleAccumulator> byMonth =
+        <String, _ScheduleAccumulator>{};
 
     for (final Saving saving in savings) {
       final String assetType = normaliseAssetType(saving.assetType);
 
-      double zakatValueEgp = 0;
-      if (assetType == 'cash') {
-        zakatValueEgp =
-            convertToEgp(saving.remainingAmount, saving.unit, marketData) * defaultConfig.zakatRate;
-      } else if (assetType == 'gold') {
-        zakatValueEgp = convertToGold24k(saving.remainingAmount, saving.unit) *
-            defaultConfig.zakatRate *
-            marketData.goldPrice24kEgp;
-      } else if (assetType == 'silver') {
-        zakatValueEgp = convertToSilverGrams(saving.remainingAmount) *
-            defaultConfig.zakatRate *
-            marketData.silverPriceEgp;
-      }
-      if (zakatValueEgp < 0.01) continue;
+      for (final _SavingZakatSegment segment in _savingZakatSegments(saving)) {
+        double zakatValueEgp = 0;
+        if (assetType == 'cash') {
+          zakatValueEgp =
+              convertToEgp(segment.amount, saving.unit, marketData) *
+              defaultConfig.zakatRate;
+        } else if (assetType == 'gold') {
+          zakatValueEgp =
+              convertToGold24k(segment.amount, saving.unit) *
+              defaultConfig.zakatRate *
+              marketData.goldPrice24kEgp;
+        } else if (assetType == 'silver') {
+          zakatValueEgp =
+              convertToSilverGrams(segment.amount) *
+              defaultConfig.zakatRate *
+              marketData.silverPriceEgp;
+        }
+        if (zakatValueEgp < 0.01) continue;
 
-      final DateTime savingDate = _dateOnly(saving.dateAcquired);
+        final DateTime savingDate = _dateOnly(segment.date);
 
-      for (int year = 1; year <= 30; year++) {
-        final int daysRequired = year * defaultConfig.nisabDays;
-        final DateTime dueDateRaw = savingDate.add(Duration(days: daysRequired));
-        if (dueDateRaw.isAfter(futureLimit)) break;
+        for (int year = 1; year <= 30; year++) {
+          final int daysRequired = year * defaultConfig.nisabDays;
+          final DateTime dueDateRaw = savingDate.add(
+            Duration(days: daysRequired),
+          );
+          if (dueDateRaw.isAfter(futureLimit)) break;
 
-        final DateTime paymentDate = DateTime(dueDateRaw.year, dueDateRaw.month, 1);
-        final String monthKey = _monthKey(paymentDate);
+          final DateTime paymentDate = DateTime(
+            dueDateRaw.year,
+            dueDateRaw.month,
+            1,
+          );
+          final String monthKey = _monthKey(paymentDate);
 
-        byMonth.putIfAbsent(
-          monthKey,
-          () => _ScheduleAccumulator(
-            monthKey: monthKey,
-            paymentDate: _yyyyMmDd(paymentDate),
-            totalZakat: 0,
-            isPast: paymentDate.isBefore(today),
-            isCurrentMonth: paymentDate.year == today.year && paymentDate.month == today.month,
-            entries: <Map<String, dynamic>>[],
-          ),
-        );
+          byMonth.putIfAbsent(
+            monthKey,
+            () => _ScheduleAccumulator(
+              monthKey: monthKey,
+              paymentDate: _yyyyMmDd(paymentDate),
+              totalZakat: 0,
+              isPast: paymentDate.isBefore(today),
+              isCurrentMonth:
+                  paymentDate.year == today.year &&
+                  paymentDate.month == today.month,
+              entries: <Map<String, dynamic>>[],
+            ),
+          );
 
-        final _ScheduleAccumulator acc = byMonth[monthKey]!;
-        acc.totalZakat += zakatValueEgp;
-        acc.entries.add(<String, dynamic>{
-          'type': 'savings',
-          'savingDate': saving.dateAcquired,
-          'assetType': assetType,
-          'amount': saving.remainingAmount,
-          'unit': saving.unit,
-          'description': saving.description,
-          'year': year,
-          'zakatAmount': zakatValueEgp,
-          'dueDateRaw': _yyyyMmDd(dueDateRaw),
-        });
+          final _ScheduleAccumulator acc = byMonth[monthKey]!;
+          acc.totalZakat += zakatValueEgp;
+          acc.entries.add(<String, dynamic>{
+            'type': 'savings',
+            'savingDate': segment.date,
+            'assetType': assetType,
+            'amount': segment.amount,
+            'unit': saving.unit,
+            'description': saving.description,
+            'fundingSourceId': segment.sourceId,
+            'year': year,
+            'zakatAmount': zakatValueEgp,
+            'dueDateRaw': _yyyyMmDd(dueDateRaw),
+          });
+        }
       }
     }
 
-    final List<ZakatScheduleEntry> result = byMonth.values
-        .map((acc) => acc.toScheduleEntry())
-        .toList()
-      ..sort((ZakatScheduleEntry a, ZakatScheduleEntry b) =>
-          a.monthKey.compareTo(b.monthKey));
+    final List<ZakatScheduleEntry> result =
+        byMonth.values.map((acc) => acc.toScheduleEntry()).toList()..sort(
+          (ZakatScheduleEntry a, ZakatScheduleEntry b) =>
+              a.monthKey.compareTo(b.monthKey),
+        );
 
     return result;
   }
@@ -916,26 +1192,39 @@ class ZakatEngineService {
     final int? hm = int.tryParse(parts[0]);
     final int? hd = int.tryParse(parts[1]);
 
-    if (hm == null || hd == null || hm < 1 || hm > 12 || hd < 1 || hd > hijriMonthLength(hm)) {
+    if (hm == null ||
+        hd == null ||
+        hm < 1 ||
+        hm > 12 ||
+        hd < 1 ||
+        hd > hijriMonthLength(hm)) {
       return const <ZakatScheduleEntry>[];
     }
 
     final DateTime today = now ?? DateTime.now();
     final HijriDate todayH = gregorianToHijri(today);
-    final double nisabValueEgp = defaultConfig.nisabGoldGrams * marketData.goldPrice24kEgp;
+    final double nisabValueEgp =
+        defaultConfig.nisabGoldGrams * marketData.goldPrice24kEgp;
 
-    final Map<String, ZakatScheduleEntry> byMonth = <String, ZakatScheduleEntry>{};
+    final Map<String, ZakatScheduleEntry> byMonth =
+        <String, ZakatScheduleEntry>{};
 
     for (int offset = -3; offset <= 2; offset++) {
       final int hy = todayH.year + offset;
       if (hy < 1) continue;
 
       final DateTime dueGreg = hijriToGregorian(hy, hm, hd);
-      final DateTime payDate = DateTime(dueGreg.year, dueGreg.month, 1);
-      final String monthKey = _monthKey(dueGreg);
+      final DateTime dueDate = DateTime(
+        dueGreg.year,
+        dueGreg.month,
+        dueGreg.day,
+      );
+      final DateTime todayDate = DateTime(today.year, today.month, today.day);
+      final String dateKey = _yyyyMmDd(dueDate);
+      final String hijriDate = _hijriDateKey(hy, hm, hd);
 
       final double totalWealthEgpAtDate = calculateTotalWealthEgpAt(
-        asOf: payDate,
+        asOf: dueDate,
         transactions: transactions,
         savings: savings,
         investments: investments,
@@ -946,34 +1235,36 @@ class ZakatEngineService {
 
       final double zakatAmount = totalWealthEgpAtDate * defaultConfig.zakatRate;
 
-      byMonth[monthKey] = ZakatScheduleEntry(
-        monthKey: monthKey,
-        paymentDate: _yyyyMmDd(payDate),
+      byMonth[dateKey] = ZakatScheduleEntry(
+        monthKey: dateKey,
+        paymentDate: dateKey,
         totalZakat: zakatAmount,
         totalWealth: totalWealthEgpAtDate,
         hijriYear: hy,
         hijriMonth: hm,
         hijriDay: hd,
-        isPast: payDate.isBefore(today) &&
-            !(payDate.year == today.year && payDate.month == today.month),
-        isCurrentMonth: payDate.year == today.year && payDate.month == today.month,
+        isPast: dueDate.isBefore(todayDate),
+        isCurrentMonth: dueDate.isAtSameMomentAs(todayDate),
         entries: <Map<String, dynamic>>[
           <String, dynamic>{
             'type': 'annual',
             'totalWealth': totalWealthEgpAtDate,
             'zakatAmount': zakatAmount,
-            'dueDateRaw': _yyyyMmDd(dueGreg),
+            'dueDateRaw': dateKey,
             'hijriYear': hy,
             'hijriMonth': hm,
             'hijriDay': hd,
-          }
+            'hijriDate': hijriDate,
+          },
         ],
       );
     }
 
     final List<ZakatScheduleEntry> result = byMonth.values.toList()
-      ..sort((ZakatScheduleEntry a, ZakatScheduleEntry b) =>
-          a.monthKey.compareTo(b.monthKey));
+      ..sort(
+        (ZakatScheduleEntry a, ZakatScheduleEntry b) =>
+            a.monthKey.compareTo(b.monthKey),
+      );
 
     return result;
   }
@@ -993,10 +1284,15 @@ class ZakatEngineService {
     );
 
     return schedule
-        .where((ZakatScheduleEntry m) =>
-            m.monthKey.compareTo(currentMonthKey) <= 0 &&
-            !zakatPaidMonths.contains(m.monthKey))
-        .fold<double>(0, (double sum, ZakatScheduleEntry m) => sum + m.totalZakat);
+        .where(
+          (ZakatScheduleEntry m) =>
+              m.monthKey.compareTo(currentMonthKey) <= 0 &&
+              !zakatPaidMonths.contains(m.monthKey),
+        )
+        .fold<double>(
+          0,
+          (double sum, ZakatScheduleEntry m) => sum + m.totalZakat,
+        );
   }
 
   static HijriDate gregorianToHijri(DateTime date) {
@@ -1007,7 +1303,8 @@ class ZakatEngineService {
     final int a = ((14 - gm) / 12).floor();
     final int y = gy + 4800 - a;
     final int m = gm + 12 * a - 3;
-    final int jd = gd +
+    final int jd =
+        gd +
         ((153 * m + 2) / 5).floor() +
         365 * y +
         (y / 4).floor() -
@@ -1018,9 +1315,11 @@ class ZakatEngineService {
     final int l = jd - 1948440 + 10632;
     final int n = ((l - 1) / 10631).floor();
     final int l2 = l - 10631 * n + 354;
-    final int j = (((10985 - l2) / 5316).floor() * ((50 * l2) / 17719).floor()) +
+    final int j =
+        (((10985 - l2) / 5316).floor() * ((50 * l2) / 17719).floor()) +
         ((l2 / 5670).floor() * ((43 * l2) / 15238).floor());
-    final int l3 = l2 -
+    final int l3 =
+        l2 -
         (((30 - j) / 15).floor() * ((17719 * j) / 50).floor()) -
         ((j / 16).floor() * ((15238 * j) / 43).floor()) +
         29;
@@ -1032,7 +1331,8 @@ class ZakatEngineService {
   }
 
   static DateTime hijriToGregorian(int hy, int hm, int hd) {
-    final int jd = ((11 * hy + 3) / 30).floor() +
+    final int jd =
+        ((11 * hy + 3) / 30).floor() +
         354 * hy +
         30 * hm -
         ((hm - 1) / 2).floor() +
@@ -1094,12 +1394,108 @@ class ZakatEngineService {
     return '${date.year}-$m-$d';
   }
 
+  static String _hijriDateKey(int year, int month, int day) {
+    final String m = month.toString().padLeft(2, '0');
+    final String d = day.toString().padLeft(2, '0');
+    return '$year-$m-$d';
+  }
+
   static double _asDouble(dynamic value) {
     if (value is num) return value.toDouble();
     return double.tryParse(value?.toString() ?? '') ?? 0;
   }
 
   static double _round6(double v) => (v * 1000000).roundToDouble() / 1000000;
+
+  static bool _combinedPortfolioMeetsNisab({
+    required List<Map<String, dynamic>> lots,
+    required List<Saving> savings,
+    required MarketData marketData,
+  }) {
+    final NisabTotals totals = computeNisabTotals(
+      savings: savings,
+      marketData: marketData,
+    );
+    final double incomeCashEgp = lots.fold<double>(
+      0,
+      (double sum, Map<String, dynamic> lot) =>
+          sum + _asDouble(lot['remainingAmount']),
+    );
+    return checkCashNisab(
+      totals.totalSavingsWealthEgp + incomeCashEgp,
+      marketData,
+    );
+  }
+
+  static List<_SavingZakatSegment> _savingZakatSegments(Saving saving) {
+    final String type = normaliseAssetType(saving.assetType);
+    if ((type != 'gold' && type != 'silver') ||
+        saving.fundingAllocations.isEmpty) {
+      return <_SavingZakatSegment>[
+        _SavingZakatSegment(
+          date: saving.dateAcquired,
+          amount: saving.remainingAmount,
+          sourceId: null,
+        ),
+      ];
+    }
+
+    final double totalFunding = saving.fundingAllocations.fold<double>(
+      0,
+      (double sum, Map<String, dynamic> allocation) =>
+          sum + _asDouble(allocation['amount']),
+    );
+    if (totalFunding <= 0 || saving.purchaseAmount <= 0) {
+      return <_SavingZakatSegment>[
+        _SavingZakatSegment(
+          date: saving.dateAcquired,
+          amount: saving.remainingAmount,
+          sourceId: null,
+        ),
+      ];
+    }
+
+    final List<_SavingZakatSegment> segments = <_SavingZakatSegment>[];
+    double allocatedMetal = 0;
+    for (final Map<String, dynamic> allocation in saving.fundingAllocations) {
+      final double fundingAmount = _asDouble(allocation['amount']);
+      if (fundingAmount <= 0) continue;
+      final double metalAmount =
+          saving.remainingAmount * (fundingAmount / totalFunding);
+      allocatedMetal += metalAmount;
+      segments.add(
+        _SavingZakatSegment(
+          date: (allocation['sourceDate'] ?? saving.dateAcquired).toString(),
+          amount: metalAmount,
+          sourceId: allocation['sourceId']?.toString(),
+        ),
+      );
+    }
+
+    final double residual = saving.remainingAmount - allocatedMetal;
+    if (residual > minAmount) {
+      segments.add(
+        _SavingZakatSegment(
+          date: saving.dateAcquired,
+          amount: residual,
+          sourceId: null,
+        ),
+      );
+    }
+    return segments;
+  }
+}
+
+class _SavingZakatSegment {
+  const _SavingZakatSegment({
+    required this.date,
+    required this.amount,
+    required this.sourceId,
+  });
+
+  final String date;
+  final double amount;
+  final String? sourceId;
 }
 
 class _ScheduleAccumulator {

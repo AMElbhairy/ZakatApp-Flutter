@@ -180,7 +180,13 @@ class _AddFinancialPlanScreenState extends State<AddFinancialPlanScreen> {
                   items: ZakatEngineService.supportedCurrencies
                       .map((String currency) => DropdownMenuItem<String>(
                             value: currency,
-                            child: Text(currency),
+                            child: Text(ZakatEngineService.getCurrencySymbol(
+                              currency,
+                              isArabic: Localizations.localeOf(context)
+                                      .languageCode
+                                      .toLowerCase() ==
+                                  'ar',
+                            )),
                           ))
                       .toList(growable: false),
                   validator: (String? value) {

@@ -14,6 +14,9 @@ import 'package:zakatapp_flutter/services/google_drive_service.dart';
 import 'package:zakatapp_flutter/services/local_storage_service.dart';
 
 class _FakeAuthService implements AuthService {
+  @override
+  Future<bool> ensureSession() async => true;
+
   _FakeAuthService({this.user});
 
   final UserProfile? user;
@@ -36,7 +39,8 @@ class _FakeGoogleDriveService extends GoogleDriveService {
   int uploadCalls = 0;
 
   @override
-  Future<DriveBackupFile?> fetchLatestBackup(String accessToken) async => latest;
+  Future<DriveBackupFile?> fetchLatestBackup(String accessToken) async =>
+      latest;
 
   @override
   Future<DriveBackupFile?> uploadBackup({
@@ -50,11 +54,13 @@ class _FakeGoogleDriveService extends GoogleDriveService {
       name: GoogleDriveService.backupFileName,
       rawJson: jsonString,
       backupCreatedAt: DateTime.parse(
-        (jsonDecode(jsonString) as Map<String, dynamic>)['cloudBackupMetadata']['createdAt']
+        (jsonDecode(jsonString)
+                as Map<String, dynamic>)['cloudBackupMetadata']['createdAt']
             as String,
       ).toUtc(),
       backupUpdatedAt: DateTime.parse(
-        (jsonDecode(jsonString) as Map<String, dynamic>)['cloudBackupMetadata']['updatedAt']
+        (jsonDecode(jsonString)
+                as Map<String, dynamic>)['cloudBackupMetadata']['updatedAt']
             as String,
       ).toUtc(),
     );
@@ -84,8 +90,14 @@ Transaction _tx(String id) {
   );
 }
 
-Future<({AppStateController appState, AuthController auth, CloudBackupController cloud})>
-    _buildControllers({
+Future<
+  ({
+    AppStateController appState,
+    AuthController auth,
+    CloudBackupController cloud,
+  })
+>
+_buildControllers({
   required _FakeGoogleDriveService driveService,
   UserProfile? user,
   Duration? autoBackupDelay,
@@ -136,6 +148,9 @@ void main() {
     await controllers.appState.addTransaction(_tx('tx1'));
     final bool ok = await controllers.cloud.backupNow();
 
+    debugPrint(
+      'ok: $ok, err: ${controllers.cloud.lastError}, status: ${controllers.cloud.statusMessage}',
+    );
     expect(ok, isTrue);
     final Map<String, dynamic> payload =
         jsonDecode(driveService.uploadedJson!) as Map<String, dynamic>;
@@ -185,6 +200,9 @@ void main() {
     await controllers.cloud.refreshCloudState();
     final bool ok = await controllers.cloud.restoreLatestBackup();
 
+    debugPrint(
+      'ok: $ok, err: ${controllers.cloud.lastError}, status: ${controllers.cloud.statusMessage}',
+    );
     expect(ok, isTrue);
     expect(controllers.appState.state.transactions, hasLength(1));
     expect(controllers.appState.state.transactions.first.id, 'restored');
@@ -266,30 +284,33 @@ void main() {
     expect(driveService.uploadCalls, 1);
   });
 
-  test('background pause uploads immediately when pending changes exist', () async {
-    final _FakeGoogleDriveService driveService = _FakeGoogleDriveService();
-    final UserProfile user = const UserProfile(
-      id: 'u1',
-      email: 'a@example.com',
-      name: 'User',
-      accessToken: 'token',
-    );
-    final controllers = await _buildControllers(
-      driveService: driveService,
-      user: user,
-      autoBackupDelay: const Duration(minutes: 3),
-    );
+  test(
+    'background pause uploads immediately when pending changes exist',
+    () async {
+      final _FakeGoogleDriveService driveService = _FakeGoogleDriveService();
+      final UserProfile user = const UserProfile(
+        id: 'u1',
+        email: 'a@example.com',
+        name: 'User',
+        accessToken: 'token',
+      );
+      final controllers = await _buildControllers(
+        driveService: driveService,
+        user: user,
+        autoBackupDelay: const Duration(minutes: 3),
+      );
 
-    await controllers.auth.signIn();
-    await controllers.appState.addTransaction(_tx('tx1'));
+      await controllers.auth.signIn();
+      await controllers.appState.addTransaction(_tx('tx1'));
 
-    expect(controllers.cloud.hasPendingAutoBackup, isTrue);
-    expect(driveService.uploadCalls, 0);
+      expect(controllers.cloud.hasPendingAutoBackup, isTrue);
+      expect(driveService.uploadCalls, 0);
 
-    controllers.cloud.didChangeAppLifecycleState(AppLifecycleState.paused);
-    await Future<void>.delayed(const Duration(milliseconds: 20));
+      controllers.cloud.didChangeAppLifecycleState(AppLifecycleState.paused);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
 
-    expect(driveService.uploadCalls, 1);
-    expect(controllers.cloud.hasPendingAutoBackup, isFalse);
-  });
+      expect(driveService.uploadCalls, 1);
+      expect(controllers.cloud.hasPendingAutoBackup, isFalse);
+    },
+  );
 }

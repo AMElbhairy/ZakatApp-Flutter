@@ -19,10 +19,11 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
     BackupRestoreService? backupRestoreService,
     Duration? autoBackupDelay,
     this._appVersion = '1.0.0+1',
-  })  : _googleDriveService = googleDriveService ?? GoogleDriveService(),
-        _backupRestoreService =
-            backupRestoreService ?? BackupRestoreService(controller: appStateController),
-        _autoBackupDelay = autoBackupDelay ?? const Duration(minutes: 3) {
+  }) : _googleDriveService = googleDriveService ?? GoogleDriveService(),
+       _backupRestoreService =
+           backupRestoreService ??
+           BackupRestoreService(controller: appStateController),
+       _autoBackupDelay = autoBackupDelay ?? const Duration(minutes: 3) {
     appStateController.addListener(_onAppStateChanged);
     authController.addListener(_onAuthChanged);
     WidgetsBinding.instance.addObserver(this);
@@ -46,6 +47,7 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
   bool _cloudBackupNewerThanLocal = false;
   String? _lastObservedStateHash;
   String? _lastSignedInUserId;
+  Future<void>? _refreshCloudStateInFlight;
   String _statusMessage = '';
   String _lastError = '';
   DriveBackupFile? _latestBackup;
@@ -63,8 +65,7 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
   Duration get autoBackupDelay => _autoBackupDelay;
 
   Future<void> refreshCloudState({bool evaluatePrompt = true}) async {
-    final String? accessToken = _accessToken;
-    if (accessToken == null || accessToken.isEmpty) {
+    if (_accessToken == null || _accessToken!.isEmpty) {
       _latestBackup = null;
       _pendingRestorePrompt = false;
       _cloudBackupNewerThanLocal = false;
@@ -72,10 +73,37 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
       notifyListeners();
       return;
     }
-    if (_isChecking) return;
+    if (_refreshCloudStateInFlight != null) {
+      await _refreshCloudStateInFlight;
+      if (evaluatePrompt) {
+        _pendingRestorePrompt = _shouldPromptRestoreAfterSignIn(_latestBackup);
+        notifyListeners();
+      }
+      return;
+    }
+
+    final Future<void> refreshFuture = _performRefreshCloudState(
+      evaluatePrompt: evaluatePrompt,
+    );
+    _refreshCloudStateInFlight = refreshFuture;
+    await refreshFuture;
+  }
+
+  Future<void> _performRefreshCloudState({required bool evaluatePrompt}) async {
     _isChecking = true;
+    _statusMessage = 'Checking cloud backup...';
     notifyListeners();
     try {
+      if (!await authController.ensureSession()) {
+        debugPrint(
+          'CloudBackupController.refreshCloudState: ensureSession failed',
+        );
+        _statusMessage = 'Session expired. Please sign in again.';
+        return;
+      }
+      final String? accessToken = _accessToken;
+      if (accessToken == null) return;
+
       _latestBackup = await _googleDriveService.fetchLatestBackup(accessToken);
       _cloudBackupNewerThanLocal = _isCloudNewerThanLocal(_latestBackup);
       if (_latestBackup == null) {
@@ -93,18 +121,22 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
       _statusMessage = 'Failed to check cloud backup.';
     } finally {
       _isChecking = false;
+      _refreshCloudStateInFlight = null;
       notifyListeners();
     }
   }
 
-  Future<bool> backupNow({bool forceIfCloudNewer = false, bool automatic = false}) async {
-    final String? accessToken = _accessToken;
-    if (accessToken == null || accessToken.isEmpty) {
+  Future<bool> backupNow({
+    bool forceIfCloudNewer = false,
+    bool automatic = false,
+  }) async {
+    if (_accessToken == null || _accessToken!.isEmpty) {
       _statusMessage = 'Sign in to use Google Drive backup.';
       notifyListeners();
       return false;
     }
-    if (automatic && !BackupService.hasData(appStateController.state.toJson())) {
+    if (automatic &&
+        !BackupService.hasData(appStateController.state.toJson())) {
       return false;
     }
     if (_isBackingUp || _isRestoring) return false;
@@ -112,17 +144,28 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
     if (_latestBackup != null &&
         _isCloudNewerThanLocal(_latestBackup) &&
         !forceIfCloudNewer) {
-      _statusMessage = 'Cloud backup is newer than local data. Restore or confirm overwrite.';
+      _statusMessage =
+          'Cloud backup is newer than local data. Restore or confirm overwrite.';
       notifyListeners();
       return false;
     }
 
     _isBackingUp = true;
     _lastError = '';
-    _statusMessage = automatic ? 'Auto backup in progress...' : 'Backup in progress...';
+    _statusMessage = automatic
+        ? 'Auto backup in progress...'
+        : 'Backup in progress...';
     notifyListeners();
 
     try {
+      if (!await authController.ensureSession()) {
+        debugPrint('CloudBackupController.backupNow: ensureSession failed');
+        _statusMessage = 'Session expired. Please sign in again.';
+        return false;
+      }
+      final String? accessToken = _accessToken;
+      if (accessToken == null) return false;
+
       final DateTime now = DateTime.now().toUtc();
       final DateTime createdAt = _latestBackup?.backupCreatedAt ?? now;
       final Map<String, dynamic> appState = appStateController.state.toJson();
@@ -150,7 +193,9 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
       _hasPendingAutoBackup = false;
       _autoBackupTimer?.cancel();
       _cloudBackupNewerThanLocal = false;
-      _statusMessage = automatic ? 'Auto backup complete.' : 'Cloud backup completed.';
+      _statusMessage = automatic
+          ? 'Auto backup complete.'
+          : 'Cloud backup completed.';
       return true;
     } catch (error) {
       _lastError = error.toString();
@@ -164,11 +209,18 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<BackupPreview?> previewLatestBackup() async {
     final DriveBackupFile? latest = _latestBackup;
-    final String? accessToken = _accessToken;
-    if (latest == null || accessToken == null || accessToken.isEmpty) {
+    if (latest == null || _accessToken == null || _accessToken!.isEmpty) {
+      debugPrint(
+        'CloudBackupController.previewLatestBackup: latest=$latest, accessToken=$_accessToken',
+      );
       return null;
     }
-    final String? rawJson = latest.rawJson ??
+    if (!await authController.ensureSession()) return null;
+    final String? accessToken = _accessToken;
+    if (accessToken == null) return null;
+
+    final String? rawJson =
+        latest.rawJson ??
         await _googleDriveService.downloadBackupContent(
           accessToken: accessToken,
           fileId: latest.id,
@@ -179,20 +231,38 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<bool> restoreLatestBackup({bool allowOverwrite = true}) async {
     final DriveBackupFile? latest = _latestBackup;
-    final String? accessToken = _accessToken;
-    if (latest == null || accessToken == null || accessToken.isEmpty) {
+    if (latest == null || _accessToken == null || _accessToken!.isEmpty) {
+      debugPrint(
+        'CloudBackupController.restoreLatestBackup: latest=$latest, accessToken=$_accessToken',
+      );
       _statusMessage = 'No cloud backup found.';
       notifyListeners();
       return false;
     }
-    if (_isRestoring || _isBackingUp) return false;
+    if (_isRestoring || _isBackingUp) {
+      debugPrint(
+        'CloudBackupController.restoreLatestBackup: blocked isRestoring=$_isRestoring, isBackingUp=$_isBackingUp',
+      );
+      return false;
+    }
 
     _isRestoring = true;
     _lastError = '';
     _statusMessage = 'Restore in progress...';
     notifyListeners();
     try {
-      final String? rawJson = latest.rawJson ??
+      if (!await authController.ensureSession()) {
+        debugPrint(
+          'CloudBackupController.restoreLatestBackup: ensureSession failed',
+        );
+        _statusMessage = 'Session expired. Please sign in again.';
+        return false;
+      }
+      final String? accessToken = _accessToken;
+      if (accessToken == null) return false;
+
+      final String? rawJson =
+          latest.rawJson ??
           await _googleDriveService.downloadBackupContent(
             accessToken: accessToken,
             fileId: latest.id,
@@ -295,7 +365,9 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
     if (latest == null) return false;
     final DateTime? cloudUpdatedAt = latest.effectiveUpdatedAt;
     final String localRaw = appStateController.state.lastModifiedAt.trim();
-    final DateTime? localUpdatedAt = localRaw.isEmpty ? null : DateTime.tryParse(localRaw)?.toUtc();
+    final DateTime? localUpdatedAt = localRaw.isEmpty
+        ? null
+        : DateTime.tryParse(localRaw)?.toUtc();
     if (cloudUpdatedAt == null) return false;
     if (localUpdatedAt == null) return true;
     return cloudUpdatedAt.isAfter(localUpdatedAt);

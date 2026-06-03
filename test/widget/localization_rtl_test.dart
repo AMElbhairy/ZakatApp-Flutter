@@ -28,6 +28,9 @@ class _NoopMarketDataApiService implements MarketDataApiService {
 
 class _FakeAuthService implements AuthService {
   @override
+  Future<bool> ensureSession() async => true;
+
+  @override
   Future<UserProfile?> restoreSession() async => null;
 
   @override
@@ -192,7 +195,7 @@ void main() {
 
     expect(find.text('إضافة إدخال'), findsWidgets);
     expect(find.text('إضافة دخل/مصروف'), findsOneWidget);
-    expect(find.text('إضافة ادخار'), findsOneWidget);
+    expect(find.text('إضافة نقدي'), findsOneWidget);
   });
 
   testWidgets('Arabic validation messages are Arabic',

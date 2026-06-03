@@ -9,9 +9,17 @@ import '../../models/transaction.dart';
 import '../../services/app_state_controller.dart';
 
 class AddTransactionScreen extends StatefulWidget {
-  const AddTransactionScreen({super.key, this.initialTransaction});
+  const AddTransactionScreen({
+    super.key,
+    this.initialTransaction,
+    this.initialType,
+    this.cashMode = false,
+  });
 
   final Transaction? initialTransaction;
+  final String? initialType;
+  /// When true: titled 'Add Cash', no expense toggle, always income type.
+  final bool cashMode;
 
   bool get isEditMode => initialTransaction != null;
 
@@ -37,7 +45,8 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     final Transaction? tx = widget.initialTransaction;
     final String defaultEntryCurrency =
         context.read<AppStateController>().state.defaultEntryCurrency;
-    _type = tx?.type ?? 'income';
+    // In cashMode always use income type
+    _type = tx?.type ?? widget.initialType ?? (widget.cashMode ? 'income' : 'income');
     _currency = tx?.currency ??
         (defaultEntryCurrency.trim().isEmpty ? 'EGP' : defaultEntryCurrency);
     _category = tx?.category;
@@ -78,8 +87,8 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       appBar: AppBar(
         title: Text(
           widget.isEditMode
-              ? context.l10n.tr('edit_transaction')
-              : context.l10n.tr('add_transaction'),
+              ? context.l10n.tr(widget.cashMode ? 'edit_cash_title' : 'edit_transaction')
+              : context.l10n.tr(widget.cashMode ? 'add_cash_title' : 'add_transaction'),
         ),
       ),
       body: SafeArea(
@@ -90,25 +99,28 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                SegmentedButton<String>(
-                  segments: <ButtonSegment<String>>[
-                    ButtonSegment<String>(
-                      value: 'income',
-                      label: Text(context.l10n.tr('income')),
-                    ),
-                    ButtonSegment<String>(
-                      value: 'expense',
-                      label: Text(context.l10n.tr('expense')),
-                    ),
-                  ],
-                  selected: <String>{_type},
-                  onSelectionChanged: (Set<String> selected) {
-                    setState(() {
-                      _type = selected.first;
-                    });
-                  },
-                ),
-                const SizedBox(height: 16),
+                // Show income/expense toggle only when NOT in cashMode
+                if (!widget.cashMode) ...[
+                  SegmentedButton<String>(
+                    segments: <ButtonSegment<String>>[
+                      ButtonSegment<String>(
+                        value: 'income',
+                        label: Text(context.l10n.tr('income')),
+                      ),
+                      ButtonSegment<String>(
+                        value: 'expense',
+                        label: Text(context.l10n.tr('expense')),
+                      ),
+                    ],
+                    selected: <String>{_type},
+                    onSelectionChanged: (Set<String> selected) {
+                      setState(() {
+                        _type = selected.first;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 TextFormField(
                   key: const Key('amountField'),
                   controller: _amountController,
@@ -136,7 +148,13 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                   items: ZakatEngineService.supportedCurrencies
                       .map((String currency) => DropdownMenuItem<String>(
                             value: currency,
-                            child: Text(currency),
+                            child: Text(ZakatEngineService.getCurrencySymbol(
+                              currency,
+                              isArabic: Localizations.localeOf(context)
+                                      .languageCode
+                                      .toLowerCase() ==
+                                  'ar',
+                            )),
                           ))
                       .toList(growable: false),
                   onChanged: (String? value) {
@@ -197,7 +215,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                   },
                 ),
                 const SizedBox(height: 24),
-                SizedBox(
+                  SizedBox(
                   width: double.infinity,
                   child: AppPrimaryButton(
                     key: const Key('saveTransactionButton'),
@@ -245,8 +263,8 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                     label: _saving
                         ? context.l10n.tr('saving_progress')
                         : (widget.isEditMode
-                            ? context.l10n.tr('update_transaction')
-                            : context.l10n.tr('save_transaction')),
+                            ? context.l10n.tr(widget.cashMode ? 'update_cash' : 'update_transaction')
+                            : context.l10n.tr(widget.cashMode ? 'save_cash' : 'save_transaction')),
                     icon: Icons.check,
                   ),
                 ),

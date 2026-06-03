@@ -10,11 +10,14 @@ import 'package:zakatapp_flutter/models/transaction.dart';
 import 'test_helpers.dart';
 
 void main() {
-  final Map<String, dynamic> fixture =
-      loadJsonFixture('test/fixtures/sample_app_state.json');
+  final Map<String, dynamic> fixture = loadJsonFixture(
+    'test/fixtures/sample_app_state.json',
+  );
 
   test('transaction parsing', () {
-    final tx = Transaction.fromJson(fixture['transactions'][0] as Map<String, dynamic>);
+    final tx = Transaction.fromJson(
+      fixture['transactions'][0] as Map<String, dynamic>,
+    );
     expect(tx.id, 'tx_income_1');
     expect(tx.amount, 10000);
     expect(tx.rolledOver, false);
@@ -22,14 +25,48 @@ void main() {
   });
 
   test('saving parsing', () {
-    final saving = Saving.fromJson(fixture['savings'][0] as Map<String, dynamic>);
+    final saving = Saving.fromJson(
+      fixture['savings'][0] as Map<String, dynamic>,
+    );
     expect(saving.assetType, 'cash');
     expect(saving.remainingAmount, 4000);
     expect(saving.toJson()['unit'], 'EGP');
   });
 
+  test('saving funding allocations roundtrip', () {
+    final saving = Saving.fromJson(<String, dynamic>{
+      'id': 'gold1',
+      'assetType': 'gold',
+      'dateAcquired': '2025-06-01',
+      'amount': 10,
+      'remainingAmount': 10,
+      'unit': '24',
+      'description': 'Gold',
+      'purchaseCurrency': 'EGP',
+      'purchaseAmount': 1000,
+      'createdAt': '2025-06-01T00:00:00Z',
+      'fundingAllocations': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'sourceType': 'savings',
+          'sourceId': 'cash1',
+          'sourceDate': '2025-02-01',
+          'currency': 'EGP',
+          'amount': 1000,
+        },
+      ],
+    });
+
+    expect(saving.fundingAllocations.single['sourceId'], 'cash1');
+    expect(
+      (saving.toJson()['fundingAllocations'] as List).single['sourceDate'],
+      '2025-02-01',
+    );
+  });
+
   test('investment parsing', () {
-    final inv = InvestmentAsset.fromJson(fixture['investments'][0] as Map<String, dynamic>);
+    final inv = InvestmentAsset.fromJson(
+      fixture['investments'][0] as Map<String, dynamic>,
+    );
     expect(inv.investmentType, 'real_estate');
     expect(inv.marketValue, 1200000);
     expect(inv.toJson()['ownershipType'], 'fully_owned');
@@ -45,7 +82,9 @@ void main() {
   });
 
   test('financial plan parsing', () {
-    final plan = FinancialPlan.fromJson(fixture['financialPlans'][0] as Map<String, dynamic>);
+    final plan = FinancialPlan.fromJson(
+      fixture['financialPlans'][0] as Map<String, dynamic>,
+    );
     expect(plan.name, 'Base plan');
     expect(plan.durationYears, 2);
     expect(plan.toJson()['includeZakat'], true);
@@ -105,9 +144,9 @@ void main() {
   });
 
   test('market snapshot missing fields falls back safely', () {
-    final MarketSnapshot snapshot = MarketSnapshot.fromJson(
-      <String, dynamic>{'gold24kPricePerGramEgp': 5100},
-    );
+    final MarketSnapshot snapshot = MarketSnapshot.fromJson(<String, dynamic>{
+      'gold24kPricePerGramEgp': 5100,
+    });
 
     expect(snapshot.gold24kPricePerGramEgp, 5100);
     expect(snapshot.silverPricePerGramEgp, 0);
@@ -116,21 +155,19 @@ void main() {
   });
 
   test('old formatted lastUpdated value remains safe', () {
-    final MarketSnapshot snapshot = MarketSnapshot.fromJson(
-      <String, dynamic>{'lastUpdated': '2026-05-31 10:45'},
-    );
+    final MarketSnapshot snapshot = MarketSnapshot.fromJson(<String, dynamic>{
+      'lastUpdated': '2026-05-31 10:45',
+    });
     expect(snapshot.lastUpdated, '2026-05-31 10:45');
   });
 
   test('market snapshot invalid field types do not throw', () {
-    final MarketSnapshot snapshot = MarketSnapshot.fromJson(
-      <String, dynamic>{
-        'gold24kPricePerGramEgp': 'bad',
-        'silverPricePerGramEgp': <String>['x'],
-        'usdToEgp': null,
-        'lastUpdated': 12345,
-      },
-    );
+    final MarketSnapshot snapshot = MarketSnapshot.fromJson(<String, dynamic>{
+      'gold24kPricePerGramEgp': 'bad',
+      'silverPricePerGramEgp': <String>['x'],
+      'usdToEgp': null,
+      'lastUpdated': 12345,
+    });
 
     expect(snapshot.gold24kPricePerGramEgp, 0);
     expect(snapshot.silverPricePerGramEgp, 0);

@@ -7,6 +7,7 @@ abstract class AuthService {
   Future<UserProfile?> signIn();
   Future<void> signOut();
   Future<UserProfile?> restoreSession();
+  Future<bool> ensureSession();
 }
 
 class GoogleAuthService implements AuthService {
@@ -52,6 +53,19 @@ class GoogleAuthService implements AuthService {
   @override
   Future<void> signOut() async {
     await _googleSignIn.signOut();
+  }
+
+  @override
+  Future<bool> ensureSession() async {
+    if (!_isConfiguredForCurrentPlatform) return false;
+    final GoogleSignInAccount? account = _googleSignIn.currentUser;
+    if (account == null) return false;
+    try {
+      await account.authentication;
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   @override
