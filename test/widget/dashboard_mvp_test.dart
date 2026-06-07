@@ -201,7 +201,7 @@ Future<void> _openAction(WidgetTester tester, Key key) async {
 }
 
 Future<void> _addIncome(WidgetTester tester, String amount) async {
-  await _openAction(tester, const Key('actionAddTransaction'));
+  await _openAction(tester, const Key('actionAddIncome'));
   await tester.enterText(find.byKey(const Key('amountField')), amount);
   await tester.tap(find.byKey(const Key('categoryField')));
   await tester.pumpAndSettle();
@@ -212,7 +212,7 @@ Future<void> _addIncome(WidgetTester tester, String amount) async {
 }
 
 Future<void> _addSaving(WidgetTester tester, String amount) async {
-  await _openAction(tester, const Key('actionAddCash'));
+  await _openAction(tester, const Key('actionAddIncome'));
   await tester.tap(find.byKey(const Key('categoryField')));
   await tester.pumpAndSettle();
   await tester.tap(find.text('Salary').last);
@@ -283,6 +283,52 @@ void main() {
     expect(find.textContaining('1,200'), findsWidgets);
   });
 
+  testWidgets(
+    'foreign currency expense updates dashboard and assets summaries',
+    (WidgetTester tester) async {
+      final Map<String, dynamic> seeded = _seedStateWithMarketData();
+      seeded['transactions'] = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'id': 'egp-income',
+          'type': 'income',
+          'date': '2026-06-01',
+          'amount': 100,
+          'currency': 'egp',
+          'category': 'Salary',
+          'description': '',
+          'createdAt': '2026-06-01T00:00:00.000Z',
+          'rolledOver': false,
+        },
+        <String, dynamic>{
+          'id': 'usd-expense',
+          'type': 'expense',
+          'date': '2026-06-02',
+          'amount': 10,
+          'currency': 'usd',
+          'category': 'Food & Dining',
+          'description': 'AI or normal expense',
+          'createdAt': '2026-06-02T00:00:00.000Z',
+          'rolledOver': false,
+        },
+      ];
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'zakatAppData': jsonEncode(seeded),
+      });
+
+      await tester.pumpWidget(_buildApp());
+      await tester.pumpAndSettle();
+
+      expect(find.text('NET POSITION'), findsOneWidget);
+      expect(find.textContaining('-400.00'), findsWidgets);
+
+      await tester.tap(find.text('Assets').last);
+      await tester.pumpAndSettle();
+
+      expect(find.text('LIABILITIES'), findsOneWidget);
+      expect(find.textContaining('500.00'), findsWidgets);
+    },
+  );
+
   testWidgets('adding saving updates total wealth', (
     WidgetTester tester,
   ) async {
@@ -347,9 +393,63 @@ void main() {
 
     final Finder rows = find.byWidgetPredicate(
       (Widget w) =>
-          w.key != null && w.key.toString().contains('dashboardRecentTx_'),
+          w.key != null && w.key.toString().contains('dashboardRecent_'),
     );
     expect(rows, findsNWidgets(4));
+  });
+
+  testWidgets('recent activity includes income, expense, and cash savings', (
+    WidgetTester tester,
+  ) async {
+    final Map<String, dynamic> seeded = _seedStateWithMarketData();
+    seeded['transactions'] = <Map<String, dynamic>>[
+      _transactionJson(
+        id: 'recent-income',
+        type: 'income',
+        date: '2026-06-01',
+        amount: 100,
+      ),
+      _transactionJson(
+        id: 'recent-expense',
+        type: 'expense',
+        date: '2026-06-02',
+        amount: 20,
+      ),
+    ];
+    seeded['savings'] = <Map<String, dynamic>>[
+      <String, dynamic>{
+        'id': 'recent-saving',
+        'assetType': 'cash',
+        'dateAcquired': '2026-06-03',
+        'amount': 40,
+        'remainingAmount': 40,
+        'unit': 'EGP',
+        'description': 'Emergency fund',
+        'purchaseCurrency': '',
+        'purchaseAmount': 0,
+        'createdAt': '2026-06-03T00:00:00.000Z',
+      },
+    ];
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'zakatAppData': jsonEncode(seeded),
+    });
+
+    await tester.pumpWidget(_buildApp());
+    await tester.pumpAndSettle();
+    await _scrollToText(tester, 'Recent Activity');
+
+    expect(
+      find.byKey(const Key('dashboardRecent_tx_recent-income')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('dashboardRecent_tx_recent-expense')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('dashboardRecent_saving_recent-saving')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('View All goes to Activity tab', (WidgetTester tester) async {
@@ -398,7 +498,7 @@ void main() {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    await _openAction(tester, const Key('actionAddTransaction'));
+    await _openAction(tester, const Key('actionAddIncome'));
     await tester.enterText(find.byKey(const Key('amountField')), '100');
     await tester.tap(find.byKey(const Key('currencyField')));
     await tester.pumpAndSettle();

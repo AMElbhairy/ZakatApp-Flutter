@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import '../models/investment_asset.dart';
+
 class LegacyMigrationReport {
   const LegacyMigrationReport({
     required this.state,
@@ -16,7 +18,6 @@ class LegacyBackupMigrationService {
   static const List<String> _unsupportedRootFields = <String>[
     'syncHealth',
     'aiSettings',
-    'lastRollover',
     'marketHistory',
   ];
 
@@ -43,7 +44,9 @@ class LegacyBackupMigrationService {
       }
     }
     if (unsupportedFields.isNotEmpty) {
-      warnings.add('Dropped unsupported fields: ${unsupportedFields.join(', ')}');
+      warnings.add(
+        'Dropped unsupported fields: ${unsupportedFields.join(', ')}',
+      );
     }
 
     final String mainCurrency = (state['mainCurrency'] ?? 'EGP').toString();
@@ -65,7 +68,14 @@ class LegacyBackupMigrationService {
       state['financialPlans'],
       warnings,
     );
-    state['recurringTransactions'] = _normalizeList(state['recurringTransactions']);
+    state['recurringTransactions'] = _normalizeRecurringTransactions(
+      state['recurringTransactions'],
+      warnings,
+    );
+    state['lastRollover'] = _normalizeLastRollover(
+      state['lastRollover'],
+      warnings,
+    );
 
     if (state['categories'] is! Map) {
       state['categories'] = <String, dynamic>{
@@ -82,7 +92,10 @@ class LegacyBackupMigrationService {
     );
   }
 
-  Map<String, dynamic> _unwrapState(Map<String, dynamic> root, List<String> warnings) {
+  Map<String, dynamic> _unwrapState(
+    Map<String, dynamic> root,
+    List<String> warnings,
+  ) {
     if (root['appName'] == 'ZakatApp' && root['appState'] is Map) {
       return Map<String, dynamic>.from(root['appState'] as Map);
     }
@@ -104,35 +117,101 @@ class LegacyBackupMigrationService {
     throw const FormatException('Unrecognized backup schema.');
   }
 
-  List<Map<String, dynamic>> _normalizeTransactions(dynamic value, List<String> warnings) {
+  List<Map<String, dynamic>> _normalizeTransactions(
+    dynamic value,
+    List<String> warnings,
+  ) {
     final List<dynamic> items = _normalizeList(value);
-    return items.asMap().entries.map((MapEntry<int, dynamic> entry) {
-      final int index = entry.key;
-      final Map<String, dynamic> tx = _asMap(entry.value);
-      tx['id'] = _ensureString(tx['id'], 'tx_$index');
-      tx['description'] = (tx['description'] ?? '').toString();
-      tx['createdAt'] = _ensureCreatedAt(tx['createdAt'], tx['date'], index);
+    return items
+        .asMap()
+        .entries
+        .map((MapEntry<int, dynamic> entry) {
+          final int index = entry.key;
+          final Map<String, dynamic> tx = _asMap(entry.value);
+          final String rawType = _firstNonEmpty(tx, <String>[
+            'type',
+            'transactionType',
+            'entryType',
+            'kind',
+          ]).toLowerCase();
+          String type = _normalizeTransactionType(rawType);
 
-      // Preserve known dynamic metadata from old app.
-      _preserveString(tx, 'exchangePairId');
-      _preserveString(tx, 'sourceIncomeId');
-      _preserveBool(tx, 'rolledOver');
-      _preserveNum(tx, 'rolledAmount');
-      _preserveString(tx, 'linkedCashEntryId');
-      if (tx['zakatExpenseIds'] is List) {
-        tx['zakatExpenseIds'] = List<dynamic>.from(tx['zakatExpenseIds'] as List);
-      }
+          num amount = _firstNum(tx, <String>[
+            'amount',
+            'value',
+            'incomeAmount',
+            'expenseAmount',
+            'totalAmount',
+          ]);
+          if (type.isEmpty) {
+            if (tx['incomeAmount'] != null) {
+              type = 'income';
+            } else if (tx['expenseAmount'] != null) {
+              type = 'expense';
+            } else if (amount < 0) {
+              type = 'expense';
+            }
+          }
+          if (amount < 0) amount = amount.abs();
 
-      final String desc = tx['description'].toString().toLowerCase();
-      if (desc.startsWith('savings exchange:')) {
-        tx['internalTransferType'] = tx['internalTransferType'] ?? 'savings_exchange';
-      }
-      if (desc.startsWith('currency exchange out:')) {
-        tx['internalTransferType'] = tx['internalTransferType'] ?? 'currency_exchange_out';
-      }
+          tx['type'] = type == 'expense' ? 'expense' : 'income';
+          tx['amount'] = amount;
+          tx['currency'] = _normaliseCurrency(
+            _firstNonEmpty(tx, <String>['currency', 'unit', 'currencyCode']),
+          );
+          if ((tx['currency'] ?? '').toString().isEmpty) {
+            tx['currency'] = 'EGP';
+            warnings.add('Backfilled transaction.currency with EGP.');
+          }
+          tx['date'] = _normaliseDate(
+            _firstNonEmpty(tx, <String>[
+              'date',
+              'transactionDate',
+              'dateAcquired',
+              'createdDate',
+            ]),
+          );
+          if ((tx['date'] ?? '').toString().isEmpty) {
+            tx['date'] = '1970-01-01';
+            warnings.add('Backfilled transaction.date with 1970-01-01.');
+          }
+          tx['category'] = _firstNonEmpty(tx, <String>['category', 'source']);
+          if ((tx['category'] ?? '').toString().isEmpty) {
+            tx['category'] = tx['type'] == 'income' ? 'Income' : 'Expense';
+          }
+          tx['id'] = _ensureString(tx['id'], 'tx_$index');
+          tx['description'] = (tx['description'] ?? '').toString();
+          tx['createdAt'] = _ensureCreatedAt(
+            tx['createdAt'],
+            tx['date'],
+            index,
+          );
 
-      return tx;
-    }).toList(growable: false);
+          // Preserve known dynamic metadata from old app.
+          _preserveString(tx, 'exchangePairId');
+          _preserveString(tx, 'sourceIncomeId');
+          _preserveBool(tx, 'rolledOver');
+          _preserveNum(tx, 'rolledAmount');
+          _preserveString(tx, 'linkedCashEntryId');
+          if (tx['zakatExpenseIds'] is List) {
+            tx['zakatExpenseIds'] = List<dynamic>.from(
+              tx['zakatExpenseIds'] as List,
+            );
+          }
+
+          final String desc = tx['description'].toString().toLowerCase();
+          if (desc.startsWith('savings exchange:')) {
+            tx['internalTransferType'] =
+                tx['internalTransferType'] ?? 'savings_exchange';
+          }
+          if (desc.startsWith('currency exchange out:')) {
+            tx['internalTransferType'] =
+                tx['internalTransferType'] ?? 'currency_exchange_out';
+          }
+
+          return tx;
+        })
+        .toList(growable: false);
   }
 
   List<Map<String, dynamic>> _normalizeSavings(
@@ -144,11 +223,30 @@ class LegacyBackupMigrationService {
     final List<Map<String, dynamic>> result = <Map<String, dynamic>>[];
     for (int i = 0; i < items.length; i++) {
       final Map<String, dynamic> saving = _asMap(items[i]);
-      final String assetType = (saving['assetType'] ?? '').toString().toLowerCase();
+      final String assetType = _normalizeAssetType(saving['assetType']);
       saving['assetType'] = assetType;
+      saving['dateAcquired'] = _normaliseDate(
+        _firstNonEmpty(saving, <String>[
+          'dateAcquired',
+          'date',
+          'createdDate',
+          'createdAt',
+        ]),
+      );
 
       final String description = (saving['description'] ?? '').toString();
       saving['description'] = description;
+
+      if (assetType == 'cash') {
+        final String unit = _normaliseCurrency(
+          _firstNonEmpty(saving, <String>[
+            'unit',
+            'currency',
+            'purchaseCurrency',
+          ]),
+        );
+        saving['unit'] = unit.isEmpty ? mainCurrency : unit;
+      }
 
       if (assetType == 'cash' &&
           (saving['unit'] ?? '').toString() == 'EGP' &&
@@ -167,7 +265,15 @@ class LegacyBackupMigrationService {
       }
 
       saving['id'] = _ensureString(saving['id'], 'sav_$i');
-      saving['createdAt'] = _ensureCreatedAt(saving['createdAt'], saving['dateAcquired'], i);
+      _preserveString(saving, 'sourceIncomeId');
+      _preserveString(saving, 'linkedCashEntryId');
+      _preserveString(saving, 'exchangeSourceSavingId');
+      _preserveString(saving, 'exchangeSourceIncomeId');
+      saving['createdAt'] = _ensureCreatedAt(
+        saving['createdAt'],
+        saving['dateAcquired'],
+        i,
+      );
 
       final num amount = _asNum(saving['amount']);
       if (saving['remainingAmount'] == null) {
@@ -180,67 +286,153 @@ class LegacyBackupMigrationService {
       if ((saving['purchaseCurrency'] ?? '').toString().trim().isEmpty) {
         final String fallbackCurrency =
             (saving['currency'] ?? '').toString().trim().isEmpty
-                ? mainCurrency
-                : (saving['currency'] ?? '').toString();
-        saving['purchaseCurrency'] = fallbackCurrency;
+            ? (assetType == 'cash' ? saving['unit'].toString() : mainCurrency)
+            : (saving['currency'] ?? '').toString();
+        saving['purchaseCurrency'] = _normaliseCurrency(fallbackCurrency);
+      } else {
+        saving['purchaseCurrency'] = _normaliseCurrency(
+          saving['purchaseCurrency'].toString(),
+        );
       }
       result.add(saving);
     }
     return result;
   }
 
-  List<Map<String, dynamic>> _normalizeInvestments(dynamic value, List<String> warnings) {
+  List<Map<String, dynamic>> _normalizeInvestments(
+    dynamic value,
+    List<String> warnings,
+  ) {
     final List<dynamic> items = _normalizeList(value);
-    return items.asMap().entries.map((MapEntry<int, dynamic> entry) {
-      final int index = entry.key;
-      final Map<String, dynamic> inv = _asMap(entry.value);
-      inv['id'] = _ensureString(inv['id'], 'inv_$index');
-      inv['description'] = (inv['description'] ?? '').toString();
-      inv['createdAt'] = _ensureCreatedAt(inv['createdAt'], inv['valuationDate'], index);
+    return items
+        .asMap()
+        .entries
+        .map((MapEntry<int, dynamic> entry) {
+          final int index = entry.key;
+          final Map<String, dynamic> inv = _asMap(entry.value);
+          inv['id'] = _ensureString(inv['id'], 'inv_$index');
+          inv['description'] = (inv['description'] ?? '').toString();
+          inv['createdAt'] = _ensureCreatedAt(
+            inv['createdAt'],
+            inv['valuationDate'],
+            index,
+          );
 
-      final num totalPayable = _asNum(inv['totalPayable']);
-      final num paidAmount = _asNum(inv['paidAmount']);
-      inv['paidAmount'] = paidAmount;
-      inv['remainingAmount'] = inv['remainingAmount'] ?? (totalPayable - paidAmount);
-      inv['loanBalance'] = inv['loanBalance'] ?? inv['remainingAmount'] ?? 0;
+          final num totalPayable = _asNum(inv['totalPayable']);
+          final num paidAmount = _asNum(inv['paidAmount']);
+          inv['paidAmount'] = paidAmount;
+          inv['remainingAmount'] =
+              inv['remainingAmount'] ?? (totalPayable - paidAmount);
+          inv['loanBalance'] =
+              inv['loanBalance'] ?? inv['remainingAmount'] ?? 0;
 
-      final dynamic installmentPlan = inv['installmentPlan'];
-      if (installmentPlan is String && installmentPlan.trim().isNotEmpty) {
-        try {
-          final dynamic parsed = jsonDecode(installmentPlan);
-          if (parsed is List) {
-            inv['installmentPlan'] = parsed
-                .map((dynamic e) => e is Map
-                    ? Map<String, dynamic>.from(e)
-                    : <String, dynamic>{})
-                .toList(growable: false);
-            warnings.add('Parsed stringified investment.installmentPlan.');
+          final dynamic installmentPlan = inv['installmentPlan'];
+          if (installmentPlan is String && installmentPlan.trim().isNotEmpty) {
+            try {
+              final dynamic parsed = jsonDecode(installmentPlan);
+              if (parsed is List) {
+                inv['installmentPlan'] =
+                    InvestmentAsset.normalizeInstallmentPlan(parsed);
+                warnings.add('Parsed stringified investment.installmentPlan.');
+              }
+            } catch (_) {
+              inv['installmentPlan'] = <Map<String, dynamic>>[];
+              warnings.add(
+                'Invalid stringified investment.installmentPlan replaced with empty list.',
+              );
+            }
+          } else {
+            inv['installmentPlan'] = InvestmentAsset.normalizeInstallmentPlan(
+              installmentPlan,
+            );
           }
-        } catch (_) {
-          inv['installmentPlan'] = <Map<String, dynamic>>[];
-          warnings.add('Invalid stringified investment.installmentPlan replaced with empty list.');
-        }
-      }
-      return inv;
-    }).toList(growable: false);
+          return inv;
+        })
+        .toList(growable: false);
   }
 
-  List<Map<String, dynamic>> _normalizeFinancialPlans(dynamic value, List<String> warnings) {
+  List<Map<String, dynamic>> _normalizeRecurringTransactions(
+    dynamic value,
+    List<String> warnings,
+  ) {
     final List<dynamic> items = _normalizeList(value);
-    return items.asMap().entries.map((MapEntry<int, dynamic> entry) {
-      final int index = entry.key;
-      final Map<String, dynamic> plan = _asMap(entry.value);
-      plan['id'] = _ensureString(plan['id'], 'plan_$index');
-      plan['createdAt'] = _ensureCreatedAt(plan['createdAt'], plan['startDate'], index);
-      if (plan['context'] != null && plan['context'] is! Map) {
-        plan['context'] = <String, dynamic>{};
-        warnings.add('FinancialPlan.context had invalid shape; reset to empty map.');
-      }
-      if (plan['context'] is Map) {
-        plan['context'] = Map<String, dynamic>.from(plan['context'] as Map);
-      }
-      return plan;
-    }).toList(growable: false);
+    return items
+        .asMap()
+        .entries
+        .map((MapEntry<int, dynamic> entry) {
+          final int index = entry.key;
+          final Map<String, dynamic> tx = _asMap(entry.value);
+          tx['id'] = _ensureString(tx['id'], 'rec_$index');
+          tx['name'] = _firstNonEmpty(tx, <String>['name', 'title']);
+          tx['type'] = _normalizeTransactionType(
+            _firstNonEmpty(tx, <String>[
+              'type',
+              'transactionType',
+              'entryType',
+              'kind',
+            ]),
+          );
+          if (tx['type'] != 'expense') tx['type'] = 'income';
+          tx['amount'] = _firstNum(tx, <String>['amount', 'value']);
+          tx['currency'] = _normaliseCurrency(
+            _firstNonEmpty(tx, <String>['currency', 'unit', 'currencyCode']),
+          );
+          if ((tx['currency'] ?? '').toString().isEmpty) {
+            tx['currency'] = 'EGP';
+            warnings.add('Backfilled recurring transaction currency with EGP.');
+          }
+          tx['category'] = _firstNonEmpty(tx, <String>['category', 'source']);
+          if ((tx['category'] ?? '').toString().isEmpty) {
+            tx['category'] = tx['type'] == 'income' ? 'Income' : 'Expense';
+          }
+          tx['description'] = (tx['description'] ?? '').toString();
+          if ((tx['frequency'] ?? '').toString().trim().isEmpty) {
+            tx['frequency'] = 'monthly';
+          }
+          tx['lastProcessed'] = _normaliseDate(
+            (tx['lastProcessed'] ?? '').toString(),
+          );
+          tx['skipMonth'] = (tx['skipMonth'] ?? '').toString();
+          _preserveBool(tx, 'enabled');
+          tx['createdAt'] = _ensureCreatedAt(
+            tx['createdAt'],
+            tx['lastProcessed'],
+            index,
+          );
+          return tx;
+        })
+        .toList(growable: false);
+  }
+
+  List<Map<String, dynamic>> _normalizeFinancialPlans(
+    dynamic value,
+    List<String> warnings,
+  ) {
+    final List<dynamic> items = _normalizeList(value);
+    return items
+        .asMap()
+        .entries
+        .map((MapEntry<int, dynamic> entry) {
+          final int index = entry.key;
+          final Map<String, dynamic> plan = _asMap(entry.value);
+          plan['id'] = _ensureString(plan['id'], 'plan_$index');
+          plan['createdAt'] = _ensureCreatedAt(
+            plan['createdAt'],
+            plan['startDate'],
+            index,
+          );
+          if (plan['context'] != null && plan['context'] is! Map) {
+            plan['context'] = <String, dynamic>{};
+            warnings.add(
+              'FinancialPlan.context had invalid shape; reset to empty map.',
+            );
+          }
+          if (plan['context'] is Map) {
+            plan['context'] = Map<String, dynamic>.from(plan['context'] as Map);
+          }
+          return plan;
+        })
+        .toList(growable: false);
   }
 
   String _ensureString(dynamic value, String fallback) {
@@ -260,11 +452,16 @@ class LegacyBackupMigrationService {
       }
       final DateTime? localDate = DateTime.tryParse('${date}T00:00:00Z');
       if (localDate != null) {
-        return localDate.toUtc().add(Duration(seconds: index)).toIso8601String();
+        return localDate
+            .toUtc()
+            .add(Duration(seconds: index))
+            .toIso8601String();
       }
     }
-    return DateTime.fromMillisecondsSinceEpoch(index * 1000, isUtc: true)
-        .toIso8601String();
+    return DateTime.fromMillisecondsSinceEpoch(
+      index * 1000,
+      isUtc: true,
+    ).toIso8601String();
   }
 
   Map<String, dynamic> _asMap(dynamic value) {
@@ -280,6 +477,66 @@ class LegacyBackupMigrationService {
   num _asNum(dynamic value) {
     if (value is num) return value;
     return num.tryParse((value ?? '').toString()) ?? 0;
+  }
+
+  num _firstNum(Map<String, dynamic> map, List<String> keys) {
+    for (final String key in keys) {
+      final dynamic value = map[key];
+      if (value == null) continue;
+      if (value is String && value.trim().isEmpty) continue;
+      return _asNum(value);
+    }
+    return 0;
+  }
+
+  String _firstNonEmpty(Map<String, dynamic> map, List<String> keys) {
+    for (final String key in keys) {
+      final String value = (map[key] ?? '').toString().trim();
+      if (value.isNotEmpty) return value;
+    }
+    return '';
+  }
+
+  String _normaliseCurrency(String value) {
+    return value.trim().toUpperCase();
+  }
+
+  String _normalizeTransactionType(String value) {
+    final String type = value.trim().toLowerCase();
+    if (type == 'cash_in' ||
+        type == 'cashin' ||
+        type == 'deposit' ||
+        type == 'credit' ||
+        type == 'earning') {
+      return 'income';
+    }
+    if (type == 'cash_out' ||
+        type == 'cashout' ||
+        type == 'withdrawal' ||
+        type == 'debit' ||
+        type == 'spending') {
+      return 'expense';
+    }
+    return type;
+  }
+
+  String _normalizeAssetType(dynamic value) {
+    final String raw = (value ?? '').toString().trim().toLowerCase();
+    if (raw == 'cash & currencies' || raw == 'currency' || raw == 'wallet') {
+      return 'cash';
+    }
+    if (raw == 'precious_metal' || raw == 'precious metals') {
+      return 'gold';
+    }
+    return raw;
+  }
+
+  String _normaliseDate(String value) {
+    final String raw = value.trim();
+    if (raw.isEmpty) return '';
+    final DateTime? parsed = DateTime.tryParse(raw);
+    if (parsed == null) return raw;
+    return parsed.toIso8601String().split('T').first;
   }
 
   void _preserveString(Map<String, dynamic> map, String key) {
@@ -302,5 +559,61 @@ class LegacyBackupMigrationService {
   void _preserveNum(Map<String, dynamic> map, String key) {
     if (map[key] is num || map[key] == null) return;
     map[key] = num.tryParse(map[key].toString());
+  }
+
+  String _normalizeLastRollover(dynamic value, List<String> warnings) {
+    if (value == null) return '';
+    final String raw = value.toString().trim();
+    if (raw.isEmpty) return '';
+
+    final DateTime? parsed = DateTime.tryParse(raw);
+    if (parsed != null) {
+      return parsed.toIso8601String().split('T').first;
+    }
+
+    final List<String> parts = raw.split(RegExp(r'\s+'));
+    if (parts.length >= 3) {
+      final Map<String, int> months = <String, int>{
+        'jan': 1,
+        'feb': 2,
+        'mar': 3,
+        'apr': 4,
+        'may': 5,
+        'jun': 6,
+        'jul': 7,
+        'aug': 8,
+        'sep': 9,
+        'oct': 10,
+        'nov': 11,
+        'dec': 12,
+      };
+
+      String? yearStr;
+      String? monthStr;
+      String? dayStr;
+
+      for (final String part in parts) {
+        final String clean = part.replaceAll(',', '').toLowerCase();
+        if (months.containsKey(clean)) {
+          monthStr = clean;
+        } else if (RegExp(r'^\d{4}$').hasMatch(clean)) {
+          yearStr = clean;
+        } else if (RegExp(r'^\d{1,2}$').hasMatch(clean)) {
+          dayStr = clean;
+        }
+      }
+
+      if (yearStr != null && monthStr != null && dayStr != null) {
+        final int year = int.parse(yearStr);
+        final int month = months[monthStr]!;
+        final int day = int.parse(dayStr);
+        final String m = month.toString().padLeft(2, '0');
+        final String d = day.toString().padLeft(2, '0');
+        return '$year-$m-$d';
+      }
+    }
+
+    warnings.add('Unable to parse lastRollover date: "$raw". Keeping as is.');
+    return raw;
   }
 }

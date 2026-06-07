@@ -34,10 +34,10 @@ class Transaction {
   factory Transaction.fromJson(Map<String, dynamic> json) {
     return Transaction(
       id: (json['id'] ?? '').toString(),
-      type: (json['type'] ?? '').toString(),
+      type: (json['type'] ?? '').toString().trim().toLowerCase(),
       date: (json['date'] ?? '').toString(),
       amount: _asDouble(json['amount']),
-      currency: (json['currency'] ?? '').toString(),
+      currency: (json['currency'] ?? '').toString().trim().toUpperCase(),
       category: (json['category'] ?? '').toString(),
       description: (json['description'] ?? '').toString(),
       createdAt: (json['createdAt'] ?? '').toString(),

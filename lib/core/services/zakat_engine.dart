@@ -43,7 +43,7 @@ class MarketData {
     final dynamic ratesRaw = json['RATES_TO_EGP'];
     if (ratesRaw is Map) {
       ratesRaw.forEach((dynamic key, dynamic value) {
-        parsedRates[key.toString()] = _asDouble(value);
+        parsedRates[key.toString().trim().toUpperCase()] = _asDouble(value);
       });
     }
 
@@ -137,6 +137,24 @@ class ZakatEngineService {
 
   static const ZakatConfig defaultConfig = ZakatConfig();
   static const double minAmount = 0.005;
+  static const String nisabBasisGold85 = 'gold85';
+  static const String nisabBasisSilver595 = 'silver595';
+
+  static String normalizeZakatNisabBasis(String? basis) {
+    return basis == nisabBasisSilver595
+        ? nisabBasisSilver595
+        : nisabBasisGold85;
+  }
+
+  static double cashNisabThresholdEgp(
+    MarketData marketData, {
+    String? zakatNisabBasis,
+  }) {
+    return switch (normalizeZakatNisabBasis(zakatNisabBasis)) {
+      nisabBasisSilver595 => 595 * marketData.silverPriceEgp,
+      _ => defaultConfig.nisabGoldGrams * marketData.goldPrice24kEgp,
+    };
+  }
 
   static String getCurrencySymbol(
     String currencyCode, {
@@ -285,7 +303,7 @@ class ZakatEngineService {
     String? currency,
     MarketData marketData,
   ) {
-    final String cur = (currency ?? '').trim();
+    final String cur = (currency ?? '').trim().toUpperCase();
     if (cur.isEmpty || cur == 'EGP') return true;
     final double? rate = _resolveRateToEgp(cur, marketData);
     return rate != null && rate > 0;
@@ -296,7 +314,7 @@ class ZakatEngineService {
     String? currency,
     MarketData marketData,
   ) {
-    final String cur = (currency ?? '').trim();
+    final String cur = (currency ?? '').trim().toUpperCase();
     if (cur.isEmpty || cur == 'EGP') return amount;
     if (amount == 0) return 0;
     final double? rate = _resolveRateToEgp(cur, marketData);
@@ -318,7 +336,7 @@ class ZakatEngineService {
     String? currency,
     MarketData marketData,
   ) {
-    final String cur = (currency ?? '').trim();
+    final String cur = (currency ?? '').trim().toUpperCase();
     if (cur.isEmpty || cur == 'EGP') return amountEgp;
     if (amountEgp == 0) return 0;
     final double? rate = _resolveRateToEgp(cur, marketData);
@@ -394,9 +412,15 @@ class ZakatEngineService {
     );
   }
 
-  static bool checkCashNisab(double amountInEgp, MarketData marketData) {
-    final double nisabValueEgp =
-        defaultConfig.nisabGoldGrams * marketData.goldPrice24kEgp;
+  static bool checkCashNisab(
+    double amountInEgp,
+    MarketData marketData, {
+    String? zakatNisabBasis,
+  }) {
+    final double nisabValueEgp = cashNisabThresholdEgp(
+      marketData,
+      zakatNisabBasis: zakatNisabBasis,
+    );
     return amountInEgp >= nisabValueEgp;
   }
 
@@ -423,6 +447,7 @@ class ZakatEngineService {
     required List<Saving> savings,
     required MarketData marketData,
     NisabTotals? nisabTotals,
+    String? zakatNisabBasis,
   }) {
     final int daysElapsed = calculateDaysElapsed(saving.dateAcquired);
     final bool hasCompletedYear = daysElapsed >= defaultConfig.nisabDays;
@@ -444,6 +469,7 @@ class ZakatEngineService {
       final bool meetsNisab = checkCashNisab(
         totals.totalSavingsWealthEgp,
         marketData,
+        zakatNisabBasis: zakatNisabBasis,
       );
       if (!meetsNisab) {
         status = 'Nisab Not Met';
@@ -462,6 +488,7 @@ class ZakatEngineService {
       final bool meetsNisab = checkCashNisab(
         totals.totalSavingsWealthEgp,
         marketData,
+        zakatNisabBasis: zakatNisabBasis,
       );
       if (!meetsNisab) {
         status = 'Nisab Not Met';
@@ -478,6 +505,7 @@ class ZakatEngineService {
       final bool meetsNisab = checkCashNisab(
         totals.totalSavingsWealthEgp,
         marketData,
+        zakatNisabBasis: zakatNisabBasis,
       );
       if (!meetsNisab) {
         status = 'Nisab Not Met';
@@ -575,14 +603,21 @@ class ZakatEngineService {
     required List<Transaction> transactions,
     required List<Saving> savings,
     required MarketData marketData,
+    String? lastRollover,
   }) {
-    return supportedCurrencies.fold<double>(0, (double sum, String currency) {
+    return _cashCurrencies(
+      transactions: transactions,
+      savings: savings,
+      marketData: marketData,
+    ).fold<double>(0, (double sum, String currency) {
       final double balance = calculateWalletBalanceByCurrency(
         currency: currency,
         transactions: transactions,
         savings: savings,
+        lastRollover: lastRollover,
       );
-      return sum + convertToEgp(balance, currency, marketData);
+      final double? converted = tryConvertToEgp(balance, currency, marketData);
+      return sum + (converted ?? 0);
     });
   }
 
@@ -590,23 +625,19 @@ class ZakatEngineService {
     required String currency,
     required List<Transaction> transactions,
     required List<Saving> savings,
+    String? lastRollover,
   }) {
-    final double txnBalance = transactions
-        .where((Transaction tx) => tx.currency == currency)
-        .fold<double>(0, (double sum, Transaction tx) {
-          if (tx.type == 'income') {
-            if (tx.rolledOver && tx.rolledAmount != null) {
-              return sum + (tx.amount - tx.rolledAmount!);
-            }
-            return sum + tx.amount;
-          }
-          return sum - tx.amount;
-        });
-
+    final String normalizedCurrency = currency.trim().toUpperCase();
+    final double txnBalance = _calculateTransactionBalanceByCurrency(
+      currency: normalizedCurrency,
+      transactions: transactions,
+      lastRollover: lastRollover,
+    );
     final double savingsContribution = savings
         .where(
           (Saving s) =>
-              normaliseAssetType(s.assetType) == 'cash' && s.unit == currency,
+              normaliseAssetType(s.assetType) == 'cash' &&
+              s.unit.trim().toUpperCase() == normalizedCurrency,
         )
         .fold<double>(0, (double sum, Saving s) {
           return sum + math.max(0, s.amount - s.remainingAmount);
@@ -615,24 +646,115 @@ class ZakatEngineService {
     return txnBalance + savingsContribution;
   }
 
+  static double _calculateTransactionBalanceByCurrency({
+    required String currency,
+    required List<Transaction> transactions,
+    String? lastRollover,
+  }) {
+    final String normalizedCurrency = currency.trim().toUpperCase();
+    return transactions
+        .where(
+          (Transaction tx) =>
+              tx.currency.trim().toUpperCase() == normalizedCurrency,
+        )
+        .fold<double>(0, (double sum, Transaction tx) {
+          if (tx.type == 'income') {
+            if (tx.rolledOver && tx.rolledAmount != null) {
+              return sum + (tx.amount - tx.rolledAmount!);
+            }
+            return sum + tx.amount;
+          }
+          if (lastRollover != null &&
+              lastRollover.isNotEmpty &&
+              tx.date.isNotEmpty &&
+              tx.date.compareTo(lastRollover) <= 0) {
+            return sum;
+          }
+          return sum - tx.amount;
+        });
+  }
+
+  static bool isLegacyDerivedCashSaving(Saving saving) {
+    return normaliseAssetType(saving.assetType) == 'cash' &&
+        ((saving.sourceIncomeId ?? '').trim().isNotEmpty ||
+            (saving.exchangeSourceSavingId ?? '').trim().isNotEmpty);
+  }
+
+  static Map<String, double> calculateCashByCurrency({
+    required List<Transaction> transactions,
+    required List<Saving> savings,
+    required MarketData marketData,
+    String? lastRollover,
+  }) {
+    final Map<String, double> savingsByCurrency = <String, double>{};
+    for (final Saving saving in savings.where(
+      (Saving s) => normaliseAssetType(s.assetType) == 'cash',
+    )) {
+      final String currency = saving.unit.trim().toUpperCase();
+      if (currency.isEmpty) continue;
+      final double remaining = saving.remainingAmount.isFinite
+          ? saving.remainingAmount
+          : saving.amount;
+      if (remaining <= minAmount) continue;
+      savingsByCurrency[currency] =
+          (savingsByCurrency[currency] ?? 0.0) + remaining;
+    }
+
+    final Map<String, double> result = <String, double>{};
+    for (final String currency in _cashCurrencies(
+      transactions: transactions,
+      savings: savings,
+      marketData: marketData,
+    )) {
+      final double savingsAmount = savingsByCurrency[currency] ?? 0.0;
+      final double walletAmount = calculateWalletBalanceByCurrency(
+        currency: currency,
+        transactions: transactions,
+        savings: savings,
+      );
+      final double amount = math.max(0, walletAmount) + savingsAmount;
+
+      if (amount > minAmount) {
+        result[currency] = _round6(amount);
+      }
+    }
+    return result;
+  }
+
+  static Set<String> _cashCurrencies({
+    required List<Transaction> transactions,
+    required List<Saving> savings,
+    required MarketData marketData,
+  }) {
+    return <String>{
+          ...supportedCurrencies,
+          ...marketData.ratesToEgp.keys,
+          ...transactions.map((Transaction tx) => tx.currency),
+          ...savings
+              .where((Saving s) => normaliseAssetType(s.assetType) == 'cash')
+              .map((Saving s) => s.unit),
+        }
+        .map((String currency) => currency.trim().toUpperCase())
+        .where((String currency) => currency.isNotEmpty)
+        .toSet();
+  }
+
   static double calculateTotalWealthEgp({
     required List<Transaction> transactions,
     required List<Saving> savings,
     required List<InvestmentAsset> investments,
     required MarketData marketData,
+    String? lastRollover,
   }) {
-    final double walletEgp = math.max(
-      0,
-      calculateWalletBalance(
-        transactions: transactions,
-        savings: savings,
-        marketData: marketData,
-      ),
-    );
-
     final NisabTotals totals = computeNisabTotals(
       savings: savings,
       marketData: marketData,
+    );
+    final double cashEgp = calculateTotalCashWealthEgp(
+      transactions: transactions,
+      savings: savings,
+      marketData: marketData,
+      lastRollover: lastRollover,
     );
 
     final double goldEgp = totals.totalGold24k * marketData.goldPrice24kEgp;
@@ -643,11 +765,25 @@ class ZakatEngineService {
       marketData: marketData,
     );
 
-    return walletEgp +
-        totals.totalCashEgp +
-        goldEgp +
-        silverEgp +
-        investmentsEgp;
+    return cashEgp + goldEgp + silverEgp + investmentsEgp;
+  }
+
+  static double calculateTotalCashWealthEgp({
+    required List<Transaction> transactions,
+    required List<Saving> savings,
+    required MarketData marketData,
+    String? lastRollover,
+  }) {
+    return calculateCashByCurrency(
+      transactions: transactions,
+      savings: savings,
+      marketData: marketData,
+      lastRollover: lastRollover,
+    ).entries.fold<double>(
+      0,
+      (double sum, MapEntry<String, double> entry) =>
+          sum + convertToEgp(entry.value, entry.key, marketData),
+    );
   }
 
   static double calculateTotalCashSavingsEgp({
@@ -746,17 +882,32 @@ class ZakatEngineService {
     required List<Saving> savings,
     required List<InvestmentAsset> investments,
     required MarketData marketData,
+    String? lastRollover,
   }) {
     final double investmentDebt = calculateTotalInvestmentLoanBalancesEgp(
       investments: investments,
       marketData: marketData,
     );
-    final double walletBalance = calculateWalletBalance(
-      transactions: transactions,
-      savings: savings,
-      marketData: marketData,
-    );
-    final double walletOverdraft = math.max(0, -walletBalance);
+    final double walletOverdraft =
+        _cashCurrencies(
+          transactions: transactions,
+          savings: savings,
+          marketData: marketData,
+        ).fold<double>(0, (double sum, String currency) {
+          final double balance = calculateWalletBalanceByCurrency(
+            currency: currency,
+            transactions: transactions,
+            savings: savings,
+            lastRollover: lastRollover,
+          );
+          if (balance >= -minAmount) return sum;
+          final double? converted = tryConvertToEgp(
+            -balance,
+            currency,
+            marketData,
+          );
+          return sum + (converted ?? 0);
+        });
     return investmentDebt + walletOverdraft;
   }
 
@@ -765,12 +916,14 @@ class ZakatEngineService {
     required List<Saving> savings,
     required List<InvestmentAsset> investments,
     required MarketData marketData,
+    String? lastRollover,
   }) {
     return calculateTotalWealthEgp(
       transactions: transactions,
       savings: savings,
       investments: investments,
       marketData: marketData,
+      lastRollover: lastRollover,
     );
   }
 
@@ -779,18 +932,21 @@ class ZakatEngineService {
     required List<Saving> savings,
     required List<InvestmentAsset> investments,
     required MarketData marketData,
+    String? lastRollover,
   }) {
     return calculateTotalAssetsEgp(
           transactions: transactions,
           savings: savings,
           investments: investments,
           marketData: marketData,
+          lastRollover: lastRollover,
         ) -
         calculateTotalLiabilitiesEgp(
           transactions: transactions,
           savings: savings,
           investments: investments,
           marketData: marketData,
+          lastRollover: lastRollover,
         );
   }
 
@@ -811,39 +967,29 @@ class ZakatEngineService {
     required List<InvestmentAsset> investments,
     required MarketData marketData,
     MarketData? ratesOverride,
+    String? lastRollover,
   }) {
     final MarketData ratesAtDate =
         ratesOverride ?? getMarketDataAtDate(marketData);
 
-    double convertToEgpAt(double amount, String currency) {
-      if (currency == 'USD') return amount * ratesAtDate.usdToEgp;
-      if (currency == 'SAR') return amount * ratesAtDate.sarToEgp;
-      return amount;
-    }
+    double convertToEgpAt(double amount, String currency) =>
+        tryConvertToEgp(amount, currency, ratesAtDate) ?? 0;
 
     final DateTime asOfDate = _dateOnlyDateTime(asOf);
 
-    final double walletEgp = supportedCurrencies.fold<double>(0, (
-      double sum,
-      String currency,
-    ) {
-      final double txnBalance = transactions
-          .where((Transaction tx) {
-            return tx.currency == currency &&
-                _dateOnly(tx.date).compareTo(asOfDate) <= 0;
-          })
-          .fold<double>(0, (double s, Transaction tx) {
-            if (tx.type == 'income') {
-              final double rolledAmount = tx.rolledAmount ?? 0;
-              final double effectiveIncome = tx.rolledOver
-                  ? math.max(0, tx.amount - rolledAmount)
-                  : tx.amount;
-              return s + effectiveIncome;
-            }
-            return s - tx.amount;
-          });
-      return sum + convertToEgpAt(txnBalance, currency);
-    });
+    final List<Transaction> transactionsAtDate = transactions
+        .where((Transaction tx) => _dateOnly(tx.date).compareTo(asOfDate) <= 0)
+        .toList(growable: false);
+    final double incomeCashEgp =
+        getNetIncomeLots(
+          transactions: transactionsAtDate,
+          marketData: ratesAtDate,
+          lastRollover: lastRollover,
+        ).fold<double>(
+          0,
+          (double sum, Map<String, dynamic> lot) =>
+              sum + _asDouble(lot['remainingAmount']),
+        );
 
     final double cashEgp = savings
         .where((Saving s) {
@@ -897,10 +1043,11 @@ class ZakatEngineService {
               valuationDate.compareTo(asOfDate) <= 0;
         })
         .fold<double>(0, (double sum, InvestmentAsset asset) {
-          return sum + asset.estimatedCurrentValue;
+          return sum +
+              convertToEgpAt(asset.estimatedCurrentValue, asset.currency);
         });
 
-    return math.max(0, walletEgp) +
+    return math.max(0, incomeCashEgp) +
         cashEgp +
         goldEgp +
         silverEgp +
@@ -910,81 +1057,150 @@ class ZakatEngineService {
   static List<Map<String, dynamic>> getNetIncomeLots({
     required List<Transaction> transactions,
     required MarketData marketData,
+    String? lastRollover,
   }) {
-    final List<Transaction> sorted = List<Transaction>.from(transactions)
-      ..sort((Transaction a, Transaction b) {
-        final DateTime ad = _dateOnly(a.date);
-        final DateTime bd = _dateOnly(b.date);
-        final int dateComp = ad.compareTo(bd);
-        if (dateComp != 0) return dateComp;
-
-        final DateTime ac =
-            _tryDateTime(a.createdAt) ??
-            DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
-        final DateTime bc =
-            _tryDateTime(b.createdAt) ??
-            DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
-        final int createdComp = ac.compareTo(bc);
-        if (createdComp != 0) return createdComp;
-
-        if (a.type != b.type) return a.type == 'income' ? -1 : 1;
-        return 0;
-      });
-
-    final List<Map<String, dynamic>> lots = <Map<String, dynamic>>[];
-
-    for (final Transaction tx in sorted) {
-      final double amountEgp = convertToEgp(tx.amount, tx.currency, marketData);
-      if (tx.type == 'income') {
-        double effectiveAmountEgp;
-        if (tx.rolledOver && tx.rolledAmount != null) {
-          effectiveAmountEgp = convertToEgp(
-            tx.amount - tx.rolledAmount!,
-            tx.currency,
-            marketData,
-          );
-          if (effectiveAmountEgp < minAmount) continue;
-        } else {
-          effectiveAmountEgp = amountEgp;
-        }
-        lots.add(<String, dynamic>{
-          'id': tx.id,
-          'date': tx.date,
-          'originalAmount': effectiveAmountEgp,
-          'remainingAmount': effectiveAmountEgp,
-          'category': tx.category,
-          'description': tx.description,
-        });
-      } else {
-        double toDeduct = amountEgp;
-
-        if (tx.sourceIncomeId != null && tx.sourceIncomeId!.isNotEmpty) {
-          final int idx = lots.indexWhere(
-            (Map<String, dynamic> lot) => lot['id'] == tx.sourceIncomeId,
-          );
-          if (idx != -1) {
-            final Map<String, dynamic> linkedLot = lots[idx];
-            final double linkedRemain = _asDouble(linkedLot['remainingAmount']);
-            final double linkedDeduction = math.min(linkedRemain, toDeduct);
-            linkedLot['remainingAmount'] = _round6(
-              linkedRemain - linkedDeduction,
-            );
-            toDeduct = _round6(toDeduct - linkedDeduction);
-          }
-        }
-
-        for (int i = lots.length - 1; i >= 0 && toDeduct > 0; i--) {
-          final Map<String, dynamic> lot = lots[i];
-          if (toDeduct <= 0) break;
-          final double lotRemaining = _asDouble(lot['remainingAmount']);
-          final double deduction = math.min(lotRemaining, toDeduct);
-          lot['remainingAmount'] = _round6(lotRemaining - deduction);
-          toDeduct = _round6(toDeduct - deduction);
-        }
-      }
+    // Group transactions by currency
+    final Map<String, List<Transaction>> groups = <String, List<Transaction>>{};
+    for (final Transaction tx in transactions) {
+      final String currency = tx.currency.trim().toUpperCase();
+      groups.putIfAbsent(currency, () => <Transaction>[]).add(tx);
     }
 
-    return lots;
+    final List<Map<String, dynamic>> allLots = <Map<String, dynamic>>[];
+
+    for (final String currency in groups.keys) {
+      final List<Transaction> curTransactions = groups[currency]!;
+      final List<Transaction> sorted = List<Transaction>.from(curTransactions)
+        ..sort((Transaction a, Transaction b) {
+          final DateTime ad = _dateOnly(a.date);
+          final DateTime bd = _dateOnly(b.date);
+          final int dateComp = ad.compareTo(bd);
+          if (dateComp != 0) return dateComp;
+
+          final DateTime ac =
+              _tryDateTime(a.createdAt) ??
+              DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+          final DateTime bc =
+              _tryDateTime(b.createdAt) ??
+              DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+          final int createdComp = ac.compareTo(bc);
+          if (createdComp != 0) return createdComp;
+
+          if (a.type != b.type) return a.type == 'income' ? -1 : 1;
+          return 0;
+        });
+
+      final List<Map<String, dynamic>> lots = <Map<String, dynamic>>[];
+
+      for (final Transaction tx in sorted) {
+        final double amountEgp = convertToEgp(
+          tx.amount,
+          tx.currency,
+          marketData,
+        );
+        if (tx.type == 'income') {
+          double effectiveAmountEgp;
+          if (tx.rolledOver && tx.rolledAmount != null) {
+            effectiveAmountEgp = convertToEgp(
+              tx.amount - tx.rolledAmount!,
+              tx.currency,
+              marketData,
+            );
+            if (effectiveAmountEgp < minAmount) continue;
+          } else {
+            effectiveAmountEgp = amountEgp;
+          }
+          lots.add(<String, dynamic>{
+            'id': tx.id,
+            'date': tx.date,
+            'originalAmount': effectiveAmountEgp,
+            'remainingAmount': effectiveAmountEgp,
+            'currency': tx.currency,
+            'originalAmountCurrency': tx.rolledOver && tx.rolledAmount != null
+                ? math.max(0, tx.amount - tx.rolledAmount!)
+                : tx.amount,
+            'remainingAmountCurrency': tx.rolledOver && tx.rolledAmount != null
+                ? math.max(0, tx.amount - tx.rolledAmount!)
+                : tx.amount,
+            'category': tx.category,
+            'description': tx.description,
+          });
+        } else {
+          if (lastRollover != null &&
+              lastRollover.isNotEmpty &&
+              tx.date.isNotEmpty &&
+              tx.date.compareTo(lastRollover) <= 0) {
+            continue;
+          }
+          double toDeduct = amountEgp;
+
+          if (tx.sourceIncomeId != null && tx.sourceIncomeId!.isNotEmpty) {
+            final int idx = lots.indexWhere(
+              (Map<String, dynamic> lot) => lot['id'] == tx.sourceIncomeId,
+            );
+            if (idx != -1) {
+              final Map<String, dynamic> linkedLot = lots[idx];
+              final double linkedRemain = _asDouble(
+                linkedLot['remainingAmount'],
+              );
+              final double linkedDeduction = math.min(linkedRemain, toDeduct);
+              _deductIncomeLotNativeAmount(
+                linkedLot,
+                linkedDeduction,
+                marketData,
+              );
+              linkedLot['remainingAmount'] = _round6(
+                linkedRemain - linkedDeduction,
+              );
+              toDeduct = _round6(toDeduct - linkedDeduction);
+            }
+          }
+
+          for (int i = lots.length - 1; i >= 0 && toDeduct > 0; i--) {
+            final Map<String, dynamic> lot = lots[i];
+            if (toDeduct <= 0) break;
+            final double lotRemaining = _asDouble(lot['remainingAmount']);
+            final double deduction = math.min(lotRemaining, toDeduct);
+            _deductIncomeLotNativeAmount(lot, deduction, marketData);
+            lot['remainingAmount'] = _round6(lotRemaining - deduction);
+            toDeduct = _round6(toDeduct - deduction);
+          }
+        }
+      }
+      allLots.addAll(lots);
+    }
+
+    // Sort all combined lots by date to preserve chronological order
+    allLots.sort((Map<String, dynamic> a, Map<String, dynamic> b) {
+      final String da = (a['date'] ?? '').toString();
+      final String db = (b['date'] ?? '').toString();
+      return da.compareTo(db);
+    });
+
+    return allLots;
+  }
+
+  static void _deductIncomeLotNativeAmount(
+    Map<String, dynamic> lot,
+    double deductionEgp,
+    MarketData marketData,
+  ) {
+    final String currency = (lot['currency'] ?? 'EGP').toString();
+    final double remainingNative = _asDouble(lot['remainingAmountCurrency']);
+    if (remainingNative <= 0 || deductionEgp <= 0) return;
+
+    final double remainingEgp = convertToEgp(
+      remainingNative,
+      currency,
+      marketData,
+    );
+    if (remainingEgp <= 0) return;
+
+    final double nativeDeduction = math.min(
+      remainingNative,
+      remainingNative * (deductionEgp / remainingEgp),
+    );
+    lot['remainingAmountCurrency'] = _round6(remainingNative - nativeDeduction);
   }
 
   static List<ZakatScheduleEntry> calculateMonthlyZakatSchedule({
@@ -992,15 +1208,19 @@ class ZakatEngineService {
     List<Saving> savings = const <Saving>[],
     required MarketData marketData,
     DateTime? now,
+    String? lastRollover,
+    String? zakatNisabBasis,
   }) {
     final List<Map<String, dynamic>> lots = getNetIncomeLots(
       transactions: transactions,
       marketData: marketData,
+      lastRollover: lastRollover,
     );
     if (!_combinedPortfolioMeetsNisab(
       lots: lots,
       savings: savings,
       marketData: marketData,
+      zakatNisabBasis: zakatNisabBasis,
     )) {
       return const <ZakatScheduleEntry>[];
     }
@@ -1074,15 +1294,19 @@ class ZakatEngineService {
     List<Transaction> transactions = const <Transaction>[],
     required MarketData marketData,
     DateTime? now,
+    String? lastRollover,
+    String? zakatNisabBasis,
   }) {
     final List<Map<String, dynamic>> lots = getNetIncomeLots(
       transactions: transactions,
       marketData: marketData,
+      lastRollover: lastRollover,
     );
     if (!_combinedPortfolioMeetsNisab(
       lots: lots,
       savings: savings,
       marketData: marketData,
+      zakatNisabBasis: zakatNisabBasis,
     )) {
       return const <ZakatScheduleEntry>[];
     }
@@ -1183,6 +1407,7 @@ class ZakatEngineService {
     required List<InvestmentAsset> investments,
     required MarketData marketData,
     DateTime? now,
+    String? zakatNisabBasis,
   }) {
     if (zakatAnnualDate.isEmpty || !zakatAnnualDate.contains('-')) {
       return const <ZakatScheduleEntry>[];
@@ -1203,8 +1428,10 @@ class ZakatEngineService {
 
     final DateTime today = now ?? DateTime.now();
     final HijriDate todayH = gregorianToHijri(today);
-    final double nisabValueEgp =
-        defaultConfig.nisabGoldGrams * marketData.goldPrice24kEgp;
+    final double nisabValueEgp = cashNisabThresholdEgp(
+      marketData,
+      zakatNisabBasis: zakatNisabBasis,
+    );
 
     final Map<String, ZakatScheduleEntry> byMonth =
         <String, ZakatScheduleEntry>{};
@@ -1411,6 +1638,7 @@ class ZakatEngineService {
     required List<Map<String, dynamic>> lots,
     required List<Saving> savings,
     required MarketData marketData,
+    String? zakatNisabBasis,
   }) {
     final NisabTotals totals = computeNisabTotals(
       savings: savings,
@@ -1424,6 +1652,7 @@ class ZakatEngineService {
     return checkCashNisab(
       totals.totalSavingsWealthEgp + incomeCashEgp,
       marketData,
+      zakatNisabBasis: zakatNisabBasis,
     );
   }
 

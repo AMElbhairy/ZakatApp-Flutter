@@ -146,6 +146,7 @@
   },
   "zakatMethod": "hawl",
   "zakatAnnualDate": "09-01",
+  "zakatNisabBasis": "gold85",
   "zakatScheduleFilter": "unpaid",
   "marketData": {
     "GOLD_PRICE_24K_EGP": 3000,

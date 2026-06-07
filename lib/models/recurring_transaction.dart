@@ -35,7 +35,7 @@ class RecurringTransaction {
       name: (json['name'] ?? '').toString(),
       type: (json['type'] ?? '').toString(),
       amount: _asDouble(json['amount']),
-      currency: (json['currency'] ?? '').toString(),
+      currency: (json['currency'] ?? '').toString().trim().toUpperCase(),
       category: (json['category'] ?? '').toString(),
       description: (json['description'] ?? '').toString(),
       dayOfMonth: _asInt(json['dayOfMonth']),

@@ -87,7 +87,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       totalSavingsWealthEgp: 0,
     );
     double totalWealthEgp = 0;
-    double investmentLiabilityEgp = 0;
+    double totalLiabilitiesEgp = 0;
     double netPositionEgp = 0;
     double nisabThreshold = 0;
     bool nisabMet = false;
@@ -102,24 +102,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
         savings: savings,
         investments: investments,
         marketData: market,
+        lastRollover: state.lastRollover,
       );
 
-      investmentLiabilityEgp = investments.fold<double>(
-        0,
-        (double sum, InvestmentAsset asset) =>
-            sum +
-            ZakatEngineService.convertToEgp(
-              asset.loanBalance,
-              asset.currency,
-              market,
-            ),
+      totalLiabilitiesEgp = ZakatEngineService.calculateTotalLiabilitiesEgp(
+        transactions: transactions,
+        savings: savings,
+        investments: investments,
+        marketData: market,
+        lastRollover: state.lastRollover,
       );
-      netPositionEgp = totalWealthEgp - investmentLiabilityEgp;
+      netPositionEgp = totalWealthEgp - totalLiabilitiesEgp;
 
-      nisabThreshold =
-          ZakatEngineService.defaultConfig.nisabGoldGrams *
-          market.goldPrice24kEgp;
-      nisabMet = ZakatEngineService.checkCashNisab(totalWealthEgp, market);
+      nisabThreshold = ZakatEngineService.cashNisabThresholdEgp(
+        market,
+        zakatNisabBasis: state.zakatNisabBasis,
+      );
+      nisabMet = ZakatEngineService.checkCashNisab(
+        totalWealthEgp,
+        market,
+        zakatNisabBasis: state.zakatNisabBasis,
+      );
     }
 
     final List<Map<String, dynamic>> schedule = hasMarketData
@@ -130,6 +133,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             savings: savings,
             investments: investments,
             marketData: market,
+            lastRollover: state.lastRollover,
+            zakatNisabBasis: state.zakatNisabBasis,
           )
         : const <Map<String, dynamic>>[];
     final _Dues dues = _computeDues(
@@ -140,21 +145,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
     final String? nextZakatDate = _findNextZakatDate(schedule);
 
-    final double rawWallet = hasFxData
-        ? ZakatEngineService.calculateWalletBalance(
+    final double cashWealthEgp = hasFxData
+        ? ZakatEngineService.calculateTotalCashWealthEgp(
             transactions: transactions,
             savings: savings,
             marketData: market,
+            lastRollover: state.lastRollover,
           )
         : 0.0;
-    final double walletEgp = rawWallet > 0 ? rawWallet : 0.0;
 
     final _Allocation allocation = _computeAllocation(
       savingsTotals: savingsTotals,
       investments: investments,
       marketData: market,
       totalWealthEgp: totalWealthEgp,
-      walletEgp: walletEgp,
+      cashWealthEgp: cashWealthEgp,
     );
     final bool balancesHidden = _isBalanceHidden(state);
     final _HeroGrowthData? heroGrowth = _computeHeroGrowth(
@@ -165,11 +170,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
       marketHistory: state.marketHistory,
       totalWealthEgp: totalWealthEgp,
       hasMarketData: hasMarketData,
+      lastRollover: state.lastRollover,
     );
 
-    final List<Transaction> recent = List<Transaction>.from(transactions)
-      ..sort((a, b) => _parseDate(b.date).compareTo(_parseDate(a.date)));
-    final List<Transaction> recent4 = recent.take(4).toList(growable: false);
+    final List<_DashboardActivityEntry> recent =
+        <_DashboardActivityEntry>[
+          ...transactions.map(_DashboardActivityEntry.transaction),
+          ...savings
+              .where(
+                (Saving saving) =>
+                    ZakatEngineService.normaliseAssetType(saving.assetType) ==
+                    'cash',
+              )
+              .map(_DashboardActivityEntry.cashSaving),
+        ]..sort((_DashboardActivityEntry a, _DashboardActivityEntry b) {
+          final int byDate = _parseDate(b.date).compareTo(_parseDate(a.date));
+          if (byDate != 0) return byDate;
+          return b.createdAt.compareTo(a.createdAt);
+        });
+    final List<_DashboardActivityEntry> recent4 = recent
+        .take(4)
+        .toList(growable: false);
 
     final bool hasAnyData =
         transactions.isNotEmpty || savings.isNotEmpty || investments.isNotEmpty;
@@ -400,8 +421,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       )
                     else
                       ...recent4.map(
-                        (Transaction tx) => _ActivityRow(
-                          tx: tx,
+                        (_DashboardActivityEntry entry) => _ActivityRow(
+                          entry: entry,
                           balancesHidden: balancesHidden,
                         ),
                       ),
@@ -443,6 +464,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required List<Saving> savings,
     required List<InvestmentAsset> investments,
     required MarketData marketData,
+    String? lastRollover,
+    String? zakatNisabBasis,
   }) {
     if (zakatMethod == 'annual') {
       return ZakatScheduleService.calculateAnnualZakatSchedule(
@@ -453,6 +476,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         savings: savings.map((e) => e.toJson()).toList(growable: false),
         investments: investments.map((e) => e.toJson()).toList(growable: false),
         marketData: marketData,
+        lastRollover: lastRollover,
+        zakatNisabBasis: zakatNisabBasis,
       );
     }
 
@@ -468,12 +493,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
           transactions: transactionJson,
           savings: savingsJson,
           marketData: marketData,
+          lastRollover: lastRollover,
+          zakatNisabBasis: zakatNisabBasis,
         );
     final List<Map<String, dynamic>> savingsSchedule =
         ZakatScheduleService.calculateSavingsZakatSchedule(
           savings: savingsJson,
           transactions: transactionJson,
           marketData: marketData,
+          lastRollover: lastRollover,
+          zakatNisabBasis: zakatNisabBasis,
         );
 
     return <Map<String, dynamic>>[...incomeSchedule, ...savingsSchedule];
@@ -510,21 +539,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
         if (!zakatPaidMonths.contains(monthKey)) {
           thisMonth += value;
         }
-      }
-      if (scheduleMonthKey == nextMonthKey) {
+      } else if (scheduleMonthKey == nextMonthKey) {
         if (!zakatPaidMonths.contains(monthKey)) {
           nextMonth += value;
         }
       }
     }
 
-    // 2. Unpaid installments for this month and next month
+    // 2. Unpaid installments
     for (final asset in investments) {
       for (final installment in asset.installmentPlan) {
         final bool isPaid = installment['isPaid'] == true;
         if (isPaid) continue;
 
-        final String rawDate = (installment['date'] ?? '').toString();
+        final String rawDate = InvestmentAsset.installmentDueDate(installment);
         final DateTime? parsedDate = DateTime.tryParse(rawDate);
         if (parsedDate == null) continue;
 
@@ -561,7 +589,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required List<InvestmentAsset> investments,
     required MarketData marketData,
     required double totalWealthEgp,
-    required double walletEgp,
+    required double cashWealthEgp,
   }) {
     if (totalWealthEgp <= 0 ||
         totalWealthEgp.isNaN ||
@@ -579,7 +607,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
     }
 
-    final double cash = savingsTotals.totalCashEgp + walletEgp;
+    final double cash = cashWealthEgp;
     final double metals =
         savingsTotals.totalGoldEgp + savingsTotals.totalSilverEgp;
 
@@ -755,6 +783,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required List<Map<String, dynamic>> marketHistory,
     required double totalWealthEgp,
     required bool hasMarketData,
+    String? lastRollover,
   }) {
     final DateTime now = DateTime.now();
     if (!hasMarketData || totalWealthEgp < 0 || !totalWealthEgp.isFinite) {
@@ -769,6 +798,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           savings: savings,
           investments: investments,
           marketData: marketData,
+          lastRollover: lastRollover,
         );
     if (startOfYearWealth <= 0 || !startOfYearWealth.isFinite) return null;
 
@@ -811,6 +841,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             savings: savings,
             investments: investments,
             marketData: marketData,
+            lastRollover: lastRollover,
           );
 
     return _HeroGrowthData(changePct: changePct, points: sparklinePoints);
@@ -823,6 +854,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required List<Saving> savings,
     required List<InvestmentAsset> investments,
     required MarketData marketData,
+    String? lastRollover,
   }) {
     final List<double> points = <double>[];
     DateTime cursor = DateTime(startOfYear.year, startOfYear.month, 1);
@@ -835,6 +867,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         savings: savings,
         investments: investments,
         marketData: marketData,
+        lastRollover: lastRollover,
       );
       if (value.isFinite && value > 0) {
         points.add(value);
@@ -1310,32 +1343,24 @@ class _AnimatedAmountText extends StatelessWidget {
         ).textTheme.titleLarge?.copyWith(color: Colors.white),
       );
     }
-    return TweenAnimationBuilder<double>(
-      tween: Tween<double>(begin: 0, end: displayValue),
-      duration: const Duration(milliseconds: 900),
-      curve: Curves.easeOutCubic,
-      builder: (_, double value, Widget? child) {
-        final String displayText = hidden
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: AlignmentDirectional.centerStart,
+      child: Text(
+        hidden
             ? '••••••'
             : _DashboardScreenState._formatCompactDisplay(
                 context,
-                value,
+                displayValue,
                 currency,
-              );
-        return FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: AlignmentDirectional.centerStart,
-          child: Text(
-            displayText,
-            maxLines: 1,
-            style: Theme.of(context).textTheme.displayLarge?.copyWith(
-              fontWeight: FontWeight.w700,
-              color: Colors.white,
-              letterSpacing: hidden ? 0 : -0.5,
-            ),
-          ),
-        );
-      },
+              ),
+        maxLines: 1,
+        style: Theme.of(context).textTheme.displayLarge?.copyWith(
+          fontWeight: FontWeight.w700,
+          color: Colors.white,
+          letterSpacing: hidden ? 0 : -0.5,
+        ),
+      ),
     );
   }
 }
@@ -2813,18 +2838,46 @@ class _AllocSeg {
   final String label;
 }
 
-class _ActivityRow extends StatelessWidget {
-  const _ActivityRow({required this.tx, required this.balancesHidden});
+class _DashboardActivityEntry {
+  const _DashboardActivityEntry._({this.transaction, this.saving});
 
-  final Transaction tx;
+  factory _DashboardActivityEntry.transaction(Transaction transaction) {
+    return _DashboardActivityEntry._(transaction: transaction);
+  }
+
+  factory _DashboardActivityEntry.cashSaving(Saving saving) {
+    return _DashboardActivityEntry._(saving: saving);
+  }
+
+  final Transaction? transaction;
+  final Saving? saving;
+
+  bool get isSaving => saving != null;
+  bool get isExpense => transaction?.type == 'expense';
+  String get id => isSaving ? 'saving_${saving!.id}' : 'tx_${transaction!.id}';
+  String get date => saving?.dateAcquired ?? transaction!.date;
+  String get createdAt => saving?.createdAt ?? transaction!.createdAt;
+  String get currency => saving?.unit ?? transaction!.currency;
+  double get amount => saving?.amount ?? transaction!.amount;
+
+  String title(BuildContext context) {
+    if (isSaving) return context.l10n.tr('cash_in');
+    return transaction!.category;
+  }
+}
+
+class _ActivityRow extends StatelessWidget {
+  const _ActivityRow({required this.entry, required this.balancesHidden});
+
+  final _DashboardActivityEntry entry;
   final bool balancesHidden;
 
   @override
   Widget build(BuildContext context) {
-    final bool isExpense = tx.type == 'expense';
+    final bool isExpense = entry.isExpense;
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     return Container(
-      key: Key('dashboardRecentTx_${tx.id}'),
+      key: Key('dashboardRecent_${entry.id}'),
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
@@ -2859,7 +2912,7 @@ class _ActivityRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Text(
-                  tx.category,
+                  entry.title(context),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(
@@ -2867,7 +2920,7 @@ class _ActivityRow extends StatelessWidget {
                   ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 2),
-                Text(tx.date, style: Theme.of(context).textTheme.bodySmall),
+                Text(entry.date, style: Theme.of(context).textTheme.bodySmall),
               ],
             ),
           ),
@@ -2875,8 +2928,8 @@ class _ActivityRow extends StatelessWidget {
             balancesHidden
                 ? '••••••'
                 : ZakatEngineService.formatCurrency(
-                    isExpense ? -tx.amount : tx.amount,
-                    tx.currency,
+                    isExpense ? -entry.amount : entry.amount,
+                    entry.currency,
                     isArabic: _DashboardScreenState._isArabic(context),
                     showSign: true,
                   ),

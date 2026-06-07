@@ -193,9 +193,10 @@ void main() {
     await tester.tap(find.byKey(const Key('addEntryFab')));
     await tester.pumpAndSettle();
 
-    expect(find.text('إضافة إدخال'), findsWidgets);
-    expect(find.text('إضافة دخل/مصروف'), findsOneWidget);
-    expect(find.text('إضافة نقدي'), findsOneWidget);
+    expect(find.text('إضافة قيد'), findsWidgets);
+    expect(find.text('إضافة دخل'), findsOneWidget);
+    expect(find.text('إضافة مصروف'), findsOneWidget);
+    expect(find.text('إضافة مدخرات'), findsOneWidget);
   });
 
   testWidgets('Arabic validation messages are Arabic',
@@ -208,7 +209,7 @@ void main() {
 
     await tester.tap(find.byKey(const Key('addEntryFab')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('actionAddTransaction')));
+    await tester.tap(find.byKey(const Key('actionAddIncome')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('saveTransactionButton')));
     await tester.pumpAndSettle();
@@ -223,11 +224,11 @@ void main() {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('النشاط').last);
+    await tester.tap(find.text('السجل').last);
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('deleteTransaction_tx_1')));
+    await tester.tap(find.byKey(const Key('deleteActivityEntry_tx_tx_1')));
     await tester.pumpAndSettle();
-    expect(find.text('حذف المعاملة؟'), findsOneWidget);
+    expect(find.text('هل تريد حذف المعاملة؟'), findsOneWidget);
     expect(find.text('إلغاء'), findsOneWidget);
     expect(find.text('حذف'), findsOneWidget);
   });

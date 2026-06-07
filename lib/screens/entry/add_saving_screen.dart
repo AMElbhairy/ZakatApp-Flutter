@@ -387,10 +387,9 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
     if (_linkPurchaseToCashEntries &&
         (allocationTotal - purchaseAmount).abs() > 0.01) {
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Funding allocations must equal purchase amount.'),
-        ),
+      showTopSnackBar(
+        context,
+        'Funding allocations must equal purchase amount.',
       );
       return;
     }

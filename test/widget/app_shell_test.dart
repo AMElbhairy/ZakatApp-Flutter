@@ -118,7 +118,7 @@ void main() {
 
     await tester.tap(find.text('Assets').last);
     await tester.pumpAndSettle();
-    expect(find.text('Total Assets'), findsOneWidget);
+    expect(find.text('TOTAL ASSETS'), findsOneWidget);
 
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();

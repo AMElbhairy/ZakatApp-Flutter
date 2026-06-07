@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/i18n/app_localizations.dart';
@@ -29,14 +30,14 @@ class _AppShellState extends State<AppShell> {
   final GlobalKey<ActivityScreenState> _activityKey =
       GlobalKey<ActivityScreenState>();
   bool _restorePromptVisible = false;
-  double? _dragStartX;
+  double? _edgeDragDistance;
 
   @override
   Widget build(BuildContext context) {
     final tokens = context.premiumTokens;
     final double bottomInset = MediaQuery.paddingOf(context).bottom;
-    final CloudBackupController? cloudBackupController =
-        context.watch<CloudBackupController?>();
+    final CloudBackupController? cloudBackupController = context
+        .watch<CloudBackupController?>();
     _maybeShowRestorePrompt(context, cloudBackupController);
     final List<Widget> tabs = <Widget>[
       AssetsScreen(
@@ -77,6 +78,7 @@ class _AppShellState extends State<AppShell> {
     ];
 
     final double navTouchBlockHeight = 90 + bottomInset;
+    final bool allowEdgeSwipe = defaultTargetPlatform == TargetPlatform.iOS;
     return PopScope<void>(
       canPop: _index == 2,
       onPopInvokedWithResult: (bool didPop, void _) {
@@ -88,237 +90,298 @@ class _AppShellState extends State<AppShell> {
         backgroundColor: tokens.colors.background,
         resizeToAvoidBottomInset: false,
         extendBody: true,
-        body: GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onHorizontalDragStart: (DragStartDetails details) {
-            _dragStartX = details.globalPosition.dx;
-          },
-          onHorizontalDragUpdate: (DragUpdateDetails details) {
-            if (_dragStartX == null || _index == 2) return;
-            final double screenWidth = MediaQuery.sizeOf(context).width;
-            final bool isRtl = Directionality.of(context) == TextDirection.rtl;
-            final double delta = details.globalPosition.dx - _dragStartX!;
-
-            if (isRtl) {
-              if (_dragStartX! > screenWidth - 40 && delta < -50) {
-                setState(() => _index = 2);
-                _dragStartX = null;
-              }
-            } else {
-              if (_dragStartX! < 40 && delta > 50) {
-                setState(() => _index = 2);
-                _dragStartX = null;
-              }
-            }
-          },
-          onHorizontalDragEnd: (_) {
-            _dragStartX = null;
-          },
-          onHorizontalDragCancel: () {
-            _dragStartX = null;
-          },
-          child: Stack(
-            clipBehavior: Clip.none,
+        body: Stack(
+          clipBehavior: Clip.none,
           children: <Widget>[
             SafeArea(
               bottom: false,
               child: IndexedStack(index: _index, children: tabs),
             ),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            height: navTouchBlockHeight,
-            child: const AbsorbPointer(
-              absorbing: true,
-              child: SizedBox.expand(),
+            if (allowEdgeSwipe && _index != 2)
+              PositionedDirectional(
+                start: 0,
+                top: 0,
+                bottom: navTouchBlockHeight,
+                width: 24,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onHorizontalDragStart: (_) {
+                    _edgeDragDistance = 0;
+                  },
+                  onHorizontalDragUpdate: (DragUpdateDetails details) {
+                    final bool isRtl =
+                        Directionality.of(context) == TextDirection.rtl;
+                    final double delta = details.primaryDelta ?? 0;
+                    _edgeDragDistance =
+                        (_edgeDragDistance ?? 0) + (isRtl ? -delta : delta);
+                    if ((_edgeDragDistance ?? 0) > 56) {
+                      setState(() => _index = 2);
+                      _edgeDragDistance = null;
+                    }
+                  },
+                  onHorizontalDragEnd: (DragEndDetails details) {
+                    final bool isRtl =
+                        Directionality.of(context) == TextDirection.rtl;
+                    final double velocity = details.primaryVelocity ?? 0;
+                    final bool swipedBack = isRtl
+                        ? velocity < -500
+                        : velocity > 500;
+                    if (swipedBack) {
+                      setState(() => _index = 2);
+                    }
+                    _edgeDragDistance = null;
+                  },
+                  onHorizontalDragCancel: () {
+                    _edgeDragDistance = null;
+                  },
+                  child: const SizedBox.expand(),
+                ),
+              ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: navTouchBlockHeight,
+              child: const AbsorbPointer(
+                absorbing: true,
+                child: SizedBox.expand(),
+              ),
             ),
-          ),
-          Positioned(
-            left: 14,
-            right: 14,
-            bottom: 2 + bottomInset,
-            child: SizedBox(
-              key: const Key('premiumBottomNav'),
-              height: 86,
-              child: LayoutBuilder(
-                builder: (BuildContext context, BoxConstraints constraints) {
-                  final List<_NavItemData> items = <_NavItemData>[
-                    _NavItemData(icon: AppIcons.assets, label: context.l10n.tr('assets')),
-                    _NavItemData(icon: AppIcons.activity, label: context.l10n.tr('activity')),
-                    _NavItemData(icon: AppIcons.dashboard, label: context.l10n.tr('dashboard')),
-                    _NavItemData(icon: AppIcons.plans, label: context.l10n.tr('plans')),
-                    _NavItemData(icon: AppIcons.account, label: context.l10n.tr('account')),
-                  ];
-                  const double navHeight = 58;
-                  const double dashboardRaisedHeight = 66;
-                  const double dashboardRaisedWidth = 97;
-                  final double slotWidth = constraints.maxWidth / items.length;
-                  const int dashboardIndex = 2;
-                  final double selectedLeft =
-                      (slotWidth * dashboardIndex) + ((slotWidth - dashboardRaisedWidth) / 2);
+            Positioned(
+              left: 14,
+              right: 14,
+              bottom: 2 + bottomInset,
+              child: SizedBox(
+                key: const Key('premiumBottomNav'),
+                height: 86,
+                child: LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints constraints) {
+                    final List<_NavItemData> items = <_NavItemData>[
+                      _NavItemData(
+                        icon: AppIcons.assets,
+                        label: context.l10n.tr('assets'),
+                      ),
+                      _NavItemData(
+                        icon: AppIcons.activity,
+                        label: context.l10n.tr('activity'),
+                      ),
+                      _NavItemData(
+                        icon: AppIcons.dashboard,
+                        label: context.l10n.tr('dashboard'),
+                      ),
+                      _NavItemData(
+                        icon: AppIcons.plans,
+                        label: context.l10n.tr('plans'),
+                      ),
+                      _NavItemData(
+                        icon: AppIcons.account,
+                        label: context.l10n.tr('account'),
+                      ),
+                    ];
+                    const double navHeight = 58;
+                    const double dashboardRaisedHeight = 66;
+                    const double dashboardRaisedWidth = 97;
+                    final double slotWidth =
+                        constraints.maxWidth / items.length;
+                    const int dashboardIndex = 2;
+                    final double selectedLeft =
+                        (slotWidth * dashboardIndex) +
+                        ((slotWidth - dashboardRaisedWidth) / 2);
 
-                  return Stack(
-                    clipBehavior: Clip.none,
-                    children: <Widget>[
-                      Positioned(
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        child: Container(
-                          height: navHeight,
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            borderRadius: AppRadii.pill,
-                            color: const Color(0xFF02201A),
-                            border: Border.all(
-                              color: const Color(0xFFC5A059).withValues(alpha: 0.30),
+                    return Stack(
+                      clipBehavior: Clip.none,
+                      children: <Widget>[
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          child: Container(
+                            height: navHeight,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
                             ),
-                            boxShadow: <BoxShadow>[
-                              BoxShadow(
-                                color: const Color(0xFFD4AF37).withValues(alpha: 0.12),
-                                blurRadius: 10,
-                                spreadRadius: 0.5,
-                                offset: const Offset(0, 1),
+                            decoration: BoxDecoration(
+                              borderRadius: AppRadii.pill,
+                              color: const Color(0xFF02201A),
+                              border: Border.all(
+                                color: const Color(
+                                  0xFFC5A059,
+                                ).withValues(alpha: 0.30),
                               ),
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.12),
-                                blurRadius: 12,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: Row(
-                            children: List<Widget>.generate(items.length, (int i) {
-                              final bool selected = i == _index;
-                              final _NavItemData item = items[i];
-                              return Expanded(
-                                child: Padding(
-                                  padding: EdgeInsetsDirectional.only(
-                                    end: i == 1 ? 12 : 0,
-                                    start: i == 3 ? 12 : 0,
-                                  ),
-                                  child: GestureDetector(
-                                    behavior: HitTestBehavior.opaque,
-                                    onTap: () => setState(() => _index = i),
-                                    child: i == dashboardIndex
-                                        ? const SizedBox.shrink()
-                                        : Column(
-                                            mainAxisAlignment: MainAxisAlignment.center,
-                                            children: <Widget>[
-                                              Container(
-                                                decoration: selected
-                                                    ? BoxDecoration(
-                                                        shape: BoxShape.circle,
-                                                        boxShadow: <BoxShadow>[
-                                                          BoxShadow(
-                                                            color: const Color(0xFFD4AF37)
-                                                                .withValues(alpha: 0.18),
-                                                            blurRadius: 8,
-                                                            spreadRadius: 0.2,
-                                                          ),
-                                                        ],
-                                                      )
-                                                    : null,
-                                                child: Icon(
-                                                  item.icon,
-                                                  size: 18,
-                                                  color: selected
-                                                      ? const Color(0xFFD4AF37)
-                                                      : const Color(0xFFA3B8B5),
-                                                ),
-                                              ),
-                                              const SizedBox(height: 2),
-                                              Text(
-                                                item.label,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                                      fontSize: 10.5,
-                                                      fontWeight:
-                                                          selected ? FontWeight.w700 : FontWeight.w500,
-                                                      color: selected
-                                                          ? const Color(0xFFD4AF37)
-                                                          : const Color(0xFFA3B8B5),
-                                                      shadows: selected
-                                                          ? <Shadow>[
-                                                              Shadow(
-                                                                color: const Color(0xFFD4AF37)
-                                                                    .withValues(alpha: 0.28),
-                                                                blurRadius: 8,
-                                                              ),
-                                                            ]
-                                                          : null,
-                                                    ),
-                                              ),
-                                            ],
-                                          ),
-                                  ),
+                              boxShadow: <BoxShadow>[
+                                BoxShadow(
+                                  color: const Color(
+                                    0xFFD4AF37,
+                                  ).withValues(alpha: 0.12),
+                                  blurRadius: 10,
+                                  spreadRadius: 0.5,
+                                  offset: const Offset(0, 1),
                                 ),
-                              );
-                            }),
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.12),
+                                  blurRadius: 12,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              children: List<Widget>.generate(items.length, (
+                                int i,
+                              ) {
+                                final bool selected = i == _index;
+                                final _NavItemData item = items[i];
+                                return Expanded(
+                                  child: Padding(
+                                    padding: EdgeInsetsDirectional.only(
+                                      end: i == 1 ? 12 : 0,
+                                      start: i == 3 ? 12 : 0,
+                                    ),
+                                    child: GestureDetector(
+                                      behavior: HitTestBehavior.opaque,
+                                      onTap: () => setState(() => _index = i),
+                                      child: i == dashboardIndex
+                                          ? const SizedBox.shrink()
+                                          : Column(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              children: <Widget>[
+                                                Container(
+                                                  decoration: selected
+                                                      ? BoxDecoration(
+                                                          shape:
+                                                              BoxShape.circle,
+                                                          boxShadow: <BoxShadow>[
+                                                            BoxShadow(
+                                                              color:
+                                                                  const Color(
+                                                                    0xFFD4AF37,
+                                                                  ).withValues(
+                                                                    alpha: 0.18,
+                                                                  ),
+                                                              blurRadius: 8,
+                                                              spreadRadius: 0.2,
+                                                            ),
+                                                          ],
+                                                        )
+                                                      : null,
+                                                  child: Icon(
+                                                    item.icon,
+                                                    size: 18,
+                                                    color: selected
+                                                        ? const Color(
+                                                            0xFFD4AF37,
+                                                          )
+                                                        : const Color(
+                                                            0xFFA3B8B5,
+                                                          ),
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 2),
+                                                Text(
+                                                  item.label,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .labelSmall
+                                                      ?.copyWith(
+                                                        fontSize: 10.5,
+                                                        fontWeight: selected
+                                                            ? FontWeight.w700
+                                                            : FontWeight.w500,
+                                                        color: selected
+                                                            ? const Color(
+                                                                0xFFD4AF37,
+                                                              )
+                                                            : const Color(
+                                                                0xFFA3B8B5,
+                                                              ),
+                                                        shadows: selected
+                                                            ? <Shadow>[
+                                                                Shadow(
+                                                                  color:
+                                                                      const Color(
+                                                                        0xFFD4AF37,
+                                                                      ).withValues(
+                                                                        alpha:
+                                                                            0.28,
+                                                                      ),
+                                                                  blurRadius: 8,
+                                                                ),
+                                                              ]
+                                                            : null,
+                                                      ),
+                                                ),
+                                              ],
+                                            ),
+                                    ),
+                                  ),
+                                );
+                              }),
+                            ),
                           ),
                         ),
-                      ),
-                      Positioned(
-                        left: selectedLeft,
-                        bottom: -4,
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () => setState(() => _index = dashboardIndex),
-                          child: _dashboardRaisedItem(
-                            item: items[dashboardIndex],
-                            selected: _index == dashboardIndex,
-                            width: dashboardRaisedWidth,
-                            height: dashboardRaisedHeight,
+                        Positioned(
+                          left: selectedLeft,
+                          bottom: -4,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () =>
+                                setState(() => _index = dashboardIndex),
+                            child: _dashboardRaisedItem(
+                              item: items[dashboardIndex],
+                              selected: _index == dashboardIndex,
+                              width: dashboardRaisedWidth,
+                              height: dashboardRaisedHeight,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ),
-          PositionedDirectional(
-            start: 22,
-            bottom: 75 + bottomInset,
-            child: SizedBox(
-              width: 64,
-              height: 64,
-              child: FloatingActionButton(
-                key: const Key('addEntryFab'),
-                onPressed: () => _showAddActions(context),
-                backgroundColor: const Color(0xFF012E26),
-                foregroundColor: const Color(0xFFD4AF37),
-                elevation: 0,
-                shape: CircleBorder(
-                  side: BorderSide(
-                    color: const Color(0xFFC5A059).withValues(alpha: 0.45),
-                    width: 1.2,
-                  ),
-                ),
-                child: Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    boxShadow: <BoxShadow>[
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.22),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  alignment: Alignment.center,
-                  child: const Icon(AppIcons.add, size: 28),
+                      ],
+                    );
+                  },
                 ),
               ),
             ),
-          ),
+            PositionedDirectional(
+              start: 22,
+              bottom: 75 + bottomInset,
+              child: SizedBox(
+                width: 64,
+                height: 64,
+                child: FloatingActionButton(
+                  key: const Key('addEntryFab'),
+                  onPressed: () => _showAddActions(context),
+                  backgroundColor: const Color(0xFF012E26),
+                  foregroundColor: const Color(0xFFD4AF37),
+                  elevation: 0,
+                  shape: CircleBorder(
+                    side: BorderSide(
+                      color: const Color(0xFFC5A059).withValues(alpha: 0.45),
+                      width: 1.2,
+                    ),
+                  ),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      boxShadow: <BoxShadow>[
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.22),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    alignment: Alignment.center,
+                    child: const Icon(AppIcons.add, size: 28),
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),
-    ),
     );
   }
 
@@ -339,7 +402,7 @@ class _AppShellState extends State<AppShell> {
             cloudBackupController.latestBackup?.effectiveUpdatedAt == null
                 ? 'A Google Drive backup was found. Restore now?'
                 : 'A Google Drive backup was found from '
-                    '${cloudBackupController.latestBackup!.effectiveUpdatedAt!.toLocal()}. Restore now?',
+                      '${cloudBackupController.latestBackup!.effectiveUpdatedAt!.toLocal()}. Restore now?',
           ),
           actions: <Widget>[
             TextButton(
@@ -419,7 +482,9 @@ class _AppShellState extends State<AppShell> {
                 : null,
             child: Icon(
               item.icon,
-              color: selected ? const Color(0xFFD4AF37) : const Color(0xFFA3B8B5),
+              color: selected
+                  ? const Color(0xFFD4AF37)
+                  : const Color(0xFFA3B8B5),
               size: 23,
             ),
           ),
@@ -429,18 +494,20 @@ class _AppShellState extends State<AppShell> {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  fontSize: 10.5,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                  color: selected ? const Color(0xFFD4AF37) : const Color(0xFFA3B8B5),
-                  shadows: selected
-                      ? <Shadow>[
-                          Shadow(
-                            color: const Color(0xFFD4AF37).withValues(alpha: 0.18),
-                            blurRadius: 5,
-                          ),
-                        ]
-                      : null,
-                ),
+              fontSize: 10.5,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              color: selected
+                  ? const Color(0xFFD4AF37)
+                  : const Color(0xFFA3B8B5),
+              shadows: selected
+                  ? <Shadow>[
+                      Shadow(
+                        color: const Color(0xFFD4AF37).withValues(alpha: 0.18),
+                        blurRadius: 5,
+                      ),
+                    ]
+                  : null,
+            ),
           ),
         ],
       ),
@@ -453,16 +520,21 @@ class _AppShellState extends State<AppShell> {
       useSafeArea: true,
       builder: (BuildContext context) {
         return SafeArea(
-          child: Padding(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                SectionHeader(title: context.l10n.tr('add_entry'), bottomSpacing: 8),
+                SectionHeader(
+                  title: context.l10n.tr('add_entry'),
+                  bottomSpacing: 8,
+                ),
                 // Add Income
                 ListTile(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
                   key: const Key('actionAddIncome'),
                   leading: const Icon(Icons.trending_up_outlined),
                   title: Text(context.l10n.tr('add_income')),
@@ -470,14 +542,17 @@ class _AppShellState extends State<AppShell> {
                     Navigator.of(context).pop();
                     Navigator.of(this.context).push(
                       MaterialPageRoute<void>(
-                        builder: (_) => const AddTransactionScreen(initialType: 'income'),
+                        builder: (_) =>
+                            const AddTransactionScreen(initialType: 'income'),
                       ),
                     );
                   },
                 ),
                 // Add Expense
                 ListTile(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
                   key: const Key('actionAddExpense'),
                   leading: const Icon(Icons.trending_down_outlined),
                   title: Text(context.l10n.tr('add_expense')),
@@ -485,14 +560,17 @@ class _AppShellState extends State<AppShell> {
                     Navigator.of(context).pop();
                     Navigator.of(this.context).push(
                       MaterialPageRoute<void>(
-                        builder: (_) => const AddTransactionScreen(initialType: 'expense'),
+                        builder: (_) =>
+                            const AddTransactionScreen(initialType: 'expense'),
                       ),
                     );
                   },
                 ),
                 // Add Savings
                 ListTile(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
                   key: const Key('actionAddSaving'),
                   leading: const Icon(Icons.savings_outlined),
                   title: Text(context.l10n.tr('add_saving')),
@@ -507,7 +585,9 @@ class _AppShellState extends State<AppShell> {
                 ),
                 // Add Investment
                 ListTile(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
                   key: const Key('actionAddInvestment'),
                   leading: const Icon(Icons.business_outlined),
                   title: Text(context.l10n.tr('add_investment')),
@@ -522,7 +602,9 @@ class _AppShellState extends State<AppShell> {
                 ),
                 // Add Plan
                 ListTile(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
                   key: const Key('actionAddPlan'),
                   leading: const Icon(Icons.auto_graph_outlined),
                   title: Text(context.l10n.tr('add_plan')),
@@ -555,9 +637,14 @@ class _AppShellState extends State<AppShell> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                SectionHeader(title: context.l10n.tr('add_asset'), bottomSpacing: 8),
+                SectionHeader(
+                  title: context.l10n.tr('add_asset'),
+                  bottomSpacing: 8,
+                ),
                 ListTile(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
                   leading: const Icon(Icons.savings_outlined),
                   title: Text(context.l10n.tr('add_saving')),
                   onTap: () {
@@ -570,7 +657,9 @@ class _AppShellState extends State<AppShell> {
                   },
                 ),
                 ListTile(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
                   leading: const Icon(Icons.business_outlined),
                   title: Text(context.l10n.tr('add_investment')),
                   onTap: () {

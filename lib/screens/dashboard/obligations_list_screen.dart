@@ -91,6 +91,8 @@ class _ObligationsListScreenState extends State<ObligationsListScreen> {
     required List<Saving> savings,
     required List<InvestmentAsset> investments,
     required MarketData marketData,
+    String? lastRollover,
+    String? zakatNisabBasis,
   }) {
     if (zakatMethod == 'annual') {
       return ZakatScheduleService.calculateAnnualZakatSchedule(
@@ -101,6 +103,8 @@ class _ObligationsListScreenState extends State<ObligationsListScreen> {
         savings: savings.map((e) => e.toJson()).toList(growable: false),
         investments: investments.map((e) => e.toJson()).toList(growable: false),
         marketData: marketData,
+        lastRollover: lastRollover,
+        zakatNisabBasis: zakatNisabBasis,
       );
     }
 
@@ -116,12 +120,16 @@ class _ObligationsListScreenState extends State<ObligationsListScreen> {
           transactions: transactionJson,
           savings: savingsJson,
           marketData: marketData,
+          lastRollover: lastRollover,
+          zakatNisabBasis: zakatNisabBasis,
         );
     final List<Map<String, dynamic>> savingsSchedule =
         ZakatScheduleService.calculateSavingsZakatSchedule(
           savings: savingsJson,
           transactions: transactionJson,
           marketData: marketData,
+          lastRollover: lastRollover,
+          zakatNisabBasis: zakatNisabBasis,
         );
     return <Map<String, dynamic>>[...monthly, ...savingsSchedule];
   }
@@ -165,6 +173,14 @@ class _ObligationsListScreenState extends State<ObligationsListScreen> {
     final controller = context.watch<AppStateController>();
     final state = controller.state;
     final tokens = context.premiumTokens;
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final bool isRtl = Directionality.of(context) == TextDirection.rtl;
+    final Alignment gradientBegin = isRtl
+        ? Alignment.centerLeft
+        : Alignment.centerRight;
+    final Alignment gradientEnd = isRtl
+        ? Alignment.centerRight
+        : Alignment.centerLeft;
 
     final transactions = state.transactions;
     final savings = state.savings;
@@ -190,6 +206,8 @@ class _ObligationsListScreenState extends State<ObligationsListScreen> {
             savings: savings,
             investments: investments,
             marketData: market,
+            lastRollover: state.lastRollover,
+            zakatNisabBasis: state.zakatNisabBasis,
           )
         : const <Map<String, dynamic>>[];
 
@@ -224,7 +242,7 @@ class _ObligationsListScreenState extends State<ObligationsListScreen> {
       for (int i = 0; i < asset.installmentPlan.length; i++) {
         final plan = asset.installmentPlan[i];
         final bool isPaid = plan['isPaid'] == true;
-        final String rawDate = (plan['date'] ?? '').toString();
+        final String rawDate = InvestmentAsset.installmentDueDate(plan);
         final double amount = (plan['amount'] as num?)?.toDouble() ?? 0.0;
         final String currency = (plan['currency'] ?? asset.currency).toString();
         final double amountEgp = ZakatEngineService.convertToEgp(
@@ -266,7 +284,6 @@ class _ObligationsListScreenState extends State<ObligationsListScreen> {
       } else if (widget.filterMode == 'next_month') {
         return itemMonthKey == nextMonthKey;
       } else {
-        // total mode: shows both this month and next month obligations
         return itemMonthKey == thisMonthKey || itemMonthKey == nextMonthKey;
       }
     }).toList();
@@ -329,37 +346,95 @@ class _ObligationsListScreenState extends State<ObligationsListScreen> {
               // Summary Banner Card
               PremiumCard(
                 hero: true,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 18,
-                ),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: <Widget>[
-                      Text(
-                        context.l10n
-                            .tr('total_upcoming_obligations')
-                            .toUpperCase(),
-                        style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.6,
-                          color: Color(0xFFA3B8B5),
+                padding: EdgeInsets.zero,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: <Widget>[
+                    PositionedDirectional(
+                      top: 0,
+                      start: 0,
+                      end: 0,
+                      bottom: 0,
+                      child: IgnorePointer(
+                        child: ShaderMask(
+                          shaderCallback: (Rect bounds) {
+                            return LinearGradient(
+                              begin: gradientBegin,
+                              end: gradientEnd,
+                              colors: <Color>[
+                                Colors.white.withValues(
+                                  alpha: isDark ? 0.20 : 0.38,
+                                ),
+                                Colors.white.withValues(
+                                  alpha: isDark ? 0.01 : 0.05,
+                                ),
+                              ],
+                              stops: const <double>[0.0, 1.0],
+                            ).createShader(bounds);
+                          },
+                          blendMode: BlendMode.dstIn,
+                          child: Image.asset(
+                            'assets/images/hero_pattern_watermark.png',
+                            fit: BoxFit.cover,
+                            alignment: AlignmentDirectional.topEnd,
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        totalDisplay,
-                        style: const TextStyle(
-                          fontSize: 26,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Row(
+                        children: <Widget>[
+                          CircleAvatar(
+                            backgroundColor: Colors.white.withValues(alpha: 0.15),
+                            radius: 28,
+                            child: const Icon(
+                              Icons.event_available_rounded,
+                              color: Colors.white,
+                              size: 28,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: <Widget>[
+                                Text(
+                                  pageTitle.toUpperCase(),
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 0.8,
+                                    color: Color(0xFFFFC928),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  totalDisplay,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  '${filteredItems.length} ${context.l10n.tr('entries')}',
+                                  style: const TextStyle(
+                                    color: Colors.white60,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 20),

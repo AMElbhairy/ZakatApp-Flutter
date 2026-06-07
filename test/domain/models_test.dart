@@ -24,6 +24,35 @@ void main() {
     expect(tx.toJson()['currency'], 'EGP');
   });
 
+  test('financial model currencies normalize for consistent summaries', () {
+    final Transaction transaction = Transaction.fromJson(<String, dynamic>{
+      'type': 'EXPENSE',
+      'currency': ' usd ',
+    });
+    final Saving saving = Saving.fromJson(<String, dynamic>{
+      'assetType': 'cash',
+      'unit': ' eur ',
+      'purchaseCurrency': ' gbp ',
+    });
+    final InvestmentAsset investment = InvestmentAsset.fromJson(
+      <String, dynamic>{'currency': ' sar '},
+    );
+    final RecurringTransaction recurring = RecurringTransaction.fromJson(
+      <String, dynamic>{'currency': ' aed '},
+    );
+    final FinancialPlan plan = FinancialPlan.fromJson(<String, dynamic>{
+      'currency': ' kwd ',
+    });
+
+    expect(transaction.type, 'expense');
+    expect(transaction.currency, 'USD');
+    expect(saving.unit, 'EUR');
+    expect(saving.purchaseCurrency, 'GBP');
+    expect(investment.currency, 'SAR');
+    expect(recurring.currency, 'AED');
+    expect(plan.currency, 'KWD');
+  });
+
   test('saving parsing', () {
     final saving = Saving.fromJson(
       fixture['savings'][0] as Map<String, dynamic>,
@@ -109,6 +138,7 @@ void main() {
     expect(roundtrip.mainCurrency, appState.mainCurrency);
     expect(roundtrip.zakatMethod, appState.zakatMethod);
     expect(roundtrip.zakatAnnualDate, appState.zakatAnnualDate);
+    expect(roundtrip.zakatNisabBasis, appState.zakatNisabBasis);
   });
 
   test('market snapshot fromJson/toJson', () {

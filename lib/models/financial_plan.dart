@@ -30,11 +30,13 @@ class FinancialPlan {
       id: (json['id'] ?? '').toString(),
       name: (json['name'] ?? '').toString(),
       startDate: (json['startDate'] ?? '').toString(),
-      currency: (json['currency'] ?? '').toString(),
+      currency: (json['currency'] ?? '').toString().trim().toUpperCase(),
       monthlyIncome: _asDouble(json['monthlyIncome']),
       monthlyExpenses: _asDouble(json['monthlyExpenses']),
       includeInstallments: _asBool(json['includeInstallments']),
-      includeZakat: json['includeZakat'] == null ? true : _asBool(json['includeZakat']),
+      includeZakat: json['includeZakat'] == null
+          ? true
+          : _asBool(json['includeZakat']),
       durationYears: _asInt(json['durationYears']),
       context: json['context'] is Map
           ? Map<String, dynamic>.from(json['context'] as Map)

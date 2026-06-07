@@ -101,6 +101,15 @@ class AppStateController extends ChangeNotifier {
     );
   }
 
+  Future<void> addTransactions(List<Transaction> transactions) async {
+    if (transactions.isEmpty) return;
+    await updateState(
+      _state.copyWith(
+        transactions: <Transaction>[..._state.transactions, ...transactions],
+      ),
+    );
+  }
+
   Future<void> updateTransaction(Transaction transaction) async {
     final List<Transaction> next = _state.transactions
         .map((Transaction tx) => tx.id == transaction.id ? transaction : tx)
@@ -109,8 +118,21 @@ class AppStateController extends ChangeNotifier {
   }
 
   Future<void> deleteTransaction(String transactionId) async {
+    Transaction? target;
+    for (final tx in _state.transactions) {
+      if (tx.id == transactionId) {
+        target = tx;
+        break;
+      }
+    }
+    final String? pairId = target?.exchangePairId;
     final List<Transaction> next = _state.transactions
-        .where((Transaction tx) => tx.id != transactionId)
+        .where((Transaction tx) {
+          if (pairId != null && pairId.isNotEmpty) {
+            return tx.exchangePairId != pairId;
+          }
+          return tx.id != transactionId;
+        })
         .toList(growable: false);
     await updateState(_state.copyWith(transactions: next));
   }
@@ -170,9 +192,40 @@ class AppStateController extends ChangeNotifier {
   }
 
   Future<void> deleteSaving(String savingId) async {
-    final List<Saving> next = _state.savings
+    Saving? target;
+    for (final s in _state.savings) {
+      if (s.id == savingId) {
+        target = s;
+        break;
+      }
+    }
+    List<Saving> nextSavings = _state.savings
         .where((Saving entry) => entry.id != savingId)
         .toList(growable: false);
+
+    if (target != null &&
+        target.exchangeSourceSavingId != null &&
+        target.exchangeSourceSavingId!.isNotEmpty) {
+      final String srcId = target.exchangeSourceSavingId!;
+      double deducted = 0.0;
+      final RegExp regExp = RegExp(r'Savings exchange:\s*([0-9.]+)\s');
+      final Match? match = regExp.firstMatch(target.description);
+      if (match != null) {
+        deducted = double.tryParse(match.group(1) ?? '') ?? 0.0;
+      }
+      if (deducted > 0) {
+        nextSavings = nextSavings.map((Saving s) {
+          if (s.id == srcId) {
+            return s.copyWith(
+              amount: s.amount + deducted,
+              remainingAmount: s.remainingAmount + deducted,
+            );
+          }
+          return s;
+        }).toList();
+      }
+    }
+
     final List<Transaction> nextTransactions = _state.transactions
         .where(
           (Transaction tx) =>
@@ -181,8 +234,69 @@ class AppStateController extends ChangeNotifier {
         )
         .toList(growable: false);
     await updateState(
-      _state.copyWith(savings: next, transactions: nextTransactions),
+      _state.copyWith(savings: nextSavings, transactions: nextTransactions),
     );
+  }
+
+  Future<void> updateCurrencyExchange({
+    required String oldExchangePairId,
+    required String? oldTargetSavingId,
+    required String? oldSourceSavingId,
+    required double oldSourceDeductedAmount,
+    required String date,
+    required String sourceType,
+    required String sourceCurrency,
+    required String targetCurrency,
+    required double sourceAmount,
+    required double targetAmount,
+  }) async {
+    List<Transaction> nextTransactions = _state.transactions;
+    List<Saving> nextSavings = _state.savings;
+
+    if (oldExchangePairId.isNotEmpty) {
+      nextTransactions = nextTransactions
+          .where((tx) => tx.exchangePairId != oldExchangePairId)
+          .toList();
+    }
+
+    if (oldTargetSavingId != null && oldTargetSavingId.isNotEmpty) {
+      nextSavings = nextSavings
+          .where((s) => s.id != oldTargetSavingId)
+          .toList();
+      if (oldSourceSavingId != null &&
+          oldSourceSavingId.isNotEmpty &&
+          oldSourceDeductedAmount > 0) {
+        nextSavings = nextSavings.map((s) {
+          if (s.id == oldSourceSavingId) {
+            return s.copyWith(
+              amount: s.amount + oldSourceDeductedAmount,
+              remainingAmount: s.remainingAmount + oldSourceDeductedAmount,
+            );
+          }
+          return s;
+        }).toList();
+      }
+    }
+
+    final AppStateModel revertedState = _state.copyWith(
+      transactions: nextTransactions,
+      savings: nextSavings,
+    );
+
+    final ReconciliationResult out = reconciliationService
+        .executeCurrencyExchange(
+          input: revertedState,
+          date: date,
+          sourceType: sourceType,
+          sourceCurrency: sourceCurrency,
+          targetCurrency: targetCurrency,
+          sourceAmount: sourceAmount,
+          targetAmount: targetAmount,
+        );
+
+    if (out.modified) {
+      await updateState(out.state);
+    }
   }
 
   Future<void> addInvestment(InvestmentAsset investment) async {
@@ -374,6 +488,11 @@ class AppStateController extends ChangeNotifier {
     await updateState(_state.copyWith(zakatAnnualDate: annualDate));
   }
 
+  Future<void> updateZakatNisabBasis(String basis) async {
+    final String normalized = basis == 'silver595' ? 'silver595' : 'gold85';
+    await updateState(_state.copyWith(zakatNisabBasis: normalized));
+  }
+
   Future<void> updateLanguagePreference(String languageCode) async {
     await updateState(_state.copyWith(languagePreference: languageCode));
   }
@@ -397,6 +516,47 @@ class AppStateController extends ChangeNotifier {
         aiSettings['balancesHidden'] == true;
     aiSettings['privacyMode'] = !isCurrentlyHidden;
     await updateState(_state.copyWith(aiSettings: aiSettings));
+  }
+
+  Future<void> updateAiSettings(Map<String, dynamic> aiSettings) async {
+    await updateState(_state.copyWith(aiSettings: aiSettings));
+  }
+
+  double getAvailableBalance({
+    required String currency,
+    required String sourceType,
+  }) {
+    double totalAvailable = 0.0;
+    final List<Map<String, dynamic>> savingsJson = _state.savings
+        .map((e) => e.toJson())
+        .toList();
+    final List<Map<String, dynamic>> transactionsJson = _state.transactions
+        .map((e) => e.toJson())
+        .toList();
+
+    if (sourceType == 'savings' || sourceType == 'both') {
+      final cashSavings = savingsJson.where((s) {
+        final String type = (s['assetType'] ?? '').toString().toLowerCase();
+        return type == 'cash' && (s['unit'] ?? '').toString() == currency;
+      });
+      for (final s in cashSavings) {
+        final double rem = ((s['remainingAmount'] ?? s['amount'] ?? 0.0) as num)
+            .toDouble();
+        totalAvailable += rem;
+      }
+    }
+
+    if (sourceType == 'income' || sourceType == 'both') {
+      final incomeLots = reconciliationService.getNetIncomeLotsForCurrency(
+        transactions: transactionsJson,
+        currency: currency,
+        lastRollover: _state.lastRollover,
+      );
+      for (final l in incomeLots) {
+        totalAvailable += l.remainingAmount;
+      }
+    }
+    return totalAvailable;
   }
 
   Future<void> updateMarketSnapshot(MarketSnapshot snapshot) async {
@@ -618,6 +778,7 @@ extension AppStateModelCopyWith on AppStateModel {
     Map<String, dynamic>? zakatExpenseIds,
     String? zakatMethod,
     String? zakatAnnualDate,
+    String? zakatNisabBasis,
     String? languagePreference,
     String? themeMode,
     String? zakatScheduleFilter,
@@ -646,6 +807,7 @@ extension AppStateModelCopyWith on AppStateModel {
       zakatExpenseIds: zakatExpenseIds ?? this.zakatExpenseIds,
       zakatMethod: zakatMethod ?? this.zakatMethod,
       zakatAnnualDate: zakatAnnualDate ?? this.zakatAnnualDate,
+      zakatNisabBasis: zakatNisabBasis ?? this.zakatNisabBasis,
       languagePreference: languagePreference ?? this.languagePreference,
       themeMode: themeMode ?? this.themeMode,
       zakatScheduleFilter: zakatScheduleFilter ?? this.zakatScheduleFilter,

@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:zakatapp_flutter/core/services/zakat_engine.dart';
+import 'package:zakatapp_flutter/models/saving.dart';
 import 'package:zakatapp_flutter/models/transaction.dart';
 import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
 import 'package:zakatapp_flutter/services/app_state_controller.dart';
@@ -23,7 +25,10 @@ void main() {
       paymentDate: '2026-06-01',
     );
     expect(controller.state.zakatPaidMonths, contains('2026-06'));
-    expect(controller.state.transactions.any((t) => t.category == 'Zakat'), isTrue);
+    expect(
+      controller.state.transactions.any((t) => t.category == 'Zakat'),
+      isTrue,
+    );
   });
 
   test('controller executeCurrencyExchange creates linked records', () async {
@@ -49,7 +54,87 @@ void main() {
       sourceAmount: 50,
       targetAmount: 2500,
     );
-    final exchanged = controller.state.transactions.where((t) => t.exchangePairId != null).toList();
+    final exchanged = controller.state.transactions
+        .where((t) => t.exchangePairId != null)
+        .toList();
     expect(exchanged.length, 2);
+  });
+
+  test('controller adds scanned transactions in one persisted batch', () async {
+    final controller = await makeController();
+    await controller.addTransactions(<Transaction>[
+      const Transaction(
+        id: 'scan-1',
+        type: 'expense',
+        date: '2026-06-01',
+        amount: 10,
+        currency: 'EGP',
+        category: 'Food & Dining',
+        description: 'First scanned item',
+        createdAt: '2026-06-01T00:00:00.000Z',
+        rolledOver: false,
+      ),
+      const Transaction(
+        id: 'scan-2',
+        type: 'expense',
+        date: '2026-06-01',
+        amount: 20,
+        currency: 'EGP',
+        category: 'Food & Dining',
+        description: 'Second scanned item',
+        createdAt: '2026-06-01T00:00:01.000Z',
+        rolledOver: false,
+      ),
+    ]);
+
+    expect(
+      controller.state.transactions.map((Transaction tx) => tx.id),
+      containsAll(<String>['scan-1', 'scan-2']),
+    );
+  });
+
+  test('controller expense deducts post-rollover cash saving', () async {
+    final controller = await makeController();
+    await controller.updateState(
+      controller.state.copyWith(lastRollover: '2026-05-31'),
+    );
+    await controller.addSaving(
+      const Saving(
+        id: 'saving-1',
+        assetType: 'cash',
+        dateAcquired: '2026-05-01',
+        amount: 100,
+        remainingAmount: 100,
+        unit: 'EGP',
+        description: '',
+        purchaseCurrency: '',
+        purchaseAmount: 0,
+        createdAt: '2026-05-01T00:00:00.000Z',
+      ),
+    );
+    await controller.addTransaction(
+      const Transaction(
+        id: 'expense-1',
+        type: 'expense',
+        date: '2026-06-02',
+        amount: 20,
+        currency: 'EGP',
+        category: 'Food & Dining',
+        description: '',
+        createdAt: '2026-06-02T00:00:00.000Z',
+        rolledOver: false,
+      ),
+    );
+
+    expect(controller.state.savings.single.remainingAmount, 80);
+    expect(
+      ZakatEngineService.calculateCashByCurrency(
+        transactions: controller.state.transactions,
+        savings: controller.state.savings,
+        marketData: MarketData.fromJson(controller.state.marketData),
+        lastRollover: controller.state.lastRollover,
+      )['EGP'],
+      80,
+    );
   });
 }

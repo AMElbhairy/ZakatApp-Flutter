@@ -49,13 +49,12 @@ Future<void> _addTx(
 }) async {
   await tester.tap(find.byKey(const Key('addEntryFab')));
   await tester.pumpAndSettle();
-  await tester.tap(find.byKey(const Key('actionAddTransaction')));
-  await tester.pumpAndSettle();
-
-  if (!income) {
-    await tester.tap(find.text('Expense'));
-    await tester.pumpAndSettle();
+  if (income) {
+    await tester.tap(find.byKey(const Key('actionAddIncome')));
+  } else {
+    await tester.tap(find.byKey(const Key('actionAddExpense')));
   }
+  await tester.pumpAndSettle();
 
   await tester.enterText(find.byKey(const Key('amountField')), amount);
   await tester.tap(find.byKey(const Key('categoryField')));

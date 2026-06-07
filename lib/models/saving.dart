@@ -46,10 +46,13 @@ class Saving {
       remainingAmount: json['remainingAmount'] == null
           ? _asDouble(json['amount'])
           : _asDouble(json['remainingAmount']),
-      unit: (json['unit'] ?? '').toString(),
+      unit: (json['unit'] ?? '').toString().trim().toUpperCase(),
       description: (json['description'] ?? '').toString(),
       linkedCashEntryId: json['linkedCashEntryId']?.toString(),
-      purchaseCurrency: (json['purchaseCurrency'] ?? '').toString(),
+      purchaseCurrency: (json['purchaseCurrency'] ?? '')
+          .toString()
+          .trim()
+          .toUpperCase(),
       purchaseAmount: _asDouble(json['purchaseAmount']),
       createdAt: (json['createdAt'] ?? '').toString(),
       sourceIncomeId: json['sourceIncomeId']?.toString(),
@@ -107,5 +110,47 @@ class Saving {
         .whereType<Map>()
         .map((Map<dynamic, dynamic> item) => Map<String, dynamic>.from(item))
         .toList(growable: false);
+  }
+
+  Saving copyWith({
+    String? id,
+    String? assetType,
+    String? dateAcquired,
+    double? amount,
+    double? remainingAmount,
+    String? unit,
+    String? description,
+    String? linkedCashEntryId,
+    String? purchaseCurrency,
+    double? purchaseAmount,
+    String? createdAt,
+    String? sourceIncomeId,
+    String? exchangeSourceSavingId,
+    String? exchangeSourceIncomeId,
+    bool? internalTransfer,
+    String? internalTransferType,
+    List<Map<String, dynamic>>? fundingAllocations,
+  }) {
+    return Saving(
+      id: id ?? this.id,
+      assetType: assetType ?? this.assetType,
+      dateAcquired: dateAcquired ?? this.dateAcquired,
+      amount: amount ?? this.amount,
+      remainingAmount: remainingAmount ?? this.remainingAmount,
+      unit: unit ?? this.unit,
+      description: description ?? this.description,
+      linkedCashEntryId: linkedCashEntryId ?? this.linkedCashEntryId,
+      purchaseCurrency: purchaseCurrency ?? this.purchaseCurrency,
+      purchaseAmount: purchaseAmount ?? this.purchaseAmount,
+      createdAt: createdAt ?? this.createdAt,
+      sourceIncomeId: sourceIncomeId ?? this.sourceIncomeId,
+      exchangeSourceSavingId:
+          exchangeSourceSavingId ?? this.exchangeSourceSavingId,
+      exchangeSourceIncomeId:
+          exchangeSourceIncomeId ?? this.exchangeSourceIncomeId,
+      internalTransfer: internalTransfer ?? this.internalTransfer,
+      internalTransferType: internalTransferType ?? this.internalTransferType,
+      fundingAllocations: fundingAllocations ?? this.fundingAllocations,
+    );
   }
 }

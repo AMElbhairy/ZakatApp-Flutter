@@ -20,6 +20,7 @@ class AppStateModel {
     required this.zakatExpenseIds,
     required this.zakatMethod,
     required this.zakatAnnualDate,
+    required this.zakatNisabBasis,
     required this.zakatScheduleFilter,
     required this.marketData,
     required this.marketHistory,
@@ -47,6 +48,7 @@ class AppStateModel {
   final Map<String, dynamic> zakatExpenseIds;
   final String zakatMethod;
   final String zakatAnnualDate;
+  final String zakatNisabBasis;
   final String zakatScheduleFilter;
   final Map<String, dynamic> marketData;
   final List<Map<String, dynamic>> marketHistory;
@@ -64,9 +66,9 @@ class AppStateModel {
       transactions: _asList(json['transactions'])
           .map((dynamic e) => Transaction.fromJson(_asMap(e)))
           .toList(growable: false),
-      savings: _asList(json['savings'])
-          .map((dynamic e) => Saving.fromJson(_asMap(e)))
-          .toList(growable: false),
+      savings: _asList(
+        json['savings'],
+      ).map((dynamic e) => Saving.fromJson(_asMap(e))).toList(growable: false),
       recurringTransactions: _asList(json['recurringTransactions'])
           .map((dynamic e) => RecurringTransaction.fromJson(_asMap(e)))
           .toList(growable: false),
@@ -78,22 +80,23 @@ class AppStateModel {
           .toList(growable: false),
       lastRollover: (json['lastRollover'] ?? '').toString(),
       categories: AppCategories.fromJson(_asMap(json['categories'])),
-      zakatPaidMonths: _asList(json['zakatPaidMonths'])
-          .map((dynamic e) => e.toString())
-          .toList(growable: false),
-      processedExpenseIds: _asList(json['processedExpenseIds'])
-          .map((dynamic e) => e.toString())
-          .toList(growable: false),
+      zakatPaidMonths: _asList(
+        json['zakatPaidMonths'],
+      ).map((dynamic e) => e.toString()).toList(growable: false),
+      processedExpenseIds: _asList(
+        json['processedExpenseIds'],
+      ).map((dynamic e) => e.toString()).toList(growable: false),
       mainCurrency: (json['mainCurrency'] ?? '').toString(),
       defaultEntryCurrency: (json['defaultEntryCurrency'] ?? '').toString(),
       zakatExpenseIds: _asMap(json['zakatExpenseIds']),
       zakatMethod: (json['zakatMethod'] ?? '').toString(),
       zakatAnnualDate: (json['zakatAnnualDate'] ?? '').toString(),
+      zakatNisabBasis: _normalizeZakatNisabBasis(json['zakatNisabBasis']),
       zakatScheduleFilter: (json['zakatScheduleFilter'] ?? '').toString(),
       marketData: _asMap(json['marketData']),
-      marketHistory: _asList(json['marketHistory'])
-          .map((dynamic e) => _asMap(e))
-          .toList(growable: false),
+      marketHistory: _asList(
+        json['marketHistory'],
+      ).map((dynamic e) => _asMap(e)).toList(growable: false),
       syncHealth: SyncHealth.fromJson(_asMap(json['syncHealth'])),
       lastModifiedAt: (json['lastModifiedAt'] ?? '').toString(),
       languagePreference: (json['languagePreference'] ?? 'en').toString(),
@@ -115,10 +118,15 @@ class AppStateModel {
     return <String, dynamic>{
       'transactions': transactions.map((Transaction e) => e.toJson()).toList(),
       'savings': savings.map((Saving e) => e.toJson()).toList(),
-      'recurringTransactions':
-          recurringTransactions.map((RecurringTransaction e) => e.toJson()).toList(),
-      'investments': investments.map((InvestmentAsset e) => e.toJson()).toList(),
-      'financialPlans': financialPlans.map((FinancialPlan e) => e.toJson()).toList(),
+      'recurringTransactions': recurringTransactions
+          .map((RecurringTransaction e) => e.toJson())
+          .toList(),
+      'investments': investments
+          .map((InvestmentAsset e) => e.toJson())
+          .toList(),
+      'financialPlans': financialPlans
+          .map((FinancialPlan e) => e.toJson())
+          .toList(),
       'lastRollover': lastRollover,
       'categories': categories.toJson(),
       'zakatPaidMonths': zakatPaidMonths,
@@ -128,6 +136,7 @@ class AppStateModel {
       'zakatExpenseIds': zakatExpenseIds,
       'zakatMethod': zakatMethod,
       'zakatAnnualDate': zakatAnnualDate,
+      'zakatNisabBasis': zakatNisabBasis,
       'zakatScheduleFilter': zakatScheduleFilter,
       'marketData': marketData,
       'marketHistory': marketHistory,
@@ -150,6 +159,11 @@ class AppStateModel {
     return raw == 'true' || raw == '1';
   }
 
+  static String _normalizeZakatNisabBasis(dynamic value) {
+    final String raw = (value ?? '').toString().trim();
+    return raw == 'silver595' ? 'silver595' : 'gold85';
+  }
+
   static List<dynamic> _asList(dynamic value) {
     if (value is List) return value;
     return const <dynamic>[];
@@ -164,10 +178,7 @@ class AppStateModel {
 }
 
 class AppCategories {
-  const AppCategories({
-    required this.income,
-    required this.expense,
-  });
+  const AppCategories({required this.income, required this.expense});
 
   final List<String> income;
   final List<String> expense;
@@ -184,10 +195,7 @@ class AppCategories {
   }
 
   Map<String, dynamic> toJson() {
-    return <String, dynamic>{
-      'income': income,
-      'expense': expense,
-    };
+    return <String, dynamic>{'income': income, 'expense': expense};
   }
 }
 

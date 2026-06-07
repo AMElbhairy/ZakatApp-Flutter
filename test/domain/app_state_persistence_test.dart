@@ -26,6 +26,7 @@ void main() {
     expect(controller.state.savings, isEmpty);
     expect(controller.state.mainCurrency, 'EGP');
     expect(controller.state.zakatMethod, 'hawl');
+    expect(controller.state.zakatNisabBasis, 'gold85');
     expect(controller.state.categories.income, isNotEmpty);
   });
 
@@ -46,7 +47,9 @@ void main() {
 
     await controller.addTransaction(tx);
 
-    final AppStateController reloaded = AppStateController(repository: repository);
+    final AppStateController reloaded = AppStateController(
+      repository: repository,
+    );
     await reloaded.load();
 
     expect(reloaded.state.transactions.length, 1);
@@ -193,7 +196,9 @@ void main() {
       ),
     );
 
-    final AppStateController reloaded = AppStateController(repository: repository);
+    final AppStateController reloaded = AppStateController(
+      repository: repository,
+    );
     await reloaded.load();
     final snapshot = reloaded.currentMarketSnapshot;
 
@@ -208,10 +213,12 @@ void main() {
       'zakatAppData': '{invalid json',
     });
     const LocalStorageService localStorage = LocalStorageService();
-    final AppStateRepository badRepository =
-        AppStateRepository(localStorage: localStorage);
-    final AppStateController badController =
-        AppStateController(repository: badRepository);
+    final AppStateRepository badRepository = AppStateRepository(
+      localStorage: localStorage,
+    );
+    final AppStateController badController = AppStateController(
+      repository: badRepository,
+    );
 
     await badController.load();
 
@@ -236,10 +243,12 @@ void main() {
 ''',
     });
     const LocalStorageService localStorage = LocalStorageService();
-    final AppStateRepository mixedRepository =
-        AppStateRepository(localStorage: localStorage);
-    final AppStateController mixedController =
-        AppStateController(repository: mixedRepository);
+    final AppStateRepository mixedRepository = AppStateRepository(
+      localStorage: localStorage,
+    );
+    final AppStateController mixedController = AppStateController(
+      repository: mixedRepository,
+    );
 
     await mixedController.load();
 

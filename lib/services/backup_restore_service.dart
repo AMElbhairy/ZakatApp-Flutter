@@ -30,8 +30,8 @@ class BackupRestoreService {
   }) async {
     _ensureConflictSafety(allowWhenLocalDataExists);
 
-    final LegacyMigrationReport report =
-        _migrationService.parseAndMigrateWithReport(rawJson);
+    final LegacyMigrationReport report = _migrationService
+        .parseAndMigrateWithReport(rawJson);
     final AppStateModel next = AppStateModel.fromJson(report.state);
     await controller.updateState(next);
 
@@ -48,18 +48,29 @@ class BackupRestoreService {
   }) async {
     _ensureConflictSafety(allowWhenLocalDataExists);
 
-    final LegacyMigrationReport report =
-        _migrationService.parseAndMigrateWithReport(rawJson);
+    final LegacyMigrationReport report = _migrationService
+        .parseAndMigrateWithReport(rawJson);
     final Map<String, dynamic> current = controller.state.toJson();
     final Map<String, dynamic> incoming = report.state;
 
     final Map<String, dynamic> merged = <String, dynamic>{...current};
-    merged['transactions'] = _mergeById(current['transactions'], incoming['transactions']);
+    merged['transactions'] = _mergeById(
+      current['transactions'],
+      incoming['transactions'],
+    );
     merged['savings'] = _mergeById(current['savings'], incoming['savings']);
-    merged['investments'] = _mergeById(current['investments'], incoming['investments']);
-    merged['recurringTransactions'] =
-        _mergeById(current['recurringTransactions'], incoming['recurringTransactions']);
-    merged['financialPlans'] = _mergeById(current['financialPlans'], incoming['financialPlans']);
+    merged['investments'] = _mergeById(
+      current['investments'],
+      incoming['investments'],
+    );
+    merged['recurringTransactions'] = _mergeById(
+      current['recurringTransactions'],
+      incoming['recurringTransactions'],
+    );
+    merged['financialPlans'] = _mergeById(
+      current['financialPlans'],
+      incoming['financialPlans'],
+    );
 
     final Map<String, dynamic> categories = _mergeCategories(
       current['categories'],
@@ -67,15 +78,23 @@ class BackupRestoreService {
     );
     merged['categories'] = categories;
 
-    merged['mainCurrency'] = (incoming['mainCurrency'] ?? current['mainCurrency']).toString();
+    merged['mainCurrency'] =
+        (incoming['mainCurrency'] ?? current['mainCurrency']).toString();
     merged['defaultEntryCurrency'] =
-        (incoming['defaultEntryCurrency'] ?? current['defaultEntryCurrency']).toString();
-    merged['zakatMethod'] = (incoming['zakatMethod'] ?? current['zakatMethod']).toString();
+        (incoming['defaultEntryCurrency'] ?? current['defaultEntryCurrency'])
+            .toString();
+    merged['zakatMethod'] = (incoming['zakatMethod'] ?? current['zakatMethod'])
+        .toString();
     merged['zakatAnnualDate'] =
         (incoming['zakatAnnualDate'] ?? current['zakatAnnualDate']).toString();
+    merged['zakatNisabBasis'] =
+        (incoming['zakatNisabBasis'] ?? current['zakatNisabBasis'] ?? 'gold85')
+            .toString();
     merged['languagePreference'] =
-        (incoming['languagePreference'] ?? current['languagePreference']).toString();
-    merged['themeMode'] = (incoming['themeMode'] ?? current['themeMode'] ?? 'system').toString();
+        (incoming['languagePreference'] ?? current['languagePreference'])
+            .toString();
+    merged['themeMode'] =
+        (incoming['themeMode'] ?? current['themeMode'] ?? 'system').toString();
     merged['marketData'] = incoming['marketData'] is Map
         ? Map<String, dynamic>.from(incoming['marketData'] as Map)
         : current['marketData'];
@@ -96,8 +115,11 @@ class BackupRestoreService {
   }
 
   void _ensureConflictSafety(bool allowWhenLocalDataExists) {
-    if (!allowWhenLocalDataExists && BackupService.hasData(controller.state.toJson())) {
-      throw StateError('Local data exists. Explicit restore action is required.');
+    if (!allowWhenLocalDataExists &&
+        BackupService.hasData(controller.state.toJson())) {
+      throw StateError(
+        'Local data exists. Explicit restore action is required.',
+      );
     }
   }
 
@@ -115,7 +137,10 @@ class BackupRestoreService {
     }
 
     return merged.values
-        .where((Map<String, dynamic> e) => (e['id'] ?? '').toString().trim().isNotEmpty)
+        .where(
+          (Map<String, dynamic> e) =>
+              (e['id'] ?? '').toString().trim().isNotEmpty,
+        )
         .toList(growable: false);
   }
 
@@ -141,14 +166,19 @@ class BackupRestoreService {
     };
   }
 
-  void _resetRemainingAmountsIfNeeded(Map<String, dynamic> state, List<String> warnings) {
+  void _resetRemainingAmountsIfNeeded(
+    Map<String, dynamic> state,
+    List<String> warnings,
+  ) {
     final List<Map<String, dynamic>> savings = _asMapList(state['savings']);
     for (final Map<String, dynamic> saving in savings) {
       if (saving['remainingAmount'] == null) {
         saving['remainingAmount'] = saving['amount'] ?? 0;
       }
     }
-    final List<Map<String, dynamic>> investments = _asMapList(state['investments']);
+    final List<Map<String, dynamic>> investments = _asMapList(
+      state['investments'],
+    );
     for (final Map<String, dynamic> investment in investments) {
       if (investment['remainingAmount'] == null) {
         final num totalPayable = _asNum(investment['totalPayable']);

@@ -156,6 +156,45 @@ void main() {
     expect(twice.processedExpenseIds, contains('e1'));
   });
 
+  test('post-rollover expense deducts from savings exactly once', () {
+    final AppStateModel base = makeState(
+      transactions: <Map<String, dynamic>>[
+        <String, dynamic>{
+          'id': 'e1',
+          'type': 'expense',
+          'date': '2026-06-02',
+          'amount': 20,
+          'currency': 'EGP',
+        },
+      ],
+      savings: <Map<String, dynamic>>[
+        <String, dynamic>{
+          'id': 's1',
+          'assetType': 'cash',
+          'unit': 'EGP',
+          'amount': 100,
+          'remainingAmount': 100,
+          'dateAcquired': '2026-05-01',
+        },
+      ],
+    );
+    final AppStateModel state = AppStateModel.fromJson(<String, dynamic>{
+      ...base.toJson(),
+      'lastRollover': '2026-05-31',
+    });
+
+    final AppStateModel once = service
+        .reconcileExpensesWithSavings(state)
+        .state;
+    final AppStateModel twice = service
+        .reconcileExpensesWithSavings(once)
+        .state;
+
+    expect(once.savings.single.remainingAmount, 80);
+    expect(twice.savings.single.remainingAmount, 80);
+    expect(twice.processedExpenseIds, contains('e1'));
+  });
+
   test('deleting expense restores remainingAmount after reconciliation', () {
     final initial = makeState(
       transactions: <Map<String, dynamic>>[
@@ -470,7 +509,7 @@ void main() {
           'remainingAmount': 1000,
           'installmentPlan': <Map<String, dynamic>>[
             <String, dynamic>{
-              'date': '2026-01-01',
+              'recurrenceDate': '2026-01-01',
               'amount': 200,
               'currency': 'EGP',
               'isPaid': false,
@@ -517,6 +556,13 @@ void main() {
           .length,
       1,
     );
+    expect(
+      out.transactions
+          .firstWhere((t) => t.description.contains('Installment payment'))
+          .date,
+      '2026-01-01',
+    );
+    expect(out.investments.first.installmentPlan.single['date'], '2026-01-01');
     expect(out.investments.first.loanBalance, lessThan(1000));
   });
 
@@ -664,5 +710,42 @@ void main() {
     expect(income.exchangePairId, expense.exchangePairId);
     expect(expense.amount, 40);
     expect(income.amount, 2000);
+  });
+
+  test('savings currency exchange records a current activity timestamp', () {
+    final AppStateModel base = AppStateDefaults.create();
+    final AppStateModel state = AppStateModel.fromJson(<String, dynamic>{
+      ...base.toJson(),
+      'savings': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'id': 'cash-1',
+          'assetType': 'cash',
+          'dateAcquired': '2024-01-01',
+          'amount': 100,
+          'remainingAmount': 100,
+          'unit': 'USD',
+          'description': 'Old cash',
+          'createdAt': '2024-01-01T00:00:00.000Z',
+        },
+      ],
+    });
+
+    final AppStateModel out = service
+        .executeCurrencyExchange(
+          input: state,
+          date: '2026-06-01',
+          sourceType: 'savings',
+          sourceCurrency: 'USD',
+          targetCurrency: 'EGP',
+          sourceAmount: 40,
+          targetAmount: 2000,
+        )
+        .state;
+
+    final Saving exchanged = out.savings.firstWhere(
+      (Saving saving) => saving.exchangeSourceSavingId == 'cash-1',
+    );
+    expect(exchanged.dateAcquired, '2024-01-01');
+    expect(exchanged.createdAt, isNot('2024-01-01T00:00:00.000Z'));
   });
 }

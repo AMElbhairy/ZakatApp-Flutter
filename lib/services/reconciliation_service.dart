@@ -1,4 +1,5 @@
 import '../models/app_state.dart';
+import '../models/investment_asset.dart';
 import '../core/services/zakat_engine.dart';
 
 class IncomeLot {
@@ -46,6 +47,7 @@ class ReconciliationService {
       state['transactions'],
     );
     final List<Map<String, dynamic>> savings = _asMapList(state['savings']);
+    final String lastRollover = input.lastRollover;
 
     final List<Map<String, dynamic>> normalizedTransactions = transactions
         .asMap()
@@ -64,6 +66,16 @@ class ReconciliationService {
         })
         .toList(growable: false);
 
+    String? oldestTxDateStr;
+    for (final Map<String, dynamic> tx in normalizedTransactions) {
+      final String date = (tx['date'] ?? '').toString();
+      if (date.isNotEmpty) {
+        if (oldestTxDateStr == null || date.compareTo(oldestTxDateStr) < 0) {
+          oldestTxDateStr = date;
+        }
+      }
+    }
+
     final List<Map<String, dynamic>> normalizedSavings = savings
         .asMap()
         .entries
@@ -75,7 +87,27 @@ class ReconciliationService {
             entry.key,
           );
           final double amount = _asDouble(s['amount']);
-          s['remainingAmount'] = amount;
+          final String dateAcquired = (s['dateAcquired'] ?? '').toString();
+          bool shouldPreserve = false;
+          if (lastRollover.isNotEmpty) {
+            shouldPreserve = true;
+          } else if (oldestTxDateStr != null && dateAcquired.isNotEmpty) {
+            final DateTime? dtAcquired = DateTime.tryParse(dateAcquired);
+            final DateTime? dtOldestTx = DateTime.tryParse(oldestTxDateStr);
+            if (dtAcquired != null && dtOldestTx != null) {
+              if (dtOldestTx.difference(dtAcquired).inDays > 30) {
+                shouldPreserve = true;
+              }
+            }
+          }
+
+          if (shouldPreserve) {
+            s['remainingAmount'] = s['remainingAmount'] != null
+                ? _asDouble(s['remainingAmount'])
+                : amount;
+          } else {
+            s['remainingAmount'] = amount;
+          }
           return s;
         })
         .toList(growable: false);
@@ -89,6 +121,8 @@ class ReconciliationService {
       ),
     }..removeWhere((String e) => e.trim().isEmpty);
 
+    final Set<String> previouslyProcessedExpenseIds = input.processedExpenseIds
+        .toSet();
     final Set<String> processedExpenseIds = <String>{};
 
     for (final Map<String, dynamic> metalSaving in normalizedSavings.where((
@@ -153,20 +187,37 @@ class ReconciliationService {
         }
         if (type != 'expense') continue;
 
+        final String date = (tx['date'] ?? '').toString();
+        if (lastRollover.isNotEmpty &&
+            date.isNotEmpty &&
+            date.compareTo(lastRollover) <= 0) {
+          continue;
+        }
+
         runningBalance -= amount;
 
         if (runningBalance < -minAmount) {
           final double overflow = -runningBalance;
-          final DeductResult deduct = deductExpenseFromSavings(
-            savings: normalizedSavings,
-            currency: currency,
-            overflowAmount: overflow,
-          );
-          final double covered = deduct.deductions.fold<double>(
-            0,
-            (double sum, SavingDeduction d) => sum + d.deduction,
-          );
-          runningBalance += covered;
+          final String expenseId = (tx['id'] ?? '').toString();
+          final bool shouldDeductFromSavings =
+              lastRollover.isEmpty ||
+              !previouslyProcessedExpenseIds.contains(expenseId);
+          if (shouldDeductFromSavings) {
+            final DeductResult deduct = deductExpenseFromSavings(
+              savings: normalizedSavings,
+              currency: currency,
+              overflowAmount: overflow,
+            );
+            final double covered = deduct.deductions.fold<double>(
+              0,
+              (double sum, SavingDeduction d) => sum + d.deduction,
+            );
+            runningBalance += covered;
+          } else {
+            // A post-rollover expense that was already processed has already
+            // consumed its savings coverage in the persisted remaining amount.
+            runningBalance = 0;
+          }
         }
         final String expenseId = (tx['id'] ?? '').toString();
         if (expenseId.trim().isNotEmpty) {
@@ -187,6 +238,7 @@ class ReconciliationService {
   List<IncomeLot> getNetIncomeLotsForCurrency({
     required List<Map<String, dynamic>> transactions,
     required String currency,
+    String? lastRollover,
   }) {
     final List<Map<String, dynamic>> sorted = _sortTransactionsForLotMatching(
       transactions
@@ -232,6 +284,13 @@ class ReconciliationService {
           'description': tx['description'],
         });
       } else if (type == 'expense') {
+        final String date = (tx['date'] ?? '').toString();
+        if (lastRollover != null &&
+            lastRollover.isNotEmpty &&
+            date.isNotEmpty &&
+            date.compareTo(lastRollover) <= 0) {
+          continue;
+        }
         double toDeduct = amount;
         final String sourceIncomeId = (tx['sourceIncomeId'] ?? '').toString();
         if (sourceIncomeId.isNotEmpty) {
@@ -281,7 +340,16 @@ class ReconciliationService {
         }
         return sum + amount;
       }
-      if (type == 'expense') return sum - amount;
+      if (type == 'expense') {
+        final String date = (tx['date'] ?? '').toString();
+        if (lastRollover != null &&
+            lastRollover.isNotEmpty &&
+            date.isNotEmpty &&
+            date.compareTo(lastRollover) <= 0) {
+          return sum;
+        }
+        return sum - amount;
+      }
       return sum;
     });
 
@@ -382,11 +450,13 @@ class ReconciliationService {
           ? installment['currency'].toString()
           : (asset['currency']?.toString() ?? 'EGP');
 
-      final String today = DateTime.now()
+      final String fallbackDate = DateTime.now()
           .toUtc()
           .toIso8601String()
           .split('T')
           .first;
+      final String dueDate = InvestmentAsset.installmentDueDate(installment);
+      final String expenseDate = dueDate.isEmpty ? fallbackDate : dueDate;
       final String assetLabel = asset['location']?.toString().isNotEmpty == true
           ? asset['location'].toString()
           : (asset['assetSubtype']?.toString() ?? 'Asset');
@@ -396,7 +466,7 @@ class ReconciliationService {
       final Map<String, dynamic> expense = <String, dynamic>{
         'id': txId,
         'type': 'expense',
-        'date': today,
+        'date': expenseDate,
         'amount': _asDouble(installment['amount']),
         'currency': installmentCurrency,
         'category': paymentCategory,
@@ -535,6 +605,7 @@ class ReconciliationService {
       final Iterable<IncomeLot> incomeLots = getNetIncomeLotsForCurrency(
         transactions: transactions,
         currency: sourceCurrency,
+        lastRollover: input.lastRollover,
       ).where((IncomeLot l) => l.remainingAmount >= minAmount);
 
       for (final IncomeLot l in incomeLots) {
@@ -588,6 +659,7 @@ class ReconciliationService {
 
     final String exchangePairId =
         'exch_${DateTime.now().millisecondsSinceEpoch}';
+    final String exchangeCreatedAt = DateTime.now().toUtc().toIso8601String();
 
     for (final Map<String, dynamic> d in deductions) {
       if (d['sourceType'] == 'savings') {
@@ -618,7 +690,7 @@ class ReconciliationService {
               'Currency exchange out: ${d['deductedAmount']} $sourceCurrency → $targetCurrency',
           'sourceIncomeId': d['id'],
           'exchangePairId': exchangePairId,
-          'createdAt': DateTime.now().toUtc().toIso8601String(),
+          'createdAt': exchangeCreatedAt,
         };
         transactions.add(outTx);
         processedExpenseIds.add(outId);
@@ -657,8 +729,7 @@ class ReconciliationService {
           'internalTransferType': 'savings_currency_exchange',
           'exchangeSourceSavingId': d['id'],
           'sourceIncomeId': d['ref']?['sourceIncomeId'],
-          'createdAt':
-              d['createdAt'] ?? DateTime.now().toUtc().toIso8601String(),
+          'createdAt': exchangeCreatedAt,
         };
         savings.add(ns);
       } else {
@@ -673,7 +744,7 @@ class ReconciliationService {
               'Currency exchange in: ${d['deductedAmount']} $sourceCurrency → $alloc $targetCurrency',
           'exchangeSourceIncomeId': d['id'],
           'exchangePairId': exchangePairId,
-          'createdAt': DateTime.now().toUtc().toIso8601String(),
+          'createdAt': exchangeCreatedAt,
         };
         transactions.add(inTx);
       }

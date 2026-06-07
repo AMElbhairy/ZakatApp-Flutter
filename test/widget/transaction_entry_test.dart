@@ -10,6 +10,7 @@ import 'dart:convert';
 import 'package:zakatapp_flutter/models/user_profile.dart';
 import 'package:zakatapp_flutter/services/auth_controller.dart';
 import 'package:zakatapp_flutter/services/auth_service.dart';
+import 'package:zakatapp_flutter/screens/entry/add_transaction_screen.dart';
 
 Map<String, dynamic> _seedStateWithMarketData() {
   return <String, dynamic>{
@@ -46,11 +47,15 @@ Map<String, dynamic> _seedStateWithMarketData() {
       'lastError': '',
       'pendingWrites': 0,
     },
-    'aiSettings': <String, dynamic>{'keys': <String>['', ''], 'defaultKeyIndex': 0},
+    'aiSettings': <String, dynamic>{
+      'keys': <String>['', ''],
+      'defaultKeyIndex': 0,
+    },
     'cloudHydrated': false,
     'hasUnsyncedAuthChanges': false,
   };
 }
+
 class _FakeAuthService implements AuthService {
   @override
   Future<bool> ensureSession() async => true;
@@ -64,8 +69,9 @@ class _FakeAuthService implements AuthService {
 
 Widget _buildApp() {
   const LocalStorageService localStorage = LocalStorageService();
-  final AppStateRepository repository =
-      AppStateRepository(localStorage: localStorage);
+  final AppStateRepository repository = AppStateRepository(
+    localStorage: localStorage,
+  );
   return MultiProvider(
     providers: <ChangeNotifierProvider<dynamic>>[
       ChangeNotifierProvider<AppStateController>(
@@ -85,13 +91,77 @@ Widget _buildApp() {
 Future<void> _openTransactionForm(WidgetTester tester) async {
   await tester.tap(find.byKey(const Key('addEntryFab')));
   await tester.pumpAndSettle();
-  await tester.tap(find.byKey(const Key('actionAddTransaction')));
+  await tester.tap(find.byKey(const Key('actionAddIncome')));
   await tester.pumpAndSettle();
 }
 
 void main() {
-  testWidgets('save transaction and dashboard updates',
-      (WidgetTester tester) async {
+  testWidgets(
+    'AI confirmation shows extracted data and saves selected entries',
+    (WidgetTester tester) async {
+      List<Map<String, dynamic>>? saved;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (BuildContext context) => Scaffold(
+              body: FilledButton(
+                onPressed: () => showDialog<bool>(
+                  context: context,
+                  builder: (_) => ScannedTransactionsConfirmationDialog(
+                    transactions: <Map<String, dynamic>>[
+                      <String, dynamic>{
+                        'merchant': 'Market One',
+                        'description': 'Groceries',
+                        'date': '2026-06-06',
+                        'amount': 125,
+                        'currency': 'EGP',
+                        'category': 'Food & Dining',
+                      },
+                      <String, dynamic>{
+                        'merchant': 'Market Two',
+                        'description': 'Drinks',
+                        'date': '2026-06-06',
+                        'amount': '25.50',
+                        'currency': 'EGP',
+                        'category': 'Food & Dining',
+                      },
+                    ],
+                    categories: const <String>['Food & Dining'],
+                    onSave: (List<Map<String, dynamic>> entries) async {
+                      saved = entries;
+                    },
+                  ),
+                ),
+                child: const Text('Open confirmation'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open confirmation'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Market One'), findsOneWidget);
+      expect(find.text('Market Two'), findsOneWidget);
+      expect(find.byKey(const Key('scannedDate_0')), findsOneWidget);
+      expect(find.byKey(const Key('scannedAmount_0')), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const Key('saveSelectedScannedTransactions')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(saved, hasLength(2));
+      expect(saved!.first['date'], '2026-06-06');
+      expect(saved!.first['amount'], 125);
+    },
+  );
+
+  testWidgets('save transaction and dashboard updates', (
+    WidgetTester tester,
+  ) async {
     SharedPreferences.setMockInitialValues(<String, Object>{
       'zakatAppData': jsonEncode(_seedStateWithMarketData()),
     });

@@ -64,13 +64,13 @@ class InvestmentAsset {
       assetSubtype: (json['assetSubtype'] ?? '').toString(),
       ownershipType: (json['ownershipType'] ?? '').toString(),
       valuationMode: (json['valuationMode'] ?? '').toString(),
-      currency: (json['currency'] ?? '').toString(),
+      currency: (json['currency'] ?? '').toString().trim().toUpperCase(),
       originalPrice: _asDouble(json['originalPrice']),
       totalInterest: _asDouble(json['totalInterest']),
       totalPayable: _asDouble(json['totalPayable']),
       paidAmount: _asDouble(json['paidAmount']),
       remainingAmount: _asDouble(json['remainingAmount']),
-      installmentPlan: _asInstallmentPlan(json['installmentPlan']),
+      installmentPlan: normalizeInstallmentPlan(json['installmentPlan']),
       valuationDate: (json['valuationDate'] ?? '').toString(),
       marketValue: _asDouble(json['marketValue']),
       marketValueDate: (json['marketValueDate'] ?? '').toString(),
@@ -121,15 +121,51 @@ class InvestmentAsset {
     };
   }
 
-  static List<Map<String, dynamic>> _asInstallmentPlan(dynamic value) {
+  static List<Map<String, dynamic>> normalizeInstallmentPlan(dynamic value) {
     if (value is List) {
       return value
-          .map((dynamic e) => e is Map
-              ? Map<String, dynamic>.from(e)
-              : <String, dynamic>{})
+          .map((dynamic e) {
+            final Map<String, dynamic> item = e is Map
+                ? Map<String, dynamic>.from(e)
+                : <String, dynamic>{};
+            final String dueDate = _firstNonEmpty(item, <String>[
+              'recurrenceDate',
+              'date',
+              'dueDate',
+              'paymentDate',
+            ]);
+            if (dueDate.isNotEmpty) {
+              item['recurrenceDate'] = dueDate;
+              item['date'] = dueDate;
+            }
+            if (item['amount'] != null) {
+              item['amount'] = _asDouble(item['amount']);
+            }
+            if (item['isPaid'] != null) {
+              item['isPaid'] = _asBool(item['isPaid']);
+            }
+            return item;
+          })
           .toList(growable: false);
     }
     return const <Map<String, dynamic>>[];
+  }
+
+  static String installmentDueDate(Map<String, dynamic> item) {
+    return _firstNonEmpty(item, const <String>[
+      'recurrenceDate',
+      'date',
+      'dueDate',
+      'paymentDate',
+    ]);
+  }
+
+  static String _firstNonEmpty(Map<String, dynamic> item, List<String> keys) {
+    for (final String key in keys) {
+      final String value = (item[key] ?? '').toString().trim();
+      if (value.isNotEmpty) return value;
+    }
+    return '';
   }
 
   static double _asDouble(dynamic value) {

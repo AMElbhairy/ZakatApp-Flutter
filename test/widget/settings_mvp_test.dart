@@ -30,8 +30,9 @@ class _FakeAuthService implements AuthService {
 
 Widget _buildApp() {
   const LocalStorageService localStorage = LocalStorageService();
-  final AppStateRepository repository =
-      AppStateRepository(localStorage: localStorage);
+  final AppStateRepository repository = AppStateRepository(
+    localStorage: localStorage,
+  );
   return MultiProvider(
     providers: <ChangeNotifierProvider<dynamic>>[
       ChangeNotifierProvider<AppStateController>(
@@ -53,8 +54,9 @@ Widget _buildApp() {
 
 Widget _buildAppWithService(MarketDataApiService service) {
   const LocalStorageService localStorage = LocalStorageService();
-  final AppStateRepository repository =
-      AppStateRepository(localStorage: localStorage);
+  final AppStateRepository repository = AppStateRepository(
+    localStorage: localStorage,
+  );
   return MultiProvider(
     providers: <ChangeNotifierProvider<dynamic>>[
       ChangeNotifierProvider<AppStateController>(
@@ -94,8 +96,11 @@ class _SettingsTestApp extends StatelessWidget {
 
 class _FakeMarketDataApiService implements MarketDataApiService {
   @override
-  Future<Map<String, double>?> fetchFxRatesToEgp() async =>
-      <String, double>{'USD': 50, 'SAR': 13.3, 'AED': 13.6};
+  Future<Map<String, double>?> fetchFxRatesToEgp() async => <String, double>{
+    'USD': 50,
+    'SAR': 13.3,
+    'AED': 13.6,
+  };
 
   @override
   Future<double?> fetchGold24kPerGramEgp({required double usdToEgp}) async =>
@@ -120,7 +125,9 @@ Future<void> _setDropdownString(
 }
 
 Future<void> _expandManualOverride(WidgetTester tester) async {
-  await tester.ensureVisible(find.byKey(const Key('marketAdvancedOverrideTile')));
+  await tester.ensureVisible(
+    find.byKey(const Key('marketAdvancedOverrideTile')),
+  );
   await tester.pumpAndSettle();
   await tester.tap(find.byKey(const Key('marketAdvancedOverrideTile')));
   await tester.pumpAndSettle();
@@ -135,7 +142,10 @@ void main() {
     expect(find.text('Settings'), findsOneWidget);
     expect(find.byKey(const Key('settingsMainCurrencyField')), findsOneWidget);
     expect(find.byKey(const Key('settingsZakatMethodField')), findsOneWidget);
-    await tester.drag(find.byType(SingleChildScrollView).first, const Offset(0, -1000));
+    await tester.drag(
+      find.byType(SingleChildScrollView).first,
+      const Offset(0, -1000),
+    );
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Appearance'));
     await tester.pumpAndSettle();
@@ -160,8 +170,9 @@ void main() {
     expect(find.text('⃁'), findsWidgets);
   });
 
-  testWidgets('update default entry currency persists',
-      (WidgetTester tester) async {
+  testWidgets('update default entry currency persists', (
+    WidgetTester tester,
+  ) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
@@ -182,7 +193,10 @@ void main() {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    await tester.drag(find.byType(SingleChildScrollView).first, const Offset(0, -1400));
+    await tester.drag(
+      find.byType(SingleChildScrollView).first,
+      const Offset(0, -1400),
+    );
     await tester.pumpAndSettle();
 
     await _setDropdownString(
@@ -219,8 +233,27 @@ void main() {
     expect(find.byKey(const Key('settingsAnnualDateSection')), findsOneWidget);
   });
 
-  testWidgets('annual date fields shown only for annual',
-      (WidgetTester tester) async {
+  testWidgets('update cash nisab basis persists', (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    await tester.pumpWidget(_buildApp());
+    await tester.pumpAndSettle();
+
+    await _setDropdownString(
+      tester,
+      fieldKey: const Key('settingsZakatNisabBasisField'),
+      value: '595 g silver 999',
+    );
+
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String? raw = prefs.getString('zakatAppData');
+    expect(raw, isNotNull);
+    final Map<String, dynamic> json = jsonDecode(raw!) as Map<String, dynamic>;
+    expect(json['zakatNisabBasis'], 'silver595');
+  });
+
+  testWidgets('annual date fields shown only for annual', (
+    WidgetTester tester,
+  ) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
@@ -274,7 +307,10 @@ void main() {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    await tester.drag(find.byType(SingleChildScrollView).first, const Offset(0, -800));
+    await tester.drag(
+      find.byType(SingleChildScrollView).first,
+      const Offset(0, -800),
+    );
     await tester.pumpAndSettle();
     await _expandManualOverride(tester);
 
@@ -291,29 +327,37 @@ void main() {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String raw = prefs.getString('zakatAppData')!;
     final Map<String, dynamic> json = jsonDecode(raw) as Map<String, dynamic>;
-    final String lastUpdated = (json['marketData'] as Map<String, dynamic>)['LAST_UPDATED'] as String;
+    final String lastUpdated =
+        (json['marketData'] as Map<String, dynamic>)['LAST_UPDATED'] as String;
     expect(() => DateTime.parse(lastUpdated), returnsNormally);
 
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
-    await tester.drag(find.byType(SingleChildScrollView).first, const Offset(0, -800));
+    await tester.drag(
+      find.byType(SingleChildScrollView).first,
+      const Offset(0, -800),
+    );
     await tester.pumpAndSettle();
     await _expandManualOverride(tester);
 
-    final TextFormField goldField =
-        tester.widget<TextFormField>(find.byKey(const Key('marketGoldField')));
-    final TextFormField silverField =
-        tester.widget<TextFormField>(find.byKey(const Key('marketSilverField')));
-    final TextFormField usdField =
-        tester.widget<TextFormField>(find.byKey(const Key('marketUsdField')));
+    final TextFormField goldField = tester.widget<TextFormField>(
+      find.byKey(const Key('marketGoldField')),
+    );
+    final TextFormField silverField = tester.widget<TextFormField>(
+      find.byKey(const Key('marketSilverField')),
+    );
+    final TextFormField usdField = tester.widget<TextFormField>(
+      find.byKey(const Key('marketUsdField')),
+    );
 
     expect(goldField.controller?.text, '5200');
     expect(silverField.controller?.text, '62.5');
     expect(usdField.controller?.text, '50');
   });
 
-  testWidgets('old formatted lastUpdated still displays safely',
-      (WidgetTester tester) async {
+  testWidgets('old formatted lastUpdated still displays safely', (
+    WidgetTester tester,
+  ) async {
     final Map<String, dynamic> seededState = <String, dynamic>{
       'transactions': <dynamic>[],
       'savings': <dynamic>[],
@@ -348,7 +392,10 @@ void main() {
         'lastError': '',
         'pendingWrites': 0,
       },
-      'aiSettings': <String, dynamic>{'keys': <String>['', ''], 'defaultKeyIndex': 0},
+      'aiSettings': <String, dynamic>{
+        'keys': <String>['', ''],
+        'defaultKeyIndex': 0,
+      },
       'cloudHydrated': false,
       'hasUnsyncedAuthChanges': false,
     };
@@ -358,19 +405,26 @@ void main() {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    await tester.drag(find.byType(SingleChildScrollView).first, const Offset(0, -800));
+    await tester.drag(
+      find.byType(SingleChildScrollView).first,
+      const Offset(0, -800),
+    );
     await tester.pumpAndSettle();
 
     expect(find.textContaining('Last updated:'), findsOneWidget);
   });
 
-  testWidgets('settings refresh button triggers refresh',
-      (WidgetTester tester) async {
+  testWidgets('settings refresh button triggers refresh', (
+    WidgetTester tester,
+  ) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     await tester.pumpWidget(_buildAppWithService(_FakeMarketDataApiService()));
     await tester.pumpAndSettle();
 
-    await tester.drag(find.byType(SingleChildScrollView).first, const Offset(0, -900));
+    await tester.drag(
+      find.byType(SingleChildScrollView).first,
+      const Offset(0, -900),
+    );
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const Key('refreshMarketDataButton')));
@@ -379,14 +433,21 @@ void main() {
     expect(find.text('Market data refreshed.'), findsOneWidget);
   });
 
-  testWidgets('category add persists to app state', (WidgetTester tester) async {
+  testWidgets('category add persists to app state', (
+    WidgetTester tester,
+  ) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    await tester.drag(find.byType(SingleChildScrollView).first, const Offset(0, -350));
+    await tester.drag(
+      find.byType(SingleChildScrollView).first,
+      const Offset(0, -350),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('settingsCategoriesTile')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('addCategory_income')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('addCategory_income')));
     await tester.pumpAndSettle();
@@ -397,12 +458,17 @@ void main() {
     expect(find.text('Consulting'), findsOneWidget);
   });
 
-  testWidgets('delete all data cancel does nothing', (WidgetTester tester) async {
+  testWidgets('delete all data cancel does nothing', (
+    WidgetTester tester,
+  ) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    await tester.drag(find.byType(SingleChildScrollView).first, const Offset(0, -1700));
+    await tester.drag(
+      find.byType(SingleChildScrollView).first,
+      const Offset(0, -1700),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('settingsSecurityTile')));
     await tester.pumpAndSettle();
@@ -413,14 +479,21 @@ void main() {
     expect(find.text('Settings'), findsOneWidget);
   });
 
-  testWidgets('backup section shows Drive backup actions',
-      (WidgetTester tester) async {
+  testWidgets('backup section shows Drive backup actions', (
+    WidgetTester tester,
+  ) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
-    await tester.drag(find.byType(SingleChildScrollView).first, const Offset(0, -1300));
+    await tester.drag(
+      find.byType(SingleChildScrollView).first,
+      const Offset(0, -1300),
+    );
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('driveBackupNowButton')), findsOneWidget);
-    expect(find.byKey(const Key('driveRestoreFromCloudButton')), findsOneWidget);
+    expect(
+      find.byKey(const Key('driveRestoreFromCloudButton')),
+      findsOneWidget,
+    );
   });
 }

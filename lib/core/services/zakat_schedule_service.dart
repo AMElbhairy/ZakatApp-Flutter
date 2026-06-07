@@ -11,6 +11,8 @@ class ZakatScheduleService {
     List<Map<String, dynamic>> savings = const <Map<String, dynamic>>[],
     required MarketData marketData,
     DateTime? now,
+    String? lastRollover,
+    String? zakatNisabBasis,
   }) {
     final DateTime today = now ?? DateTime.now();
     final DateTime futureLimit = DateTime(
@@ -24,6 +26,7 @@ class ZakatScheduleService {
     final List<Map<String, dynamic>> lots = ZakatEngineService.getNetIncomeLots(
       transactions: parsedTransactions,
       marketData: marketData,
+      lastRollover: lastRollover,
     );
     final List<SavingLike> parsedSavings = savings
         .map((Map<String, dynamic> s) => SavingLike.fromJson(s))
@@ -32,6 +35,7 @@ class ZakatScheduleService {
       lots: lots,
       savings: parsedSavings,
       marketData: marketData,
+      zakatNisabBasis: zakatNisabBasis,
     )) {
       return <Map<String, dynamic>>[];
     }
@@ -103,6 +107,8 @@ class ZakatScheduleService {
     List<Map<String, dynamic>> transactions = const <Map<String, dynamic>>[],
     required MarketData marketData,
     DateTime? now,
+    String? lastRollover,
+    String? zakatNisabBasis,
   }) {
     final List<SavingLike> parsedSavings = savings
         .map((Map<String, dynamic> s) => SavingLike.fromJson(s))
@@ -114,11 +120,13 @@ class ZakatScheduleService {
     final List<Map<String, dynamic>> lots = ZakatEngineService.getNetIncomeLots(
       transactions: parsedTransactions,
       marketData: marketData,
+      lastRollover: lastRollover,
     );
     if (!_combinedPortfolioMeetsNisab(
       lots: lots,
       savings: parsedSavings,
       marketData: marketData,
+      zakatNisabBasis: zakatNisabBasis,
     )) {
       return <Map<String, dynamic>>[];
     }
@@ -227,6 +235,8 @@ class ZakatScheduleService {
     required List<Map<String, dynamic>> investments,
     required MarketData marketData,
     DateTime? now,
+    String? lastRollover,
+    String? zakatNisabBasis,
   }) {
     if (zakatAnnualDate.isEmpty || !zakatAnnualDate.contains('-')) {
       return <Map<String, dynamic>>[];
@@ -246,9 +256,10 @@ class ZakatScheduleService {
 
     final DateTime today = now ?? DateTime.now();
     final HijriDate todayH = ZakatEngineService.gregorianToHijri(today);
-    final double nisabValueEgp =
-        ZakatEngineService.defaultConfig.nisabGoldGrams *
-        marketData.goldPrice24kEgp;
+    final double nisabValueEgp = ZakatEngineService.cashNisabThresholdEgp(
+      marketData,
+      zakatNisabBasis: zakatNisabBasis,
+    );
 
     final List<Transaction> txModels = transactions
         .map((Map<String, dynamic> tx) => _transactionFromJson(tx))
@@ -286,6 +297,7 @@ class ZakatScheduleService {
                 .toList(growable: false),
             investments: invModels,
             marketData: marketData,
+            lastRollover: lastRollover,
           );
 
       if (totalWealthEgpAtDate < nisabValueEgp) continue;
@@ -393,6 +405,7 @@ class ZakatScheduleService {
     required List<Map<String, dynamic>> lots,
     required List<SavingLike> savings,
     required MarketData marketData,
+    String? zakatNisabBasis,
   }) {
     final NisabTotals totals = ZakatEngineService.computeNisabTotals(
       savings: savings
@@ -408,6 +421,7 @@ class ZakatScheduleService {
     return ZakatEngineService.checkCashNisab(
       totals.totalSavingsWealthEgp + incomeCashEgp,
       marketData,
+      zakatNisabBasis: zakatNisabBasis,
     );
   }
 }

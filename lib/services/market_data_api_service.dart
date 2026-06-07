@@ -12,20 +12,23 @@ abstract class MarketDataApiService {
 
 class MarketDataApiServiceImpl implements MarketDataApiService {
   MarketDataApiServiceImpl({http.Client? httpClient})
-      : _httpClient = httpClient ?? http.Client() {
+    : _httpClient = httpClient ?? http.Client() {
     _logApiKeyPresence();
   }
   // Log whether GOLD_API_KEY was provided at startup (do not print the key)
   // This helps debugging when running from Xcode where dart-define may be missing.
   void _logApiKeyPresence() {
     try {
-      debugPrint('MarketDataApiService: GOLD_API_KEY configured: ${_goldApiKey.trim().isNotEmpty}');
+      debugPrint(
+        'MarketDataApiService: GOLD_API_KEY configured: ${_goldApiKey.trim().isNotEmpty}',
+      );
     } catch (_) {}
   }
 
   final http.Client _httpClient;
   SharedPreferences? _prefs;
-  final Map<String, Future<double?>?> _inFlightMetalFetches = <String, Future<double?>?>{};
+  final Map<String, Future<double?>?> _inFlightMetalFetches =
+      <String, Future<double?>?>{};
 
   static const Duration _metalCooldown = Duration(minutes: 5);
 
@@ -42,19 +45,20 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
   Future<double?> _getCachedPriceUsd(String symbol) async {
     await _initPrefs();
     final double? cached = _prefs?.getDouble('cached_price_usd_$symbol');
-      if (cached != null && cached > 0) {
-      debugPrint('MarketDataApiService: using cached $symbol price USD $cached');
+    if (cached != null && cached > 0) {
+      debugPrint(
+        'MarketDataApiService: using cached $symbol price USD $cached',
+      );
       return cached;
     }
     return null;
   }
+
   static const double _troyOunceToGrams = 31.1034768;
   static const String _hexaRateApiKey = String.fromEnvironment(
     'HEXA_RATE_API_KEY',
   );
-  static const String _goldApiKey = String.fromEnvironment(
-    'GOLD_API_KEY',
-  );
+  static const String _goldApiKey = String.fromEnvironment('GOLD_API_KEY');
 
   static const List<String> _supportedFx = <String>[
     'USD',
@@ -75,12 +79,29 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
 
   @override
   Future<Map<String, double>?> fetchFxRatesToEgp() async {
-    final Map<String, double>? fromHexa = await _fetchFxFromHexaRate();
-    if (fromHexa != null) return fromHexa;
-    final Map<String, double>? fromHexaProxy =
-        await _fetchFxFromHexaRateProxy();
-    if (fromHexaProxy != null) return fromHexaProxy;
-    return _fetchFxFromOpenErApi();
+    final Map<String, double>? preferredUsd =
+        await _fetchFxFromHexaRate() ?? await _fetchFxFromHexaRateProxy();
+    final Map<String, double>? broadRates = await _fetchFxFromOpenErApi();
+
+    if (preferredUsd == null && broadRates == null) return null;
+    final Map<String, double> normalizedBroadRates = <String, double>{
+      ...?broadRates,
+    };
+    final double preferredUsdToEgp = preferredUsd?['USD'] ?? 0;
+    final double broadUsdToEgp = broadRates?['USD'] ?? 0;
+    if (preferredUsdToEgp > 0 && broadUsdToEgp > 0) {
+      final double scale = preferredUsdToEgp / broadUsdToEgp;
+      for (final String currency in normalizedBroadRates.keys.toList()) {
+        if (currency == 'EGP') continue;
+        normalizedBroadRates[currency] =
+            normalizedBroadRates[currency]! * scale;
+      }
+    }
+    return <String, double>{
+      ...normalizedBroadRates,
+      ...?preferredUsd,
+      'EGP': 1,
+    };
   }
 
   @override
@@ -112,10 +133,7 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
     final Map<String, String>? headers = _hexaRateApiKey.trim().isEmpty
         ? null
         : <String, String>{'Authorization': 'Bearer $_hexaRateApiKey'};
-    final Map<String, dynamic>? json = await _getJson(
-      uri,
-      headers: headers,
-    );
+    final Map<String, dynamic>? json = await _getJson(uri, headers: headers);
     if (json == null) return null;
     final double usdToEgp = _asDouble(json['mid']);
     if (usdToEgp <= 0) return null;
@@ -129,10 +147,7 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
     final Map<String, String>? headers = _hexaRateApiKey.trim().isEmpty
         ? null
         : <String, String>{'Authorization': 'Bearer $_hexaRateApiKey'};
-    final Map<String, dynamic>? json = await _getJson(
-      uri,
-      headers: headers,
-    );
+    final Map<String, dynamic>? json = await _getJson(uri, headers: headers);
     if (json == null) return null;
     final double usdToEgp = _asDouble(json['mid']);
     if (usdToEgp <= 0) return null;
@@ -150,7 +165,10 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
     );
     final double usdToEgp = _asDouble(rawRates['EGP']);
     if (usdToEgp <= 0) return null;
-    final Map<String, double> toEgp = <String, double>{'EGP': 1, 'USD': usdToEgp};
+    final Map<String, double> toEgp = <String, double>{
+      'EGP': 1,
+      'USD': usdToEgp,
+    };
     for (final String code in _supportedFx) {
       if (code == 'USD') continue;
       final double perUsd = _asDouble(rawRates[code]);
@@ -177,8 +195,12 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
     final String? lastSuccessRaw = _prefs?.getString(lastSuccessKey);
     if (lastSuccessRaw != null && lastSuccessRaw.isNotEmpty) {
       final DateTime? lastSuccess = DateTime.tryParse(lastSuccessRaw);
-        if (lastSuccess != null && DateTime.now().difference(lastSuccess) < _metalCooldown && cached != null) {
-        debugPrint('MarketDataApiService: using cached $symbol (recent success)');
+      if (lastSuccess != null &&
+          DateTime.now().difference(lastSuccess) < _metalCooldown &&
+          cached != null) {
+        debugPrint(
+          'MarketDataApiService: using cached $symbol (recent success)',
+        );
         return cached;
       }
     }
@@ -197,21 +219,30 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
           final String? rlRaw = _prefs?.getString(rateLimitKey);
           if (rlRaw != null && rlRaw.isNotEmpty) {
             final DateTime? lastRl = DateTime.tryParse(rlRaw);
-            if (lastRl != null && DateTime.now().difference(lastRl) < _metalCooldown) {
+            if (lastRl != null &&
+                DateTime.now().difference(lastRl) < _metalCooldown) {
               // skip this provider due to recent rate limit
               return null;
             }
           }
 
-          final http.Response response = await _httpClient.get(Uri.parse(mlEndpoint), headers: <String,String>{'accept':'application/json'});
+          final http.Response response = await _httpClient.get(
+            Uri.parse(mlEndpoint),
+            headers: <String, String>{'accept': 'application/json'},
+          );
           final String body = response.body;
           if (response.statusCode != 200) {
             if (response.statusCode == 429) {
               final String rateLimitKey = 'last_rate_limit_${provider}_$symbol';
               try {
-                await _prefs?.setString(rateLimitKey, DateTime.now().toUtc().toIso8601String());
+                await _prefs?.setString(
+                  rateLimitKey,
+                  DateTime.now().toUtc().toIso8601String(),
+                );
               } catch (_) {}
-              debugPrint('MarketDataApiService: metals.live returned 429 for $symbol — using cached/manual value');
+              debugPrint(
+                'MarketDataApiService: metals.live returned 429 for $symbol — using cached/manual value',
+              );
             }
             return null;
           }
@@ -224,17 +255,24 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
               priceUsd = _asDouble(first['gold'] ?? first['silver']);
             }
           } else if (json is Map) {
-            priceUsd = _asDouble(json['gold'] ?? json['silver'] ?? json['price']);
+            priceUsd = _asDouble(
+              json['gold'] ?? json['silver'] ?? json['price'],
+            );
           }
           if (priceUsd == null || priceUsd <= 0) return null;
           // metals.live returns USD per troy ounce in common responses
           await _cachePriceUsd(symbol, priceUsd);
           try {
-            await _prefs?.setString('last_success_metal_fetch_$symbol', DateTime.now().toUtc().toIso8601String());
+            await _prefs?.setString(
+              'last_success_metal_fetch_$symbol',
+              DateTime.now().toUtc().toIso8601String(),
+            );
           } catch (_) {}
           return priceUsd;
         } catch (error) {
-          debugPrint('MarketDataApiService: metals.live request failed for $symbol: $error');
+          debugPrint(
+            'MarketDataApiService: metals.live request failed for $symbol: $error',
+          );
           return null;
         }
       }
@@ -244,7 +282,9 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
         final Uri baseUri = Uri.parse('https://api.gold-api.com/price/$symbol');
         Uri uri = baseUri;
         if (_goldApiKey.trim().isNotEmpty) {
-          final Map<String, String> qp = Map<String, String>.from(uri.queryParameters);
+          final Map<String, String> qp = Map<String, String>.from(
+            uri.queryParameters,
+          );
           qp['apikey'] = _goldApiKey;
           uri = uri.replace(queryParameters: qp);
         }
@@ -254,43 +294,67 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
         final String? rlRaw = _prefs?.getString(rateLimitKey);
         if (rlRaw != null && rlRaw.isNotEmpty) {
           final DateTime? lastRl = DateTime.tryParse(rlRaw);
-          if (lastRl != null && DateTime.now().difference(lastRl) < _metalCooldown) {
+          if (lastRl != null &&
+              DateTime.now().difference(lastRl) < _metalCooldown) {
             // skip gold-api due to recent rate limit
             return null;
           }
         }
 
         try {
-          final Map<String,String> headers = <String,String>{'accept':'application/json','user-agent':'Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15'};
+          final Map<String, String> headers = <String, String>{
+            'accept': 'application/json',
+            'user-agent':
+                'Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15',
+          };
           if (_goldApiKey.trim().isNotEmpty) {
             headers['x-api-key'] = _goldApiKey;
           }
-          final http.Response response = await _httpClient.get(uri, headers: headers);
+          final http.Response response = await _httpClient.get(
+            uri,
+            headers: headers,
+          );
           final String body = response.body;
 
           if (response.statusCode != 200) {
             if (response.statusCode == 429) {
               try {
-                  await _prefs?.setString(rateLimitKey, DateTime.now().toUtc().toIso8601String());
-                } catch (_) {}
-                debugPrint('MarketDataApiService: gold-api returned 429 for $symbol — using last saved value due to rate limit');
+                await _prefs?.setString(
+                  rateLimitKey,
+                  DateTime.now().toUtc().toIso8601String(),
+                );
+              } catch (_) {}
+              debugPrint(
+                'MarketDataApiService: gold-api returned 429 for $symbol — using last saved value due to rate limit',
+              );
             } else {
-              debugPrint('MarketDataApiService: gold-api returned ${response.statusCode} for $symbol');
+              debugPrint(
+                'MarketDataApiService: gold-api returned ${response.statusCode} for $symbol',
+              );
             }
             return null;
           }
 
-          final Map<String, dynamic>? json = jsonDecode(body) as Map<String, dynamic>?;
+          final Map<String, dynamic>? json =
+              jsonDecode(body) as Map<String, dynamic>?;
           if (json == null) return null;
-          final double value = extractUsdPerOunceFromGoldApiJson(json, symbol: symbol);
+          final double value = extractUsdPerOunceFromGoldApiJson(
+            json,
+            symbol: symbol,
+          );
           if (value <= 0) return null;
           await _cachePriceUsd(symbol, value);
           try {
-            await _prefs?.setString('last_success_metal_fetch_$symbol', DateTime.now().toUtc().toIso8601String());
+            await _prefs?.setString(
+              'last_success_metal_fetch_$symbol',
+              DateTime.now().toUtc().toIso8601String(),
+            );
           } catch (_) {}
           return value;
         } catch (error) {
-          debugPrint('MarketDataApiService: gold-api request failed for $symbol: $error');
+          debugPrint(
+            'MarketDataApiService: gold-api request failed for $symbol: $error',
+          );
           return null;
         }
       }
@@ -360,7 +424,10 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
     Map<String, String>? headers,
   }) async {
     try {
-      final http.Response response = await _httpClient.get(uri, headers: headers);
+      final http.Response response = await _httpClient.get(
+        uri,
+        headers: headers,
+      );
       if (response.statusCode != 200) {
         // ignore: avoid_print
         print(
@@ -371,7 +438,9 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
       final String body = response.body;
       return jsonDecode(body);
     } catch (error) {
-      debugPrint('MarketDataApiService: request error ${uri.toString()}: $error');
+      debugPrint(
+        'MarketDataApiService: request error ${uri.toString()}: $error',
+      );
       return null;
     }
   }

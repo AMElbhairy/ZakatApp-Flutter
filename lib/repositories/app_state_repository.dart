@@ -6,22 +6,20 @@ import '../models/app_state.dart';
 import '../services/local_storage_service.dart';
 
 class AppStateRepository {
-  const AppStateRepository({
-    required this.localStorage,
-  });
+  const AppStateRepository({required this.localStorage});
 
   final LocalStorageService localStorage;
 
   Future<AppStateModel> loadAppState() async {
-    final String? raw =
-        await localStorage.loadString(StorageKeys.appStateAnonymousKey);
+    final String? raw = await localStorage.loadString(
+      StorageKeys.appStateAnonymousKey,
+    );
     if (raw == null || raw.trim().isEmpty) {
       return AppStateDefaults.create();
     }
 
     try {
-      final Map<String, dynamic> json =
-          jsonDecode(raw) as Map<String, dynamic>;
+      final Map<String, dynamic> json = jsonDecode(raw) as Map<String, dynamic>;
       return AppStateModel.fromJson(json);
     } catch (error, stackTrace) {
       debugPrint(
@@ -64,7 +62,7 @@ class AppStateDefaults {
           'Gift',
           'Bonus',
           'Savings',
-          'Other Income'
+          'Other Income',
         ],
         expense: <String>[
           'Food & Dining',
@@ -87,7 +85,7 @@ class AppStateDefaults {
           'Childcare',
           'Subscriptions',
           'Loan Payment',
-          'Other'
+          'Other',
         ],
       ),
       zakatPaidMonths: <String>[],
@@ -97,6 +95,7 @@ class AppStateDefaults {
       zakatExpenseIds: <String, dynamic>{},
       zakatMethod: 'hawl',
       zakatAnnualDate: '',
+      zakatNisabBasis: 'gold85',
       zakatScheduleFilter: 'unpaid',
       marketData: <String, dynamic>{},
       marketHistory: <Map<String, dynamic>>[],
