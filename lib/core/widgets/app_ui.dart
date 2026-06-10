@@ -22,7 +22,9 @@ class PremiumCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final BorderRadius borderRadius = hero ? AppRadii.hero : AppRadii.card;
     final Widget content = Ink(
-      decoration: hero ? AppComponentTokens.heroCard(context) : AppComponentTokens.premiumCard(context),
+      decoration: hero
+          ? AppComponentTokens.heroCard(context)
+          : AppComponentTokens.premiumCard(context),
       child: Padding(padding: padding, child: child),
     );
 
@@ -32,11 +34,7 @@ class PremiumCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: onTap == null
           ? content
-          : InkWell(
-              onTap: onTap,
-              borderRadius: borderRadius,
-              child: content,
-            ),
+          : InkWell(onTap: onTap, borderRadius: borderRadius, child: content),
     );
   }
 }
@@ -83,12 +81,14 @@ class MetricTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: <Widget>[
-        Expanded(child: Text(label, style: Theme.of(context).textTheme.bodyMedium)),
+        Expanded(
+          child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
+        ),
         Text(
           value,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                fontWeight: bold ? FontWeight.w700 : FontWeight.w500,
-              ),
+            fontWeight: bold ? FontWeight.w700 : FontWeight.w500,
+          ),
         ),
       ],
     );
@@ -126,7 +126,10 @@ class EmptyStateCard extends StatelessWidget {
           Text(title, style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: AppSpacing.xs),
           Text(message),
-          if (action != null) ...<Widget>[const SizedBox(height: AppSpacing.sm), action!],
+          if (action != null) ...<Widget>[
+            const SizedBox(height: AppSpacing.sm),
+            action!,
+          ],
         ],
       ),
     );
@@ -226,10 +229,7 @@ void showTopSnackBar(BuildContext context, String message) {
 }
 
 class _TopToastWidget extends StatefulWidget {
-  const _TopToastWidget({
-    required this.message,
-    required this.onDismiss,
-  });
+  const _TopToastWidget({required this.message, required this.onDismiss});
 
   final String message;
   final VoidCallback onDismiss;
@@ -238,7 +238,8 @@ class _TopToastWidget extends StatefulWidget {
   State<_TopToastWidget> createState() => _TopToastWidgetState();
 }
 
-class _TopToastWidgetState extends State<_TopToastWidget> with SingleTickerProviderStateMixin {
+class _TopToastWidgetState extends State<_TopToastWidget>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<Offset> _offsetAnimation;
   late final Animation<double> _opacityAnimation;
@@ -255,18 +256,12 @@ class _TopToastWidgetState extends State<_TopToastWidget> with SingleTickerProvi
     _offsetAnimation = Tween<Offset>(
       begin: const Offset(0, -1.5),
       end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeOutBack,
-    ));
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutBack));
 
     _opacityAnimation = Tween<double>(
       begin: 0.0,
       end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeOut,
-    ));
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
 
     _controller.forward();
 
@@ -324,7 +319,10 @@ class _TopToastWidgetState extends State<_TopToastWidget> with SingleTickerProvi
             child: Material(
               color: Colors.transparent,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
                 decoration: BoxDecoration(
                   color: bgColor,
                   borderRadius: BorderRadius.circular(16),
@@ -341,13 +339,17 @@ class _TopToastWidgetState extends State<_TopToastWidget> with SingleTickerProvi
                   children: [
                     Icon(
                       Icons.info_outline,
-                      color: dark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7),
+                      color: dark
+                          ? const Color(0xFF38BDF8)
+                          : const Color(0xFF0284C7),
                       size: 20,
                     ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
                         widget.message,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
@@ -365,4 +367,3 @@ class _TopToastWidgetState extends State<_TopToastWidget> with SingleTickerProvi
     );
   }
 }
-

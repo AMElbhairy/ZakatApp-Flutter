@@ -38,6 +38,7 @@ class AppLocalizations {
       'zakat_schedule': 'Zakat Schedule',
       'all': 'All',
       'all_categories': 'All Categories',
+      'search_notes': 'Search notes',
       'income': 'Income',
       'expense': 'Expense',
       'save': 'Save',
@@ -277,6 +278,12 @@ class AppLocalizations {
       'no_upcoming_obligations': 'No upcoming obligations',
       'mark_as_paid': 'Mark as Paid',
       'mark_as_unpaid': 'Mark as Unpaid',
+      'this_month': 'This Month',
+      'next_month': 'Next Month',
+      'total': 'Total',
+      'top_expense_categories': 'Top Expense Categories',
+      'add_expenses_insights': 'Add expenses to see spending insights.',
+      'expense_analysis_coming_soon': 'Expense Analysis screen coming soon!',
     },
     'ar': <String, String>{
       'dashboard': 'لوحة التحكم',
@@ -304,6 +311,7 @@ class AppLocalizations {
       'zakat_schedule': 'جدول الزكاة',
       'all': 'الكل',
       'all_categories': 'جميع الفئات',
+      'search_notes': 'بحث في الملاحظات',
       'income': 'الدخل',
       'expense': 'المصروفات',
       'save': 'حفظ',
@@ -386,8 +394,7 @@ class AppLocalizations {
       'coming_soon': 'قريباً',
       'ai_coming_soon':
           'إعدادات مفتاح الذكاء الاصطناعي غير مفعّلة في هذه النسخة',
-      'drive_backup_coming_soon':
-          'النسخ الاحتياطي على جوجل درايف غير متاح بعد',
+      'drive_backup_coming_soon': 'النسخ الاحتياطي على جوجل درايف غير متاح بعد',
       'about_section': 'حول التطبيق',
       'language_label': 'اللغة',
       'main_currency': 'العملة الرئيسية',
@@ -478,7 +485,8 @@ class AppLocalizations {
       'valuation_date': 'تاريخ التقييم',
       'plan_name': 'اسم الخطة',
       'starting_balance': 'رصيد البداية',
-      'starting_balance_non_negative': 'يجب أن يكون رصيد البداية أكبر من أو يساوي 0',
+      'starting_balance_non_negative':
+          'يجب أن يكون رصيد البداية أكبر من أو يساوي 0',
       'monthly_saving': 'الادخار الشهري',
       'monthly_expense': 'المصروف الشهري',
       'expected_annual_return': 'العائد السنوي المتوقع %',
@@ -540,6 +548,12 @@ class AppLocalizations {
       'no_upcoming_obligations': 'لا توجد التزامات قادمة',
       'mark_as_paid': 'تحديد كمدفوع',
       'mark_as_unpaid': 'تحديد كغير مدفوع',
+      'this_month': 'هذا الشهر',
+      'next_month': 'الشهر القادم',
+      'total': 'الإجمالي',
+      'top_expense_categories': 'أعلى فئات المصروفات',
+      'add_expenses_insights': 'أضف مصروفات لعرض تفاصيل الإنفاق.',
+      'expense_analysis_coming_soon': 'شاشة تحليل المصروفات ستتوفر قريباً!',
     },
   };
 

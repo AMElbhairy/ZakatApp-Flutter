@@ -23,8 +23,9 @@ class _FakeAuthService implements AuthService {
 
 Widget _buildApp() {
   const LocalStorageService localStorage = LocalStorageService();
-  final AppStateRepository repository =
-      AppStateRepository(localStorage: localStorage);
+  final AppStateRepository repository = AppStateRepository(
+    localStorage: localStorage,
+  );
   return MultiProvider(
     providers: <ChangeNotifierProvider<dynamic>>[
       ChangeNotifierProvider<AppStateController>(
@@ -46,6 +47,7 @@ Future<void> _addTx(
   required String amount,
   required String category,
   required bool income,
+  String notes = '',
 }) async {
   await tester.tap(find.byKey(const Key('addEntryFab')));
   await tester.pumpAndSettle();
@@ -61,13 +63,17 @@ Future<void> _addTx(
   await tester.pumpAndSettle();
   await tester.tap(find.text(category).last);
   await tester.pumpAndSettle();
+  if (notes.isNotEmpty) {
+    await tester.enterText(find.byKey(const Key('notesField')), notes);
+  }
   await tester.tap(find.byKey(const Key('saveTransactionButton')));
   await tester.pumpAndSettle();
 }
 
 void main() {
-  testWidgets('list transactions and filter income/expense',
-      (WidgetTester tester) async {
+  testWidgets('list transactions and filter income/expense', (
+    WidgetTester tester,
+  ) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
 
     await tester.pumpWidget(_buildApp());
@@ -97,8 +103,62 @@ void main() {
     expect(find.textContaining('E£ -40.00'), findsOneWidget);
   });
 
-  testWidgets('delete transaction with confirmation',
-      (WidgetTester tester) async {
+  testWidgets(
+    'search filters transaction descriptions and combines with type',
+    (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+
+      await tester.pumpWidget(_buildApp());
+      await tester.pumpAndSettle();
+
+      await _addTx(
+        tester,
+        amount: '100',
+        category: 'Salary',
+        income: true,
+        notes: 'June consulting payment',
+      );
+      await _addTx(
+        tester,
+        amount: '40',
+        category: 'Food & Dining',
+        income: false,
+        notes: 'Team lunch downtown',
+      );
+      await _addTx(
+        tester,
+        amount: '25',
+        category: 'Food & Dining',
+        income: false,
+        notes: 'Coffee beans',
+      );
+
+      await tester.tap(find.text('Activity').first);
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const Key('activitySearchField')),
+        'LUNCH',
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Team lunch downtown'), findsOneWidget);
+      expect(find.text('June consulting payment'), findsNothing);
+      expect(find.text('Coffee beans'), findsNothing);
+
+      await tester.tap(find.text('Income').first);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('activityEmptyState')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('clearActivitySearch')));
+      await tester.pumpAndSettle();
+      expect(find.text('June consulting payment'), findsOneWidget);
+    },
+  );
+
+  testWidgets('delete transaction with confirmation', (
+    WidgetTester tester,
+  ) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
 
     await tester.pumpWidget(_buildApp());
@@ -119,8 +179,9 @@ void main() {
     expect(find.byKey(const Key('activityEmptyState')), findsOneWidget);
   });
 
-  testWidgets('edit transaction and persist after reload',
-      (WidgetTester tester) async {
+  testWidgets('edit transaction and persist after reload', (
+    WidgetTester tester,
+  ) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
 
     await tester.pumpWidget(_buildApp());

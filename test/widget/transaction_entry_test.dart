@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zakatapp_flutter/main.dart';
+import 'package:zakatapp_flutter/core/widgets/app_ui.dart';
 import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
 import 'package:zakatapp_flutter/services/app_state_controller.dart';
 import 'package:zakatapp_flutter/services/local_storage_service.dart';
@@ -96,6 +97,58 @@ Future<void> _openTransactionForm(WidgetTester tester) async {
 }
 
 void main() {
+  test('receipt scan errors are concise and classify transient statuses', () {
+    expect(isTransientReceiptScanStatus(503), isTrue);
+    expect(isTransientReceiptScanStatus(429), isTrue);
+    expect(isTransientReceiptScanStatus(403), isFalse);
+    expect(
+      receiptScanFailureMessage(503, isArabic: false),
+      'Gemini is busy right now. Please try again shortly.',
+    );
+    expect(
+      receiptScanFailureMessage(403, isArabic: false),
+      'Gemini API key was rejected. Check it in Settings.',
+    );
+    expect(
+      receiptScanFailureMessage(null, isArabic: false),
+      isNot(contains('Exception')),
+    );
+  });
+
+  testWidgets('top toast constrains long error messages', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (BuildContext context) => Scaffold(
+            body: FilledButton(
+              onPressed: () => showTopSnackBar(
+                context,
+                List<String>.filled(30, 'Long API error').join(' '),
+              ),
+              child: const Text('Show error'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Show error'));
+    await tester.pump();
+
+    final Text toastText = tester.widget<Text>(
+      find.byWidgetPredicate(
+        (Widget widget) =>
+            widget is Text && widget.data?.contains('Long API error') == true,
+      ),
+    );
+    expect(toastText.maxLines, 3);
+    expect(toastText.overflow, TextOverflow.ellipsis);
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+  });
+
   testWidgets(
     'AI confirmation shows extracted data and saves selected entries',
     (WidgetTester tester) async {

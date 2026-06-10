@@ -26,6 +26,7 @@ class ActivityScreen extends StatefulWidget {
 class ActivityScreenState extends State<ActivityScreen> {
   _ActivityFilter _filter = _ActivityFilter.all;
   _ActivitySection _section = _ActivitySection.transactions;
+  final TextEditingController _searchController = TextEditingController();
 
   // Filter States for Transactions
   String _selectedDateFilter = 'All Time';
@@ -36,6 +37,12 @@ class ActivityScreenState extends State<ActivityScreen> {
   bool _showUnpaidOnly = true;
   String _zakatDateFilter = 'All Time';
   DateTimeRange? _zakatCustomDateRange;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   void showSchedule() {
     if (!mounted) return;
@@ -256,7 +263,8 @@ class ActivityScreenState extends State<ActivityScreen> {
       _selectedCategory = 'All';
     }
 
-    // 3. Finally, filter the transactions list further by the selected category filter
+    // 3. Finally, filter by the selected category and transaction note.
+    final String searchQuery = _searchController.text.trim().toLowerCase();
     final List<_ActivityEntry> filtered = filteredByTypeAndDate
         .where((_ActivityEntry entry) {
           if (_selectedCategory == 'All') return true;
@@ -264,6 +272,13 @@ class ActivityScreenState extends State<ActivityScreen> {
               ? context.l10n.tr('cash_in')
               : entry.transaction!.category;
           return catName == _selectedCategory;
+        })
+        .where((_ActivityEntry entry) {
+          if (searchQuery.isEmpty) return true;
+          return entry.transaction?.description.toLowerCase().contains(
+                searchQuery,
+              ) ??
+              false;
         })
         .toList(growable: false);
 
@@ -481,7 +496,7 @@ class ActivityScreenState extends State<ActivityScreen> {
         ),
         const SizedBox(height: 10),
 
-        // Category Selector Row (Separate Row below Date filter to avoid cropping/cluttering)
+        // Category and note search filters
         Row(
           children: <Widget>[
             Icon(
@@ -511,6 +526,76 @@ class ActivityScreenState extends State<ActivityScreen> {
               selected: _selectedCategory != 'All',
               onSelected: (bool selected) =>
                   _showCategoryPicker(context, sortedCategories),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: SizedBox(
+                height: 34,
+                child: TextField(
+                  key: const Key('activitySearchField'),
+                  controller: _searchController,
+                  onChanged: (_) => setState(() {}),
+                  textInputAction: TextInputAction.search,
+                  style: const TextStyle(fontSize: 12),
+                  decoration: InputDecoration(
+                    hintText: context.l10n.tr('search_notes'),
+                    hintStyle: TextStyle(
+                      fontSize: 12,
+                      color: tokens.colors.textSecondary,
+                    ),
+                    prefixIcon: Icon(
+                      Icons.search_rounded,
+                      size: 17,
+                      color: tokens.colors.textPrimary.withValues(alpha: 0.6),
+                    ),
+                    prefixIconConstraints: const BoxConstraints(minWidth: 34),
+                    suffixIcon: _searchController.text.isEmpty
+                        ? null
+                        : IconButton(
+                            key: const Key('clearActivitySearch'),
+                            padding: EdgeInsets.zero,
+                            visualDensity: VisualDensity.compact,
+                            icon: Icon(
+                              Icons.close_rounded,
+                              size: 16,
+                              color: tokens.colors.textSecondary,
+                            ),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() {});
+                            },
+                          ),
+                    suffixIconConstraints: const BoxConstraints(minWidth: 32),
+                    filled: true,
+                    fillColor: Theme.of(context)
+                        .colorScheme
+                        .surfaceContainerHighest
+                        .withValues(alpha: 0.5),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 0,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(18),
+                      borderSide: BorderSide(
+                        color: tokens.colors.gold.withValues(alpha: 0.15),
+                      ),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(18),
+                      borderSide: BorderSide(
+                        color: tokens.colors.gold.withValues(alpha: 0.15),
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(18),
+                      borderSide: BorderSide(
+                        color: tokens.colors.gold.withValues(alpha: 0.7),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ),
           ],
         ),

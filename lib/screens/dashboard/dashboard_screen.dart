@@ -63,6 +63,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final state = controller.state;
     final transactions = state.transactions;
     final savings = state.savings;
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
     final investments = state.investments;
 
     final market = MarketData.fromJson(state.marketData);
@@ -401,6 +402,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
             const SizedBox(height: 16),
             _stagger(
               order: 5,
+              child: _TopExpensesWidget(
+                transactions: transactions,
+                mainCurrency: state.mainCurrency,
+                market: market,
+                hasMarketData: hasMarketData,
+                balancesHidden: balancesHidden,
+              ),
+            ),
+            const SizedBox(height: 16),
+            _stagger(
+              order: 6,
               child: _PremiumSection(
                 title: context.l10n.tr('recent_activity_title'),
                 trailing: TextButton(
@@ -420,11 +432,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ),
                       )
                     else
-                      ...recent4.map(
-                        (_DashboardActivityEntry entry) => _ActivityRow(
-                          entry: entry,
-                          balancesHidden: balancesHidden,
-                        ),
+                      ...recent4.asMap().entries.map(
+                        (MapEntry<int, _DashboardActivityEntry> item) {
+                          final int index = item.key;
+                          final _DashboardActivityEntry entry = item.value;
+                          final bool isLast = index == recent4.length - 1;
+                          return Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              _ActivityRow(
+                                entry: entry,
+                                balancesHidden: balancesHidden,
+                              ),
+                              if (!isLast)
+                                Divider(
+                                  height: 1,
+                                  thickness: 1,
+                                  color: dark
+                                      ? tokens.colors.divider
+                                      : const Color(0xFFE8E8E8),
+                                ),
+                            ],
+                          );
+                        },
                       ),
                   ],
                 ),
@@ -694,8 +724,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     double valueEgp,
     bool hasMarketData,
     String mainCurrency,
-    MarketData marketData,
-  ) {
+    MarketData marketData, {
+    bool compact = false,
+  }) {
     if (!hasMarketData) return context.l10n.tr('market_data_required');
     final String displayCurrency = mainCurrency.trim().isEmpty
         ? 'EGP'
@@ -706,7 +737,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       marketData,
     );
     if (displayValue.isNaN) return context.l10n.tr('market_data_required');
-    return _formatDisplay(context, displayValue, displayCurrency);
+    return compact
+        ? _formatCompactDisplay(context, displayValue, displayCurrency)
+        : _formatDisplay(context, displayValue, displayCurrency);
   }
 
   static String _formatPct(double value) {
@@ -1919,11 +1952,13 @@ class _PremiumSection extends StatelessWidget {
     required this.title,
     required this.child,
     this.trailing,
+    this.subtitle,
   });
 
   final String title;
   final Widget child;
   final Widget? trailing;
+  final String? subtitle;
 
   @override
   Widget build(BuildContext context) {
@@ -1944,12 +1979,29 @@ class _PremiumSection extends StatelessWidget {
           Row(
             children: <Widget>[
               Expanded(
-                child: Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: dark ? Colors.white : const Color(0xFF111827),
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: dark ? Colors.white : const Color(0xFF111827),
+                      ),
+                    ),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle!,
+                        style: TextStyle(
+                          fontSize: 12.0,
+                          color: dark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
               if (trailing case final Widget t) t,
@@ -3053,6 +3105,232 @@ class _ObligationSummaryTile extends StatelessWidget {
               color: tokens.colors.textPrimary.withValues(alpha: 0.4),
               size: 20,
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TopExpensesWidget extends StatefulWidget {
+  const _TopExpensesWidget({
+    required this.transactions,
+    required this.mainCurrency,
+    required this.market,
+    required this.hasMarketData,
+    required this.balancesHidden,
+  });
+
+  final List<Transaction> transactions;
+  final String mainCurrency;
+  final MarketData market;
+  final bool hasMarketData;
+  final bool balancesHidden;
+
+  @override
+  State<_TopExpensesWidget> createState() => _TopExpensesWidgetState();
+}
+
+class _TopExpensesWidgetState extends State<_TopExpensesWidget>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _scaleAnimation;
+  bool _isPressed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 130),
+    );
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.98).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+
+    final DateTime now = DateTime.now();
+    final List<Transaction> currentMonthExpenses = widget.transactions.where((tx) {
+      if (tx.type != 'expense') return false;
+      final DateTime? parsed = DateTime.tryParse(tx.date);
+      if (parsed == null) return false;
+      return parsed.year == now.year && parsed.month == now.month;
+    }).toList();
+
+    final Map<String, double> categoryAmountsEgp = {};
+    double totalExpensesEgp = 0.0;
+    for (final tx in currentMonthExpenses) {
+      final double valEgp = ZakatEngineService.tryConvertToEgp(
+            tx.amount,
+            tx.currency,
+            widget.market,
+          ) ??
+          0.0;
+      categoryAmountsEgp[tx.category] = (categoryAmountsEgp[tx.category] ?? 0.0) + valEgp;
+      totalExpensesEgp += valEgp;
+    }
+
+    final List<MapEntry<String, double>> sortedCategories = categoryAmountsEgp.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final List<MapEntry<String, double>> topCategories = sortedCategories.take(4).toList();
+
+    final double maxCategoryEgp = topCategories.isNotEmpty ? topCategories.first.value : 0.0;
+
+    final Color pressedOverlay = dark
+        ? const Color(0xFF10B981).withValues(alpha: 0.08)
+        : const Color(0xFF10B981).withValues(alpha: 0.04);
+
+    return ScaleTransition(
+      scale: _scaleAnimation,
+      child: GestureDetector(
+        onTapDown: (_) {
+          _controller.forward();
+          setState(() {
+            _isPressed = true;
+          });
+        },
+        onTapUp: (_) {
+          _controller.reverse();
+          setState(() {
+            _isPressed = false;
+          });
+          showTopSnackBar(
+            context,
+            context.l10n.tr('expense_analysis_coming_soon'),
+          );
+        },
+        onTapCancel: () {
+          _controller.reverse();
+          setState(() {
+            _isPressed = false;
+          });
+        },
+        child: Stack(
+          children: [
+            _PremiumSection(
+              title: context.l10n.tr('top_expense_categories'),
+              subtitle: context.l10n.tr('this_month'),
+              child: topCategories.isEmpty
+                  ? Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 20),
+                      child: Center(
+                        child: Text(
+                          context.l10n.tr('add_expenses_insights'),
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: dark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280),
+                          ),
+                        ),
+                      ),
+                    )
+                  : Column(
+                      children: topCategories.asMap().entries.map((item) {
+                        final int idx = item.key;
+                        final String category = item.value.key;
+                        final double amountEgp = item.value.value;
+
+                        final double pct = totalExpensesEgp > 0 ? (amountEgp / totalExpensesEgp) : 0.0;
+                        final double fillFactor = maxCategoryEgp > 0 ? (amountEgp / maxCategoryEgp) : 0.0;
+
+                        final String formattedAmount = widget.balancesHidden
+                            ? '••••••'
+                            : _DashboardScreenState._formatOrMissing(
+                                context,
+                                amountEgp,
+                                widget.hasMarketData,
+                                widget.mainCurrency,
+                                widget.market,
+                                compact: true,
+                              );
+
+                        return Padding(
+                          padding: EdgeInsets.only(
+                            top: idx == 0 ? 4.0 : 12.0,
+                            bottom: idx == topCategories.length - 1 ? 4.0 : 0.0,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      category,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 13.0,
+                                        fontWeight: FontWeight.w600,
+                                        color: dark ? Colors.white : const Color(0xFF1F2937),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        '${(pct * 100).toStringAsFixed(0)}%',
+                                        style: TextStyle(
+                                          fontSize: 12.0,
+                                          fontWeight: FontWeight.w500,
+                                          color: dark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        formattedAmount,
+                                        style: TextStyle(
+                                          fontSize: 13.5,
+                                          fontWeight: FontWeight.w800,
+                                          color: dark ? Colors.white : const Color(0xFF111827),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(4),
+                                child: SizedBox(
+                                  height: 4,
+                                  child: LinearProgressIndicator(
+                                    value: fillFactor,
+                                    backgroundColor: dark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                                    valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF10B981)),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                    ),
+            ),
+            if (_isPressed)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: pressedOverlay,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),

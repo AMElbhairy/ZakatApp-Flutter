@@ -13,6 +13,35 @@ import '../../core/widgets/app_ui.dart';
 import '../../models/transaction.dart';
 import '../../services/app_state_controller.dart';
 
+bool isTransientReceiptScanStatus(int statusCode) {
+  return statusCode == 429 ||
+      statusCode == 500 ||
+      statusCode == 502 ||
+      statusCode == 503 ||
+      statusCode == 504;
+}
+
+String receiptScanFailureMessage(int? statusCode, {required bool isArabic}) {
+  if (<int>[500, 502, 503, 504].contains(statusCode)) {
+    return isArabic
+        ? 'خدمة Gemini مشغولة حالياً. حاول مرة أخرى بعد قليل.'
+        : 'Gemini is busy right now. Please try again shortly.';
+  }
+  if (statusCode == 429) {
+    return isArabic
+        ? 'تم الوصول إلى حد استخدام Gemini. حاول مرة أخرى لاحقاً.'
+        : 'Gemini usage limit reached. Please try again later.';
+  }
+  if (statusCode == 401 || statusCode == 403) {
+    return isArabic
+        ? 'تعذر استخدام مفتاح Gemini. تحقق من المفتاح في الإعدادات.'
+        : 'Gemini API key was rejected. Check it in Settings.';
+  }
+  return isArabic
+      ? 'تعذر تحليل الفاتورة. تحقق من الاتصال وحاول مرة أخرى.'
+      : 'Could not analyze the receipt. Check your connection and try again.';
+}
+
 class AddTransactionScreen extends StatefulWidget {
   const AddTransactionScreen({
     super.key,
@@ -450,27 +479,37 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
           '}\n'
           'Do not wrap the response in markdown blocks or any text other than the raw JSON.';
 
-      final response = await http.post(
-        Uri.parse(
-          'https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=$apiKey',
-        ),
-        headers: <String, String>{'Content-Type': 'application/json'},
-        body: jsonEncode(<String, dynamic>{
-          'contents': <Map<String, dynamic>>[
-            <String, dynamic>{
-              'parts': <Map<String, dynamic>>[
-                <String, dynamic>{'text': prompt},
-                <String, dynamic>{
-                  'inlineData': <String, dynamic>{
-                    'mimeType': mimeType,
-                    'data': base64Image,
-                  },
-                },
-              ],
-            },
-          ],
-        }),
+      final Uri endpoint = Uri.parse(
+        'https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=$apiKey',
       );
+      final String requestBody = jsonEncode(<String, dynamic>{
+        'contents': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'parts': <Map<String, dynamic>>[
+              <String, dynamic>{'text': prompt},
+              <String, dynamic>{
+                'inlineData': <String, dynamic>{
+                  'mimeType': mimeType,
+                  'data': base64Image,
+                },
+              },
+            ],
+          },
+        ],
+      });
+      http.Response response = await http.post(
+        endpoint,
+        headers: <String, String>{'Content-Type': 'application/json'},
+        body: requestBody,
+      );
+      if (isTransientReceiptScanStatus(response.statusCode)) {
+        await Future<void>.delayed(const Duration(milliseconds: 700));
+        response = await http.post(
+          endpoint,
+          headers: <String, String>{'Content-Type': 'application/json'},
+          body: requestBody,
+        );
+      }
 
       if (response.statusCode == 200) {
         if (!mounted) return;
@@ -558,16 +597,31 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
           }
         }
       } else {
-        throw Exception(
-          'Gemini request failed: ${response.statusCode} - ${response.body}',
+        debugPrint(
+          'Receipt scan failed with Gemini status ${response.statusCode}: '
+          '${response.body}',
         );
+        if (!mounted) return;
+        _showError(
+          receiptScanFailureMessage(
+            response.statusCode,
+            isArabic:
+                Localizations.localeOf(context).languageCode.toLowerCase() ==
+                'ar',
+          ),
+        );
+        return;
       }
     } catch (e) {
       if (!mounted) return;
+      debugPrint('Receipt scan failed: $e');
       _showError(
-        Localizations.localeOf(context).languageCode == 'ar'
-            ? 'فشل تحليل الفاتورة: $e'
-            : 'Failed to analyze receipt: $e',
+        receiptScanFailureMessage(
+          null,
+          isArabic:
+              Localizations.localeOf(context).languageCode.toLowerCase() ==
+              'ar',
+        ),
       );
     } finally {
       if (mounted) {
