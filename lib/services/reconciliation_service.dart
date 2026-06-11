@@ -31,6 +31,24 @@ class SavingDeduction {
   final double deduction;
 }
 
+class CashSource {
+  const CashSource({
+    required this.id,
+    required this.sourceType,
+    required this.date,
+    required this.createdAt,
+    required this.availableAmount,
+    required this.currency,
+  });
+
+  final String id;
+  final String sourceType;
+  final String date;
+  final String createdAt;
+  final double availableAmount;
+  final String currency;
+}
+
 class ReconciliationResult {
   const ReconciliationResult({required this.state, required this.modified});
 
@@ -40,6 +58,142 @@ class ReconciliationResult {
 
 class ReconciliationService {
   static const double minAmount = 0.005;
+
+  List<CashSource> getAvailableCashSources({
+    required AppStateModel state,
+    required String currency,
+    bool newestFirst = false,
+  }) {
+    final String normalizedCurrency = currency.trim().toUpperCase();
+    final List<CashSource> sources = <CashSource>[
+      ...state.savings
+          .where(
+            (saving) =>
+                _normalizeAssetType(saving.assetType) == 'cash' &&
+                saving.unit.trim().toUpperCase() == normalizedCurrency &&
+                saving.remainingAmount >= minAmount,
+          )
+          .map(
+            (saving) => CashSource(
+              id: saving.id,
+              sourceType: 'savings',
+              date: saving.dateAcquired,
+              createdAt: saving.createdAt,
+              availableAmount: saving.remainingAmount,
+              currency: normalizedCurrency,
+            ),
+          ),
+      ...getNetIncomeLotsForCurrency(
+            transactions: state.transactions
+                .map((transaction) => transaction.toJson())
+                .toList(growable: false),
+            currency: normalizedCurrency,
+            lastRollover: state.lastRollover,
+          )
+          .where((lot) => lot.remainingAmount >= minAmount)
+          .map(
+            (lot) => CashSource(
+              id: lot.id,
+              sourceType: 'income',
+              date: lot.date,
+              createdAt: lot.date,
+              availableAmount: lot.remainingAmount,
+              currency: normalizedCurrency,
+            ),
+          ),
+    ];
+
+    sources.sort((CashSource a, CashSource b) {
+      final DateTime ad = DateTime.tryParse(a.date) ?? DateTime(1970);
+      final DateTime bd = DateTime.tryParse(b.date) ?? DateTime(1970);
+      final int dateComparison = ad.compareTo(bd);
+      if (dateComparison != 0) return dateComparison;
+      return a.createdAt.compareTo(b.createdAt);
+    });
+
+    final double targetBalance =
+        ZakatEngineService.calculateCashByCurrency(
+          transactions: state.transactions,
+          savings: state.savings,
+          marketData: MarketData.fromJson(state.marketData),
+          lastRollover: state.lastRollover,
+        )[normalizedCurrency] ??
+        0;
+    double difference =
+        targetBalance -
+        sources.fold<double>(
+          0,
+          (double total, CashSource source) => total + source.availableAmount,
+        );
+
+    if (difference > minAmount && sources.isNotEmpty) {
+      int index = sources.lastIndexWhere(
+        (CashSource source) => source.sourceType == 'income',
+      );
+      if (index < 0) index = sources.length - 1;
+      final CashSource source = sources[index];
+      sources[index] = _copyCashSource(
+        source,
+        availableAmount: source.availableAmount + difference,
+      );
+    } else if (difference < -minAmount) {
+      difference = -difference;
+      for (
+        int index = sources.length - 1;
+        index >= 0 && difference > minAmount;
+        index--
+      ) {
+        final CashSource source = sources[index];
+        final double reduction = _min(source.availableAmount, difference);
+        sources[index] = _copyCashSource(
+          source,
+          availableAmount: _round6(source.availableAmount - reduction),
+        );
+        difference = _round6(difference - reduction);
+      }
+      sources.removeWhere(
+        (CashSource source) => source.availableAmount < minAmount,
+      );
+    }
+
+    return newestFirst ? sources.reversed.toList(growable: false) : sources;
+  }
+
+  CashSource _copyCashSource(
+    CashSource source, {
+    required double availableAmount,
+  }) {
+    return CashSource(
+      id: source.id,
+      sourceType: source.sourceType,
+      date: source.date,
+      createdAt: source.createdAt,
+      availableAmount: _round6(availableAmount),
+      currency: source.currency,
+    );
+  }
+
+  double getAvailableCashBalance({
+    required AppStateModel state,
+    required String currency,
+  }) {
+    return ZakatEngineService.calculateCashByCurrency(
+          transactions: state.transactions,
+          savings: state.savings,
+          marketData: MarketData.fromJson(state.marketData),
+          lastRollover: state.lastRollover,
+        )[currency.trim().toUpperCase()] ??
+        0;
+  }
+
+  Map<String, double> getCashByCurrency(AppStateModel state) {
+    return ZakatEngineService.calculateCashByCurrency(
+      transactions: state.transactions,
+      savings: state.savings,
+      marketData: MarketData.fromJson(state.marketData),
+      lastRollover: state.lastRollover,
+    );
+  }
 
   ReconciliationResult reconcileExpensesWithSavings(AppStateModel input) {
     final Map<String, dynamic> state = input.toJson();
@@ -565,7 +719,6 @@ class ReconciliationService {
   ReconciliationResult executeCurrencyExchange({
     required AppStateModel input,
     required String date,
-    required String sourceType, // 'savings', 'income', 'both'
     required String sourceCurrency,
     required String targetCurrency,
     required double sourceAmount,
@@ -580,59 +733,24 @@ class ReconciliationService {
       state['processedExpenseIds'],
     );
 
-    final List<Map<String, dynamic>> lots = <Map<String, dynamic>>[];
-
-    if (sourceType == 'savings' || sourceType == 'both') {
-      final Iterable<Map<String, dynamic>> cashSavings = savings.where(
-        (Map<String, dynamic> s) =>
-            _normalizeAssetType(s['assetType']) == 'cash' &&
-            (s['unit'] ?? '').toString() == sourceCurrency &&
-            _asDouble(s['remainingAmount']) >= minAmount,
-      );
-      for (final Map<String, dynamic> s in cashSavings) {
-        lots.add(<String, dynamic>{
-          'sourceType': 'savings',
-          'id': s['id'],
-          'date': s['dateAcquired'],
-          'createdAt': s['createdAt'],
-          'availableAmount': _asDouble(s['remainingAmount']),
-          'ref': s,
-        });
-      }
-    }
-
-    if (sourceType == 'income' || sourceType == 'both') {
-      final Iterable<IncomeLot> incomeLots = getNetIncomeLotsForCurrency(
-        transactions: transactions,
-        currency: sourceCurrency,
-        lastRollover: input.lastRollover,
-      ).where((IncomeLot l) => l.remainingAmount >= minAmount);
-
-      for (final IncomeLot l in incomeLots) {
-        lots.add(<String, dynamic>{
-          'sourceType': 'income',
-          'id': l.id,
-          'date': l.date,
-          'createdAt': l.date,
-          'availableAmount': l.remainingAmount,
-          'ref': <String, dynamic>{'sourceIncomeId': l.id},
-        });
-      }
-    }
-
-    lots.sort((Map<String, dynamic> a, Map<String, dynamic> b) {
-      final DateTime da =
-          DateTime.tryParse('${a['date']}') ??
-          DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
-      final DateTime db =
-          DateTime.tryParse('${b['date']}') ??
-          DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
-      final int comp = da.compareTo(db);
-      if (comp != 0) return comp;
-      final DateTime ca = DateTime.tryParse('${a['createdAt']}') ?? da;
-      final DateTime cb = DateTime.tryParse('${b['createdAt']}') ?? db;
-      return ca.compareTo(cb);
-    });
+    final List<Map<String, dynamic>> lots =
+        getAvailableCashSources(state: input, currency: sourceCurrency)
+            .map((CashSource source) {
+              return <String, dynamic>{
+                'sourceType': source.sourceType,
+                'id': source.id,
+                'date': source.date,
+                'createdAt': source.createdAt,
+                'availableAmount': source.availableAmount,
+                'ref': source.sourceType == 'savings'
+                    ? savings.firstWhere(
+                        (Map<String, dynamic> saving) =>
+                            saving['id'] == source.id,
+                      )
+                    : <String, dynamic>{'sourceIncomeId': source.id},
+              };
+            })
+            .toList(growable: false);
 
     final double totalAvailable = lots.fold<double>(
       0,

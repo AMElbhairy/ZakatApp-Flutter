@@ -694,7 +694,6 @@ void main() {
         .executeCurrencyExchange(
           input: state,
           date: '2026-06-01',
-          sourceType: 'income',
           sourceCurrency: 'USD',
           targetCurrency: 'EGP',
           sourceAmount: 40,
@@ -734,7 +733,6 @@ void main() {
         .executeCurrencyExchange(
           input: state,
           date: '2026-06-01',
-          sourceType: 'savings',
           sourceCurrency: 'USD',
           targetCurrency: 'EGP',
           sourceAmount: 40,
@@ -747,5 +745,202 @@ void main() {
     );
     expect(exchanged.dateAcquired, '2024-01-01');
     expect(exchanged.createdAt, isNot('2024-01-01T00:00:00.000Z'));
+  });
+
+  test('combined cash sources include income and legacy cash savings', () {
+    final AppStateModel base = AppStateDefaults.create();
+    final AppStateModel state = AppStateModel.fromJson(<String, dynamic>{
+      ...base.toJson(),
+      'transactions': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'id': 'income-1',
+          'type': 'income',
+          'date': '2026-02-01',
+          'amount': 100,
+          'currency': 'USD',
+          'category': 'Salary',
+          'description': 'Income source',
+        },
+      ],
+      'savings': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'id': 'legacy-cash',
+          'assetType': 'cash',
+          'dateAcquired': '2025-01-01',
+          'amount': 75,
+          'remainingAmount': 75,
+          'unit': 'USD',
+          'description': 'Legacy imported cash',
+          'sourceIncomeId': 'legacy-income',
+        },
+      ],
+    });
+
+    final List<CashSource> sources = service.getAvailableCashSources(
+      state: state,
+      currency: 'USD',
+    );
+
+    expect(sources.map((CashSource source) => source.id), <String>[
+      'legacy-cash',
+      'income-1',
+    ]);
+    expect(
+      sources.fold<double>(
+        0,
+        (double total, CashSource source) => total + source.availableAmount,
+      ),
+      175,
+    );
+    expect(service.getAvailableCashBalance(state: state, currency: 'USD'), 175);
+    expect(service.getCashByCurrency(state)['USD'], 175);
+  });
+
+  test('currency exchange automatically deducts across all cash sources', () {
+    final AppStateModel base = AppStateDefaults.create();
+    final AppStateModel state = AppStateModel.fromJson(<String, dynamic>{
+      ...base.toJson(),
+      'transactions': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'id': 'income-1',
+          'type': 'income',
+          'date': '2026-02-01',
+          'amount': 100,
+          'currency': 'USD',
+          'category': 'Salary',
+          'description': '',
+        },
+      ],
+      'savings': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'id': 'cash-1',
+          'assetType': 'cash',
+          'dateAcquired': '2025-01-01',
+          'amount': 50,
+          'remainingAmount': 50,
+          'unit': 'USD',
+          'description': '',
+        },
+      ],
+    });
+
+    final AppStateModel out = service
+        .executeCurrencyExchange(
+          input: state,
+          date: '2026-06-01',
+          sourceCurrency: 'USD',
+          targetCurrency: 'EGP',
+          sourceAmount: 70,
+          targetAmount: 3500,
+        )
+        .state;
+
+    expect(
+      out.savings.where((Saving saving) => saving.id == 'cash-1'),
+      isEmpty,
+    );
+    expect(
+      out.transactions
+          .where(
+            (transaction) =>
+                transaction.type == 'expense' &&
+                transaction.sourceIncomeId == 'income-1',
+          )
+          .single
+          .amount,
+      20,
+    );
+    expect(service.getAvailableCashBalance(state: out, currency: 'USD'), 80);
+  });
+
+  test('combined cash balance reflects metal funding deductions', () {
+    final AppStateModel base = AppStateDefaults.create();
+    final AppStateModel state = AppStateModel.fromJson(<String, dynamic>{
+      ...base.toJson(),
+      'savings': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'id': 'cash-1',
+          'assetType': 'cash',
+          'dateAcquired': '2026-01-01',
+          'amount': 100,
+          'remainingAmount': 80,
+          'unit': 'USD',
+          'description': '',
+        },
+        <String, dynamic>{
+          'id': 'gold-1',
+          'assetType': 'gold',
+          'dateAcquired': '2026-02-01',
+          'amount': 1,
+          'remainingAmount': 1,
+          'unit': '24',
+          'description': '',
+          'fundingAllocations': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'sourceType': 'savings',
+              'sourceId': 'cash-1',
+              'currency': 'USD',
+              'amount': 20,
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(service.getAvailableCashBalance(state: state, currency: 'USD'), 80);
+    expect(service.getCashByCurrency(state)['USD'], 80);
+  });
+
+  test('combined cash source amounts equal the shared displayed balance', () {
+    final AppStateModel base = AppStateDefaults.create();
+    final AppStateModel state = AppStateModel.fromJson(<String, dynamic>{
+      ...base.toJson(),
+      'transactions': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'id': 'expense-1',
+          'type': 'expense',
+          'date': '2026-06-02',
+          'amount': 20,
+          'currency': 'USD',
+          'category': 'Expense',
+          'description': '',
+        },
+        <String, dynamic>{
+          'id': 'income-1',
+          'type': 'income',
+          'date': '2026-06-03',
+          'amount': 50,
+          'currency': 'USD',
+          'category': 'Salary',
+          'description': '',
+        },
+      ],
+      'savings': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'id': 'cash-1',
+          'assetType': 'cash',
+          'dateAcquired': '2026-01-01',
+          'amount': 100,
+          'remainingAmount': 80,
+          'unit': 'USD',
+          'description': '',
+        },
+      ],
+    });
+
+    final List<CashSource> sources = service.getAvailableCashSources(
+      state: state,
+      currency: 'USD',
+    );
+    final double sourceTotal = sources.fold<double>(
+      0,
+      (double total, CashSource source) => total + source.availableAmount,
+    );
+
+    expect(
+      sourceTotal,
+      service.getAvailableCashBalance(state: state, currency: 'USD'),
+    );
+    expect(sourceTotal, 130);
   });
 }

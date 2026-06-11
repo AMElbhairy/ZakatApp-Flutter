@@ -687,6 +687,8 @@ class ZakatEngineService {
     String? lastRollover,
   }) {
     final Map<String, double> savingsByCurrency = <String, double>{};
+    final Map<String, double> directSavingFundingByCurrency =
+        <String, double>{};
     for (final Saving saving in savings.where(
       (Saving s) => normaliseAssetType(s.assetType) == 'cash',
     )) {
@@ -698,6 +700,19 @@ class ZakatEngineService {
       if (remaining <= minAmount) continue;
       savingsByCurrency[currency] =
           (savingsByCurrency[currency] ?? 0.0) + remaining;
+    }
+    for (final Saving saving in savings) {
+      for (final Map<String, dynamic> allocation in saving.fundingAllocations) {
+        if ((allocation['sourceType'] ?? '').toString() != 'savings') continue;
+        final String currency = (allocation['currency'] ?? '')
+            .toString()
+            .trim()
+            .toUpperCase();
+        if (currency.isEmpty) continue;
+        directSavingFundingByCurrency[currency] =
+            (directSavingFundingByCurrency[currency] ?? 0.0) +
+            _asDouble(allocation['amount']);
+      }
     }
 
     final Map<String, double> result = <String, double>{};
@@ -712,7 +727,12 @@ class ZakatEngineService {
         transactions: transactions,
         savings: savings,
       );
-      final double amount = math.max(0, walletAmount) + savingsAmount;
+      final double amount =
+          math.max(
+            0,
+            walletAmount - (directSavingFundingByCurrency[currency] ?? 0),
+          ) +
+          savingsAmount;
 
       if (amount > minAmount) {
         result[currency] = _round6(amount);

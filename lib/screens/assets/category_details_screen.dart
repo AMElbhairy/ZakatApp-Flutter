@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/i18n/app_localizations.dart';
 import '../../core/services/zakat_engine.dart';
+import '../../core/utils/amount_parser.dart';
 import '../../core/theme/app_theme_extensions.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/widgets/app_ui.dart';
@@ -251,12 +252,14 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
       final List<Transaction> filteredTransactions = transactions
           .where((Transaction tx) => includesSelectedDate(tx.date))
           .toList(growable: false);
-      cashByCurrency = ZakatEngineService.calculateCashByCurrency(
-        transactions: filteredTransactions,
-        savings: filteredCashSavings,
-        marketData: market,
-        lastRollover: controller.state.lastRollover,
-      );
+      cashByCurrency = _selectedDateFilter == 'All Time'
+          ? controller.cashByCurrency
+          : ZakatEngineService.calculateCashByCurrency(
+              transactions: filteredTransactions,
+              savings: filteredCashSavings,
+              marketData: market,
+              lastRollover: controller.state.lastRollover,
+            );
       categoryTotalVal = cashByCurrency.entries.fold<double>(
         0,
         (double sum, MapEntry<String, double> entry) =>
@@ -1775,7 +1778,6 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
     String initTargetCurrency = 'EGP';
     double initSourceAmount = 0.0;
     double initTargetAmount = 0.0;
-    String initSourceType = 'income';
     String initDate = DateTime.now().toUtc().toIso8601String().split('T').first;
 
     if (item is Transaction) {
@@ -1796,7 +1798,6 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
       initTargetCurrency = txTarget.currency;
       initSourceAmount = txSource.amount;
       initTargetAmount = txTarget.amount;
-      initSourceType = 'income';
       initDate = txSource.date;
     } else if (item is Saving) {
       oldTargetSavingId = item.id;
@@ -1804,7 +1805,6 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
       initTargetCurrency = item.unit;
       initTargetAmount = item.amount;
       initDate = item.dateAcquired;
-      initSourceType = 'savings';
 
       final RegExp regex = RegExp(
         r'Savings exchange:\s*([0-9.]+)\s+([A-Z]+)\s+→',
@@ -1831,7 +1831,6 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
     );
     String sourceCurrency = initSourceCurrency;
     String targetCurrency = initTargetCurrency;
-    String sourceType = initSourceType;
     String date = initDate;
 
     final bool? ok = await showDialog<bool>(
@@ -1840,10 +1839,8 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
         builder: (BuildContext ctx, void Function(void Function()) setDialogState) {
           double available = controller.getAvailableBalance(
             currency: sourceCurrency,
-            sourceType: sourceType,
           );
-          if (sourceCurrency == initSourceCurrency &&
-              sourceType == initSourceType) {
+          if (sourceCurrency == initSourceCurrency) {
             available += initSourceAmount;
           }
 
@@ -1853,29 +1850,6 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
-                  DropdownButtonFormField<String>(
-                    initialValue: sourceType,
-                    decoration: InputDecoration(
-                      labelText: context.l10n.tr('exchange_source_type'),
-                    ),
-                    items: <DropdownMenuItem<String>>[
-                      DropdownMenuItem<String>(
-                        value: 'both',
-                        child: Text(context.l10n.tr('both')),
-                      ),
-                      DropdownMenuItem<String>(
-                        value: 'savings',
-                        child: Text(context.l10n.tr('savings')),
-                      ),
-                      DropdownMenuItem<String>(
-                        value: 'income',
-                        child: Text(context.l10n.tr('income')),
-                      ),
-                    ],
-                    onChanged: (String? v) =>
-                        setDialogState(() => sourceType = v ?? sourceType),
-                  ),
-                  const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
                     initialValue: sourceCurrency,
                     decoration: InputDecoration(
@@ -2006,9 +1980,9 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
               FilledButton(
                 onPressed: () {
                   final double sAmt =
-                      double.tryParse(sourceAmountController.text.trim()) ?? 0;
+                      tryParseAmount(sourceAmountController.text) ?? 0;
                   final double tAmt =
-                      double.tryParse(targetAmountController.text.trim()) ?? 0;
+                      tryParseAmount(targetAmountController.text) ?? 0;
                   if (sAmt <= 0 || tAmt <= 0 || sAmt > available) {
                     showTopSnackBar(
                       context,
@@ -2030,10 +2004,8 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
 
     if (ok != true || !context.mounted) return;
 
-    final double sAmount =
-        double.tryParse(sourceAmountController.text.trim()) ?? 0;
-    final double tAmount =
-        double.tryParse(targetAmountController.text.trim()) ?? 0;
+    final double sAmount = tryParseAmount(sourceAmountController.text) ?? 0;
+    final double tAmount = tryParseAmount(targetAmountController.text) ?? 0;
 
     try {
       await controller.updateCurrencyExchange(
@@ -2042,7 +2014,6 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
         oldSourceSavingId: oldSourceSavingId,
         oldSourceDeductedAmount: oldSourceDeductedAmount,
         date: date,
-        sourceType: sourceType,
         sourceCurrency: sourceCurrency,
         targetCurrency: targetCurrency,
         sourceAmount: sAmount,

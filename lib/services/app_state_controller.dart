@@ -244,7 +244,6 @@ class AppStateController extends ChangeNotifier {
     required String? oldSourceSavingId,
     required double oldSourceDeductedAmount,
     required String date,
-    required String sourceType,
     required String sourceCurrency,
     required String targetCurrency,
     required double sourceAmount,
@@ -287,7 +286,6 @@ class AppStateController extends ChangeNotifier {
         .executeCurrencyExchange(
           input: revertedState,
           date: date,
-          sourceType: sourceType,
           sourceCurrency: sourceCurrency,
           targetCurrency: targetCurrency,
           sourceAmount: sourceAmount,
@@ -522,41 +520,26 @@ class AppStateController extends ChangeNotifier {
     await updateState(_state.copyWith(aiSettings: aiSettings));
   }
 
-  double getAvailableBalance({
+  double getAvailableBalance({required String currency}) {
+    return reconciliationService.getAvailableCashBalance(
+      state: _state,
+      currency: currency,
+    );
+  }
+
+  List<CashSource> getAvailableCashSources({
     required String currency,
-    required String sourceType,
+    bool newestFirst = false,
   }) {
-    double totalAvailable = 0.0;
-    final List<Map<String, dynamic>> savingsJson = _state.savings
-        .map((e) => e.toJson())
-        .toList();
-    final List<Map<String, dynamic>> transactionsJson = _state.transactions
-        .map((e) => e.toJson())
-        .toList();
+    return reconciliationService.getAvailableCashSources(
+      state: _state,
+      currency: currency,
+      newestFirst: newestFirst,
+    );
+  }
 
-    if (sourceType == 'savings' || sourceType == 'both') {
-      final cashSavings = savingsJson.where((s) {
-        final String type = (s['assetType'] ?? '').toString().toLowerCase();
-        return type == 'cash' && (s['unit'] ?? '').toString() == currency;
-      });
-      for (final s in cashSavings) {
-        final double rem = ((s['remainingAmount'] ?? s['amount'] ?? 0.0) as num)
-            .toDouble();
-        totalAvailable += rem;
-      }
-    }
-
-    if (sourceType == 'income' || sourceType == 'both') {
-      final incomeLots = reconciliationService.getNetIncomeLotsForCurrency(
-        transactions: transactionsJson,
-        currency: currency,
-        lastRollover: _state.lastRollover,
-      );
-      for (final l in incomeLots) {
-        totalAvailable += l.remainingAmount;
-      }
-    }
-    return totalAvailable;
+  Map<String, double> get cashByCurrency {
+    return reconciliationService.getCashByCurrency(_state);
   }
 
   Future<void> updateMarketSnapshot(MarketSnapshot snapshot) async {
@@ -601,7 +584,6 @@ class AppStateController extends ChangeNotifier {
 
   Future<void> executeCurrencyExchange({
     required String date,
-    required String sourceType,
     required String sourceCurrency,
     required String targetCurrency,
     required double sourceAmount,
@@ -611,7 +593,6 @@ class AppStateController extends ChangeNotifier {
         .executeCurrencyExchange(
           input: _state,
           date: date,
-          sourceType: sourceType,
           sourceCurrency: sourceCurrency,
           targetCurrency: targetCurrency,
           sourceAmount: sourceAmount,

@@ -263,13 +263,14 @@ class _AssetsScreenState extends State<AssetsScreen> {
       }).toList();
     }
 
-    final Map<String, double> cashByCurrency =
-        ZakatEngineService.calculateCashByCurrency(
-          transactions: filteredTransactions,
-          savings: filteredSavings,
-          marketData: market,
-          lastRollover: controller.state.lastRollover,
-        );
+    final Map<String, double> cashByCurrency = _selectedDateFilter == 'All Time'
+        ? controller.cashByCurrency
+        : ZakatEngineService.calculateCashByCurrency(
+            transactions: filteredTransactions,
+            savings: filteredSavings,
+            marketData: market,
+            lastRollover: controller.state.lastRollover,
+          );
     final double cashTotalEgp = cashByCurrency.entries.fold<double>(
       0,
       (double sum, MapEntry<String, double> entry) =>

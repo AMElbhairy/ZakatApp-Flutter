@@ -12,6 +12,7 @@ import '../../models/backup_preview.dart';
 import '../../models/market_snapshot.dart';
 import '../../models/recurring_transaction.dart';
 import '../../core/services/zakat_engine.dart';
+import '../../core/utils/amount_parser.dart';
 import '../../services/app_state_controller.dart';
 import '../../services/auth_controller.dart';
 import '../../services/backup_restore_card.dart';
@@ -1273,7 +1274,6 @@ class _AccountScreenState extends State<AccountScreen> {
       (String c) => c != sourceCurrency,
       orElse: () => 'USD',
     );
-    String sourceType = 'both';
     final String date = DateTime.now()
         .toUtc()
         .toIso8601String()
@@ -1283,174 +1283,148 @@ class _AccountScreenState extends State<AccountScreen> {
     final bool? ok = await showDialog<bool>(
       context: context,
       builder: (BuildContext ctx) => StatefulBuilder(
-        builder:
-            (BuildContext ctx, void Function(void Function()) setDialogState) {
-              final double available = context.read<AppStateController>().getAvailableBalance(
-                    currency: sourceCurrency,
-                    sourceType: sourceType,
-                  );
-              return AlertDialog(
-                title: Text(context.l10n.tr('currency_exchange')),
-                content: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      DropdownButtonFormField<String>(
-                        initialValue: sourceType,
-                        decoration: InputDecoration(
-                          labelText: context.l10n.tr('exchange_source_type'),
-                        ),
-                        items: <DropdownMenuItem<String>>[
-                          DropdownMenuItem<String>(
-                            value: 'both',
-                            child: Text(context.l10n.tr('both')),
-                          ),
-                          DropdownMenuItem<String>(
-                            value: 'savings',
-                            child: Text(context.l10n.tr('savings')),
-                          ),
-                          DropdownMenuItem<String>(
-                            value: 'income',
-                            child: Text(context.l10n.tr('income')),
-                          ),
-                        ],
-                        onChanged: (String? v) =>
-                            setDialogState(() => sourceType = v ?? sourceType),
-                      ),
-                      const SizedBox(height: 8),
-                      DropdownButtonFormField<String>(
-                        initialValue: sourceCurrency,
-                        decoration: InputDecoration(
-                          labelText: context.l10n.tr('source_currency'),
-                        ),
-                        items: _supportedCurrencies
-                            .map(
-                              (String c) => DropdownMenuItem<String>(
-                                value: c,
-                                child: Text(
-                                  ZakatEngineService.getCurrencySymbol(
-                                    c,
-                                    isArabic:
-                                        Localizations.localeOf(
-                                          context,
-                                        ).languageCode.toLowerCase() ==
-                                        'ar',
-                                  ),
-                                ),
+        builder: (BuildContext ctx, void Function(void Function()) setDialogState) {
+          final double available = context
+              .read<AppStateController>()
+              .getAvailableBalance(currency: sourceCurrency);
+          return AlertDialog(
+            title: Text(context.l10n.tr('currency_exchange')),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  DropdownButtonFormField<String>(
+                    initialValue: sourceCurrency,
+                    decoration: InputDecoration(
+                      labelText: context.l10n.tr('source_currency'),
+                    ),
+                    items: _supportedCurrencies
+                        .map(
+                          (String c) => DropdownMenuItem<String>(
+                            value: c,
+                            child: Text(
+                              ZakatEngineService.getCurrencySymbol(
+                                c,
+                                isArabic:
+                                    Localizations.localeOf(
+                                      context,
+                                    ).languageCode.toLowerCase() ==
+                                    'ar',
                               ),
-                            )
-                            .toList(growable: false),
-                        onChanged: (String? v) => setDialogState(
-                          () => sourceCurrency = v ?? sourceCurrency,
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.only(top: 6.0, bottom: 2.0),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            Localizations.localeOf(context).languageCode == 'ar'
-                                ? 'الرصيد المتاح: ${available.toStringAsFixed(2)} $sourceCurrency'
-                                : 'Available balance: ${available.toStringAsFixed(2)} $sourceCurrency',
-                            style: TextStyle(
-                              color: available <= 0 ? Colors.red : Colors.green,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
                             ),
                           ),
+                        )
+                        .toList(growable: false),
+                    onChanged: (String? v) => setDialogState(
+                      () => sourceCurrency = v ?? sourceCurrency,
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6.0, bottom: 2.0),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        Localizations.localeOf(context).languageCode == 'ar'
+                            ? 'الرصيد المتاح: ${available.toStringAsFixed(2)} $sourceCurrency'
+                            : 'Available balance: ${available.toStringAsFixed(2)} $sourceCurrency',
+                        style: TextStyle(
+                          color: available <= 0 ? Colors.red : Colors.green,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      DropdownButtonFormField<String>(
-                        initialValue: targetCurrency,
-                        decoration: InputDecoration(
-                          labelText: context.l10n.tr('target_currency'),
-                        ),
-                        items: _supportedCurrencies
-                            .where((String c) => c != sourceCurrency)
-                            .map(
-                              (String c) => DropdownMenuItem<String>(
-                                value: c,
-                                child: Text(
-                                  ZakatEngineService.getCurrencySymbol(
-                                    c,
-                                    isArabic:
-                                        Localizations.localeOf(
-                                          context,
-                                        ).languageCode.toLowerCase() ==
-                                        'ar',
-                                  ),
-                                ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    initialValue: targetCurrency,
+                    decoration: InputDecoration(
+                      labelText: context.l10n.tr('target_currency'),
+                    ),
+                    items: _supportedCurrencies
+                        .where((String c) => c != sourceCurrency)
+                        .map(
+                          (String c) => DropdownMenuItem<String>(
+                            value: c,
+                            child: Text(
+                              ZakatEngineService.getCurrencySymbol(
+                                c,
+                                isArabic:
+                                    Localizations.localeOf(
+                                      context,
+                                    ).languageCode.toLowerCase() ==
+                                    'ar',
                               ),
-                            )
-                            .toList(growable: false),
-                        onChanged: (String? v) => setDialogState(
-                          () => targetCurrency = v ?? targetCurrency,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: sourceAmount,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: InputDecoration(
-                          labelText: context.l10n.tr('source_amount'),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: targetAmount,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: InputDecoration(
-                          labelText: context.l10n.tr('target_amount'),
-                        ),
-                      ),
-                    ],
+                            ),
+                          ),
+                        )
+                        .toList(growable: false),
+                    onChanged: (String? v) => setDialogState(
+                      () => targetCurrency = v ?? targetCurrency,
+                    ),
                   ),
-                ),
-                actions: <Widget>[
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx, false),
-                    child: Text(context.l10n.tr('cancel')),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: sourceAmount,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: context.l10n.tr('source_amount'),
+                    ),
                   ),
-                  FilledButton(
-                    onPressed: () {
-                      final double sAmount = double.tryParse(sourceAmount.text.trim()) ?? 0;
-                      if (sAmount <= 0) return;
-                      if (sAmount > available) {
-                        showTopSnackBar(
-                          context,
-                          Localizations.localeOf(context).languageCode == 'ar'
-                              ? 'المبلغ المدخل أكبر من الرصيد المتاح'
-                              : 'Amount entered exceeds available balance',
-                        );
-                        return;
-                      }
-                      Navigator.pop(ctx, true);
-                    },
-                    child: Text(context.l10n.tr('confirm')),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: targetAmount,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: context.l10n.tr('target_amount'),
+                    ),
                   ),
                 ],
-              );
-            },
+              ),
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text(context.l10n.tr('cancel')),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final double sAmount = tryParseAmount(sourceAmount.text) ?? 0;
+                  if (sAmount <= 0) return;
+                  if (sAmount > available) {
+                    showTopSnackBar(
+                      context,
+                      Localizations.localeOf(context).languageCode == 'ar'
+                          ? 'المبلغ المدخل أكبر من الرصيد المتاح'
+                          : 'Amount entered exceeds available balance',
+                    );
+                    return;
+                  }
+                  Navigator.pop(ctx, true);
+                },
+                child: Text(context.l10n.tr('confirm')),
+              ),
+            ],
+          );
+        },
       ),
     );
 
     if (ok != true || !context.mounted) {
       return;
     }
-    final double sAmount = double.tryParse(sourceAmount.text.trim()) ?? 0;
-    final double tAmount = double.tryParse(targetAmount.text.trim()) ?? 0;
+    final double sAmount = tryParseAmount(sourceAmount.text) ?? 0;
+    final double tAmount = tryParseAmount(targetAmount.text) ?? 0;
     if (sAmount <= 0 || tAmount <= 0 || sourceCurrency == targetCurrency) {
       return;
     }
     try {
       await context.read<AppStateController>().executeCurrencyExchange(
         date: date,
-        sourceType: sourceType,
         sourceCurrency: sourceCurrency,
         targetCurrency: targetCurrency,
         sourceAmount: sAmount,

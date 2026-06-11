@@ -6,7 +6,6 @@ import '../../core/i18n/app_localizations.dart';
 import '../../core/services/zakat_engine.dart';
 import '../../core/widgets/app_ui.dart';
 import '../../models/saving.dart';
-import '../../models/transaction.dart';
 import '../../services/app_state_controller.dart';
 import '../../services/reconciliation_service.dart';
 
@@ -518,59 +517,19 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
 
   List<_FundingSource> _fundingSources() {
     final AppStateController controller = context.read<AppStateController>();
-    final List<_FundingSource> sources = <_FundingSource>[];
-
-    for (final Saving saving in controller.state.savings) {
-      if (saving.assetType != 'cash' || saving.unit != _purchaseCurrency) {
-        continue;
-      }
-      if (saving.remainingAmount <= 0.005) continue;
-      sources.add(
-        _FundingSource(
-          id: saving.id,
-          sourceType: 'savings',
-          date: saving.dateAcquired,
-          available: saving.remainingAmount,
-          currency: saving.unit,
-          label: saving.description.isEmpty
-              ? 'Cash saving'
-              : saving.description,
-        ),
-      );
-    }
-
-    final List<Map<String, dynamic>> txJson = controller.state.transactions
-        .map((Transaction tx) => tx.toJson())
-        .toList(growable: false);
-    final List<IncomeLot> incomeLots = ReconciliationService()
-        .getNetIncomeLotsForCurrency(
-          transactions: txJson,
-          currency: _purchaseCurrency,
+    return controller
+        .getAvailableCashSources(currency: _purchaseCurrency, newestFirst: true)
+        .map(
+          (CashSource source) => _FundingSource(
+            id: source.id,
+            sourceType: source.sourceType,
+            date: source.date,
+            available: source.availableAmount,
+            currency: source.currency,
+            label: 'Cash',
+          ),
         )
-        .where((IncomeLot lot) => lot.remainingAmount > 0.005)
         .toList(growable: false);
-    for (final IncomeLot lot in incomeLots) {
-      sources.add(
-        _FundingSource(
-          id: lot.id,
-          sourceType: 'income',
-          date: lot.date,
-          available: lot.remainingAmount,
-          currency: lot.currency,
-          label: lot.description?.isNotEmpty == true
-              ? lot.description!
-              : (lot.category?.isNotEmpty == true ? lot.category! : 'Income'),
-        ),
-      );
-    }
-
-    sources.sort((_FundingSource a, _FundingSource b) {
-      final int dateCompare = b.date.compareTo(a.date);
-      if (dateCompare != 0) return dateCompare;
-      return b.id.compareTo(a.id);
-    });
-
-    return sources;
   }
 
   TextEditingController _allocationController(String sourceId) {

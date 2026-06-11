@@ -6,6 +6,7 @@ import 'package:zakatapp_flutter/models/transaction.dart';
 import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
 import 'package:zakatapp_flutter/services/app_state_controller.dart';
 import 'package:zakatapp_flutter/services/local_storage_service.dart';
+import 'package:zakatapp_flutter/services/reconciliation_service.dart';
 
 void main() {
   Future<AppStateController> makeController() async {
@@ -48,7 +49,6 @@ void main() {
     );
     await controller.executeCurrencyExchange(
       date: '2026-06-01',
-      sourceType: 'income',
       sourceCurrency: 'USD',
       targetCurrency: 'EGP',
       sourceAmount: 50,
@@ -137,4 +137,62 @@ void main() {
       80,
     );
   });
+
+  test(
+    'exchange, assets, and cash details use the same cash balance',
+    () async {
+      final controller = await makeController();
+      await controller.addSaving(
+        const Saving(
+          id: 'legacy-cash',
+          assetType: 'cash',
+          dateAcquired: '2025-01-01',
+          amount: 75,
+          remainingAmount: 75,
+          unit: 'USD',
+          description: 'Legacy cash',
+          purchaseCurrency: '',
+          purchaseAmount: 0,
+          createdAt: '2025-01-01T00:00:00.000Z',
+          sourceIncomeId: 'legacy-income',
+        ),
+      );
+      await controller.addTransaction(
+        const Transaction(
+          id: 'income-1',
+          type: 'income',
+          date: '2026-01-01',
+          amount: 100,
+          currency: 'USD',
+          category: 'Salary',
+          description: '',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          rolledOver: false,
+        ),
+      );
+
+      final double exchangeBalance = controller.getAvailableBalance(
+        currency: 'USD',
+      );
+      final double assetsBalance = controller.cashByCurrency['USD'] ?? 0;
+      final double cashDetailsBalance =
+          ZakatEngineService.calculateCashByCurrency(
+            transactions: controller.state.transactions,
+            savings: controller.state.savings,
+            marketData: MarketData.fromJson(controller.state.marketData),
+            lastRollover: controller.state.lastRollover,
+          )['USD'] ??
+          0;
+
+      expect(exchangeBalance, assetsBalance);
+      expect(exchangeBalance, cashDetailsBalance);
+      expect(exchangeBalance, 175);
+      expect(
+        controller
+            .getAvailableCashSources(currency: 'USD')
+            .map((CashSource source) => source.id),
+        containsAll(<String>['legacy-cash', 'income-1']),
+      );
+    },
+  );
 }
