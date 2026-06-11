@@ -313,10 +313,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
               child: _PremiumSection(
                 key: const Key('dashboardUpcomingObligationsCard'),
                 title: context.l10n.tr('upcoming_obligations'),
-                child: Column(
+                padding: const EdgeInsets.only(top: 10, bottom: 10, left: 16, right: 16),
+                spacing: 9,
+                child: Row(
                   children: <Widget>[
-                    _ObligationSummaryTile(
-                      title: context.l10n.tr('obligations_this_month'),
+                    _ObligationColumn(
+                      title: context.l10n.tr('this_month'),
                       value: balancesHidden
                           ? '••••••'
                           : _formatOrMissing(
@@ -325,11 +327,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               hasMarketData,
                               state.mainCurrency,
                               market,
+                              compact: true,
                             ),
                       icon: Icons.calendar_today_outlined,
-                      iconBgColor: const Color(
-                        0xFF10B981,
-                      ).withValues(alpha: 0.12),
                       iconColor: const Color(0xFF10B981),
                       onTap: () {
                         Navigator.of(context).push(
@@ -341,9 +341,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         );
                       },
                     ),
-                    const Divider(height: 1, indent: 8, endIndent: 8),
-                    _ObligationSummaryTile(
-                      title: context.l10n.tr('obligations_next_month'),
+                    Container(
+                      width: 1,
+                      height: 28,
+                      color: const Color(0xFFC5A059).withValues(alpha: 0.35),
+                    ),
+                    _ObligationColumn(
+                      title: context.l10n.tr('next_month'),
                       value: balancesHidden
                           ? '••••••'
                           : _formatOrMissing(
@@ -352,11 +356,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               hasMarketData,
                               state.mainCurrency,
                               market,
+                              compact: true,
                             ),
                       icon: Icons.calendar_month_outlined,
-                      iconBgColor: const Color(
-                        0xFFF59E0B,
-                      ).withValues(alpha: 0.12),
                       iconColor: const Color(0xFFD97706),
                       onTap: () {
                         Navigator.of(context).push(
@@ -368,9 +370,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         );
                       },
                     ),
-                    const Divider(height: 1, indent: 8, endIndent: 8),
-                    _ObligationSummaryTile(
-                      title: context.l10n.tr('total_upcoming_obligations'),
+                    Container(
+                      width: 1,
+                      height: 28,
+                      color: const Color(0xFFC5A059).withValues(alpha: 0.35),
+                    ),
+                    _ObligationColumn(
+                      title: context.l10n.tr('total'),
                       value: balancesHidden
                           ? '••••••'
                           : _formatOrMissing(
@@ -379,12 +385,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               hasMarketData,
                               state.mainCurrency,
                               market,
+                              compact: true,
                             ),
                       icon: Icons.date_range_outlined,
-                      iconBgColor: const Color(
-                        0xFF8B5CF6,
-                      ).withValues(alpha: 0.12),
                       iconColor: const Color(0xFF8B5CF6),
+                      isTotal: true,
                       onTap: () {
                         Navigator.of(context).push(
                           MaterialPageRoute<void>(
@@ -402,17 +407,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
             const SizedBox(height: 16),
             _stagger(
               order: 5,
-              child: _TopExpensesWidget(
-                transactions: transactions,
-                mainCurrency: state.mainCurrency,
-                market: market,
-                hasMarketData: hasMarketData,
-                balancesHidden: balancesHidden,
-              ),
-            ),
-            const SizedBox(height: 16),
-            _stagger(
-              order: 6,
               child: _PremiumSection(
                 title: context.l10n.tr('recent_activity_title'),
                 trailing: TextButton(
@@ -1952,20 +1946,22 @@ class _PremiumSection extends StatelessWidget {
     required this.title,
     required this.child,
     this.trailing,
-    this.subtitle,
+    this.padding,
+    this.spacing,
   });
 
   final String title;
   final Widget child;
   final Widget? trailing;
-  final String? subtitle;
+  final EdgeInsetsGeometry? padding;
+  final double? spacing;
 
   @override
   Widget build(BuildContext context) {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     final tokens = context.premiumTokens;
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: padding ?? const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: dark ? tokens.colors.card : Colors.white,
         borderRadius: BorderRadius.circular(20),
@@ -1979,35 +1975,18 @@ class _PremiumSection extends StatelessWidget {
           Row(
             children: <Widget>[
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Text(
-                      title,
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: dark ? Colors.white : const Color(0xFF111827),
-                      ),
-                    ),
-                    if (subtitle != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle!,
-                        style: TextStyle(
-                          fontSize: 12.0,
-                          color: dark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280),
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ],
+                child: Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: dark ? Colors.white : const Color(0xFF111827),
+                  ),
                 ),
               ),
               if (trailing case final Widget t) t,
             ],
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: spacing ?? 12),
           child,
         ],
       ),
@@ -2918,81 +2897,161 @@ class _DashboardActivityEntry {
   }
 }
 
-class _ActivityRow extends StatelessWidget {
+class _ActivityRow extends StatefulWidget {
   const _ActivityRow({required this.entry, required this.balancesHidden});
 
   final _DashboardActivityEntry entry;
   final bool balancesHidden;
 
   @override
+  State<_ActivityRow> createState() => _ActivityRowState();
+}
+
+class _ActivityRowState extends State<_ActivityRow>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _scaleAnimation;
+  bool _isPressed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 130),
+    );
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.98).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final bool isExpense = entry.isExpense;
+    final bool isExpense = widget.entry.isExpense;
     final bool dark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      key: Key('dashboardRecent_${entry.id}'),
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: dark ? const Color(0xFF111925) : const Color(0xFFFAFAFA),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: dark ? const Color(0xFF253243) : const Color(0xFFE8E8E8),
-        ),
-      ),
-      child: Row(
-        children: <Widget>[
-          Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              color: isExpense
-                  ? const Color(0xFFFFF1F2)
-                  : const Color(0xFFF0FDF4),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(
-              isExpense ? Icons.south_west_rounded : Icons.north_east_rounded,
-              color: isExpense
-                  ? const Color(0xFFDC2626)
-                  : const Color(0xFF16A34A),
-              size: 18,
-            ),
+    final Color valueColor = isExpense
+        ? (dark ? const Color(0xFFF87171) : const Color(0xFFB91C1C))
+        : (dark ? const Color(0xFF34D399) : const Color(0xFF047857));
+
+    final Color iconBg = isExpense
+        ? (dark ? const Color(0xFF7F1D1D).withValues(alpha: 0.2) : const Color(0xFFFFF1F2))
+        : (dark ? const Color(0xFF064E3B).withValues(alpha: 0.2) : const Color(0xFFF0FDF4));
+
+    final Color iconColor = isExpense
+        ? const Color(0xFFDC2626)
+        : const Color(0xFF16A34A);
+
+    final Color pressedOverlay = dark
+        ? const Color(0xFF10B981).withValues(alpha: 0.08)
+        : const Color(0xFF10B981).withValues(alpha: 0.04);
+
+    return ScaleTransition(
+      scale: _scaleAnimation,
+      child: GestureDetector(
+        onTapDown: (_) {
+          _controller.forward();
+          setState(() {
+            _isPressed = true;
+          });
+        },
+        onTapUp: (_) {
+          _controller.reverse();
+          setState(() {
+            _isPressed = false;
+          });
+        },
+        onTapCancel: () {
+          _controller.reverse();
+          setState(() {
+            _isPressed = false;
+          });
+        },
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          key: Key('dashboardRecent_${widget.entry.id}'),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+          decoration: BoxDecoration(
+            color: _isPressed ? pressedOverlay : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  entry.title(context),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w700),
+          child: Row(
+            children: <Widget>[
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: iconBg,
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                const SizedBox(height: 2),
-                Text(entry.date, style: Theme.of(context).textTheme.bodySmall),
-              ],
-            ),
-          ),
-          Text(
-            balancesHidden
-                ? '••••••'
-                : ZakatEngineService.formatCurrency(
-                    isExpense ? -entry.amount : entry.amount,
-                    entry.currency,
-                    isArabic: _DashboardScreenState._isArabic(context),
-                    showSign: true,
+                child: Icon(
+                  isExpense ? Icons.south_west_rounded : Icons.north_east_rounded,
+                  color: iconColor,
+                  size: 16,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(
+                      widget.entry.title(context),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.bold,
+                        color: dark ? Colors.white : const Color(0xFF0F172A),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      widget.entry.date,
+                      style: TextStyle(
+                        fontSize: 11.0,
+                        color: dark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(
+                    widget.balancesHidden
+                        ? '••••••'
+                        : ZakatEngineService.formatCurrency(
+                            isExpense ? -widget.entry.amount : widget.entry.amount,
+                            widget.entry.currency,
+                            isArabic: _DashboardScreenState._isArabic(context),
+                            showSign: true,
+                          ),
+                    style: TextStyle(
+                      fontSize: 14.0,
+                      fontWeight: FontWeight.w800,
+                      color: valueColor,
+                    ),
                   ),
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              fontWeight: FontWeight.w800,
-              color: isExpense
-                  ? const Color(0xFFB91C1C)
-                  : const Color(0xFF047857),
-            ),
+                  const SizedBox(width: 4),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color: iconColor.withValues(alpha: 0.8),
+                    size: 16,
+                  ),
+                ],
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -3034,104 +3093,28 @@ class _Allocation {
   final double totalVal;
 }
 
-class _ObligationSummaryTile extends StatelessWidget {
-  const _ObligationSummaryTile({
+class _ObligationColumn extends StatefulWidget {
+  const _ObligationColumn({
     required this.title,
     required this.value,
     required this.icon,
-    required this.iconBgColor,
     required this.iconColor,
     required this.onTap,
+    this.isTotal = false,
   });
 
   final String title;
   final String value;
   final IconData icon;
-  final Color iconBgColor;
   final Color iconColor;
   final VoidCallback onTap;
+  final bool isTotal;
 
   @override
-  Widget build(BuildContext context) {
-    final tokens = context.premiumTokens;
-    final bool dark = Theme.of(context).brightness == Brightness.dark;
-
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-        child: Row(
-          children: <Widget>[
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: iconBgColor,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Center(child: Icon(icon, color: iconColor, size: 20)),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                      color: dark
-                          ? const Color(0xFF9CA3AF)
-                          : const Color(0xFF4B5563),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    value,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: tokens.colors.textPrimary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Icon(
-              Icons.chevron_right_rounded,
-              color: tokens.colors.textPrimary.withValues(alpha: 0.4),
-              size: 20,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  State<_ObligationColumn> createState() => _ObligationColumnState();
 }
 
-class _TopExpensesWidget extends StatefulWidget {
-  const _TopExpensesWidget({
-    required this.transactions,
-    required this.mainCurrency,
-    required this.market,
-    required this.hasMarketData,
-    required this.balancesHidden,
-  });
-
-  final List<Transaction> transactions;
-  final String mainCurrency;
-  final MarketData market;
-  final bool hasMarketData;
-  final bool balancesHidden;
-
-  @override
-  State<_TopExpensesWidget> createState() => _TopExpensesWidgetState();
-}
-
-class _TopExpensesWidgetState extends State<_TopExpensesWidget>
+class _ObligationColumnState extends State<_ObligationColumn>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
@@ -3158,180 +3141,100 @@ class _TopExpensesWidgetState extends State<_TopExpensesWidget>
   @override
   Widget build(BuildContext context) {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
-
-    final DateTime now = DateTime.now();
-    final List<Transaction> currentMonthExpenses = widget.transactions.where((tx) {
-      if (tx.type != 'expense') return false;
-      final DateTime? parsed = DateTime.tryParse(tx.date);
-      if (parsed == null) return false;
-      return parsed.year == now.year && parsed.month == now.month;
-    }).toList();
-
-    final Map<String, double> categoryAmountsEgp = {};
-    double totalExpensesEgp = 0.0;
-    for (final tx in currentMonthExpenses) {
-      final double valEgp = ZakatEngineService.tryConvertToEgp(
-            tx.amount,
-            tx.currency,
-            widget.market,
-          ) ??
-          0.0;
-      categoryAmountsEgp[tx.category] = (categoryAmountsEgp[tx.category] ?? 0.0) + valEgp;
-      totalExpensesEgp += valEgp;
-    }
-
-    final List<MapEntry<String, double>> sortedCategories = categoryAmountsEgp.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-    final List<MapEntry<String, double>> topCategories = sortedCategories.take(4).toList();
-
-    final double maxCategoryEgp = topCategories.isNotEmpty ? topCategories.first.value : 0.0;
-
     final Color pressedOverlay = dark
         ? const Color(0xFF10B981).withValues(alpha: 0.08)
         : const Color(0xFF10B981).withValues(alpha: 0.04);
 
-    return ScaleTransition(
-      scale: _scaleAnimation,
-      child: GestureDetector(
-        onTapDown: (_) {
-          _controller.forward();
-          setState(() {
-            _isPressed = true;
-          });
-        },
-        onTapUp: (_) {
-          _controller.reverse();
-          setState(() {
-            _isPressed = false;
-          });
-          showTopSnackBar(
-            context,
-            context.l10n.tr('expense_analysis_coming_soon'),
-          );
-        },
-        onTapCancel: () {
-          _controller.reverse();
-          setState(() {
-            _isPressed = false;
-          });
-        },
-        child: Stack(
-          children: [
-            _PremiumSection(
-              title: context.l10n.tr('top_expense_categories'),
-              subtitle: context.l10n.tr('this_month'),
-              child: topCategories.isEmpty
-                  ? Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 20),
-                      child: Center(
+    return Expanded(
+      child: ScaleTransition(
+        scale: _scaleAnimation,
+        child: GestureDetector(
+          onTapDown: (_) {
+            _controller.forward();
+            setState(() {
+              _isPressed = true;
+            });
+          },
+          onTapUp: (_) {
+            _controller.reverse();
+            setState(() {
+              _isPressed = false;
+            });
+            widget.onTap();
+          },
+          onTapCancel: () {
+            _controller.reverse();
+            setState(() {
+              _isPressed = false;
+            });
+          },
+          behavior: HitTestBehavior.opaque,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+            decoration: BoxDecoration(
+              color: _isPressed ? pressedOverlay : Colors.transparent,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: <Widget>[
+                    Icon(
+                      widget.icon,
+                      size: 14,
+                      color: widget.iconColor.withValues(alpha: 0.85),
+                    ),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        widget.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                          color: dark
+                              ? const Color(0xFF9CA3AF)
+                              : const Color(0xFF4B5563),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 5),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Flexible(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
                         child: Text(
-                          context.l10n.tr('add_expenses_insights'),
+                          widget.value,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 13,
-                            color: dark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280),
+                            fontSize: widget.isTotal ? 16.0 : 15.0,
+                            fontWeight: widget.isTotal ? FontWeight.w900 : FontWeight.w800,
+                            color: dark ? const Color(0xFF10B981) : const Color(0xFF0F766E),
                           ),
                         ),
                       ),
-                    )
-                  : Column(
-                      children: topCategories.asMap().entries.map((item) {
-                        final int idx = item.key;
-                        final String category = item.value.key;
-                        final double amountEgp = item.value.value;
-
-                        final double pct = totalExpensesEgp > 0 ? (amountEgp / totalExpensesEgp) : 0.0;
-                        final double fillFactor = maxCategoryEgp > 0 ? (amountEgp / maxCategoryEgp) : 0.0;
-
-                        final String formattedAmount = widget.balancesHidden
-                            ? '••••••'
-                            : _DashboardScreenState._formatOrMissing(
-                                context,
-                                amountEgp,
-                                widget.hasMarketData,
-                                widget.mainCurrency,
-                                widget.market,
-                                compact: true,
-                              );
-
-                        return Padding(
-                          padding: EdgeInsets.only(
-                            top: idx == 0 ? 4.0 : 12.0,
-                            bottom: idx == topCategories.length - 1 ? 4.0 : 0.0,
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      category,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontSize: 13.0,
-                                        fontWeight: FontWeight.w600,
-                                        color: dark ? Colors.white : const Color(0xFF1F2937),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        '${(pct * 100).toStringAsFixed(0)}%',
-                                        style: TextStyle(
-                                          fontSize: 12.0,
-                                          fontWeight: FontWeight.w500,
-                                          color: dark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        formattedAmount,
-                                        style: TextStyle(
-                                          fontSize: 13.5,
-                                          fontWeight: FontWeight.w800,
-                                          color: dark ? Colors.white : const Color(0xFF111827),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 6),
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(4),
-                                child: SizedBox(
-                                  height: 4,
-                                  child: LinearProgressIndicator(
-                                    value: fillFactor,
-                                    backgroundColor: dark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
-                                    valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF10B981)),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      }).toList(),
                     ),
-            ),
-            if (_isPressed)
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: pressedOverlay,
-                      borderRadius: BorderRadius.circular(20),
+                    const SizedBox(width: 2),
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      size: 14,
+                      color: widget.iconColor.withValues(alpha: 0.8),
                     ),
-                  ),
+                  ],
                 ),
-              ),
-          ],
+              ],
+            ),
+          ),
         ),
       ),
     );

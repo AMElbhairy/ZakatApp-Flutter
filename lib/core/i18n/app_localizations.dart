@@ -281,9 +281,6 @@ class AppLocalizations {
       'this_month': 'This Month',
       'next_month': 'Next Month',
       'total': 'Total',
-      'top_expense_categories': 'Top Expense Categories',
-      'add_expenses_insights': 'Add expenses to see spending insights.',
-      'expense_analysis_coming_soon': 'Expense Analysis screen coming soon!',
     },
     'ar': <String, String>{
       'dashboard': 'لوحة التحكم',
@@ -551,9 +548,6 @@ class AppLocalizations {
       'this_month': 'هذا الشهر',
       'next_month': 'الشهر القادم',
       'total': 'الإجمالي',
-      'top_expense_categories': 'أعلى فئات المصروفات',
-      'add_expenses_insights': 'أضف مصروفات لعرض تفاصيل الإنفاق.',
-      'expense_analysis_coming_soon': 'شاشة تحليل المصروفات ستتوفر قريباً!',
     },
   };
 
