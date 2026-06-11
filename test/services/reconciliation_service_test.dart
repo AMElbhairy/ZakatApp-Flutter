@@ -799,6 +799,47 @@ void main() {
     expect(service.getCashByCurrency(state)['USD'], 175);
   });
 
+  test('positive legacy cash balance without a source row remains visible', () {
+    final AppStateModel state = makeState(
+      transactions: <Map<String, dynamic>>[
+        <String, dynamic>{
+          'id': 'legacy-income',
+          'type': 'income',
+          'date': '2026-06-01',
+          'amount': 100,
+          'currency': 'EGP',
+        },
+        <String, dynamic>{
+          'id': 'legacy-expense',
+          'type': 'expense',
+          'date': '2026-06-02',
+          'amount': 100,
+          'currency': 'EGP',
+        },
+      ],
+      savings: <Map<String, dynamic>>[
+        <String, dynamic>{
+          'id': 'consumed-legacy-cash',
+          'assetType': 'cash',
+          'dateAcquired': '2026-05-01',
+          'amount': 100,
+          'remainingAmount': 0,
+          'unit': 'EGP',
+        },
+      ],
+    );
+
+    final List<CashSource> sources = service.getAvailableCashSources(
+      state: state,
+      currency: 'EGP',
+    );
+
+    expect(service.getAvailableCashBalance(state: state, currency: 'EGP'), 100);
+    expect(sources, hasLength(1));
+    expect(sources.single.sourceType, 'legacy');
+    expect(sources.single.availableAmount, 100);
+  });
+
   test('currency exchange automatically deducts across all cash sources', () {
     final AppStateModel base = AppStateDefaults.create();
     final AppStateModel state = AppStateModel.fromJson(<String, dynamic>{

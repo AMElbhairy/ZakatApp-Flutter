@@ -134,16 +134,48 @@ class ReconciliationService {
           (double total, CashSource source) => total + source.availableAmount,
         );
 
-    if (difference > minAmount && sources.isNotEmpty) {
-      int index = sources.lastIndexWhere(
-        (CashSource source) => source.sourceType == 'income',
-      );
-      if (index < 0) index = sources.length - 1;
-      final CashSource source = sources[index];
-      sources[index] = _copyCashSource(
-        source,
-        availableAmount: source.availableAmount + difference,
-      );
+    if (difference > minAmount) {
+      if (sources.isEmpty) {
+        final List<String> matchingDates = <String>[
+          ...state.transactions
+              .where(
+                (transaction) =>
+                    transaction.currency.trim().toUpperCase() ==
+                    normalizedCurrency,
+              )
+              .map((transaction) => transaction.date),
+          ...state.savings
+              .where(
+                (saving) =>
+                    _normalizeAssetType(saving.assetType) == 'cash' &&
+                    saving.unit.trim().toUpperCase() == normalizedCurrency,
+              )
+              .map((saving) => saving.dateAcquired),
+        ]..sort();
+        final String date = matchingDates.lastOrNull ?? '1970-01-01';
+        sources.add(
+          CashSource(
+            id: 'legacy_balance_$normalizedCurrency',
+            sourceType: 'legacy',
+            date: date,
+            createdAt: date,
+            availableAmount: _round6(targetBalance),
+            originalAmount: _round6(targetBalance),
+            currency: normalizedCurrency,
+            description: 'Cash',
+          ),
+        );
+      } else {
+        int index = sources.lastIndexWhere(
+          (CashSource source) => source.sourceType == 'income',
+        );
+        if (index < 0) index = sources.length - 1;
+        final CashSource source = sources[index];
+        sources[index] = _copyCashSource(
+          source,
+          availableAmount: source.availableAmount + difference,
+        );
+      }
     } else if (difference < -minAmount) {
       difference = -difference;
       for (

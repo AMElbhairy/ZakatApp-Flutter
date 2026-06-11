@@ -103,6 +103,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(ListTile), findsOneWidget);
     expect(find.textContaining('E£ -40.00'), findsOneWidget);
+
+    for (final String label in <String>['Income', 'Expense', 'Transfer']) {
+      final Text text = tester.widget<Text>(find.text(label).first);
+      expect(text.maxLines, 1);
+      expect(text.softWrap, isFalse);
+    }
   });
 
   testWidgets(

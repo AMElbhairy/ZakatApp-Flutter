@@ -448,27 +448,41 @@ class ActivityScreenState extends State<ActivityScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         SegmentedButton<_ActivityFilter>(
+          showSelectedIcon: false,
           style: SegmentedButton.styleFrom(
             selectedBackgroundColor: tokens.colors.gold.withValues(alpha: 0.1),
             selectedForegroundColor: tokens.colors.textPrimary,
             side: BorderSide(color: tokens.colors.gold.withValues(alpha: 0.15)),
+            textStyle: const TextStyle(fontSize: 12),
           ),
           segments: <ButtonSegment<_ActivityFilter>>[
             ButtonSegment<_ActivityFilter>(
               value: _ActivityFilter.all,
-              label: Text(context.l10n.tr('all')),
+              label: Text(context.l10n.tr('all'), maxLines: 1, softWrap: false),
             ),
             ButtonSegment<_ActivityFilter>(
               value: _ActivityFilter.income,
-              label: Text(context.l10n.tr('income')),
+              label: Text(
+                context.l10n.tr('income'),
+                maxLines: 1,
+                softWrap: false,
+              ),
             ),
             ButtonSegment<_ActivityFilter>(
               value: _ActivityFilter.expense,
-              label: Text(context.l10n.tr('expense')),
+              label: Text(
+                context.l10n.tr('expense'),
+                maxLines: 1,
+                softWrap: false,
+              ),
             ),
             ButtonSegment<_ActivityFilter>(
               value: _ActivityFilter.transfer,
-              label: Text(context.l10n.tr('transfer')),
+              label: Text(
+                context.l10n.tr('transfer'),
+                maxLines: 1,
+                softWrap: false,
+              ),
             ),
           ],
           selected: <_ActivityFilter>{_filter},

@@ -313,7 +313,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
               child: _PremiumSection(
                 key: const Key('dashboardUpcomingObligationsCard'),
                 title: context.l10n.tr('upcoming_obligations'),
-                padding: const EdgeInsets.only(top: 10, bottom: 10, left: 16, right: 16),
+                padding: const EdgeInsets.only(
+                  top: 10,
+                  bottom: 10,
+                  left: 16,
+                  right: 16,
+                ),
                 spacing: 9,
                 child: Row(
                   children: <Widget>[
@@ -426,30 +431,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ),
                       )
                     else
-                      ...recent4.asMap().entries.map(
-                        (MapEntry<int, _DashboardActivityEntry> item) {
-                          final int index = item.key;
-                          final _DashboardActivityEntry entry = item.value;
-                          final bool isLast = index == recent4.length - 1;
-                          return Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: <Widget>[
-                              _ActivityRow(
-                                entry: entry,
-                                balancesHidden: balancesHidden,
+                      ...recent4.asMap().entries.map((
+                        MapEntry<int, _DashboardActivityEntry> item,
+                      ) {
+                        final int index = item.key;
+                        final _DashboardActivityEntry entry = item.value;
+                        final bool isLast = index == recent4.length - 1;
+                        return Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            _ActivityRow(
+                              entry: entry,
+                              balancesHidden: balancesHidden,
+                            ),
+                            if (!isLast)
+                              Divider(
+                                height: 1,
+                                thickness: 1,
+                                color: dark
+                                    ? tokens.colors.divider
+                                    : const Color(0xFFE8E8E8),
                               ),
-                              if (!isLast)
-                                Divider(
-                                  height: 1,
-                                  thickness: 1,
-                                  color: dark
-                                      ? tokens.colors.divider
-                                      : const Color(0xFFE8E8E8),
-                                ),
-                            ],
-                          );
-                        },
-                      ),
+                          ],
+                        );
+                      }),
                   ],
                 ),
               ),
@@ -2884,6 +2889,7 @@ class _DashboardActivityEntry {
   final Saving? saving;
 
   bool get isSaving => saving != null;
+  bool get isTransfer => transaction?.isTransferActivity == true;
   bool get isExpense => transaction?.type == 'expense';
   String get id => isSaving ? 'saving_${saving!.id}' : 'tx_${transaction!.id}';
   String get date => saving?.dateAcquired ?? transaction!.date;
@@ -2920,9 +2926,10 @@ class _ActivityRowState extends State<_ActivityRow>
       vsync: this,
       duration: const Duration(milliseconds: 130),
     );
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.98).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
+    _scaleAnimation = Tween<double>(
+      begin: 1.0,
+      end: 0.98,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
   }
 
   @override
@@ -2934,16 +2941,27 @@ class _ActivityRowState extends State<_ActivityRow>
   @override
   Widget build(BuildContext context) {
     final bool isExpense = widget.entry.isExpense;
+    final bool isTransfer = widget.entry.isTransfer;
     final bool dark = Theme.of(context).brightness == Brightness.dark;
-    final Color valueColor = isExpense
+    final Color valueColor = isTransfer
+        ? const Color(0xFFB8860B)
+        : isExpense
         ? (dark ? const Color(0xFFF87171) : const Color(0xFFB91C1C))
         : (dark ? const Color(0xFF34D399) : const Color(0xFF047857));
 
-    final Color iconBg = isExpense
-        ? (dark ? const Color(0xFF7F1D1D).withValues(alpha: 0.2) : const Color(0xFFFFF1F2))
-        : (dark ? const Color(0xFF064E3B).withValues(alpha: 0.2) : const Color(0xFFF0FDF4));
+    final Color iconBg = isTransfer
+        ? const Color(0xFFD4AF37).withValues(alpha: 0.16)
+        : isExpense
+        ? (dark
+              ? const Color(0xFF7F1D1D).withValues(alpha: 0.2)
+              : const Color(0xFFFFF1F2))
+        : (dark
+              ? const Color(0xFF064E3B).withValues(alpha: 0.2)
+              : const Color(0xFFF0FDF4));
 
-    final Color iconColor = isExpense
+    final Color iconColor = isTransfer
+        ? const Color(0xFFD4AF37)
+        : isExpense
         ? const Color(0xFFDC2626)
         : const Color(0xFF16A34A);
 
@@ -2991,7 +3009,16 @@ class _ActivityRowState extends State<_ActivityRow>
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(
-                  isExpense ? Icons.south_west_rounded : Icons.north_east_rounded,
+                  key: Key(
+                    isTransfer
+                        ? 'dashboardRecentTransferIcon'
+                        : 'dashboardRecentTransactionIcon',
+                  ),
+                  isTransfer
+                      ? Icons.swap_horiz_rounded
+                      : isExpense
+                      ? Icons.south_west_rounded
+                      : Icons.north_east_rounded,
                   color: iconColor,
                   size: 16,
                 ),
@@ -3017,7 +3044,9 @@ class _ActivityRowState extends State<_ActivityRow>
                       widget.entry.date,
                       style: TextStyle(
                         fontSize: 11.0,
-                        color: dark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280),
+                        color: dark
+                            ? const Color(0xFF9CA3AF)
+                            : const Color(0xFF6B7280),
                       ),
                     ),
                   ],
@@ -3030,7 +3059,9 @@ class _ActivityRowState extends State<_ActivityRow>
                     widget.balancesHidden
                         ? '••••••'
                         : ZakatEngineService.formatCurrency(
-                            isExpense ? -widget.entry.amount : widget.entry.amount,
+                            isExpense
+                                ? -widget.entry.amount
+                                : widget.entry.amount,
                             widget.entry.currency,
                             isArabic: _DashboardScreenState._isArabic(context),
                             showSign: true,
@@ -3127,9 +3158,10 @@ class _ObligationColumnState extends State<_ObligationColumn>
       vsync: this,
       duration: const Duration(milliseconds: 130),
     );
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.98).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
+    _scaleAnimation = Tween<double>(
+      begin: 1.0,
+      end: 0.98,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
   }
 
   @override
@@ -3218,8 +3250,12 @@ class _ObligationColumnState extends State<_ObligationColumn>
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: widget.isTotal ? 16.0 : 15.0,
-                            fontWeight: widget.isTotal ? FontWeight.w900 : FontWeight.w800,
-                            color: dark ? const Color(0xFF10B981) : const Color(0xFF0F766E),
+                            fontWeight: widget.isTotal
+                                ? FontWeight.w900
+                                : FontWeight.w800,
+                            color: dark
+                                ? const Color(0xFF10B981)
+                                : const Color(0xFF0F766E),
                           ),
                         ),
                       ),

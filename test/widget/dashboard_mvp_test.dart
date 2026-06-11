@@ -452,6 +452,37 @@ void main() {
     );
   });
 
+  testWidgets('recent currency exchange uses gold transfer icon', (
+    WidgetTester tester,
+  ) async {
+    final Map<String, dynamic> seeded = _seedStateWithMarketData();
+    seeded['transactions'] = <Map<String, dynamic>>[
+      <String, dynamic>{
+        ..._transactionJson(
+          id: 'recent-exchange',
+          type: 'expense',
+          date: '2026-06-11',
+          amount: 20,
+        ),
+        'category': 'Currency Exchange',
+        'activityType': 'transfer',
+      },
+    ];
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'zakatAppData': jsonEncode(seeded),
+    });
+
+    await tester.pumpWidget(_buildApp());
+    await tester.pumpAndSettle();
+    await _scrollToText(tester, 'Recent Activity');
+
+    final Icon icon = tester.widget<Icon>(
+      find.byKey(const Key('dashboardRecentTransferIcon')),
+    );
+    expect(icon.icon, Icons.swap_horiz_rounded);
+    expect(icon.color, const Color(0xFFD4AF37));
+  });
+
   testWidgets('View All goes to Activity tab', (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     await tester.pumpWidget(_buildApp());
