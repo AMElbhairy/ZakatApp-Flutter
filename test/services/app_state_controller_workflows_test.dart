@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zakatapp_flutter/core/services/zakat_engine.dart';
+import 'package:zakatapp_flutter/models/currency_exchange_edit_request.dart';
 import 'package:zakatapp_flutter/models/saving.dart';
 import 'package:zakatapp_flutter/models/transaction.dart';
 import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
@@ -59,6 +60,154 @@ void main() {
         .toList();
     expect(exchanged.length, 2);
   });
+
+  test(
+    'currency exchange edit request resolves the full parent activity',
+    () async {
+      final controller = await makeController();
+      await controller.addSaving(
+        const Saving(
+          id: 'cash-legacy',
+          assetType: 'cash',
+          dateAcquired: '2026-05-01',
+          amount: 30,
+          remainingAmount: 30,
+          unit: 'USD',
+          description: 'Legacy cash',
+          purchaseCurrency: 'USD',
+          purchaseAmount: 30,
+          createdAt: '2026-05-01T00:00:00.000Z',
+        ),
+      );
+      await controller.addTransaction(
+        const Transaction(
+          id: 'income-2',
+          type: 'income',
+          date: '2026-06-01',
+          amount: 100,
+          currency: 'USD',
+          category: 'Salary',
+          description: '',
+          createdAt: '2026-06-01T00:00:00.000Z',
+          rolledOver: false,
+        ),
+      );
+      await controller.executeCurrencyExchange(
+        date: '2026-06-11',
+        sourceCurrency: 'USD',
+        targetCurrency: 'EGP',
+        sourceAmount: 50,
+        targetAmount: 2500,
+      );
+
+      final Transaction underlyingTransaction = controller.state.transactions
+          .firstWhere((Transaction tx) => tx.exchangePairId != null);
+      final CurrencyExchangeEditRequest? request =
+          resolveCurrencyExchangeEditRequest(
+            transactions: controller.state.transactions,
+            savings: controller.state.savings,
+            item: underlyingTransaction,
+          );
+
+      expect(request, isNotNull);
+      expect(request!.sourceCurrency, 'USD');
+      expect(request.targetCurrency, 'EGP');
+      expect(request.sourceAmount, 50);
+      expect(request.targetAmount, 2500);
+      expect(request.oldTargetSavingIds, isNotEmpty);
+      expect(request.oldSourceSavingDeductions['cash-legacy'], 30);
+    },
+  );
+
+  test(
+    'controller updateCurrencyExchange reapplies the full parent activity',
+    () async {
+      final controller = await makeController();
+      await controller.addSaving(
+        const Saving(
+          id: 'cash-legacy',
+          assetType: 'cash',
+          dateAcquired: '2026-05-01',
+          amount: 30,
+          remainingAmount: 30,
+          unit: 'USD',
+          description: 'Legacy cash',
+          purchaseCurrency: 'USD',
+          purchaseAmount: 30,
+          createdAt: '2026-05-01T00:00:00.000Z',
+        ),
+      );
+      await controller.addTransaction(
+        const Transaction(
+          id: 'income-3',
+          type: 'income',
+          date: '2026-06-01',
+          amount: 100,
+          currency: 'USD',
+          category: 'Salary',
+          description: '',
+          createdAt: '2026-06-01T00:00:00.000Z',
+          rolledOver: false,
+        ),
+      );
+      await controller.executeCurrencyExchange(
+        date: '2026-06-11',
+        sourceCurrency: 'USD',
+        targetCurrency: 'EGP',
+        sourceAmount: 50,
+        targetAmount: 2500,
+      );
+
+      final Transaction underlyingTransaction = controller.state.transactions
+          .firstWhere((Transaction tx) => tx.exchangePairId != null);
+      final CurrencyExchangeEditRequest original =
+          resolveCurrencyExchangeEditRequest(
+            transactions: controller.state.transactions,
+            savings: controller.state.savings,
+            item: underlyingTransaction,
+          )!;
+
+      await controller.updateCurrencyExchange(
+        CurrencyExchangeEditRequest(
+          oldActivityId: original.oldActivityId,
+          oldTargetSavingIds: original.oldTargetSavingIds,
+          oldSourceSavingDeductions: original.oldSourceSavingDeductions,
+          date: '2026-06-12',
+          sourceCurrency: 'USD',
+          targetCurrency: 'EGP',
+          sourceAmount: 40,
+          targetAmount: 2000,
+        ),
+      );
+
+      expect(
+        controller.state.transactions.any(
+          (Transaction tx) => tx.exchangePairId == original.oldActivityId,
+        ),
+        isFalse,
+      );
+
+      final Transaction newUnderlyingTransaction = controller.state.transactions
+          .firstWhere((Transaction tx) => tx.exchangePairId != null);
+      final CurrencyExchangeEditRequest updated =
+          resolveCurrencyExchangeEditRequest(
+            transactions: controller.state.transactions,
+            savings: controller.state.savings,
+            item: newUnderlyingTransaction,
+          )!;
+
+      expect(updated.oldActivityId, isNot(original.oldActivityId));
+      expect(updated.sourceAmount, 40);
+      expect(updated.targetAmount, 2000);
+      expect(updated.oldSourceSavingDeductions['cash-legacy'], 30);
+      expect(
+        controller.state.savings.any(
+          (Saving saving) => original.oldTargetSavingIds.contains(saving.id),
+        ),
+        isFalse,
+      );
+    },
+  );
 
   test('controller adds scanned transactions in one persisted batch', () async {
     final controller = await makeController();

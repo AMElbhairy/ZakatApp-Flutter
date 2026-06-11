@@ -8,6 +8,7 @@ import '../models/market_snapshot.dart';
 import '../models/recurring_transaction.dart';
 import '../models/saving.dart';
 import '../models/transaction.dart';
+import '../models/currency_exchange_edit_request.dart';
 import '../repositories/app_state_repository.dart';
 import 'market_data_api_service.dart';
 import 'reconciliation_service.dart';
@@ -125,16 +126,52 @@ class AppStateController extends ChangeNotifier {
         break;
       }
     }
-    final String? pairId = target?.exchangePairId;
-    final List<Transaction> next = _state.transactions
+    if (target == null) return;
+    final Transaction txTarget = target;
+
+    List<Saving> nextSavings = List<Saving>.from(_state.savings);
+
+    if (txTarget.category == 'Gold Sale' || txTarget.category == 'Silver Sale') {
+      final String? metalSavingId = txTarget.exchangePairId;
+      if (metalSavingId != null && metalSavingId.isNotEmpty) {
+        double soldWeight = 0.0;
+        final RegExp regex = RegExp(r'([0-9.]+)\s*g');
+        final Match? match = regex.firstMatch(txTarget.description);
+        if (match != null) {
+          soldWeight = double.tryParse(match.group(1) ?? '') ?? 0.0;
+        }
+        if (soldWeight > 0.0) {
+          nextSavings = nextSavings.map((Saving s) {
+            if (s.id == metalSavingId) {
+              return s.copyWith(remainingAmount: s.remainingAmount + soldWeight);
+            }
+            return s;
+          }).toList();
+        }
+      }
+      nextSavings.removeWhere(
+        (Saving s) =>
+            s.transferActivityId == txTarget.id &&
+            ZakatEngineService.normaliseAssetType(s.assetType) == 'cash',
+      );
+    }
+
+    final String? pairId = txTarget.exchangePairId;
+    final List<Transaction> nextTransactions = _state.transactions
         .where((Transaction tx) {
+          if (txTarget.category == 'Gold Sale' || txTarget.category == 'Silver Sale') {
+            return tx.id != transactionId;
+          }
           if (pairId != null && pairId.isNotEmpty) {
             return tx.exchangePairId != pairId;
           }
           return tx.id != transactionId;
         })
         .toList(growable: false);
-    await updateState(_state.copyWith(transactions: next));
+
+    await updateState(
+      _state.copyWith(savings: nextSavings, transactions: nextTransactions),
+    );
   }
 
   Future<void> addSaving(Saving saving) async {
@@ -239,42 +276,91 @@ class AppStateController extends ChangeNotifier {
     );
   }
 
-  Future<void> updateCurrencyExchange({
-    required String oldExchangePairId,
-    required String? oldTargetSavingId,
-    required String? oldSourceSavingId,
-    required double oldSourceDeductedAmount,
-    required String date,
-    required String sourceCurrency,
-    required String targetCurrency,
-    required double sourceAmount,
-    required double targetAmount,
-  }) async {
+  Future<void> updateCurrencyExchange(
+    CurrencyExchangeEditRequest request,
+  ) async {
     List<Transaction> nextTransactions = _state.transactions;
     List<Saving> nextSavings = _state.savings;
+    final Set<String> targetSavingIds = request.oldTargetSavingIds.toSet();
+    final List<Saving> removedTargetSavings = <Saving>[];
 
-    if (oldExchangePairId.isNotEmpty) {
+    if (request.oldActivityId.isNotEmpty) {
       nextTransactions = nextTransactions
-          .where((tx) => tx.exchangePairId != oldExchangePairId)
-          .toList();
+          .where((Transaction tx) => tx.exchangePairId != request.oldActivityId)
+          .toList(growable: false);
+      removedTargetSavings.addAll(
+        _state.savings.where(
+          (Saving saving) =>
+              saving.transferActivityId == request.oldActivityId &&
+              saving.internalTransferType == 'savings_currency_exchange',
+        ),
+      );
+      targetSavingIds.addAll(
+        removedTargetSavings.map((Saving saving) => saving.id),
+      );
     }
 
-    if (oldTargetSavingId != null && oldTargetSavingId.isNotEmpty) {
+    if (targetSavingIds.isNotEmpty) {
+      removedTargetSavings.addAll(
+        _state.savings.where(
+          (Saving saving) =>
+              targetSavingIds.contains(saving.id) &&
+              !removedTargetSavings.any(
+                (Saving existing) => existing.id == saving.id,
+              ),
+        ),
+      );
+    }
+
+    if (targetSavingIds.isNotEmpty) {
       nextSavings = nextSavings
-          .where((s) => s.id != oldTargetSavingId)
-          .toList();
-      if (oldSourceSavingId != null &&
-          oldSourceSavingId.isNotEmpty &&
-          oldSourceDeductedAmount > 0) {
-        nextSavings = nextSavings.map((s) {
-          if (s.id == oldSourceSavingId) {
-            return s.copyWith(
-              amount: s.amount + oldSourceDeductedAmount,
-              remainingAmount: s.remainingAmount + oldSourceDeductedAmount,
+          .where((Saving saving) => !targetSavingIds.contains(saving.id))
+          .toList(growable: false);
+    }
+
+    if (request.oldSourceSavingDeductions.isNotEmpty) {
+      nextSavings = nextSavings
+          .map((Saving saving) {
+            final double restoredAmount =
+                request.oldSourceSavingDeductions[saving.id] ?? 0;
+            if (restoredAmount <= 0) return saving;
+            return saving.copyWith(
+              amount: saving.amount + restoredAmount,
+              remainingAmount: saving.remainingAmount + restoredAmount,
             );
-          }
-          return s;
-        }).toList();
+          })
+          .toList(growable: false);
+
+      for (final MapEntry<String, double> entry
+          in request.oldSourceSavingDeductions.entries) {
+        final bool exists = nextSavings.any(
+          (Saving saving) => saving.id == entry.key,
+        );
+        if (exists || entry.value <= 0) continue;
+
+        final Saving? sourceTemplate = removedTargetSavings
+            .where(
+              (Saving saving) => saving.exchangeSourceSavingId == entry.key,
+            )
+            .firstOrNull;
+        nextSavings = <Saving>[
+          ...nextSavings,
+          Saving(
+            id: entry.key,
+            assetType: 'cash',
+            dateAcquired: sourceTemplate?.dateAcquired ?? request.date,
+            amount: entry.value,
+            remainingAmount: entry.value,
+            unit: request.sourceCurrency,
+            description: 'Restored exchange source',
+            purchaseCurrency: request.sourceCurrency,
+            purchaseAmount: entry.value,
+            createdAt:
+                sourceTemplate?.createdAt ??
+                DateTime.now().toUtc().toIso8601String(),
+            sourceIncomeId: sourceTemplate?.sourceIncomeId,
+          ),
+        ];
       }
     }
 
@@ -286,11 +372,11 @@ class AppStateController extends ChangeNotifier {
     final ReconciliationResult out = reconciliationService
         .executeCurrencyExchange(
           input: revertedState,
-          date: date,
-          sourceCurrency: sourceCurrency,
-          targetCurrency: targetCurrency,
-          sourceAmount: sourceAmount,
-          targetAmount: targetAmount,
+          date: request.date,
+          sourceCurrency: request.sourceCurrency,
+          targetCurrency: request.targetCurrency,
+          sourceAmount: request.sourceAmount,
+          targetAmount: request.targetAmount,
         );
 
     if (out.modified) {

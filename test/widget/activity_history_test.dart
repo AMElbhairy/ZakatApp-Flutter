@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -266,7 +268,7 @@ void main() {
     await tester.tap(find.text('Transfer').first);
     await tester.pumpAndSettle();
     expect(find.text('Currency Exchange'), findsOneWidget);
-    expect(find.textContaining('40.00 USD → 2000.00 EGP'), findsOneWidget);
+    expect(find.textContaining('USD 40.00 → EGP 2000.00'), findsOneWidget);
   });
 
   testWidgets('funded gold purchase appears under Transfer', (
@@ -323,10 +325,86 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Gold Purchase'), findsOneWidget);
-    expect(
-      find.textContaining('10000.00 EGP Cash → 2.00g Gold'),
-      findsOneWidget,
-    );
+    expect(find.textContaining('2.00g Gold • EGP 10000.00'), findsOneWidget);
     expect(find.text('Precious Metals Purchase'), findsNothing);
   });
+
+  testWidgets(
+    'gold sale appears once under Transfer and hides internal cash proceeds',
+    (WidgetTester tester) async {
+      final Map<String, dynamic> seeded = <String, dynamic>{
+        ...AppStateDefaults.create().toJson(),
+        'transactions': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'id': 'gold-sale-1',
+            'type': 'transfer',
+            'date': '2026-06-11',
+            'amount': 40000,
+            'currency': 'EGP',
+            'category': 'Gold Sale',
+            'description': '5.00g Gold -> EGP 40000.00',
+            'createdAt': '2026-06-11T00:00:00.000Z',
+            'rolledOver': false,
+            'activityType': 'transfer',
+            'exchangePairId': 'gold-holding-1',
+          },
+        ],
+        'savings': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'id': 'gold-holding-1',
+            'assetType': 'gold',
+            'dateAcquired': '2026-01-01',
+            'amount': 10,
+            'remainingAmount': 5,
+            'unit': '24',
+            'description': 'Gold bar',
+            'purchaseCurrency': 'EGP',
+            'purchaseAmount': 80000,
+            'createdAt': '2026-01-01T00:00:00.000Z',
+          },
+          <String, dynamic>{
+            'id': 'gold-sale-cash-1',
+            'assetType': 'cash',
+            'dateAcquired': '2026-06-11',
+            'amount': 40000,
+            'remainingAmount': 40000,
+            'unit': 'EGP',
+            'description': 'Gold Sale proceeds',
+            'purchaseCurrency': 'EGP',
+            'purchaseAmount': 40000,
+            'createdAt': '2026-06-11T00:00:00.000Z',
+            'internalTransfer': true,
+            'internalTransferType': 'precious_metals_sale',
+            'transferActivityId': 'gold-sale-1',
+          },
+        ],
+      };
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'zakatAppData': jsonEncode(seeded),
+      });
+
+      await tester.pumpWidget(_buildApp());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Activity').first);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Gold Sale'), findsOneWidget);
+      expect(find.text('Currency Exchange'), findsNothing);
+      expect(find.text('Gold Sale proceeds'), findsNothing);
+
+      await tester.tap(find.text('Income').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Gold Sale'), findsNothing);
+
+      await tester.tap(find.text('Expense').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Gold Sale'), findsNothing);
+
+      await tester.tap(find.text('Transfer').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Gold Sale'), findsOneWidget);
+      expect(find.textContaining('5.00g Gold -> EGP 40000.00'), findsOneWidget);
+    },
+  );
 }

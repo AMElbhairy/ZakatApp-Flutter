@@ -18,6 +18,10 @@ import '../../models/transaction.dart';
 import '../../services/app_state_controller.dart';
 import '../../services/auth_controller.dart';
 import 'obligations_list_screen.dart';
+import '../entry/add_saving_screen.dart';
+import '../entry/add_transaction_screen.dart';
+import '../../core/widgets/currency_exchange_dialog.dart';
+import '../../core/widgets/sell_metal_dialog.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({
@@ -174,14 +178,78 @@ class _DashboardScreenState extends State<DashboardScreen> {
       lastRollover: state.lastRollover,
     );
 
+    // Grouping exchanges and metal purchases for dashboard
+    final Map<String, List<Transaction>> exchangePairs =
+        <String, List<Transaction>>{};
+    for (final Transaction transaction in transactions.where(
+      (Transaction transaction) =>
+          transaction.category == 'Currency Exchange' &&
+          (transaction.exchangePairId ?? '').isNotEmpty,
+    )) {
+      exchangePairs
+          .putIfAbsent(transaction.exchangePairId!, () => <Transaction>[])
+          .add(transaction);
+    }
+    final Map<String, List<Saving>> exchangeSavings = <String, List<Saving>>{};
+    for (final Saving saving in state.savings.where(
+      (Saving saving) =>
+          (saving.transferActivityId ?? '').isNotEmpty &&
+          saving.internalTransferType == 'savings_currency_exchange',
+    )) {
+      exchangeSavings
+          .putIfAbsent(saving.transferActivityId!, () => <Saving>[])
+          .add(saving);
+    }
+    final Set<String> exchangeActivityIds = <String>{
+      ...exchangePairs.keys,
+      ...exchangeSavings.keys,
+    };
+    final Set<String> fundedMetalIds = state.savings
+        .where((Saving saving) => saving.fundingAllocations.isNotEmpty)
+        .map((Saving saving) => saving.id)
+        .toSet();
+
     final List<_DashboardActivityEntry> recent =
         <_DashboardActivityEntry>[
-          ...transactions.map(_DashboardActivityEntry.transaction),
+          ...transactions
+              .where(
+                (Transaction transaction) =>
+                    !transaction.isTransferActivity ||
+                    transaction.category == 'Gold Sale' ||
+                    transaction.category == 'Silver Sale' ||
+                    ((transaction.exchangePairId ?? '').isEmpty &&
+                        !fundedMetalIds.contains(transaction.exchangePairId)),
+              )
+              .map(_DashboardActivityEntry.transaction),
+          ...exchangeActivityIds.map(
+            (String id) => _DashboardActivityEntry.currencyExchange(
+              exchangePairs[id] ?? const <Transaction>[],
+              exchangeSavings[id] ?? const <Saving>[],
+            ),
+          ),
+          ...state.savings
+              .where(
+                (Saving saving) =>
+                    (saving.exchangeSourceSavingId ?? '').isNotEmpty &&
+                    (saving.transferActivityId ?? '').isEmpty,
+              )
+              .map(_DashboardActivityEntry.legacySavingExchange),
+          ...state.savings
+              .where(
+                (Saving saving) =>
+                    saving.fundingAllocations.isNotEmpty ||
+                    ZakatEngineService.normaliseAssetType(saving.assetType) == 'gold' ||
+                    ZakatEngineService.normaliseAssetType(saving.assetType) == 'silver',
+              )
+              .map(_DashboardActivityEntry.metalTransfer),
           ...savings
               .where(
                 (Saving saving) =>
                     ZakatEngineService.normaliseAssetType(saving.assetType) ==
-                    'cash',
+                        'cash' &&
+                    (saving.exchangeSourceSavingId ?? '').isEmpty &&
+                    (saving.exchangeSourceIncomeId ?? '').isEmpty &&
+                    (saving.transferActivityId ?? '').isEmpty,
               )
               .map(_DashboardActivityEntry.cashSaving),
         ]..sort((_DashboardActivityEntry a, _DashboardActivityEntry b) {
@@ -412,6 +480,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
             const SizedBox(height: 16),
             _stagger(
               order: 5,
+              child: _TopExpenseCategoriesCard(
+                transactions: transactions,
+                market: market,
+                mainCurrency: state.mainCurrency,
+                balancesHidden: balancesHidden,
+              ),
+            ),
+            const SizedBox(height: 16),
+            _stagger(
+              order: 6,
               child: _PremiumSection(
                 title: context.l10n.tr('recent_activity_title'),
                 trailing: TextButton(
@@ -2173,7 +2251,7 @@ class _NisabStatusCard extends StatelessWidget {
       if (s.dateAcquired.compareTo(dateStr) <= 0 &&
           ZakatEngineService.normaliseAssetType(s.assetType) == 'cash') {
         final String cur = s.unit;
-        cashAmounts[cur] = (cashAmounts[cur] ?? 0) + s.amount;
+        cashAmounts[cur] = (cashAmounts[cur] ?? 0) + s.remainingAmount;
       }
     }
 
@@ -2194,9 +2272,9 @@ class _NisabStatusCard extends StatelessWidget {
       if (s.dateAcquired.compareTo(dateStr) <= 0) {
         final String type = ZakatEngineService.normaliseAssetType(s.assetType);
         if (type == 'gold') {
-          totalGold24k += ZakatEngineService.convertToGold24k(s.amount, s.unit);
+          totalGold24k += ZakatEngineService.convertToGold24k(s.remainingAmount, s.unit);
         } else if (type == 'silver') {
-          totalSilverGrams += ZakatEngineService.convertToSilverGrams(s.amount);
+          totalSilverGrams += ZakatEngineService.convertToSilverGrams(s.remainingAmount);
         }
       }
     }
@@ -2875,7 +2953,17 @@ class _AllocSeg {
 }
 
 class _DashboardActivityEntry {
-  const _DashboardActivityEntry._({this.transaction, this.saving});
+  const _DashboardActivityEntry._({
+    this.transaction,
+    this.saving,
+    this.transferTitle,
+    this.transferDescription,
+    this.transferKey,
+    this.transferDate,
+    this.transferCreatedAt,
+    this.transferCurrency,
+    this.transferAmount,
+  });
 
   factory _DashboardActivityEntry.transaction(Transaction transaction) {
     return _DashboardActivityEntry._(transaction: transaction);
@@ -2885,19 +2973,168 @@ class _DashboardActivityEntry {
     return _DashboardActivityEntry._(saving: saving);
   }
 
+  static String _formatVal(double val) {
+    if (val == val.toInt()) {
+      return NumberFormat('#,##0', 'en_US').format(val);
+    }
+    return NumberFormat('#,##0.##', 'en_US').format(val);
+  }
+
+  factory _DashboardActivityEntry.currencyExchange(
+    List<Transaction> pair,
+    List<Saving> targetSavings,
+  ) {
+    final Transaction? sourceTransaction = pair
+        .where((Transaction transaction) => transaction.type == 'expense')
+        .firstOrNull;
+    final Transaction? targetTransaction = pair
+        .where((Transaction transaction) => transaction.type == 'income')
+        .firstOrNull;
+    final Saving? targetSaving = targetSavings.firstOrNull;
+    final Transaction source =
+        sourceTransaction ??
+        pair.firstOrNull ??
+        Transaction(
+          id: targetSaving!.id,
+          type: 'expense',
+          date: targetSaving.dateAcquired,
+          amount: 0,
+          currency: '',
+          category: 'Currency Exchange',
+          description: '',
+          createdAt: targetSaving.createdAt,
+          rolledOver: false,
+        );
+    final RegExp savingExchangePattern = RegExp(
+      r'Savings exchange:\s*([0-9.]+)\s+([A-Z]+)\s+→',
+    );
+    final double savingSourceAmount = targetSavings.fold<double>(
+      0,
+      (double total, Saving saving) =>
+          total +
+          (double.tryParse(
+                savingExchangePattern
+                        .firstMatch(saving.description)
+                        ?.group(1) ??
+                    '',
+              ) ??
+              0),
+    );
+    final String savingSourceCurrency =
+        savingExchangePattern
+            .firstMatch(targetSaving?.description ?? '')
+            ?.group(2) ??
+        '';
+    final String sourceCurrency = sourceTransaction?.currency.isNotEmpty == true
+        ? sourceTransaction!.currency
+        : savingSourceCurrency;
+    final String targetCurrency = targetTransaction?.currency.isNotEmpty == true
+        ? targetTransaction!.currency
+        : (targetSaving?.unit ?? '');
+    final double sourceAmount =
+        pair
+            .where((Transaction transaction) => transaction.type == 'expense')
+            .fold<double>(0, (double total, Transaction transaction) {
+              return total + transaction.amount;
+            }) +
+        savingSourceAmount;
+    final double targetAmount =
+        pair
+            .where((Transaction transaction) => transaction.type == 'income')
+            .fold<double>(0, (double total, Transaction transaction) {
+              return total + transaction.amount;
+            }) +
+        targetSavings.fold<double>(
+          0,
+          (double total, Saving saving) => total + saving.amount,
+        );
+    return _DashboardActivityEntry._(
+      transaction: source,
+      transferTitle: 'Currency Exchange',
+      transferDescription:
+          '$sourceCurrency ${_formatVal(sourceAmount)} → $targetCurrency ${_formatVal(targetAmount)}',
+      transferKey: 'exchange_${source.exchangePairId ?? source.id}',
+      transferDate: source.date,
+      transferCreatedAt: source.createdAt,
+      transferCurrency: sourceCurrency,
+      transferAmount: sourceAmount,
+    );
+  }
+
+  factory _DashboardActivityEntry.legacySavingExchange(Saving saving) {
+    final RegExp pattern = RegExp(
+      r'Savings exchange:\s*([0-9.]+)\s+([A-Z]+)\s+→',
+    );
+    final Match? match = pattern.firstMatch(saving.description);
+    final double sourceAmount = double.tryParse(match?.group(1) ?? '') ?? 0;
+    final String sourceCurrency = match?.group(2) ?? saving.unit;
+    return _DashboardActivityEntry._(
+      saving: saving,
+      transferTitle: 'Currency Exchange',
+      transferDescription:
+          '$sourceCurrency ${_formatVal(sourceAmount)} → ${saving.unit} ${_formatVal(saving.amount)}',
+      transferKey: 'legacy_exchange_${saving.id}',
+      transferDate: saving.dateAcquired,
+      transferCreatedAt: saving.createdAt,
+      transferCurrency: sourceCurrency,
+      transferAmount: sourceAmount,
+    );
+  }
+
+  factory _DashboardActivityEntry.metalTransfer(Saving saving) {
+    final String metal = saving.assetType == 'gold' ? 'Gold' : 'Silver';
+    return _DashboardActivityEntry._(
+      saving: saving,
+      transferTitle: '$metal Purchase',
+      transferDescription:
+          '${_formatVal(saving.amount)}g $metal • ${saving.purchaseCurrency} ${_formatVal(saving.purchaseAmount)}',
+      transferKey: 'metal_${saving.id}',
+      transferDate: saving.dateAcquired,
+      transferCreatedAt: saving.createdAt,
+      transferCurrency: saving.purchaseCurrency,
+      transferAmount: saving.purchaseAmount,
+    );
+  }
+
   final Transaction? transaction;
   final Saving? saving;
+  final String? transferTitle;
+  final String? transferDescription;
+  final String? transferKey;
+  final String? transferDate;
+  final String? transferCreatedAt;
+  final String? transferCurrency;
+  final double? transferAmount;
 
   bool get isSaving => saving != null;
-  bool get isTransfer => transaction?.isTransferActivity == true;
-  bool get isExpense => transaction?.type == 'expense';
-  String get id => isSaving ? 'saving_${saving!.id}' : 'tx_${transaction!.id}';
-  String get date => saving?.dateAcquired ?? transaction!.date;
-  String get createdAt => saving?.createdAt ?? transaction!.createdAt;
-  String get currency => saving?.unit ?? transaction!.currency;
-  double get amount => saving?.amount ?? transaction!.amount;
+  bool get isTransfer =>
+      transferTitle != null || transaction?.isTransferActivity == true;
+  bool get isExpense => !isTransfer && transaction?.type == 'expense';
+
+  String get id =>
+      transferKey ??
+      (isSaving ? 'saving_${saving!.id}' : 'tx_${transaction!.id}');
+
+  String get date {
+    if (transferDate != null) return transferDate!;
+    return saving?.dateAcquired ?? transaction!.date;
+  }
+
+  String get createdAt {
+    if (transferCreatedAt != null) return transferCreatedAt!;
+    return saving?.createdAt ?? transaction!.createdAt;
+  }
+
+  String get currency =>
+      transferCurrency ?? saving?.unit ?? transaction!.currency;
+
+  double get amount => transferAmount ?? saving?.amount ?? transaction!.amount;
+
+  String get description =>
+      transferDescription ?? saving?.description ?? transaction!.description;
 
   String title(BuildContext context) {
+    if (transferTitle != null) return transferTitle!;
     if (isSaving) return context.l10n.tr('cash_in');
     return transaction!.category;
   }
@@ -2942,15 +3179,23 @@ class _ActivityRowState extends State<_ActivityRow>
   Widget build(BuildContext context) {
     final bool isExpense = widget.entry.isExpense;
     final bool isTransfer = widget.entry.isTransfer;
+    final String entryTitle = widget.entry.title(context).toLowerCase();
+    final bool isGold = isTransfer && entryTitle.contains('gold');
+    final bool isSilver = isTransfer && entryTitle.contains('silver');
     final bool dark = Theme.of(context).brightness == Brightness.dark;
+
     final Color valueColor = isTransfer
-        ? const Color(0xFFB8860B)
+        ? (isSilver
+              ? (dark ? const Color(0xFF94A3B8) : const Color(0xFF64748B))
+              : const Color(0xFFB8860B))
         : isExpense
         ? (dark ? const Color(0xFFF87171) : const Color(0xFFB91C1C))
         : (dark ? const Color(0xFF34D399) : const Color(0xFF047857));
 
     final Color iconBg = isTransfer
-        ? const Color(0xFFD4AF37).withValues(alpha: 0.16)
+        ? (isSilver
+              ? const Color(0xFF94A3B8).withValues(alpha: 0.16)
+              : const Color(0xFFD4AF37).withValues(alpha: 0.16))
         : isExpense
         ? (dark
               ? const Color(0xFF7F1D1D).withValues(alpha: 0.2)
@@ -2960,7 +3205,7 @@ class _ActivityRowState extends State<_ActivityRow>
               : const Color(0xFFF0FDF4));
 
     final Color iconColor = isTransfer
-        ? const Color(0xFFD4AF37)
+        ? (isSilver ? const Color(0xFF94A3B8) : const Color(0xFFD4AF37))
         : isExpense
         ? const Color(0xFFDC2626)
         : const Color(0xFF16A34A);
@@ -2972,6 +3217,9 @@ class _ActivityRowState extends State<_ActivityRow>
     return ScaleTransition(
       scale: _scaleAnimation,
       child: GestureDetector(
+        onTap: () {
+          _handleRowTap(context);
+        },
         onTapDown: (_) {
           _controller.forward();
           setState(() {
@@ -3015,12 +3263,14 @@ class _ActivityRowState extends State<_ActivityRow>
                         : 'dashboardRecentTransactionIcon',
                   ),
                   isTransfer
-                      ? Icons.swap_horiz_rounded
+                      ? (isGold || isSilver
+                            ? Icons.circle
+                            : Icons.swap_horiz_rounded)
                       : isExpense
                       ? Icons.south_west_rounded
                       : Icons.north_east_rounded,
                   color: iconColor,
-                  size: 16,
+                  size: isTransfer && (isGold || isSilver) ? 12 : 16,
                 ),
               ),
               const SizedBox(width: 10),
@@ -3029,6 +3279,19 @@ class _ActivityRowState extends State<_ActivityRow>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
+                    if (isTransfer) ...[
+                      Text(
+                        '[TRANSFER]',
+                        style: TextStyle(
+                          fontSize: 10.0,
+                          fontWeight: FontWeight.bold,
+                          color: dark
+                              ? const Color(0xFFD4AF37)
+                              : const Color(0xFF8A6500),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                    ],
                     Text(
                       widget.entry.title(context),
                       maxLines: 1,
@@ -3058,6 +3321,8 @@ class _ActivityRowState extends State<_ActivityRow>
                   Text(
                     widget.balancesHidden
                         ? '••••••'
+                        : isTransfer
+                        ? widget.entry.description
                         : ZakatEngineService.formatCurrency(
                             isExpense
                                 ? -widget.entry.amount
@@ -3067,8 +3332,10 @@ class _ActivityRowState extends State<_ActivityRow>
                             showSign: true,
                           ),
                     style: TextStyle(
-                      fontSize: 14.0,
-                      fontWeight: FontWeight.w800,
+                      fontSize: isTransfer ? 12.5 : 14.0,
+                      fontWeight: isTransfer
+                          ? FontWeight.bold
+                          : FontWeight.w800,
                       color: valueColor,
                     ),
                   ),
@@ -3085,6 +3352,76 @@ class _ActivityRowState extends State<_ActivityRow>
         ),
       ),
     );
+  }
+
+  void _handleRowTap(BuildContext context) {
+    final AppStateController controller = context.read<AppStateController>();
+    final _DashboardActivityEntry entry = widget.entry;
+    final String title = (entry.transferTitle ?? entry.title(context))
+        .toLowerCase();
+
+    if (title.contains('gold sale') || title.contains('silver sale')) {
+      if (entry.transaction != null) {
+        openSellMetalDialog(context, editTransaction: entry.transaction);
+      }
+      return;
+    }
+
+    if (title.contains('gold') || title.contains('silver')) {
+      Saving? targetSaving;
+      if (entry.saving != null) {
+        targetSaving = entry.saving;
+      } else if (entry.transaction != null) {
+        final String? pairId = entry.transaction!.exchangePairId;
+        if (pairId != null && pairId.isNotEmpty) {
+          targetSaving = controller.state.savings
+              .where((Saving s) => s.id == pairId)
+              .firstOrNull;
+        }
+        if (targetSaving == null) {
+          final String targetType = title.contains('gold') ? 'gold' : 'silver';
+          targetSaving = controller.state.savings
+              .where((Saving s) => s.assetType == targetType)
+              .firstOrNull;
+        }
+      }
+      if (targetSaving != null) {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => AddSavingScreen(initialSaving: targetSaving),
+          ),
+        );
+      }
+    } else if (title.contains('exchange')) {
+      final dynamic item = entry.saving ?? entry.transaction;
+      if (item != null) {
+        openEditCurrencyExchangeDialog(context, item);
+      }
+    } else if (entry.isTransfer) {
+      if (entry.transaction != null) {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) =>
+                AddTransactionScreen(initialTransaction: entry.transaction),
+          ),
+        );
+      }
+    } else {
+      if (entry.transaction != null) {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) =>
+                AddTransactionScreen(initialTransaction: entry.transaction),
+          ),
+        );
+      } else if (entry.saving != null) {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => AddSavingScreen(initialSaving: entry.saving),
+          ),
+        );
+      }
+    }
   }
 }
 
@@ -3270,6 +3607,296 @@ class _ObligationColumnState extends State<_ObligationColumn>
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TopExpenseCategoriesCard extends StatefulWidget {
+  const _TopExpenseCategoriesCard({
+    required this.transactions,
+    required this.market,
+    required this.mainCurrency,
+    required this.balancesHidden,
+  });
+
+  final List<Transaction> transactions;
+  final MarketData market;
+  final String mainCurrency;
+  final bool balancesHidden;
+
+  @override
+  State<_TopExpenseCategoriesCard> createState() =>
+      _TopExpenseCategoriesCardState();
+}
+
+class _TopExpenseCategoriesCardState extends State<_TopExpenseCategoriesCard>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _scaleAnimation;
+  bool _isPressed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 130),
+    );
+    _scaleAnimation = Tween<double>(
+      begin: 1.0,
+      end: 0.98,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  static DateTime _parseDate(String value) {
+    try {
+      return DateTime.parse(value);
+    } catch (_) {
+      return DateTime.fromMillisecondsSinceEpoch(0);
+    }
+  }
+
+  static bool _isArabic(BuildContext context) {
+    return Localizations.localeOf(context).languageCode.toLowerCase() == 'ar';
+  }
+
+  String _formatNoDecimals(
+    BuildContext context,
+    double valueEgp,
+    String mainCurrency,
+    MarketData marketData,
+  ) {
+    final String displayCurrency = mainCurrency.trim().isEmpty
+        ? 'EGP'
+        : mainCurrency.trim();
+    final double displayValue = ZakatEngineService.convertFromEgp(
+      valueEgp,
+      displayCurrency,
+      marketData,
+    );
+    final String symbol = ZakatEngineService.getCurrencySymbol(
+      displayCurrency,
+      isArabic: _isArabic(context),
+    );
+    final String formattedNumber = NumberFormat(
+      '#,##0',
+      'en_US',
+    ).format(displayValue.abs());
+    return '\u200E$symbol $formattedNumber';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+
+    // Filter current month expenses
+    final DateTime now = DateTime.now();
+    final int currentYear = now.year;
+    final int currentMonth = now.month;
+
+    final List<Transaction> currentMonthExpenses = widget.transactions.where((
+      Transaction tx,
+    ) {
+      if (tx.type != 'expense') return false;
+      if (tx.isTransferActivity) return false;
+      final DateTime txDate = _parseDate(tx.date);
+      return txDate.year == currentYear && txDate.month == currentMonth;
+    }).toList();
+
+    // Group by category and sum EGP
+    final Map<String, double> categoryTotalsEgp = <String, double>{};
+    double totalExpensesEgp = 0;
+
+    for (final Transaction tx in currentMonthExpenses) {
+      final double amtEgp = ZakatEngineService.convertToEgp(
+        tx.amount,
+        tx.currency,
+        widget.market,
+      );
+      if (amtEgp.isNaN) continue;
+      categoryTotalsEgp[tx.category] =
+          (categoryTotalsEgp[tx.category] ?? 0) + amtEgp;
+      totalExpensesEgp += amtEgp;
+    }
+
+    final bool isEmpty = currentMonthExpenses.isEmpty || totalExpensesEgp <= 0;
+
+    final Color pressedOverlay = dark
+        ? const Color(0xFF10B981).withValues(alpha: 0.08)
+        : const Color(0xFF10B981).withValues(alpha: 0.04);
+
+    Widget cardContent;
+
+    if (isEmpty) {
+      // Empty state
+      cardContent = Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            context.l10n.tr('add_expenses_to_see_spending_insights'),
+            style: TextStyle(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w500,
+              color: dark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+            ),
+          ),
+        ),
+      );
+    } else {
+      // Sort and take top 4
+      final List<MapEntry<String, double>> sorted =
+          categoryTotalsEgp.entries.toList()..sort(
+            (MapEntry<String, double> a, MapEntry<String, double> b) =>
+                b.value.compareTo(a.value),
+          );
+      final List<MapEntry<String, double>> topCategories = sorted
+          .take(4)
+          .toList();
+
+      cardContent = Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Column(
+          children: topCategories.map((MapEntry<String, double> item) {
+            final String name = item.key;
+            final double amtEgp = item.value;
+            final int percentage = (amtEgp / totalExpensesEgp * 100).round();
+
+            final String formattedAmount = widget.balancesHidden
+                ? '••••••'
+                : _formatNoDecimals(
+                    context,
+                    amtEgp,
+                    widget.mainCurrency,
+                    widget.market,
+                  );
+
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.bold,
+                            color: dark
+                                ? Colors.white
+                                : const Color(0xFF1E293B),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '$percentage%',
+                        style: TextStyle(
+                          fontSize: 12.0,
+                          fontWeight: FontWeight.w500,
+                          color: dark
+                              ? const Color(0xFF94A3B8)
+                              : const Color(0xFF64748B),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Text(
+                        formattedAmount,
+                        style: TextStyle(
+                          fontSize: 14.0,
+                          fontWeight: FontWeight.w800,
+                          color: dark
+                              ? const Color(0xFF34D399)
+                              : const Color(0xFF0F766E),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: dark
+                          ? const Color(0xFF334155)
+                          : const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                    child: FractionallySizedBox(
+                      widthFactor: percentage / 100.0,
+                      alignment: Alignment.centerLeft,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF10B981),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+        ),
+      );
+    }
+
+    return ScaleTransition(
+      scale: _scaleAnimation,
+      child: GestureDetector(
+        onTapDown: (_) {
+          _controller.forward();
+          setState(() {
+            _isPressed = true;
+          });
+        },
+        onTapUp: (_) {
+          _controller.reverse();
+          setState(() {
+            _isPressed = false;
+          });
+          showTopSnackBar(
+            context,
+            context.l10n.tr('expense_analysis_screen_coming_soon'),
+          );
+        },
+        onTapCancel: () {
+          _controller.reverse();
+          setState(() {
+            _isPressed = false;
+          });
+        },
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          decoration: BoxDecoration(
+            color: _isPressed ? pressedOverlay : Colors.transparent,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: _PremiumSection(
+            title: context.l10n.tr('top_expense_categories'),
+            trailing: Text(
+              context.l10n.tr('this_month'),
+              style: TextStyle(
+                fontSize: 12.0,
+                fontWeight: FontWeight.w600,
+                color: dark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+              ),
+            ),
+            child: cardContent,
           ),
         ),
       ),

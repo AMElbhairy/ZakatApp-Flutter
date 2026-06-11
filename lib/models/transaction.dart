@@ -15,6 +15,10 @@ class Transaction {
     this.exchangeSourceIncomeId,
     this.remainingAmount,
     this.activityType,
+    this.costBasis,
+    this.saleValue,
+    this.realizedGain,
+    this.realizedGainLossCurrency,
   });
 
   final String id;
@@ -32,6 +36,10 @@ class Transaction {
   final String? exchangeSourceIncomeId;
   final double? remainingAmount;
   final String? activityType;
+  final double? costBasis;
+  final double? saleValue;
+  final double? realizedGain;
+  final String? realizedGainLossCurrency;
 
   bool get isTransferActivity {
     final String normalizedCategory = category.trim().toLowerCase();
@@ -43,6 +51,9 @@ class Transaction {
         normalizedCategory == 'gold sale' ||
         normalizedCategory == 'silver purchase' ||
         normalizedCategory == 'silver sale' ||
+        normalizedCategory == 'cash transfer' ||
+        normalizedCategory == 'wallet transfer' ||
+        normalizedCategory == 'account transfer' ||
         normalizedCategory == 'cash wallet transfer' ||
         normalizedCategory == 'internal asset conversion' ||
         normalizedDescription.startsWith('currency exchange out:') ||
@@ -70,6 +81,16 @@ class Transaction {
           ? null
           : _asDouble(json['remainingAmount']),
       activityType: json['activityType']?.toString().trim().toLowerCase(),
+      costBasis: json['costBasis'] == null
+          ? null
+          : _asDouble(json['costBasis']),
+      saleValue: json['saleValue'] == null
+          ? null
+          : _asDouble(json['saleValue']),
+      realizedGain: json['realizedGain'] == null
+          ? null
+          : _asDouble(json['realizedGain']),
+      realizedGainLossCurrency: json['realizedGainLossCurrency']?.toString(),
     );
   }
 
@@ -91,6 +112,11 @@ class Transaction {
         'exchangeSourceIncomeId': exchangeSourceIncomeId,
       if (remainingAmount != null) 'remainingAmount': remainingAmount,
       if (activityType != null) 'activityType': activityType,
+      if (costBasis != null) 'costBasis': costBasis,
+      if (saleValue != null) 'saleValue': saleValue,
+      if (realizedGain != null) 'realizedGain': realizedGain,
+      if (realizedGainLossCurrency != null)
+        'realizedGainLossCurrency': realizedGainLossCurrency,
     };
   }
 

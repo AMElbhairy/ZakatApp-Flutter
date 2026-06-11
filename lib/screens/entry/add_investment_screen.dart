@@ -171,8 +171,9 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                     border: OutlineInputBorder(),
                   ),
                   validator: (String? value) {
-                    if ((value ?? '').trim().isEmpty)
+                    if ((value ?? '').trim().isEmpty) {
                       return context.l10n.tr('name_required');
+                    }
                     return null;
                   },
                 ),
@@ -189,7 +190,9 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                   ),
                   validator: (String? value) {
                     final double v = double.tryParse((value ?? '').trim()) ?? 0;
-                    if (v <= 0) return context.l10n.tr('current_value_gt_zero');
+                    if (v <= 0) {
+                      return context.l10n.tr('current_value_gt_zero');
+                    }
                     return null;
                   },
                 ),
@@ -219,8 +222,9 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                       )
                       .toList(growable: false),
                   validator: (String? value) {
-                    if ((value ?? '').isEmpty)
+                    if ((value ?? '').isEmpty) {
                       return context.l10n.tr('currency_required');
+                    }
                     return null;
                   },
                   onChanged: (String? value) {
@@ -419,8 +423,9 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                           label: const Center(child: Text('Auto-Generate')),
                           selected: _scheduleInputMode == 'auto',
                           onSelected: (bool selected) {
-                            if (selected)
+                            if (selected) {
                               setState(() => _scheduleInputMode = 'auto');
+                            }
                           },
                         ),
                       ),
@@ -430,8 +435,9 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                           label: const Center(child: Text('Add One-by-One')),
                           selected: _scheduleInputMode == 'manual',
                           onSelected: (bool selected) {
-                            if (selected)
+                            if (selected) {
                               setState(() => _scheduleInputMode = 'manual');
+                            }
                           },
                         ),
                       ),
@@ -450,7 +456,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
-                      value: _autoFrequency,
+                      initialValue: _autoFrequency,
                       decoration: const InputDecoration(
                         labelText: 'Installment Frequency',
                         border: OutlineInputBorder(),

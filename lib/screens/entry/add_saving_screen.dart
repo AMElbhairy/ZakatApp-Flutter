@@ -6,13 +6,15 @@ import '../../core/i18n/app_localizations.dart';
 import '../../core/services/zakat_engine.dart';
 import '../../core/widgets/app_ui.dart';
 import '../../models/saving.dart';
+import '../../models/transaction.dart';
 import '../../services/app_state_controller.dart';
 import '../../services/reconciliation_service.dart';
 
 class AddSavingScreen extends StatefulWidget {
-  const AddSavingScreen({super.key, this.initialSaving});
+  const AddSavingScreen({super.key, this.initialSaving, this.initialAssetType});
 
   final Saving? initialSaving;
+  final String? initialAssetType;
 
   bool get isEditMode => initialSaving != null;
 
@@ -46,7 +48,7 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
         .read<AppStateController>()
         .state
         .defaultEntryCurrency;
-    _assetType = initial?.assetType ?? 'cash';
+    _assetType = initial?.assetType ?? widget.initialAssetType ?? 'cash';
     _selectedDate = _tryParseDate(initial?.dateAcquired) ?? DateTime.now();
 
     if (initial != null) {
@@ -76,6 +78,17 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
             )
           : '';
       _linkPurchaseToCashEntries = initial.fundingAllocations.isNotEmpty;
+      if (_linkPurchaseToCashEntries) {
+        for (final Map<String, dynamic> alloc in initial.fundingAllocations) {
+          final String sourceId = (alloc['sourceId'] ?? '').toString();
+          final double amount = _asDouble(alloc['amount']);
+          if (sourceId.isNotEmpty && amount > 0) {
+            _allocationController(sourceId).text = amount.toStringAsFixed(
+              amount.truncateToDouble() == amount ? 0 : 2,
+            );
+          }
+        }
+      }
     } else {
       _cashCurrency = defaultEntryCurrency.trim().isEmpty
           ? 'EGP'
@@ -458,78 +471,160 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
       );
     }
 
+    final List<_FundingSource> linkedSources =
+        sources.where((_FundingSource s) => s.isHistorical).toList();
+    final List<_FundingSource> additionalSources =
+        sources.where((_FundingSource s) => !s.isHistorical).toList();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        const SizedBox(height: 8),
-        const Text(
-          'Cash sources',
-          style: TextStyle(fontWeight: FontWeight.w700),
-        ),
-        const SizedBox(height: 8),
-        ...sources.map((_FundingSource source) {
-          final TextEditingController controller = _allocationController(
-            source.id,
-          );
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: PremiumCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    '${source.label} • ${source.date}',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Available: ${source.available.toStringAsFixed(2)} ${source.currency}',
-                  ),
-                  const SizedBox(height: 8),
-                  TextFormField(
-                    key: Key('fundingAllocation_${source.id}'),
-                    controller: controller,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    decoration: const InputDecoration(
-                      labelText: 'Amount used',
-                      border: OutlineInputBorder(),
-                    ),
-                    validator: (String? value) {
-                      final double amount =
-                          double.tryParse((value ?? '').trim()) ?? 0;
-                      if (amount < 0) return 'Invalid amount';
-                      if (amount - source.available > 0.01) {
-                        return 'Cannot exceed available amount';
-                      }
-                      return null;
-                    },
-                  ),
-                ],
-              ),
-            ),
-          );
-        }),
+        if (linkedSources.isNotEmpty) ...<Widget>[
+          const SizedBox(height: 12),
+          const Text(
+            'Linked Cash Sources',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+          ),
+          const SizedBox(height: 8),
+          ...linkedSources.map((_FundingSource source) => _buildSourceCard(context, source)),
+        ],
+        if (additionalSources.isNotEmpty) ...<Widget>[
+          const SizedBox(height: 16),
+          const Text(
+            'Additional Available Cash Sources',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+          ),
+          const SizedBox(height: 8),
+          ...additionalSources.map((_FundingSource source) => _buildSourceCard(context, source)),
+        ],
       ],
     );
   }
 
+  Widget _buildSourceCard(BuildContext context, _FundingSource source) {
+    final TextEditingController controller = _allocationController(source.id);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: PremiumCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              '${source.label} • ${source.date}',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Available: ${source.available.toStringAsFixed(2)} ${source.currency}',
+            ),
+            const SizedBox(height: 8),
+            TextFormField(
+              key: Key('fundingAllocation_${source.id}'),
+              controller: controller,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: const InputDecoration(
+                labelText: 'Amount used',
+                border: OutlineInputBorder(),
+              ),
+              validator: (String? value) {
+                final double amount =
+                    double.tryParse((value ?? '').trim()) ?? 0;
+                if (amount < 0) return 'Invalid amount';
+                if (amount - source.available > 0.01) {
+                  return 'Cannot exceed available amount';
+                }
+                return null;
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _getSourceDescription(String sourceId, String sourceType) {
+    final AppStateController controller = context.read<AppStateController>();
+    if (sourceType == 'savings') {
+      final Saving? s = controller.state.savings
+          .where((Saving saving) => saving.id == sourceId)
+          .firstOrNull;
+      if (s != null) {
+        return s.description.isNotEmpty ? s.description : 'Cash Savings';
+      }
+    } else if (sourceType == 'income') {
+      final Transaction? tx = controller.state.transactions
+          .where((Transaction t) => t.id == sourceId)
+          .firstOrNull;
+      if (tx != null) {
+        return tx.description.isNotEmpty
+            ? tx.description
+            : (tx.category.isNotEmpty ? tx.category : 'Income');
+      }
+    }
+    return 'Cash';
+  }
+
   List<_FundingSource> _fundingSources() {
     final AppStateController controller = context.read<AppStateController>();
-    return controller
-        .getAvailableCashSources(currency: _purchaseCurrency, newestFirst: true)
-        .map(
-          (CashSource source) => _FundingSource(
-            id: source.id,
-            sourceType: source.sourceType,
-            date: source.date,
-            available: source.availableAmount,
-            currency: source.currency,
-            label: 'Cash',
+    final String targetCurrency = _purchaseCurrency.trim().toUpperCase();
+
+    final List<CashSource> availableSources = controller
+        .getAvailableCashSources(currency: targetCurrency, newestFirst: true);
+
+    final List<_FundingSource> sources = <_FundingSource>[];
+    final Set<String> addedIds = <String>{};
+
+    final Saving? initial = widget.initialSaving;
+    if (initial != null) {
+      for (final Map<String, dynamic> alloc in initial.fundingAllocations) {
+        final String sourceId = (alloc['sourceId'] ?? '').toString();
+        if (sourceId.isEmpty || addedIds.contains(sourceId)) continue;
+
+        final String sourceType = (alloc['sourceType'] ?? '').toString();
+        final String sourceDate = (alloc['sourceDate'] ?? '').toString();
+        final double allocatedAmount = _asDouble(alloc['amount']);
+
+        final CashSource? match = availableSources
+            .where((CashSource s) => s.id == sourceId)
+            .firstOrNull;
+
+        final double currentAvailable = match?.availableAmount ?? 0.0;
+        final double limit = currentAvailable + allocatedAmount;
+
+        sources.add(
+          _FundingSource(
+            id: sourceId,
+            sourceType: sourceType,
+            date: sourceDate.isNotEmpty ? sourceDate : (match?.date ?? ''),
+            available: limit,
+            currency: targetCurrency,
+            label: _getSourceDescription(sourceId, sourceType),
+            isHistorical: true,
           ),
-        )
-        .toList(growable: false);
+        );
+        addedIds.add(sourceId);
+      }
+    }
+
+    for (final CashSource source in availableSources) {
+      if (addedIds.contains(source.id)) continue;
+      sources.add(
+        _FundingSource(
+          id: source.id,
+          sourceType: source.sourceType,
+          date: source.date,
+          available: source.availableAmount,
+          currency: source.currency,
+          label: _getSourceDescription(source.id, source.sourceType),
+          isHistorical: false,
+        ),
+      );
+      addedIds.add(source.id);
+    }
+
+    return sources;
   }
 
   TextEditingController _allocationController(String sourceId) {
@@ -601,6 +696,7 @@ class _FundingSource {
     required this.available,
     required this.currency,
     required this.label,
+    this.isHistorical = false,
   });
 
   final String id;
@@ -609,4 +705,5 @@ class _FundingSource {
   final double available;
   final String currency;
   final String label;
+  final bool isHistorical;
 }

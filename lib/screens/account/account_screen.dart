@@ -4,7 +4,6 @@ import 'package:intl/intl.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
-
 import '../../core/i18n/app_localizations.dart';
 import '../../core/widgets/app_ui.dart';
 import '../../models/app_state.dart';
@@ -17,6 +16,7 @@ import '../../services/app_state_controller.dart';
 import '../../services/auth_controller.dart';
 import '../../services/backup_restore_card.dart';
 import '../../services/cloud_backup_controller.dart';
+import '../../core/widgets/currency_dropdown_form_field.dart';
 
 class AccountScreen extends StatefulWidget {
   const AccountScreen({super.key});
@@ -71,7 +71,6 @@ class _AccountScreenState extends State<AccountScreen> {
     super.dispose();
   }
 
-
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<AppStateController>();
@@ -104,7 +103,6 @@ class _AccountScreenState extends State<AccountScreen> {
     final MarketSnapshot snapshot = controller.currentMarketSnapshot;
     _syncMarketControllers(snapshot);
     _syncAiControllers(state.aiSettings);
-
 
     final double navSafeBottomPadding =
         112 + MediaQuery.paddingOf(context).bottom;
@@ -725,7 +723,10 @@ class _AccountScreenState extends State<AccountScreen> {
               onExpansionChanged: (bool v) => setState(() => _aiExpanded = v),
               children: <Widget>[
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 8.0),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4.0,
+                    vertical: 8.0,
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: <Widget>[
@@ -734,7 +735,9 @@ class _AccountScreenState extends State<AccountScreen> {
                         controller: _aiKey1Controller,
                         obscureText: true,
                         decoration: InputDecoration(
-                          labelText: Localizations.localeOf(context).languageCode == 'ar'
+                          labelText:
+                              Localizations.localeOf(context).languageCode ==
+                                  'ar'
                               ? 'مفتاح Gemini 1'
                               : 'Gemini Key 1',
                           border: const OutlineInputBorder(),
@@ -747,7 +750,9 @@ class _AccountScreenState extends State<AccountScreen> {
                         controller: _aiKey2Controller,
                         obscureText: true,
                         decoration: InputDecoration(
-                          labelText: Localizations.localeOf(context).languageCode == 'ar'
+                          labelText:
+                              Localizations.localeOf(context).languageCode ==
+                                  'ar'
                               ? 'مفتاح Gemini 2'
                               : 'Gemini Key 2',
                           border: const OutlineInputBorder(),
@@ -757,9 +762,11 @@ class _AccountScreenState extends State<AccountScreen> {
                       const SizedBox(height: 12),
                       DropdownButtonFormField<int>(
                         key: const Key('geminiDefaultKeyIndexField'),
-                        value: _selectedAiKeyIndex,
+                        initialValue: _selectedAiKeyIndex,
                         decoration: InputDecoration(
-                          labelText: Localizations.localeOf(context).languageCode == 'ar'
+                          labelText:
+                              Localizations.localeOf(context).languageCode ==
+                                  'ar'
                               ? 'المفتاح الافتراضي'
                               : 'Default Key',
                           border: const OutlineInputBorder(),
@@ -768,7 +775,8 @@ class _AccountScreenState extends State<AccountScreen> {
                           DropdownMenuItem<int>(
                             value: 0,
                             child: Text(
-                              Localizations.localeOf(context).languageCode == 'ar'
+                              Localizations.localeOf(context).languageCode ==
+                                      'ar'
                                   ? 'المفتاح 1'
                                   : 'Key 1',
                             ),
@@ -776,7 +784,8 @@ class _AccountScreenState extends State<AccountScreen> {
                           DropdownMenuItem<int>(
                             value: 1,
                             child: Text(
-                              Localizations.localeOf(context).languageCode == 'ar'
+                              Localizations.localeOf(context).languageCode ==
+                                      'ar'
                                   ? 'المفتاح 2'
                                   : 'Key 2',
                             ),
@@ -795,16 +804,21 @@ class _AccountScreenState extends State<AccountScreen> {
                         children: <Widget>[
                           OutlinedButton.icon(
                             key: const Key('testGeminiConnectionButton'),
-                            onPressed: _isTestingConnection ? null : _testAiConnection,
+                            onPressed: _isTestingConnection
+                                ? null
+                                : _testAiConnection,
                             icon: _isTestingConnection
                                 ? const SizedBox(
                                     width: 16,
                                     height: 16,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
                                   )
                                 : const Icon(Icons.wifi),
                             label: Text(
-                              Localizations.localeOf(context).languageCode == 'ar'
+                              Localizations.localeOf(context).languageCode ==
+                                      'ar'
                                   ? 'اختبار الاتصال'
                                   : 'Test Connection',
                             ),
@@ -815,7 +829,8 @@ class _AccountScreenState extends State<AccountScreen> {
                             onPressed: _saveAiKeys,
                             icon: const Icon(Icons.save),
                             label: Text(
-                              Localizations.localeOf(context).languageCode == 'ar'
+                              Localizations.localeOf(context).languageCode ==
+                                      'ar'
                                   ? 'حفظ'
                                   : 'Save AI Keys',
                             ),
@@ -990,10 +1005,7 @@ class _AccountScreenState extends State<AccountScreen> {
         .read<AppStateController>()
         .deleteCategory(type: type, name: name);
     if (!deleted && context.mounted) {
-      showTopSnackBar(
-        context,
-        context.l10n.tr('category_in_use'),
-      );
+      showTopSnackBar(context, context.l10n.tr('category_in_use'));
     }
   }
 
@@ -1293,31 +1305,19 @@ class _AccountScreenState extends State<AccountScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
-                  DropdownButtonFormField<String>(
-                    initialValue: sourceCurrency,
-                    decoration: InputDecoration(
-                      labelText: context.l10n.tr('source_currency'),
-                    ),
-                    items: _supportedCurrencies
-                        .map(
-                          (String c) => DropdownMenuItem<String>(
-                            value: c,
-                            child: Text(
-                              ZakatEngineService.getCurrencySymbol(
-                                c,
-                                isArabic:
-                                    Localizations.localeOf(
-                                      context,
-                                    ).languageCode.toLowerCase() ==
-                                    'ar',
-                              ),
-                            ),
-                          ),
-                        )
-                        .toList(growable: false),
-                    onChanged: (String? v) => setDialogState(
-                      () => sourceCurrency = v ?? sourceCurrency,
-                    ),
+                  CurrencyDropdownFormField(
+                    key: const Key('exchangeSourceCurrencyField'),
+                    value: sourceCurrency,
+                    labelText: context.l10n.tr('source_currency'),
+                    currencies: _supportedCurrencies,
+                    onChanged: (String nextCurrency) {
+                      setDialogState(() {
+                        if (nextCurrency == targetCurrency) {
+                          targetCurrency = sourceCurrency;
+                        }
+                        sourceCurrency = nextCurrency;
+                      });
+                    },
                   ),
                   Padding(
                     padding: const EdgeInsets.only(top: 6.0, bottom: 2.0),
@@ -1336,32 +1336,16 @@ class _AccountScreenState extends State<AccountScreen> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  DropdownButtonFormField<String>(
-                    initialValue: targetCurrency,
-                    decoration: InputDecoration(
-                      labelText: context.l10n.tr('target_currency'),
-                    ),
-                    items: _supportedCurrencies
-                        .where((String c) => c != sourceCurrency)
-                        .map(
-                          (String c) => DropdownMenuItem<String>(
-                            value: c,
-                            child: Text(
-                              ZakatEngineService.getCurrencySymbol(
-                                c,
-                                isArabic:
-                                    Localizations.localeOf(
-                                      context,
-                                    ).languageCode.toLowerCase() ==
-                                    'ar',
-                              ),
-                            ),
-                          ),
-                        )
+                  CurrencyDropdownFormField(
+                    key: const Key('exchangeTargetCurrencyField'),
+                    value: targetCurrency,
+                    labelText: context.l10n.tr('target_currency'),
+                    currencies: _supportedCurrencies
+                        .where((String currency) => currency != sourceCurrency)
                         .toList(growable: false),
-                    onChanged: (String? v) => setDialogState(
-                      () => targetCurrency = v ?? targetCurrency,
-                    ),
+                    onChanged: (String nextCurrency) {
+                      setDialogState(() => targetCurrency = nextCurrency);
+                    },
                   ),
                   const SizedBox(height: 8),
                   TextField(
@@ -1582,16 +1566,17 @@ class _AccountScreenState extends State<AccountScreen> {
 
   Future<void> _saveAiKeys() async {
     final Map<String, dynamic> nextSettings = Map<String, dynamic>.from(
-      context.read<AppStateController>().state.aiSettings ?? <String, dynamic>{},
+      context.read<AppStateController>().state.aiSettings ??
+          <String, dynamic>{},
     );
     nextSettings['keys'] = <String>[
       _aiKey1Controller.text.trim(),
       _aiKey2Controller.text.trim(),
     ];
     nextSettings['defaultKeyIndex'] = _selectedAiKeyIndex;
-    
+
     await context.read<AppStateController>().updateAiSettings(nextSettings);
-    
+
     if (!mounted) return;
     showTopSnackBar(
       context,
@@ -1620,16 +1605,12 @@ class _AccountScreenState extends State<AccountScreen> {
         Uri.parse(
           'https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=$key',
         ),
-        headers: <String, String>{
-          'Content-Type': 'application/json',
-        },
+        headers: <String, String>{'Content-Type': 'application/json'},
         body: jsonEncode(<String, dynamic>{
           'contents': <Map<String, dynamic>>[
             <String, dynamic>{
               'parts': <Map<String, dynamic>>[
-                <String, dynamic>{
-                  'text': 'Reply with OK only.',
-                },
+                <String, dynamic>{'text': 'Reply with OK only.'},
               ],
             },
           ],
@@ -1649,7 +1630,9 @@ class _AccountScreenState extends State<AccountScreen> {
           return;
         }
       }
-      throw Exception('API responded with code ${response.statusCode}: ${response.body}');
+      throw Exception(
+        'API responded with code ${response.statusCode}: ${response.body}',
+      );
     } catch (e) {
       if (mounted) {
         showTopSnackBar(

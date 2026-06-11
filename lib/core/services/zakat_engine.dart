@@ -664,6 +664,9 @@ class ZakatEngineService {
             }
             return sum + tx.amount;
           }
+          if (tx.type == 'transfer') {
+            return sum;
+          }
           if (lastRollover != null &&
               lastRollover.isNotEmpty &&
               tx.date.isNotEmpty &&

@@ -11,6 +11,8 @@ import '../../models/transaction.dart';
 import '../../services/app_state_controller.dart';
 import '../entry/add_saving_screen.dart';
 import '../entry/add_transaction_screen.dart';
+import '../../core/widgets/currency_exchange_dialog.dart';
+import '../../core/widgets/sell_metal_dialog.dart';
 
 enum _ActivityFilter { all, income, expense, transfer }
 
@@ -209,7 +211,9 @@ class ActivityScreenState extends State<ActivityScreen> {
     }
     final Map<String, List<Saving>> exchangeSavings = <String, List<Saving>>{};
     for (final Saving saving in state.savings.where(
-      (Saving saving) => (saving.transferActivityId ?? '').isNotEmpty,
+      (Saving saving) =>
+          (saving.transferActivityId ?? '').isNotEmpty &&
+          saving.internalTransferType == 'savings_currency_exchange',
     )) {
       exchangeSavings
           .putIfAbsent(saving.transferActivityId!, () => <Saving>[])
@@ -229,6 +233,8 @@ class ActivityScreenState extends State<ActivityScreen> {
               .where(
                 (Transaction transaction) =>
                     !transaction.isTransferActivity ||
+                    transaction.category == 'Gold Sale' ||
+                    transaction.category == 'Silver Sale' ||
                     ((transaction.exchangePairId ?? '').isEmpty &&
                         !fundedMetalIds.contains(transaction.exchangePairId)),
               )
@@ -247,14 +253,20 @@ class ActivityScreenState extends State<ActivityScreen> {
               )
               .map(_ActivityEntry.legacySavingExchange),
           ...state.savings
-              .where((Saving saving) => saving.fundingAllocations.isNotEmpty)
+              .where(
+                (Saving saving) =>
+                    saving.fundingAllocations.isNotEmpty ||
+                    ZakatEngineService.normaliseAssetType(saving.assetType) == 'gold' ||
+                    ZakatEngineService.normaliseAssetType(saving.assetType) == 'silver',
+              )
               .map(_ActivityEntry.metalTransfer),
           ...state.savings
               .where(
                 (Saving saving) =>
                     saving.assetType == 'cash' &&
                     (saving.exchangeSourceSavingId ?? '').isEmpty &&
-                    (saving.exchangeSourceIncomeId ?? '').isEmpty,
+                    (saving.exchangeSourceIncomeId ?? '').isEmpty &&
+                    (saving.transferActivityId ?? '').isEmpty,
               )
               .map(_ActivityEntry.cashSaving),
         ]..sort((_ActivityEntry a, _ActivityEntry b) {
@@ -697,8 +709,71 @@ class ActivityScreenState extends State<ActivityScreen> {
                       child: ListTile(
                         key: Key('activityTile_${entry.key}'),
                         onTap: () {
+                          final AppStateController controller = context
+                              .read<AppStateController>();
                           if (entry.isTransfer) {
-                            return;
+                            final String titleStr =
+                                (entry.transferTitle ?? entry.title(context))
+                                    .toLowerCase();
+                            if (titleStr.contains('gold sale') ||
+                                titleStr.contains('silver sale')) {
+                              if (entry.transaction != null) {
+                                openSellMetalDialog(
+                                  context,
+                                  editTransaction: entry.transaction,
+                                );
+                              }
+                            } else if (titleStr.contains('gold') ||
+                                titleStr.contains('silver')) {
+                              Saving? targetSaving;
+                              if (entry.saving != null) {
+                                targetSaving = entry.saving;
+                              } else if (entry.transaction != null) {
+                                final String? pairId =
+                                    entry.transaction!.exchangePairId;
+                                if (pairId != null && pairId.isNotEmpty) {
+                                  targetSaving = controller.state.savings
+                                      .where((Saving s) => s.id == pairId)
+                                      .firstOrNull;
+                                }
+                                if (targetSaving == null) {
+                                  final String targetType =
+                                      titleStr.contains('gold')
+                                      ? 'gold'
+                                      : 'silver';
+                                  targetSaving = controller.state.savings
+                                      .where(
+                                        (Saving s) => s.assetType == targetType,
+                                      )
+                                      .firstOrNull;
+                                }
+                              }
+                              if (targetSaving != null) {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) => AddSavingScreen(
+                                      initialSaving: targetSaving,
+                                    ),
+                                  ),
+                                );
+                              }
+                            } else if (titleStr.contains('exchange')) {
+                              final dynamic item =
+                                  entry.saving ?? entry.transaction;
+                              if (item != null) {
+                                openEditCurrencyExchangeDialog(context, item);
+                              }
+                            } else {
+                              if (entry.transaction != null) {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) => AddTransactionScreen(
+                                      initialTransaction: entry.transaction,
+                                    ),
+                                  ),
+                                );
+                              }
+                            }
                           } else if (entry.transaction != null) {
                             Navigator.of(context).push(
                               MaterialPageRoute<void>(
@@ -1417,7 +1492,7 @@ class _ActivityEntry {
       transaction: source,
       transferTitle: 'Currency Exchange',
       transferDescription:
-          '${sourceAmount.toStringAsFixed(2)} $sourceCurrency → ${targetAmount.toStringAsFixed(2)} $targetCurrency',
+          '$sourceCurrency ${sourceAmount.toStringAsFixed(2)} → $targetCurrency ${targetAmount.toStringAsFixed(2)}',
       transferKey: 'exchange_${source.exchangePairId ?? source.id}',
       transferDate: source.date,
       transferCreatedAt: source.createdAt,
@@ -1437,7 +1512,7 @@ class _ActivityEntry {
       saving: saving,
       transferTitle: 'Currency Exchange',
       transferDescription:
-          '${sourceAmount.toStringAsFixed(2)} $sourceCurrency → ${saving.amount.toStringAsFixed(2)} ${saving.unit}',
+          '$sourceCurrency ${sourceAmount.toStringAsFixed(2)} → ${saving.unit} ${saving.amount.toStringAsFixed(2)}',
       transferKey: 'legacy_exchange_${saving.id}',
       transferDate: saving.dateAcquired,
       transferCreatedAt: saving.createdAt,
@@ -1452,7 +1527,7 @@ class _ActivityEntry {
       saving: saving,
       transferTitle: '$metal Purchase',
       transferDescription:
-          '${saving.purchaseAmount.toStringAsFixed(2)} ${saving.purchaseCurrency} Cash → ${saving.amount.toStringAsFixed(2)}g $metal',
+          '${saving.amount.toStringAsFixed(2)}g $metal • ${saving.purchaseCurrency} ${saving.purchaseAmount.toStringAsFixed(2)}',
       transferKey: 'metal_${saving.id}',
       transferDate: saving.dateAcquired,
       transferCreatedAt: saving.createdAt,

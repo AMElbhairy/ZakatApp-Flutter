@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 
 import '../../core/i18n/app_localizations.dart';
 import '../../core/services/zakat_engine.dart';
-import '../../core/utils/amount_parser.dart';
 import '../../core/theme/app_theme_extensions.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/widgets/app_ui.dart';
@@ -15,6 +14,8 @@ import '../../services/reconciliation_service.dart';
 import '../entry/add_investment_screen.dart';
 import '../entry/add_saving_screen.dart';
 import '../entry/add_transaction_screen.dart';
+import '../../core/widgets/currency_exchange_dialog.dart';
+import '../../core/widgets/sell_metal_dialog.dart';
 
 class CategoryDetailsScreen extends StatefulWidget {
   const CategoryDetailsScreen({
@@ -943,8 +944,12 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
         market,
       );
     } else if (saving.assetType == 'gold') {
-      originalAmountStr =
-          '${saving.remainingAmount.toStringAsFixed(2)} g • ${saving.unit}k';
+      if (saving.remainingAmount < saving.amount) {
+        originalAmountStr = 'Purchased: ${saving.amount.toStringAsFixed(2)} g (${saving.unit}k) • ${saving.remainingAmount.toStringAsFixed(2)} g available';
+      } else {
+        originalAmountStr =
+            '${saving.remainingAmount.toStringAsFixed(2)} g • ${saving.unit}k';
+      }
       final double gold24k = ZakatEngineService.convertToGold24k(
         saving.remainingAmount,
         saving.unit,
@@ -956,7 +961,11 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
         market,
       );
     } else if (saving.assetType == 'silver') {
-      originalAmountStr = '${saving.remainingAmount.toStringAsFixed(2)} g';
+      if (saving.remainingAmount < saving.amount) {
+        originalAmountStr = 'Purchased: ${saving.amount.toStringAsFixed(2)} g • ${saving.remainingAmount.toStringAsFixed(2)} g available';
+      } else {
+        originalAmountStr = '${saving.remainingAmount.toStringAsFixed(2)} g';
+      }
       final double silverGrams = ZakatEngineService.convertToSilverGrams(
         saving.remainingAmount,
       );
@@ -1031,10 +1040,64 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                     fontSize: 15,
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline, size: 20),
-                  onPressed: () => _confirmDeleteSaving(context, saving),
-                ),
+                if (saving.assetType == 'gold' || saving.assetType == 'silver')
+                  PopupMenuButton<String>(
+                    icon: const Icon(Icons.more_vert, size: 20),
+                    onSelected: (String val) {
+                      if (val == 'buy_more') {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => AddSavingScreen(initialAssetType: saving.assetType),
+                          ),
+                        );
+                      } else if (val == 'sell') {
+                        openSellMetalDialog(context, saving: saving);
+                      } else if (val == 'edit') {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => AddSavingScreen(initialSaving: saving),
+                          ),
+                        );
+                      } else if (val == 'delete') {
+                        _confirmDeleteSaving(context, saving);
+                      }
+                    },
+                    itemBuilder: (BuildContext ctx) => <PopupMenuEntry<String>>[
+                      PopupMenuItem<String>(
+                        value: 'buy_more',
+                        child: Text(
+                          saving.assetType == 'gold'
+                              ? context.l10n.tr('buy_more_gold')
+                              : context.l10n.tr('buy_more_silver'),
+                        ),
+                      ),
+                      PopupMenuItem<String>(
+                        value: 'sell',
+                        child: Text(
+                          saving.assetType == 'gold'
+                              ? context.l10n.tr('sell_gold')
+                              : context.l10n.tr('sell_silver'),
+                        ),
+                      ),
+                      PopupMenuItem<String>(
+                        value: 'edit',
+                        child: Text(
+                          saving.assetType == 'gold'
+                              ? context.l10n.tr('edit_gold')
+                              : context.l10n.tr('edit_silver'),
+                        ),
+                      ),
+                      PopupMenuItem<String>(
+                        value: 'delete',
+                        child: Text(context.l10n.tr('delete')),
+                      ),
+                    ],
+                  )
+                else
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, size: 20),
+                    onPressed: () => _confirmDeleteSaving(context, saving),
+                  ),
               ],
             ),
           ],
@@ -1892,275 +1955,6 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
     BuildContext context,
     dynamic item,
   ) async {
-    final AppStateController controller = context.read<AppStateController>();
-
-    String oldExchangePairId = '';
-    String? oldTargetSavingId;
-    String? oldSourceSavingId;
-    double oldSourceDeductedAmount = 0.0;
-
-    String initSourceCurrency = 'USD';
-    String initTargetCurrency = 'EGP';
-    double initSourceAmount = 0.0;
-    double initTargetAmount = 0.0;
-    String initDate = DateTime.now().toUtc().toIso8601String().split('T').first;
-
-    if (item is Transaction) {
-      oldExchangePairId = item.exchangePairId ?? '';
-      if (oldExchangePairId.isEmpty) return;
-      final List<Transaction> pair = controller.state.transactions
-          .where((tx) => tx.exchangePairId == oldExchangePairId)
-          .toList();
-      final Transaction? txSource = pair
-          .where((tx) => tx.type == 'expense')
-          .firstOrNull;
-      final Transaction? txTarget = pair
-          .where((tx) => tx.type == 'income')
-          .firstOrNull;
-      if (txSource == null || txTarget == null) return;
-
-      initSourceCurrency = txSource.currency;
-      initTargetCurrency = txTarget.currency;
-      initSourceAmount = txSource.amount;
-      initTargetAmount = txTarget.amount;
-      initDate = txSource.date;
-    } else if (item is Saving) {
-      oldTargetSavingId = item.id;
-      oldSourceSavingId = item.exchangeSourceSavingId;
-      initTargetCurrency = item.unit;
-      initTargetAmount = item.amount;
-      initDate = item.dateAcquired;
-
-      final RegExp regex = RegExp(
-        r'Savings exchange:\s*([0-9.]+)\s+([A-Z]+)\s+→',
-      );
-      final Match? match = regex.firstMatch(item.description);
-      if (match != null) {
-        initSourceAmount = double.tryParse(match.group(1) ?? '') ?? 0.0;
-        initSourceCurrency = match.group(2) ?? 'USD';
-      }
-      oldSourceDeductedAmount = initSourceAmount;
-    } else {
-      return;
-    }
-
-    final TextEditingController sourceAmountController = TextEditingController(
-      text: initSourceAmount.toStringAsFixed(
-        initSourceAmount.truncateToDouble() == initSourceAmount ? 0 : 2,
-      ),
-    );
-    final TextEditingController targetAmountController = TextEditingController(
-      text: initTargetAmount.toStringAsFixed(
-        initTargetAmount.truncateToDouble() == initTargetAmount ? 0 : 2,
-      ),
-    );
-    String sourceCurrency = initSourceCurrency;
-    String targetCurrency = initTargetCurrency;
-    String date = initDate;
-
-    final bool? ok = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext ctx) => StatefulBuilder(
-        builder: (BuildContext ctx, void Function(void Function()) setDialogState) {
-          double available = controller.getAvailableBalance(
-            currency: sourceCurrency,
-          );
-          if (sourceCurrency == initSourceCurrency) {
-            available += initSourceAmount;
-          }
-
-          return AlertDialog(
-            title: Text(context.l10n.tr('currency_exchange')),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  DropdownButtonFormField<String>(
-                    initialValue: sourceCurrency,
-                    decoration: InputDecoration(
-                      labelText: context.l10n.tr('source_currency'),
-                    ),
-                    items: ZakatEngineService.supportedCurrencies
-                        .map(
-                          (String c) => DropdownMenuItem<String>(
-                            value: c,
-                            child: Text(
-                              ZakatEngineService.getCurrencySymbol(
-                                c,
-                                isArabic:
-                                    Localizations.localeOf(
-                                      context,
-                                    ).languageCode.toLowerCase() ==
-                                    'ar',
-                              ),
-                            ),
-                          ),
-                        )
-                        .toList(growable: false),
-                    onChanged: (String? v) => setDialogState(
-                      () => sourceCurrency = v ?? sourceCurrency,
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6.0, bottom: 2.0),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        Localizations.localeOf(context).languageCode == 'ar'
-                            ? 'الرصيد المتاح: ${available.toStringAsFixed(2)} $sourceCurrency'
-                            : 'Available balance: ${available.toStringAsFixed(2)} $sourceCurrency',
-                        style: TextStyle(
-                          color: available <= 0 ? Colors.red : Colors.green,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  DropdownButtonFormField<String>(
-                    initialValue: targetCurrency,
-                    decoration: InputDecoration(
-                      labelText: context.l10n.tr('target_currency'),
-                    ),
-                    items: ZakatEngineService.supportedCurrencies
-                        .where((String c) => c != sourceCurrency)
-                        .map(
-                          (String c) => DropdownMenuItem<String>(
-                            value: c,
-                            child: Text(
-                              ZakatEngineService.getCurrencySymbol(
-                                c,
-                                isArabic:
-                                    Localizations.localeOf(
-                                      context,
-                                    ).languageCode.toLowerCase() ==
-                                    'ar',
-                              ),
-                            ),
-                          ),
-                        )
-                        .toList(growable: false),
-                    onChanged: (String? v) => setDialogState(
-                      () => targetCurrency = v ?? targetCurrency,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextFormField(
-                    controller: sourceAmountController,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    decoration: InputDecoration(
-                      labelText: context.l10n.tr('source_amount'),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextFormField(
-                    controller: targetAmountController,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    decoration: InputDecoration(
-                      labelText: context.l10n.tr('target_amount'),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(context.l10n.tr('date')),
-                    subtitle: Text(date),
-                    trailing: const Icon(Icons.calendar_today),
-                    onTap: () async {
-                      final DateTime? picked = await showDatePicker(
-                        context: context,
-                        initialDate: DateTime.tryParse(date) ?? DateTime.now(),
-                        firstDate: DateTime(2000),
-                        lastDate: DateTime(2100),
-                      );
-                      if (picked != null) {
-                        setDialogState(() {
-                          final String y = picked.year.toString();
-                          final String m = picked.month.toString().padLeft(
-                            2,
-                            '0',
-                          );
-                          final String d = picked.day.toString().padLeft(
-                            2,
-                            '0',
-                          );
-                          date = '$y-$m-$d';
-                        });
-                      }
-                    },
-                  ),
-                ],
-              ),
-            ),
-            actions: <Widget>[
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: Text(context.l10n.tr('cancel')),
-              ),
-              FilledButton(
-                onPressed: () {
-                  final double sAmt =
-                      tryParseAmount(sourceAmountController.text) ?? 0;
-                  final double tAmt =
-                      tryParseAmount(targetAmountController.text) ?? 0;
-                  if (sAmt <= 0 || tAmt <= 0 || sAmt > available) {
-                    showTopSnackBar(
-                      context,
-                      Localizations.localeOf(context).languageCode == 'ar'
-                          ? 'مبلغ غير صالح أو يتجاوز الرصيد المتاح'
-                          : 'Invalid amount or exceeds available balance',
-                    );
-                    return;
-                  }
-                  Navigator.pop(ctx, true);
-                },
-                child: Text(context.l10n.tr('save')),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-
-    if (ok != true || !context.mounted) return;
-
-    final double sAmount = tryParseAmount(sourceAmountController.text) ?? 0;
-    final double tAmount = tryParseAmount(targetAmountController.text) ?? 0;
-
-    try {
-      await controller.updateCurrencyExchange(
-        oldExchangePairId: oldExchangePairId,
-        oldTargetSavingId: oldTargetSavingId,
-        oldSourceSavingId: oldSourceSavingId,
-        oldSourceDeductedAmount: oldSourceDeductedAmount,
-        date: date,
-        sourceCurrency: sourceCurrency,
-        targetCurrency: targetCurrency,
-        sourceAmount: sAmount,
-        targetAmount: tAmount,
-      );
-      if (context.mounted) {
-        showTopSnackBar(
-          context,
-          Localizations.localeOf(context).languageCode == 'ar'
-              ? 'تم تعديل عملية التحويل بنجاح'
-              : 'Currency exchange updated successfully',
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        showTopSnackBar(
-          context,
-          Localizations.localeOf(context).languageCode == 'ar'
-              ? 'فشل تعديل التحويل: $e'
-              : 'Exchange edit failed: $e',
-        );
-      }
-    }
+    await openEditCurrencyExchangeDialog(context, item);
   }
 }
