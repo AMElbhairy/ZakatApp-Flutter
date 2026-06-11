@@ -166,6 +166,7 @@ class AppStateController extends ChangeNotifier {
             rolledOver: false,
             sourceIncomeId: sourceId,
             exchangePairId: saving.id,
+            activityType: 'transfer',
           );
         })
         .where((Transaction tx) => tx.amount > 0 && tx.sourceIncomeId != null)

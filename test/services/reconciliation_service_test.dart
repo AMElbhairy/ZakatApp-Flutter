@@ -707,6 +707,8 @@ void main() {
     );
     expect(expense.exchangePairId, isNotEmpty);
     expect(income.exchangePairId, expense.exchangePairId);
+    expect(expense.activityType, 'transfer');
+    expect(income.activityType, 'transfer');
     expect(expense.amount, 40);
     expect(income.amount, 2000);
   });
@@ -745,6 +747,7 @@ void main() {
     );
     expect(exchanged.dateAcquired, '2024-01-01');
     expect(exchanged.createdAt, isNot('2024-01-01T00:00:00.000Z'));
+    expect(exchanged.transferActivityId, isNotEmpty);
   });
 
   test('combined cash sources include income and legacy cash savings', () {
@@ -942,5 +945,39 @@ void main() {
       service.getAvailableCashBalance(state: state, currency: 'USD'),
     );
     expect(sourceTotal, 130);
+  });
+
+  test('available cash sources hide fully consumed entries', () {
+    final AppStateModel base = AppStateDefaults.create();
+    final AppStateModel state = AppStateModel.fromJson(<String, dynamic>{
+      ...base.toJson(),
+      'savings': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'id': 'available',
+          'assetType': 'cash',
+          'dateAcquired': '2026-01-01',
+          'amount': 100,
+          'remainingAmount': 25,
+          'unit': 'USD',
+          'description': '',
+        },
+        <String, dynamic>{
+          'id': 'consumed',
+          'assetType': 'cash',
+          'dateAcquired': '2026-01-02',
+          'amount': 100,
+          'remainingAmount': 0,
+          'unit': 'USD',
+          'description': '',
+        },
+      ],
+    });
+
+    expect(
+      service
+          .getAvailableCashSources(state: state, currency: 'USD')
+          .map((CashSource source) => source.id),
+      <String>['available'],
+    );
   });
 }

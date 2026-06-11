@@ -11,6 +11,7 @@ import '../../models/investment_asset.dart';
 import '../../models/saving.dart';
 import '../../models/transaction.dart';
 import '../../services/app_state_controller.dart';
+import '../../services/reconciliation_service.dart';
 import '../entry/add_investment_screen.dart';
 import '../entry/add_saving_screen.dart';
 import '../entry/add_transaction_screen.dart';
@@ -132,11 +133,22 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
     IconData headerIcon = Icons.folder_open;
     switch (widget.categoryType) {
       case 'cash':
-        // Cash statement includes every cash-affecting entry.
-        final List<Saving> cashSavings = savings
-            .where((s) => s.assetType == 'cash')
-            .toList();
-        items = [...cashSavings, ...transactions];
+        final Set<String> cashCurrencies = <String>{
+          ...transactions.map(
+            (Transaction transaction) => transaction.currency,
+          ),
+          ...savings
+              .where((Saving saving) => saving.assetType == 'cash')
+              .map((Saving saving) => saving.unit),
+        }..removeWhere((String currency) => currency.trim().isEmpty);
+        items = cashCurrencies
+            .expand(
+              (String currency) => controller.getAvailableCashSources(
+                currency: currency,
+                newestFirst: true,
+              ),
+            )
+            .toList(growable: false);
         titleKey = 'cash';
         headerIcon = Icons.account_balance_wallet_outlined;
         break;
@@ -210,6 +222,8 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
       String dateStr;
       if (item is Saving) {
         dateStr = _savingDisplayDate(item);
+      } else if (item is CashSource) {
+        dateStr = item.date;
       } else if (item is Transaction) {
         dateStr = item.date;
       } else {
@@ -224,6 +238,8 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
       String dateBStr;
       if (a is Saving) {
         dateAStr = _savingDisplayDate(a);
+      } else if (a is CashSource) {
+        dateAStr = a.date;
       } else if (a is Transaction) {
         dateAStr = a.date;
       } else {
@@ -231,6 +247,8 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
       }
       if (b is Saving) {
         dateBStr = _savingDisplayDate(b);
+      } else if (b is CashSource) {
+        dateBStr = b.date;
       } else if (b is Transaction) {
         dateBStr = b.date;
       } else {
@@ -246,20 +264,10 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
     // Compute Category Totals in Main Currency
     double categoryTotalVal = 0.0;
     if (widget.categoryType == 'cash') {
-      final List<Saving> filteredCashSavings = filteredItems
-          .whereType<Saving>()
-          .toList(growable: false);
-      final List<Transaction> filteredTransactions = transactions
-          .where((Transaction tx) => includesSelectedDate(tx.date))
-          .toList(growable: false);
-      cashByCurrency = _selectedDateFilter == 'All Time'
-          ? controller.cashByCurrency
-          : ZakatEngineService.calculateCashByCurrency(
-              transactions: filteredTransactions,
-              savings: filteredCashSavings,
-              marketData: market,
-              lastRollover: controller.state.lastRollover,
-            );
+      for (final CashSource source in filteredItems.whereType<CashSource>()) {
+        cashByCurrency[source.currency] =
+            (cashByCurrency[source.currency] ?? 0) + source.availableAmount;
+      }
       categoryTotalVal = cashByCurrency.entries.fold<double>(
         0,
         (double sum, MapEntry<String, double> entry) =>
@@ -848,8 +856,12 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                   ? Center(
                       child: EmptyStateCard(
                         cardKey: const Key('assetsEmptyState'),
-                        title: context.l10n.tr('no_assets_yet'),
-                        message: context.l10n.tr('assets_empty_message'),
+                        title: isCashCategory
+                            ? context.l10n.tr('no_available_cash')
+                            : context.l10n.tr('no_assets_yet'),
+                        message: isCashCategory
+                            ? context.l10n.tr('no_available_cash_message')
+                            : context.l10n.tr('assets_empty_message'),
                       ),
                     )
                   : ListView.builder(
@@ -859,6 +871,14 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                         final item = filteredItems[index];
                         if (item is Saving) {
                           return _buildSavingTile(
+                            context,
+                            item,
+                            mainCurrency,
+                            market,
+                            isArabic,
+                          );
+                        } else if (item is CashSource) {
+                          return _buildCashSourceTile(
                             context,
                             item,
                             mainCurrency,
@@ -1018,6 +1038,111 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCashSourceTile(
+    BuildContext context,
+    CashSource source,
+    String mainCurrency,
+    MarketData market,
+    bool isArabic,
+  ) {
+    final String remaining = ZakatEngineService.formatCurrency(
+      source.availableAmount,
+      source.currency,
+      isArabic: isArabic,
+    );
+    final String original = ZakatEngineService.formatCurrency(
+      source.originalAmount,
+      source.currency,
+      isArabic: isArabic,
+    );
+    final double valueInMain = ZakatEngineService.convertFromEgp(
+      ZakatEngineService.convertToEgp(
+        source.availableAmount,
+        source.currency,
+        market,
+      ),
+      mainCurrency,
+      market,
+    );
+    final String title = source.description.trim().isEmpty
+        ? context.l10n.tr('cash')
+        : source.description;
+    final AppStateController controller = context.read<AppStateController>();
+    final Saving? saving = source.sourceType == 'savings'
+        ? controller.state.savings
+              .where((Saving saving) => saving.id == source.id)
+              .firstOrNull
+        : null;
+    final Transaction? transaction = source.sourceType == 'income'
+        ? controller.state.transactions
+              .where((Transaction transaction) => transaction.id == source.id)
+              .firstOrNull
+        : null;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: PremiumCard(
+        onTap: () {
+          if (saving != null) {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => AddSavingScreen(initialSaving: saving),
+              ),
+            );
+          } else if (transaction != null) {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => AddTransactionScreen(
+                  initialTransaction: transaction,
+                  cashMode: true,
+                ),
+              ),
+            );
+          }
+        },
+        child: ListTile(
+          key: Key('cashSource_${source.sourceType}_${source.id}'),
+          contentPadding: EdgeInsets.zero,
+          leading: const CircleAvatar(
+            child: Icon(Icons.account_balance_wallet_outlined),
+          ),
+          title: Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          subtitle: Text(
+            '${source.date.split('T').first} • Original: $original • Remaining: $remaining',
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(
+                ZakatEngineService.formatCurrency(
+                  valueInMain,
+                  mainCurrency,
+                  isArabic: isArabic,
+                ),
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              if (saving != null || transaction != null)
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.delete_outline, size: 20),
+                  onPressed: () {
+                    if (saving != null) {
+                      _confirmDeleteSaving(context, saving);
+                    } else if (transaction != null) {
+                      _confirmDeleteTransaction(context, transaction);
+                    }
+                  },
+                ),
+            ],
+          ),
         ),
       ),
     );

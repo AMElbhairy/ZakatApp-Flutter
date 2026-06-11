@@ -14,6 +14,7 @@ class Transaction {
     this.exchangePairId,
     this.exchangeSourceIncomeId,
     this.remainingAmount,
+    this.activityType,
   });
 
   final String id;
@@ -30,6 +31,23 @@ class Transaction {
   final String? exchangePairId;
   final String? exchangeSourceIncomeId;
   final double? remainingAmount;
+  final String? activityType;
+
+  bool get isTransferActivity {
+    final String normalizedCategory = category.trim().toLowerCase();
+    final String normalizedDescription = description.trim().toLowerCase();
+    return activityType?.trim().toLowerCase() == 'transfer' ||
+        normalizedCategory == 'currency exchange' ||
+        normalizedCategory == 'precious metals purchase' ||
+        normalizedCategory == 'gold purchase' ||
+        normalizedCategory == 'gold sale' ||
+        normalizedCategory == 'silver purchase' ||
+        normalizedCategory == 'silver sale' ||
+        normalizedCategory == 'cash wallet transfer' ||
+        normalizedCategory == 'internal asset conversion' ||
+        normalizedDescription.startsWith('currency exchange out:') ||
+        normalizedDescription.startsWith('currency exchange in:');
+  }
 
   factory Transaction.fromJson(Map<String, dynamic> json) {
     return Transaction(
@@ -51,6 +69,7 @@ class Transaction {
       remainingAmount: json['remainingAmount'] == null
           ? null
           : _asDouble(json['remainingAmount']),
+      activityType: json['activityType']?.toString().trim().toLowerCase(),
     );
   }
 
@@ -71,6 +90,7 @@ class Transaction {
       if (exchangeSourceIncomeId != null)
         'exchangeSourceIncomeId': exchangeSourceIncomeId,
       if (remainingAmount != null) 'remainingAmount': remainingAmount,
+      if (activityType != null) 'activityType': activityType,
     };
   }
 

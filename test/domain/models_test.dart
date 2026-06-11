@@ -10,6 +10,36 @@ import 'package:zakatapp_flutter/models/transaction.dart';
 import 'test_helpers.dart';
 
 void main() {
+  test('internal asset movements classify as transfer activities', () {
+    const Transaction exchange = Transaction(
+      id: 'exchange',
+      type: 'expense',
+      date: '2026-06-11',
+      amount: 100,
+      currency: 'USD',
+      category: 'Currency Exchange',
+      description: '',
+      createdAt: '2026-06-11T00:00:00.000Z',
+      rolledOver: false,
+      activityType: 'transfer',
+    );
+    const Transaction food = Transaction(
+      id: 'food',
+      type: 'expense',
+      date: '2026-06-11',
+      amount: 10,
+      currency: 'USD',
+      category: 'Food',
+      description: '',
+      createdAt: '2026-06-11T00:00:00.000Z',
+      rolledOver: false,
+    );
+
+    expect(exchange.isTransferActivity, isTrue);
+    expect(Transaction.fromJson(exchange.toJson()).activityType, 'transfer');
+    expect(food.isTransferActivity, isFalse);
+  });
+
   final Map<String, dynamic> fixture = loadJsonFixture(
     'test/fixtures/sample_app_state.json',
   );

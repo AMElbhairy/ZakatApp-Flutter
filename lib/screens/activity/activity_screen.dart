@@ -12,7 +12,7 @@ import '../../services/app_state_controller.dart';
 import '../entry/add_saving_screen.dart';
 import '../entry/add_transaction_screen.dart';
 
-enum _ActivityFilter { all, income, expense }
+enum _ActivityFilter { all, income, expense, transfer }
 
 enum _ActivitySection { transactions, schedule }
 
@@ -196,11 +196,66 @@ class ActivityScreenState extends State<ActivityScreen> {
         state.aiSettings?['hideBalances'] == true ||
         state.aiSettings?['balancesHidden'] == true;
 
+    final Map<String, List<Transaction>> exchangePairs =
+        <String, List<Transaction>>{};
+    for (final Transaction transaction in transactions.where(
+      (Transaction transaction) =>
+          transaction.category == 'Currency Exchange' &&
+          (transaction.exchangePairId ?? '').isNotEmpty,
+    )) {
+      exchangePairs
+          .putIfAbsent(transaction.exchangePairId!, () => <Transaction>[])
+          .add(transaction);
+    }
+    final Map<String, List<Saving>> exchangeSavings = <String, List<Saving>>{};
+    for (final Saving saving in state.savings.where(
+      (Saving saving) => (saving.transferActivityId ?? '').isNotEmpty,
+    )) {
+      exchangeSavings
+          .putIfAbsent(saving.transferActivityId!, () => <Saving>[])
+          .add(saving);
+    }
+    final Set<String> exchangeActivityIds = <String>{
+      ...exchangePairs.keys,
+      ...exchangeSavings.keys,
+    };
+    final Set<String> fundedMetalIds = state.savings
+        .where((Saving saving) => saving.fundingAllocations.isNotEmpty)
+        .map((Saving saving) => saving.id)
+        .toSet();
     final List<_ActivityEntry> sorted =
         <_ActivityEntry>[
-          ...transactions.map(_ActivityEntry.transaction),
+          ...transactions
+              .where(
+                (Transaction transaction) =>
+                    !transaction.isTransferActivity ||
+                    ((transaction.exchangePairId ?? '').isEmpty &&
+                        !fundedMetalIds.contains(transaction.exchangePairId)),
+              )
+              .map(_ActivityEntry.transaction),
+          ...exchangeActivityIds.map(
+            (String id) => _ActivityEntry.currencyExchange(
+              exchangePairs[id] ?? const <Transaction>[],
+              exchangeSavings[id] ?? const <Saving>[],
+            ),
+          ),
           ...state.savings
-              .where((Saving saving) => saving.assetType == 'cash')
+              .where(
+                (Saving saving) =>
+                    (saving.exchangeSourceSavingId ?? '').isNotEmpty &&
+                    (saving.transferActivityId ?? '').isEmpty,
+              )
+              .map(_ActivityEntry.legacySavingExchange),
+          ...state.savings
+              .where((Saving saving) => saving.fundingAllocations.isNotEmpty)
+              .map(_ActivityEntry.metalTransfer),
+          ...state.savings
+              .where(
+                (Saving saving) =>
+                    saving.assetType == 'cash' &&
+                    (saving.exchangeSourceSavingId ?? '').isEmpty &&
+                    (saving.exchangeSourceIncomeId ?? '').isEmpty,
+              )
               .map(_ActivityEntry.cashSaving),
         ]..sort((_ActivityEntry a, _ActivityEntry b) {
           final DateTime ad = _parseDate(a.date);
@@ -218,6 +273,8 @@ class ActivityScreenState extends State<ActivityScreen> {
               return entry.isIncome;
             case _ActivityFilter.expense:
               return entry.isExpense;
+            case _ActivityFilter.transfer:
+              return entry.isTransfer;
             case _ActivityFilter.all:
               return true;
           }
@@ -408,6 +465,10 @@ class ActivityScreenState extends State<ActivityScreen> {
             ButtonSegment<_ActivityFilter>(
               value: _ActivityFilter.expense,
               label: Text(context.l10n.tr('expense')),
+            ),
+            ButtonSegment<_ActivityFilter>(
+              value: _ActivityFilter.transfer,
+              label: Text(context.l10n.tr('transfer')),
             ),
           ],
           selected: <_ActivityFilter>{_filter},
@@ -622,7 +683,9 @@ class ActivityScreenState extends State<ActivityScreen> {
                       child: ListTile(
                         key: Key('activityTile_${entry.key}'),
                         onTap: () {
-                          if (entry.transaction != null) {
+                          if (entry.isTransfer) {
+                            return;
+                          } else if (entry.transaction != null) {
                             Navigator.of(context).push(
                               MaterialPageRoute<void>(
                                 builder: (_) => AddTransactionScreen(
@@ -698,12 +761,14 @@ class ActivityScreenState extends State<ActivityScreen> {
                                             context,
                                           ).languageCode.toLowerCase() ==
                                           'ar',
-                                      showSign: true,
+                                      showSign: !entry.isTransfer,
                                     ),
                               style: TextStyle(
-                                color: entry.isIncome
-                                    ? const Color(0xFF2E7D32)
-                                    : const Color(0xFFC62828),
+                                color: entry.isTransfer
+                                    ? const Color(0xFFB8860B)
+                                    : (entry.isIncome
+                                          ? const Color(0xFF2E7D32)
+                                          : const Color(0xFFC62828)),
                                 fontWeight: FontWeight.bold,
                                 fontSize: 15,
                               ),
@@ -1246,7 +1311,17 @@ class ActivityScreenState extends State<ActivityScreen> {
 }
 
 class _ActivityEntry {
-  const _ActivityEntry._({this.transaction, this.saving});
+  const _ActivityEntry._({
+    this.transaction,
+    this.saving,
+    this.transferTitle,
+    this.transferDescription,
+    this.transferKey,
+    this.transferDate,
+    this.transferCreatedAt,
+    this.transferCurrency,
+    this.transferAmount,
+  });
 
   factory _ActivityEntry.transaction(Transaction transaction) {
     return _ActivityEntry._(transaction: transaction);
@@ -1256,20 +1331,149 @@ class _ActivityEntry {
     return _ActivityEntry._(saving: saving);
   }
 
+  factory _ActivityEntry.currencyExchange(
+    List<Transaction> pair,
+    List<Saving> targetSavings,
+  ) {
+    final Transaction? sourceTransaction = pair
+        .where((Transaction transaction) => transaction.type == 'expense')
+        .firstOrNull;
+    final Transaction? targetTransaction = pair
+        .where((Transaction transaction) => transaction.type == 'income')
+        .firstOrNull;
+    final Saving? targetSaving = targetSavings.firstOrNull;
+    final Transaction source =
+        sourceTransaction ??
+        pair.firstOrNull ??
+        Transaction(
+          id: targetSaving!.id,
+          type: 'expense',
+          date: targetSaving.dateAcquired,
+          amount: 0,
+          currency: '',
+          category: 'Currency Exchange',
+          description: '',
+          createdAt: targetSaving.createdAt,
+          rolledOver: false,
+        );
+    final RegExp savingExchangePattern = RegExp(
+      r'Savings exchange:\s*([0-9.]+)\s+([A-Z]+)\s+→',
+    );
+    final double savingSourceAmount = targetSavings.fold<double>(
+      0,
+      (double total, Saving saving) =>
+          total +
+          (double.tryParse(
+                savingExchangePattern
+                        .firstMatch(saving.description)
+                        ?.group(1) ??
+                    '',
+              ) ??
+              0),
+    );
+    final String savingSourceCurrency =
+        savingExchangePattern
+            .firstMatch(targetSaving?.description ?? '')
+            ?.group(2) ??
+        '';
+    final String sourceCurrency = sourceTransaction?.currency.isNotEmpty == true
+        ? sourceTransaction!.currency
+        : savingSourceCurrency;
+    final String targetCurrency = targetTransaction?.currency.isNotEmpty == true
+        ? targetTransaction!.currency
+        : (targetSaving?.unit ?? '');
+    final double sourceAmount =
+        pair
+            .where((Transaction transaction) => transaction.type == 'expense')
+            .fold<double>(0, (double total, Transaction transaction) {
+              return total + transaction.amount;
+            }) +
+        savingSourceAmount;
+    final double targetAmount =
+        pair
+            .where((Transaction transaction) => transaction.type == 'income')
+            .fold<double>(0, (double total, Transaction transaction) {
+              return total + transaction.amount;
+            }) +
+        targetSavings.fold<double>(
+          0,
+          (double total, Saving saving) => total + saving.amount,
+        );
+    return _ActivityEntry._(
+      transaction: source,
+      transferTitle: 'Currency Exchange',
+      transferDescription:
+          '${sourceAmount.toStringAsFixed(2)} $sourceCurrency → ${targetAmount.toStringAsFixed(2)} $targetCurrency',
+      transferKey: 'exchange_${source.exchangePairId ?? source.id}',
+      transferDate: source.date,
+      transferCreatedAt: source.createdAt,
+      transferCurrency: sourceCurrency,
+      transferAmount: sourceAmount,
+    );
+  }
+
+  factory _ActivityEntry.legacySavingExchange(Saving saving) {
+    final RegExp pattern = RegExp(
+      r'Savings exchange:\s*([0-9.]+)\s+([A-Z]+)\s+→',
+    );
+    final Match? match = pattern.firstMatch(saving.description);
+    final double sourceAmount = double.tryParse(match?.group(1) ?? '') ?? 0;
+    final String sourceCurrency = match?.group(2) ?? saving.unit;
+    return _ActivityEntry._(
+      saving: saving,
+      transferTitle: 'Currency Exchange',
+      transferDescription:
+          '${sourceAmount.toStringAsFixed(2)} $sourceCurrency → ${saving.amount.toStringAsFixed(2)} ${saving.unit}',
+      transferKey: 'legacy_exchange_${saving.id}',
+      transferDate: saving.dateAcquired,
+      transferCreatedAt: saving.createdAt,
+      transferCurrency: sourceCurrency,
+      transferAmount: sourceAmount,
+    );
+  }
+
+  factory _ActivityEntry.metalTransfer(Saving saving) {
+    final String metal = saving.assetType == 'gold' ? 'Gold' : 'Silver';
+    return _ActivityEntry._(
+      saving: saving,
+      transferTitle: '$metal Purchase',
+      transferDescription:
+          '${saving.purchaseAmount.toStringAsFixed(2)} ${saving.purchaseCurrency} Cash → ${saving.amount.toStringAsFixed(2)}g $metal',
+      transferKey: 'metal_${saving.id}',
+      transferDate: saving.dateAcquired,
+      transferCreatedAt: saving.createdAt,
+      transferCurrency: saving.purchaseCurrency,
+      transferAmount: saving.purchaseAmount,
+    );
+  }
+
   final Transaction? transaction;
   final Saving? saving;
+  final String? transferTitle;
+  final String? transferDescription;
+  final String? transferKey;
+  final String? transferDate;
+  final String? transferCreatedAt;
+  final String? transferCurrency;
+  final double? transferAmount;
 
   bool get isCashSaving => saving != null;
-  bool get isIncome => isCashSaving || transaction?.type == 'income';
-  bool get isExpense => transaction?.type == 'expense';
+  bool get isTransfer =>
+      transferTitle != null || transaction?.isTransferActivity == true;
+  bool get isIncome =>
+      !isTransfer && (isCashSaving || transaction?.type == 'income');
+  bool get isExpense => !isTransfer && transaction?.type == 'expense';
   String get type {
+    if (isTransfer) return 'transfer';
     if (isCashSaving) return 'savings';
     return isIncome ? 'income' : 'expense';
   }
 
   String get key =>
-      isCashSaving ? 'saving_${saving!.id}' : 'tx_${transaction!.id}';
+      transferKey ??
+      (isCashSaving ? 'saving_${saving!.id}' : 'tx_${transaction!.id}');
   String get date {
+    if (transferDate != null) return transferDate!;
     final Saving? cashSaving = saving;
     if (cashSaving != null) {
       if ((cashSaving.exchangeSourceSavingId ?? '').isNotEmpty &&
@@ -1281,13 +1485,17 @@ class _ActivityEntry {
     return transaction!.date;
   }
 
-  String get createdAt => saving?.createdAt ?? transaction!.createdAt;
-  String get currency => saving?.unit ?? transaction!.currency;
-  double get amount => saving?.amount ?? transaction!.amount;
+  String get createdAt =>
+      transferCreatedAt ?? saving?.createdAt ?? transaction!.createdAt;
+  String get currency =>
+      transferCurrency ?? saving?.unit ?? transaction!.currency;
+  double get amount => transferAmount ?? saving?.amount ?? transaction!.amount;
   double get signedAmount => isExpense ? -amount : amount;
-  String get description => saving?.description ?? transaction!.description;
+  String get description =>
+      transferDescription ?? saving?.description ?? transaction!.description;
 
   String title(BuildContext context) {
+    if (transferTitle != null) return transferTitle!;
     if (isCashSaving) return context.l10n.tr('cash_in');
     return transaction!.category;
   }
@@ -1302,13 +1510,20 @@ class _TypeBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool isIncome = type == 'income';
     final bool isSavings = type == 'savings';
-    final Color bg = isSavings
+    final bool isTransfer = type == 'transfer';
+    final Color bg = isTransfer
+        ? const Color(0xFFFFF4CC)
+        : isSavings
         ? const Color(0xFFEAF3FF)
         : (isIncome ? const Color(0xFFE8F5E9) : const Color(0xFFFFEBEE));
-    final Color fg = isSavings
+    final Color fg = isTransfer
+        ? const Color(0xFF8A6500)
+        : isSavings
         ? const Color(0xFF174A7C)
         : (isIncome ? const Color(0xFF1B5E20) : const Color(0xFFB71C1C));
-    final String label = isSavings
+    final String label = isTransfer
+        ? context.l10n.tr('transfer')
+        : isSavings
         ? context.l10n.tr('savings')
         : (isIncome ? context.l10n.tr('income') : context.l10n.tr('expense'));
 

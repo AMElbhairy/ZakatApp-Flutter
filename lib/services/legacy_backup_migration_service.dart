@@ -208,6 +208,16 @@ class LegacyBackupMigrationService {
             tx['internalTransferType'] =
                 tx['internalTransferType'] ?? 'currency_exchange_out';
           }
+          final String category = (tx['category'] ?? '')
+              .toString()
+              .trim()
+              .toLowerCase();
+          if (category == 'currency exchange' ||
+              category == 'precious metals purchase' ||
+              desc.startsWith('currency exchange out:') ||
+              desc.startsWith('currency exchange in:')) {
+            tx['activityType'] = 'transfer';
+          }
 
           return tx;
         })

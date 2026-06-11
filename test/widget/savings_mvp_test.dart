@@ -83,70 +83,71 @@ void main() {
     expect(find.text('TOTAL ASSETS'), findsOneWidget);
   });
 
-  testWidgets('cash statement lists savings, income, and expenses', (
-    WidgetTester tester,
-  ) async {
-    SharedPreferences.setMockInitialValues(<String, Object>{});
-    await tester.pumpWidget(_buildApp());
-    await tester.pumpAndSettle();
+  testWidgets(
+    'cash assets lists available sources and hides cash-out history',
+    (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      await tester.pumpWidget(_buildApp());
+      await tester.pumpAndSettle();
 
-    final AppStateController controller = Provider.of<AppStateController>(
-      tester.element(find.byType(ZakatApp)),
-      listen: false,
-    );
-    await controller.addSaving(
-      const Saving(
-        id: 'statement-saving',
-        assetType: 'cash',
-        dateAcquired: '2026-06-01',
-        amount: 100,
-        remainingAmount: 100,
-        unit: 'EGP',
-        description: 'Statement Saving',
-        purchaseCurrency: '',
-        purchaseAmount: 0,
-        createdAt: '2026-06-01T00:00:00.000Z',
-      ),
-    );
-    await controller.addTransaction(
-      const Transaction(
-        id: 'statement-expense',
-        type: 'expense',
-        date: '2026-06-02',
-        amount: 20,
-        currency: 'EGP',
-        category: 'Food & Dining',
-        description: 'Statement Expense',
-        createdAt: '2026-06-02T00:00:00.000Z',
-        rolledOver: false,
-      ),
-    );
-    await controller.addTransaction(
-      const Transaction(
-        id: 'statement-income',
-        type: 'income',
-        date: '2026-06-03',
-        amount: 50,
-        currency: 'EGP',
-        category: 'Salary',
-        description: 'Statement Income',
-        createdAt: '2026-06-03T00:00:00.000Z',
-        rolledOver: false,
-      ),
-    );
-    await tester.pumpAndSettle();
+      final AppStateController controller = Provider.of<AppStateController>(
+        tester.element(find.byType(ZakatApp)),
+        listen: false,
+      );
+      await controller.addSaving(
+        const Saving(
+          id: 'statement-saving',
+          assetType: 'cash',
+          dateAcquired: '2026-06-01',
+          amount: 100,
+          remainingAmount: 100,
+          unit: 'EGP',
+          description: 'Statement Saving',
+          purchaseCurrency: '',
+          purchaseAmount: 0,
+          createdAt: '2026-06-01T00:00:00.000Z',
+        ),
+      );
+      await controller.addTransaction(
+        const Transaction(
+          id: 'statement-expense',
+          type: 'expense',
+          date: '2026-06-02',
+          amount: 20,
+          currency: 'EGP',
+          category: 'Food & Dining',
+          description: 'Statement Expense',
+          createdAt: '2026-06-02T00:00:00.000Z',
+          rolledOver: false,
+        ),
+      );
+      await controller.addTransaction(
+        const Transaction(
+          id: 'statement-income',
+          type: 'income',
+          date: '2026-06-03',
+          amount: 50,
+          currency: 'EGP',
+          category: 'Salary',
+          description: 'Statement Income',
+          createdAt: '2026-06-03T00:00:00.000Z',
+          rolledOver: false,
+        ),
+      );
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Assets').last);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Cash').first);
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('Assets').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cash').first);
+      await tester.pumpAndSettle();
 
-    expect(find.text('Statement Saving'), findsOneWidget);
-    expect(find.text('Statement Income'), findsOneWidget);
-    expect(find.text('Statement Expense'), findsOneWidget);
-    expect(find.textContaining('130.00'), findsWidgets);
-    expect(find.textContaining('-20.00'), findsWidgets);
-  });
+      expect(find.text('Statement Saving'), findsOneWidget);
+      expect(find.text('Statement Income'), findsOneWidget);
+      expect(find.text('Statement Expense'), findsNothing);
+      expect(find.textContaining('130.00'), findsWidgets);
+      expect(find.textContaining('-20.00'), findsNothing);
+    },
+  );
 
   testWidgets('add gold and silver saving', (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});

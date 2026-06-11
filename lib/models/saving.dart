@@ -17,6 +17,7 @@ class Saving {
     this.internalTransfer,
     this.internalTransferType,
     this.fundingAllocations = const <Map<String, dynamic>>[],
+    this.transferActivityId,
   });
 
   final String id;
@@ -36,6 +37,7 @@ class Saving {
   final bool? internalTransfer;
   final String? internalTransferType;
   final List<Map<String, dynamic>> fundingAllocations;
+  final String? transferActivityId;
 
   factory Saving.fromJson(Map<String, dynamic> json) {
     return Saving(
@@ -63,6 +65,7 @@ class Saving {
           : _asBool(json['internalTransfer']),
       internalTransferType: json['internalTransferType']?.toString(),
       fundingAllocations: _asMapList(json['fundingAllocations']),
+      transferActivityId: json['transferActivityId']?.toString(),
     );
   }
 
@@ -89,6 +92,7 @@ class Saving {
         'internalTransferType': internalTransferType,
       if (fundingAllocations.isNotEmpty)
         'fundingAllocations': fundingAllocations,
+      if (transferActivityId != null) 'transferActivityId': transferActivityId,
     };
   }
 
@@ -130,6 +134,7 @@ class Saving {
     bool? internalTransfer,
     String? internalTransferType,
     List<Map<String, dynamic>>? fundingAllocations,
+    String? transferActivityId,
   }) {
     return Saving(
       id: id ?? this.id,
@@ -151,6 +156,7 @@ class Saving {
       internalTransfer: internalTransfer ?? this.internalTransfer,
       internalTransferType: internalTransferType ?? this.internalTransferType,
       fundingAllocations: fundingAllocations ?? this.fundingAllocations,
+      transferActivityId: transferActivityId ?? this.transferActivityId,
     );
   }
 }

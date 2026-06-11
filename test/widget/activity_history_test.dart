@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zakatapp_flutter/main.dart';
+import 'package:zakatapp_flutter/models/saving.dart';
+import 'package:zakatapp_flutter/models/transaction.dart';
 import 'package:zakatapp_flutter/models/user_profile.dart';
 import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
 import 'package:zakatapp_flutter/services/app_state_controller.dart';
@@ -208,5 +210,117 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('E£ +250.00'), findsOneWidget);
+  });
+
+  testWidgets('currency exchange appears only under Transfer', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    await tester.pumpWidget(_buildApp());
+    await tester.pumpAndSettle();
+
+    final AppStateController controller = Provider.of<AppStateController>(
+      tester.element(find.byType(ZakatApp)),
+      listen: false,
+    );
+    await controller.addTransaction(
+      const Transaction(
+        id: 'income-transfer-test',
+        type: 'income',
+        date: '2026-06-11',
+        amount: 100,
+        currency: 'USD',
+        category: 'Salary',
+        description: 'Salary cash',
+        createdAt: '2026-06-11T00:00:00.000Z',
+        rolledOver: false,
+      ),
+    );
+    await controller.executeCurrencyExchange(
+      date: '2026-06-11',
+      sourceCurrency: 'USD',
+      targetCurrency: 'EGP',
+      sourceAmount: 40,
+      targetAmount: 2000,
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Activity').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Currency Exchange'), findsOneWidget);
+
+    await tester.tap(find.text('Income').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Currency Exchange'), findsNothing);
+
+    await tester.tap(find.text('Expense').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Currency Exchange'), findsNothing);
+
+    await tester.tap(find.text('Transfer').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Currency Exchange'), findsOneWidget);
+    expect(find.textContaining('40.00 USD → 2000.00 EGP'), findsOneWidget);
+  });
+
+  testWidgets('funded gold purchase appears under Transfer', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    await tester.pumpWidget(_buildApp());
+    await tester.pumpAndSettle();
+
+    final AppStateController controller = Provider.of<AppStateController>(
+      tester.element(find.byType(ZakatApp)),
+      listen: false,
+    );
+    await controller.addTransaction(
+      const Transaction(
+        id: 'gold-funding-income',
+        type: 'income',
+        date: '2026-06-11',
+        amount: 10000,
+        currency: 'EGP',
+        category: 'Salary',
+        description: '',
+        createdAt: '2026-06-11T00:00:00.000Z',
+        rolledOver: false,
+      ),
+    );
+    await controller.addSavingWithFundingAllocations(
+      const Saving(
+        id: 'gold-transfer',
+        assetType: 'gold',
+        dateAcquired: '2026-06-11',
+        amount: 2,
+        remainingAmount: 2,
+        unit: '24',
+        description: '',
+        purchaseCurrency: 'EGP',
+        purchaseAmount: 10000,
+        createdAt: '2026-06-11T01:00:00.000Z',
+        fundingAllocations: <Map<String, dynamic>>[
+          <String, dynamic>{
+            'sourceType': 'income',
+            'sourceId': 'gold-funding-income',
+            'currency': 'EGP',
+            'amount': 10000,
+          },
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Activity').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Transfer').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Gold Purchase'), findsOneWidget);
+    expect(
+      find.textContaining('10000.00 EGP Cash → 2.00g Gold'),
+      findsOneWidget,
+    );
+    expect(find.text('Precious Metals Purchase'), findsNothing);
   });
 }

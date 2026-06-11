@@ -38,7 +38,9 @@ class CashSource {
     required this.date,
     required this.createdAt,
     required this.availableAmount,
+    required this.originalAmount,
     required this.currency,
+    required this.description,
   });
 
   final String id;
@@ -46,7 +48,9 @@ class CashSource {
   final String date;
   final String createdAt;
   final double availableAmount;
+  final double originalAmount;
   final String currency;
+  final String description;
 }
 
 class ReconciliationResult {
@@ -80,7 +84,9 @@ class ReconciliationService {
               date: saving.dateAcquired,
               createdAt: saving.createdAt,
               availableAmount: saving.remainingAmount,
+              originalAmount: saving.amount,
               currency: normalizedCurrency,
+              description: saving.description,
             ),
           ),
       ...getNetIncomeLotsForCurrency(
@@ -98,7 +104,9 @@ class ReconciliationService {
               date: lot.date,
               createdAt: lot.date,
               availableAmount: lot.remainingAmount,
+              originalAmount: lot.originalAmount,
               currency: normalizedCurrency,
+              description: lot.description ?? lot.category ?? '',
             ),
           ),
     ];
@@ -169,7 +177,9 @@ class ReconciliationService {
       date: source.date,
       createdAt: source.createdAt,
       availableAmount: _round6(availableAmount),
+      originalAmount: source.originalAmount,
       currency: source.currency,
+      description: source.description,
     );
   }
 
@@ -809,6 +819,7 @@ class ReconciliationService {
           'sourceIncomeId': d['id'],
           'exchangePairId': exchangePairId,
           'createdAt': exchangeCreatedAt,
+          'activityType': 'transfer',
         };
         transactions.add(outTx);
         processedExpenseIds.add(outId);
@@ -848,6 +859,7 @@ class ReconciliationService {
           'exchangeSourceSavingId': d['id'],
           'sourceIncomeId': d['ref']?['sourceIncomeId'],
           'createdAt': exchangeCreatedAt,
+          'transferActivityId': exchangePairId,
         };
         savings.add(ns);
       } else {
@@ -863,6 +875,7 @@ class ReconciliationService {
           'exchangeSourceIncomeId': d['id'],
           'exchangePairId': exchangePairId,
           'createdAt': exchangeCreatedAt,
+          'activityType': 'transfer',
         };
         transactions.add(inTx);
       }
