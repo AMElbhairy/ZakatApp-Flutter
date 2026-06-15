@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zakatapp_flutter/main.dart';
 import 'package:zakatapp_flutter/models/user_profile.dart';
@@ -34,7 +35,7 @@ class _FakeAuthService implements AuthService {
   Future<UserProfile?> restoreSession() async => null;
 
   @override
-  Future<UserProfile?> signIn() async => null;
+  Future<UserProfile?> signIn({AuthProvider provider = AuthProvider.google}) async => null;
 
   @override
   Future<void> signOut() async {}
@@ -226,10 +227,12 @@ void main() {
 
     await tester.tap(find.text('السجل').last);
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('deleteActivityEntry_tx_tx_1')));
+    await tester.drag(find.byType(Slidable).first, const Offset(500.0, 0.0));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('حذف').first);
     await tester.pumpAndSettle();
     expect(find.text('هل تريد حذف المعاملة؟'), findsOneWidget);
     expect(find.text('إلغاء'), findsOneWidget);
-    expect(find.text('حذف'), findsOneWidget);
+    expect(find.text('حذف'), findsWidgets);
   });
 }

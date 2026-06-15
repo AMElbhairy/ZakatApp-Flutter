@@ -6,7 +6,6 @@ import 'package:http/http.dart' as http;
 
 import '../../core/i18n/app_localizations.dart';
 import '../../core/widgets/app_ui.dart';
-import '../../models/app_state.dart';
 import '../../models/backup_preview.dart';
 import '../../models/market_snapshot.dart';
 import '../../models/recurring_transaction.dart';
@@ -14,9 +13,11 @@ import '../../core/services/zakat_engine.dart';
 import '../../core/utils/amount_parser.dart';
 import '../../services/app_state_controller.dart';
 import '../../services/auth_controller.dart';
+import '../../features/auth/auth_service.dart';
 import '../../services/backup_restore_card.dart';
 import '../../services/cloud_backup_controller.dart';
 import '../../core/widgets/currency_dropdown_form_field.dart';
+import '../../services/biometric_service.dart';
 
 class AccountScreen extends StatefulWidget {
   const AccountScreen({super.key});
@@ -26,6 +27,11 @@ class AccountScreen extends StatefulWidget {
 }
 
 class _AccountScreenState extends State<AccountScreen> {
+  final ScrollController _scrollController = ScrollController();
+  final GlobalKey _mainCurrencyKey = GlobalKey();
+  final GlobalKey _zakatMethodKey = GlobalKey();
+  final GlobalKey _marketDataKey = GlobalKey();
+
   static const List<String> _supportedCurrencies = <String>[
     'EGP',
     'SAR',
@@ -59,6 +65,7 @@ class _AccountScreenState extends State<AccountScreen> {
 
   @override
   void dispose() {
+    _scrollController.dispose();
     _goldController.dispose();
     _silverController.dispose();
     _usdController.dispose();
@@ -106,708 +113,797 @@ class _AccountScreenState extends State<AccountScreen> {
 
     final double navSafeBottomPadding =
         112 + MediaQuery.paddingOf(context).bottom;
-    return SingleChildScrollView(
-      padding: EdgeInsets.fromLTRB(16, 16, 16, navSafeBottomPadding),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Text(
-            context.l10n.tr('settings'),
-            style: Theme.of(context).textTheme.headlineSmall,
-          ),
-          const SizedBox(height: 16),
-          _SectionCard(
-            title: context.l10n.tr('language'),
-            child: DropdownButtonFormField<String>(
-              key: const Key('settingsLanguageField'),
-              initialValue: languagePreference,
-              decoration: InputDecoration(
-                labelText: context.l10n.tr('language_label'),
-                border: OutlineInputBorder(),
-              ),
-              items: <DropdownMenuItem<String>>[
-                DropdownMenuItem<String>(
-                  value: 'en',
-                  child: Text(context.l10n.tr('english')),
-                ),
-                DropdownMenuItem<String>(
-                  value: 'ar',
-                  child: Text(context.l10n.tr('arabic')),
-                ),
-              ],
-              onChanged: (String? value) {
-                if (value == null) return;
-                context.read<AppStateController>().updateLanguagePreference(
-                  value,
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 12),
-          _SectionCard(
-            title: context.l10n.tr('account_section'),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                if (authController == null ||
-                    !authController.isSignedIn) ...<Widget>[
-                  Text(context.l10n.tr('signed_out_state')),
-                  if (authController?.error != null &&
-                      authController!.error!.trim().isNotEmpty) ...<Widget>[
-                    const SizedBox(height: 8),
-                    Text(
-                      authController.error!,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
+    return Stack(
+      children: <Widget>[
+        SingleChildScrollView(
+          controller:
+              PrimaryScrollController.maybeOf(context) ?? _scrollController,
+          padding: EdgeInsets.fromLTRB(16, 16, 16, navSafeBottomPadding),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              _SettingsProfileHeader(
+                name: authController?.currentUser?.displayName,
+                email: authController?.currentUser?.email,
+                photoUrl: authController?.currentUser?.photoUrl,
+                connected: authController?.isSignedIn == true,
+                lastBackupAt:
+                    cloudBackupController?.latestBackup?.effectiveUpdatedAt,
+                isLoading: authController?.isLoading == true,
+                onSignIn: authController == null
+                    ? null
+                    : () => context.read<AuthController?>()?.signIn(
+                        provider: AuthProvider.google,
                       ),
-                    ),
-                  ],
-                  const SizedBox(height: 10),
-                  FilledButton.icon(
-                    key: const Key('googleSignInButton'),
-                    onPressed:
-                        authController == null || authController.isLoading
-                        ? null
-                        : () => context.read<AuthController?>()?.signIn(),
-                    icon: const Icon(Icons.login),
-                    label: Text(context.l10n.tr('sign_in_google')),
-                  ),
-                ] else ...<Widget>[
-                  Text(
-                    authController.currentUser?.name ?? '-',
-                    style: Theme.of(context).textTheme.titleSmall,
-                  ),
-                  Text(authController.currentUser?.email ?? '-'),
-                  const SizedBox(height: 10),
-                  Text(_syncHealthSummary(state.syncHealth)),
-                  const SizedBox(height: 10),
-                  FilledButton.tonalIcon(
-                    key: const Key('googleSignOutButton'),
-                    onPressed: authController.isLoading
-                        ? null
-                        : () => context.read<AuthController?>()?.signOut(),
-                    icon: const Icon(Icons.logout),
-                    label: Text(context.l10n.tr('sign_out')),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          _SectionCard(
-            title: context.l10n.tr('categories_section'),
-            child: ExpansionTile(
-              key: const Key('settingsCategoriesTile'),
-              title: Text(context.l10n.tr('categories_manage')),
-              initiallyExpanded: _categoriesExpanded,
-              onExpansionChanged: (bool v) =>
-                  setState(() => _categoriesExpanded = v),
-              children: <Widget>[
-                _buildCategoryBlock(context, type: 'income'),
-                const SizedBox(height: 8),
-                _buildCategoryBlock(context, type: 'expense'),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          _SectionCard(
-            title: context.l10n.tr('recurring_section'),
-            child: ExpansionTile(
-              key: const Key('settingsRecurringTile'),
-              title: Text(context.l10n.tr('recurring_manage')),
-              initiallyExpanded: _recurringExpanded,
-              onExpansionChanged: (bool v) =>
-                  setState(() => _recurringExpanded = v),
-              children: <Widget>[
-                ...state.recurringTransactions.map(
-                  (RecurringTransaction item) => ListTile(
-                    dense: true,
-                    title: Text(item.name),
-                    subtitle: Text(
-                      '${item.type} • ${item.amount} ${item.currency} • ${context.l10n.tr('day_of_month')}: ${item.dayOfMonth}',
-                    ),
-                    trailing: IconButton(
-                      key: Key('deleteRecurring_${item.id}'),
-                      onPressed: () => context
-                          .read<AppStateController>()
-                          .deleteRecurringTransaction(item.id),
-                      icon: const Icon(Icons.delete_outline),
-                    ),
-                  ),
-                ),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: FilledButton(
-                    key: const Key('addRecurringButton'),
-                    onPressed: () => _showAddRecurringDialog(context),
-                    child: Text(context.l10n.tr('add_recurring')),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          _SectionCard(
-            title: context.l10n.tr('currency_section'),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                DropdownButtonFormField<String>(
-                  key: const Key('settingsMainCurrencyField'),
-                  initialValue: _supportedCurrencies.contains(mainCurrency)
-                      ? mainCurrency
-                      : 'EGP',
-                  decoration: InputDecoration(
-                    labelText: context.l10n.tr('main_currency'),
-                    border: OutlineInputBorder(),
-                  ),
-                  items: _supportedCurrencies
-                      .map(
-                        (String c) => DropdownMenuItem<String>(
-                          value: c,
-                          child: Text(
-                            ZakatEngineService.getCurrencySymbol(
-                              c,
-                              isArabic:
-                                  Localizations.localeOf(
-                                    context,
-                                  ).languageCode.toLowerCase() ==
-                                  'ar',
-                            ),
-                          ),
-                        ),
-                      )
-                      .toList(growable: false),
-                  onChanged: (String? value) {
-                    if (value == null) return;
-                    context.read<AppStateController>().updateMainCurrency(
-                      value,
-                    );
-                  },
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  key: const Key('settingsDefaultEntryCurrencyField'),
-                  initialValue:
-                      _supportedCurrencies.contains(defaultEntryCurrency)
-                      ? defaultEntryCurrency
-                      : 'EGP',
-                  decoration: InputDecoration(
-                    labelText: context.l10n.tr('default_entry_currency'),
-                    border: OutlineInputBorder(),
-                  ),
-                  items: _supportedCurrencies
-                      .map(
-                        (String c) => DropdownMenuItem<String>(
-                          value: c,
-                          child: Text(
-                            ZakatEngineService.getCurrencySymbol(
-                              c,
-                              isArabic:
-                                  Localizations.localeOf(
-                                    context,
-                                  ).languageCode.toLowerCase() ==
-                                  'ar',
-                            ),
-                          ),
-                        ),
-                      )
-                      .toList(growable: false),
-                  onChanged: (String? value) {
-                    if (value == null) return;
-                    context
-                        .read<AppStateController>()
-                        .updateDefaultEntryCurrency(value);
-                  },
-                ),
-                const SizedBox(height: 12),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: OutlinedButton(
-                    key: const Key('openCurrencyExchangeButton'),
-                    onPressed: () => _openCurrencyExchangeDialog(context),
-                    child: Text(context.l10n.tr('currency_exchange')),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          _SectionCard(
-            title: context.l10n.tr('zakat_calculation_section'),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                DropdownButtonFormField<String>(
-                  key: const Key('settingsZakatMethodField'),
-                  initialValue: zakatMethod,
-                  decoration: InputDecoration(
-                    labelText: context.l10n.tr('method'),
-                    border: OutlineInputBorder(),
-                  ),
-                  items: <DropdownMenuItem<String>>[
-                    DropdownMenuItem<String>(
-                      value: 'hawl',
-                      child: Text(context.l10n.tr('monthly_hawl')),
-                    ),
-                    DropdownMenuItem<String>(
-                      value: 'annual',
-                      child: Text(context.l10n.tr('annual')),
-                    ),
-                  ],
-                  onChanged: (String? value) {
-                    if (value == null) return;
-                    context.read<AppStateController>().updateZakatMethod(value);
-                  },
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  key: const Key('settingsZakatNisabBasisField'),
-                  initialValue: zakatNisabBasis,
-                  decoration: InputDecoration(
-                    labelText: context.l10n.tr('cash_nisab'),
-                    border: OutlineInputBorder(),
-                  ),
-                  items: <DropdownMenuItem<String>>[
-                    DropdownMenuItem<String>(
-                      value: ZakatEngineService.nisabBasisGold85,
-                      child: Text(context.l10n.tr('nisab_gold_85')),
-                    ),
-                    DropdownMenuItem<String>(
-                      value: ZakatEngineService.nisabBasisSilver595,
-                      child: Text(context.l10n.tr('nisab_silver_595')),
-                    ),
-                  ],
-                  onChanged: (String? value) {
-                    if (value == null) return;
-                    context.read<AppStateController>().updateZakatNisabBasis(
-                      value,
-                    );
-                  },
-                ),
-                if (zakatMethod == 'annual') ...<Widget>[
-                  const SizedBox(height: 12),
-                  Row(
-                    key: const Key('settingsAnnualDateSection'),
-                    children: <Widget>[
-                      Expanded(
-                        child: DropdownButtonFormField<int>(
-                          key: const Key('settingsHijriMonthField'),
-                          initialValue: annualDate.month,
-                          decoration: InputDecoration(
-                            labelText: context.l10n.tr('hijri_month'),
-                            border: OutlineInputBorder(),
-                          ),
-                          items: List<DropdownMenuItem<int>>.generate(12, (
-                            int index,
-                          ) {
-                            final int m = index + 1;
-                            return DropdownMenuItem<int>(
-                              value: m,
-                              child: Text(m.toString()),
-                            );
-                          }, growable: false),
-                          onChanged: (int? value) {
-                            if (value == null) return;
-                            final int d =
-                                annualDate.day > _hijriMonthLength(value)
-                                ? _hijriMonthLength(value)
-                                : annualDate.day;
-                            _updateAnnualDate(value, d);
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: DropdownButtonFormField<int>(
-                          key: const Key('settingsHijriDayField'),
-                          initialValue: annualDate.day,
-                          decoration: InputDecoration(
-                            labelText: context.l10n.tr('hijri_day'),
-                            border: OutlineInputBorder(),
-                          ),
-                          items: List<DropdownMenuItem<int>>.generate(
-                            _hijriMonthLength(annualDate.month),
-                            (int index) {
-                              final int d = index + 1;
-                              return DropdownMenuItem<int>(
-                                value: d,
-                                child: Text(d.toString()),
+                onSignOut: authController == null
+                    ? null
+                    : () async {
+                        final AppStateController appStateController = context
+                            .read<AppStateController>();
+                        final CloudBackupController? cloud =
+                            cloudBackupController;
+                        if (appStateController.state.biometricExportEnabled &&
+                            await BiometricService.canAuthenticate()) {
+                          final bool auth = await BiometricService.authenticate(
+                            reason:
+                                'Confirm identity to back up before signing out',
+                            isSensitiveAction: true,
+                          );
+                          if (!auth) return;
+                        }
+                        final bool backupNeeded =
+                            cloud != null && cloud.hasPendingAutoBackup;
+                        bool backupOk = true;
+                        if (backupNeeded) {
+                          backupOk = await cloud.backupNow(
+                            forceIfCloudNewer: true,
+                          );
+                        }
+                        if (!backupOk) {
+                          if (!context.mounted) return;
+                          final bool? action = await showDialog<bool>(
+                            context: context,
+                            builder: (BuildContext dialogContext) {
+                              return AlertDialog(
+                                title: const Text('Backup failed.'),
+                                content: Text(
+                                  cloud?.statusMessage ?? 'Backup failed.',
+                                ),
+                                actions: <Widget>[
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.of(dialogContext).pop(false),
+                                    child: const Text('Retry'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.of(dialogContext).pop(true),
+                                    child: const Text('Sign Out Anyway'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.of(dialogContext).pop(),
+                                    child: const Text('Cancel'),
+                                  ),
+                                ],
                               );
                             },
-                            growable: false,
+                          );
+                          if (action != true) {
+                            if (action == false && cloud != null) {
+                              await cloud.backupNow(forceIfCloudNewer: true);
+                            }
+                            if (action != true) return;
+                          }
+                        }
+                        await authController?.signOut();
+                        await appStateController.resetForSignedOutUser();
+                      },
+              ),
+              const SizedBox(height: 18),
+              _SettingsOverview(
+                mainCurrency: mainCurrency,
+                defaultCurrency: defaultEntryCurrency,
+                zakatMethod: zakatMethod,
+                nisabBasis: zakatNisabBasis,
+                goldPrice: snapshot.gold24kPricePerGramEgp,
+                silverPrice: snapshot.silverPricePerGramEgp,
+                lastUpdated: _formatLastUpdatedForDisplay(_lastUpdated),
+                refreshing: _isRefreshingMarket,
+                onRefresh: _isRefreshingMarket ? null : _refreshMarketData,
+                isArabic:
+                    Localizations.localeOf(
+                      context,
+                    ).languageCode.toLowerCase() ==
+                    'ar',
+                onTapMainCurrency: () {
+                  Scrollable.ensureVisible(
+                    _mainCurrencyKey.currentContext!,
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut,
+                    alignment: 0.1,
+                  );
+                },
+                onTapDefaultCurrency: () {
+                  Scrollable.ensureVisible(
+                    _mainCurrencyKey.currentContext!,
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut,
+                    alignment: 0.1,
+                  );
+                },
+                onTapZakatMethod: () {
+                  Scrollable.ensureVisible(
+                    _zakatMethodKey.currentContext!,
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut,
+                    alignment: 0.1,
+                  );
+                },
+                onTapNisabBasis: () {
+                  Scrollable.ensureVisible(
+                    _zakatMethodKey.currentContext!,
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut,
+                    alignment: 0.1,
+                  );
+                },
+                onTapMarket: () {
+                  Scrollable.ensureVisible(
+                    _marketDataKey.currentContext!,
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut,
+                    alignment: 0.1,
+                  );
+                },
+              ),
+              const SizedBox(height: 22),
+              Text(
+                context.l10n.tr('settings'),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 10),
+              _SectionCard(
+                title: context.l10n.tr('preferences_section'),
+                child: Column(
+                  children: <Widget>[
+                    _SettingsRowTile(
+                      key: const Key('settingsLanguageTile'),
+                      icon: Icons.language_outlined,
+                      title: context.l10n.tr('language'),
+                      value: languagePreference == 'ar' ? 'العربية' : 'English',
+                      onTap: () async {
+                        final String? selected = await showDialog<String>(
+                          context: context,
+                          builder: (BuildContext ctx) => SimpleDialog(
+                            title: Text(context.l10n.tr('language_label')),
+                            children: <Widget>[
+                              SimpleDialogOption(
+                                onPressed: () => Navigator.pop(ctx, 'en'),
+                                child: Text(context.l10n.tr('english')),
+                              ),
+                              SimpleDialogOption(
+                                onPressed: () => Navigator.pop(ctx, 'ar'),
+                                child: Text(context.l10n.tr('arabic')),
+                              ),
+                            ],
                           ),
-                          onChanged: (int? value) {
-                            if (value == null) return;
-                            _updateAnnualDate(annualDate.month, value);
-                          },
+                        );
+                        if (selected != null && context.mounted) {
+                          context
+                              .read<AppStateController>()
+                              .updateLanguagePreference(selected);
+                        }
+                      },
+                    ),
+                    const Divider(height: 1, indent: 36),
+                    _SettingsRowTile(
+                      key: const Key('settingsCategoriesTile'),
+                      icon: Icons.folder_outlined,
+                      title: context.l10n.tr('categories_section'),
+                      onTap: () {
+                        setState(
+                          () => _categoriesExpanded = !_categoriesExpanded,
+                        );
+                      },
+                    ),
+                    if (_categoriesExpanded)
+                      Padding(
+                        padding: const EdgeInsets.only(
+                          left: 36,
+                          top: 4,
+                          bottom: 8,
+                        ),
+                        child: Column(
+                          children: [
+                            _buildCategoryBlock(context, type: 'income'),
+                            const SizedBox(height: 8),
+                            _buildCategoryBlock(context, type: 'expense'),
+                          ],
+                        ),
+                      ),
+                    const Divider(height: 1, indent: 36),
+                    _SettingsRowTile(
+                      key: const Key('settingsRecurringTile'),
+                      icon: Icons.event_repeat_outlined,
+                      title: context.l10n.tr('recurring_section'),
+                      onTap: () {
+                        setState(
+                          () => _recurringExpanded = !_recurringExpanded,
+                        );
+                      },
+                    ),
+                    if (_recurringExpanded)
+                      Padding(
+                        padding: const EdgeInsets.only(
+                          left: 36,
+                          top: 4,
+                          bottom: 8,
+                        ),
+                        child: Column(
+                          children: [
+                            ...state.recurringTransactions.map(
+                              (RecurringTransaction item) => ListTile(
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                title: Text(item.name),
+                                subtitle: Text(
+                                  '${item.type} • ${item.amount} ${item.currency} • ${context.l10n.tr('day_of_month')}: ${item.dayOfMonth}',
+                                ),
+                                trailing: IconButton(
+                                  key: Key('deleteRecurring_${item.id}'),
+                                  onPressed: () => context
+                                      .read<AppStateController>()
+                                      .deleteRecurringTransaction(item.id),
+                                  icon: const Icon(Icons.delete_outline),
+                                ),
+                              ),
+                            ),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: FilledButton(
+                                key: const Key('addRecurringButton'),
+                                onPressed: () =>
+                                    _showAddRecurringDialog(context),
+                                child: Text(context.l10n.tr('add_recurring')),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              _SectionCard(
+                title: 'Security',
+                child: Column(
+                  children: [
+                    _buildSecuritySwitch(
+                      context: context,
+                      icon: Icons.fingerprint_outlined,
+                      title: 'Biometric App Lock',
+                      value: state.biometricLockEnabled,
+                      onChanged: (bool val) async {
+                        final canAuth =
+                            await BiometricService.canAuthenticate();
+                        if (!canAuth) {
+                          showTopSnackBar(
+                            context,
+                            'Biometrics are not available or configured on this device.',
+                            kind: AppToastKind.warning,
+                          );
+                          return;
+                        }
+                        final authenticated = await BiometricService.authenticate(
+                          reason: val
+                              ? 'Confirm identity to enable Biometric App Lock'
+                              : 'Confirm identity to disable Biometric App Lock',
+                        );
+                        if (authenticated) {
+                          context
+                              .read<AppStateController>()
+                              .updateBiometricLockEnabled(val);
+                        }
+                      },
+                    ),
+                    const Divider(height: 1, indent: 36),
+                    _buildSecurityDropdown(
+                      context: context,
+                      icon: Icons.timer_outlined,
+                      title: 'Auto Lock Delay',
+                      value: state.biometricAutoLockDelay,
+                      onChanged: (String? val) {
+                        if (val != null) {
+                          context
+                              .read<AppStateController>()
+                              .updateBiometricAutoLockDelay(val);
+                        }
+                      },
+                    ),
+                    const Divider(height: 1, indent: 36),
+                    _buildSecuritySwitch(
+                      context: context,
+                      icon: Icons.visibility_off_outlined,
+                      title: 'Hide Wealth Values',
+                      value: state.biometricHideWealthEnabled,
+                      onChanged: (bool val) {
+                        context
+                            .read<AppStateController>()
+                            .updateBiometricHideWealthEnabled(val);
+                      },
+                    ),
+                    const Divider(height: 1, indent: 36),
+                    _buildSecuritySwitch(
+                      context: context,
+                      icon: Icons.lock_outline_rounded,
+                      title: 'Protect Exports & Delete',
+                      value: state.biometricExportEnabled,
+                      onChanged: (bool val) {
+                        context
+                            .read<AppStateController>()
+                            .updateBiometricExportEnabled(val);
+                      },
+                    ),
+                    const Divider(height: 1, indent: 36),
+                    _buildSecuritySwitch(
+                      context: context,
+                      icon: Icons.restore_outlined,
+                      title: 'Protect Restore & Import',
+                      value: state.biometricRestoreEnabled,
+                      onChanged: (bool val) {
+                        context
+                            .read<AppStateController>()
+                            .updateBiometricRestoreEnabled(val);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              _SectionCard(
+                key: _mainCurrencyKey,
+                title: context.l10n.tr('currency_section'),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    DropdownButtonFormField<String>(
+                      key: const Key('settingsMainCurrencyField'),
+                      initialValue: _supportedCurrencies.contains(mainCurrency)
+                          ? mainCurrency
+                          : 'EGP',
+                      decoration: InputDecoration(
+                        labelText: context.l10n.tr('main_currency'),
+                        border: OutlineInputBorder(),
+                      ),
+                      items: _supportedCurrencies
+                          .map(
+                            (String c) => DropdownMenuItem<String>(
+                              value: c,
+                              child: Text(
+                                ZakatEngineService.getCurrencySymbol(
+                                  c,
+                                  isArabic:
+                                      Localizations.localeOf(
+                                        context,
+                                      ).languageCode.toLowerCase() ==
+                                      'ar',
+                                ),
+                              ),
+                            ),
+                          )
+                          .toList(growable: false),
+                      onChanged: (String? value) {
+                        if (value == null) return;
+                        context.read<AppStateController>().updateMainCurrency(
+                          value,
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      key: const Key('settingsDefaultEntryCurrencyField'),
+                      initialValue:
+                          _supportedCurrencies.contains(defaultEntryCurrency)
+                          ? defaultEntryCurrency
+                          : 'EGP',
+                      decoration: InputDecoration(
+                        labelText: context.l10n.tr('default_entry_currency'),
+                        border: OutlineInputBorder(),
+                      ),
+                      items: _supportedCurrencies
+                          .map(
+                            (String c) => DropdownMenuItem<String>(
+                              value: c,
+                              child: Text(
+                                ZakatEngineService.getCurrencySymbol(
+                                  c,
+                                  isArabic:
+                                      Localizations.localeOf(
+                                        context,
+                                      ).languageCode.toLowerCase() ==
+                                      'ar',
+                                ),
+                              ),
+                            ),
+                          )
+                          .toList(growable: false),
+                      onChanged: (String? value) {
+                        if (value == null) return;
+                        context
+                            .read<AppStateController>()
+                            .updateDefaultEntryCurrency(value);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: OutlinedButton(
+                        key: const Key('openCurrencyExchangeButton'),
+                        onPressed: () => _openCurrencyExchangeDialog(context),
+                        child: Text(context.l10n.tr('currency_exchange')),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              _SectionCard(
+                key: _zakatMethodKey,
+                title: context.l10n.tr('zakat_calculation_section'),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    DropdownButtonFormField<String>(
+                      key: const Key('settingsZakatMethodField'),
+                      initialValue: zakatMethod,
+                      decoration: InputDecoration(
+                        labelText: context.l10n.tr('method'),
+                        border: OutlineInputBorder(),
+                      ),
+                      items: <DropdownMenuItem<String>>[
+                        DropdownMenuItem<String>(
+                          value: 'hawl',
+                          child: Text(context.l10n.tr('monthly_hawl')),
+                        ),
+                        DropdownMenuItem<String>(
+                          value: 'annual',
+                          child: Text(context.l10n.tr('annual')),
+                        ),
+                      ],
+                      onChanged: (String? value) {
+                        if (value == null) return;
+                        context.read<AppStateController>().updateZakatMethod(
+                          value,
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      key: const Key('settingsZakatNisabBasisField'),
+                      initialValue: zakatNisabBasis,
+                      decoration: InputDecoration(
+                        labelText: context.l10n.tr('cash_nisab'),
+                        border: OutlineInputBorder(),
+                      ),
+                      items: <DropdownMenuItem<String>>[
+                        DropdownMenuItem<String>(
+                          value: ZakatEngineService.nisabBasisGold85,
+                          child: Text(context.l10n.tr('nisab_gold_85')),
+                        ),
+                        DropdownMenuItem<String>(
+                          value: ZakatEngineService.nisabBasisSilver595,
+                          child: Text(context.l10n.tr('nisab_silver_595')),
+                        ),
+                      ],
+                      onChanged: (String? value) {
+                        if (value == null) return;
+                        context
+                            .read<AppStateController>()
+                            .updateZakatNisabBasis(value);
+                      },
+                    ),
+                    if (zakatMethod == 'annual') ...<Widget>[
+                      const SizedBox(height: 12),
+                      Row(
+                        key: const Key('settingsAnnualDateSection'),
+                        children: <Widget>[
+                          Expanded(
+                            child: DropdownButtonFormField<int>(
+                              key: const Key('settingsHijriMonthField'),
+                              initialValue: annualDate.month,
+                              decoration: InputDecoration(
+                                labelText: context.l10n.tr('hijri_month'),
+                                border: OutlineInputBorder(),
+                              ),
+                              items: List<DropdownMenuItem<int>>.generate(12, (
+                                int index,
+                              ) {
+                                final int m = index + 1;
+                                return DropdownMenuItem<int>(
+                                  value: m,
+                                  child: Text(m.toString()),
+                                );
+                              }, growable: false),
+                              onChanged: (int? value) {
+                                if (value == null) return;
+                                final int d =
+                                    annualDate.day > _hijriMonthLength(value)
+                                    ? _hijriMonthLength(value)
+                                    : annualDate.day;
+                                _updateAnnualDate(value, d);
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: DropdownButtonFormField<int>(
+                              key: const Key('settingsHijriDayField'),
+                              initialValue: annualDate.day,
+                              decoration: InputDecoration(
+                                labelText: context.l10n.tr('hijri_day'),
+                                border: OutlineInputBorder(),
+                              ),
+                              items: List<DropdownMenuItem<int>>.generate(
+                                _hijriMonthLength(annualDate.month),
+                                (int index) {
+                                  final int d = index + 1;
+                                  return DropdownMenuItem<int>(
+                                    value: d,
+                                    child: Text(d.toString()),
+                                  );
+                                },
+                                growable: false,
+                              ),
+                              onChanged: (int? value) {
+                                if (value == null) return;
+                                _updateAnnualDate(annualDate.month, value);
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              _SectionCard(
+                key: _marketDataKey,
+                title: context.l10n.tr('market_data_section'),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    _MarketSummary(
+                      goldPrice: snapshot.gold24kPricePerGramEgp,
+                      silverPrice: snapshot.silverPricePerGramEgp,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '${context.l10n.tr('last_updated')}: ${_formatLastUpdatedForDisplay(_lastUpdated)}',
+                    ),
+                    const SizedBox(height: 12),
+                    FilledButton.tonal(
+                      key: const Key('refreshMarketDataButton'),
+                      onPressed: _isRefreshingMarket
+                          ? null
+                          : _refreshMarketData,
+                      child: _isRefreshingMarket
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Text(context.l10n.tr('refresh_market_data')),
+                    ),
+                    if (_refreshMarketMessage.isNotEmpty) ...<Widget>[
+                      const SizedBox(height: 8),
+                      Text(
+                        _localizedRefreshMessage(
+                          context,
+                          _refreshMarketMessage,
                         ),
                       ),
                     ],
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          _SectionCard(
-            title: context.l10n.tr('market_data_section'),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(context.l10n.tr('auto_refresh_market')),
-                const SizedBox(height: 10),
-                Text(
-                  '${context.l10n.tr('last_updated')}: ${_formatLastUpdatedForDisplay(_lastUpdated)}',
-                ),
-                const SizedBox(height: 12),
-                FilledButton.tonal(
-                  key: const Key('refreshMarketDataButton'),
-                  onPressed: _isRefreshingMarket ? null : _refreshMarketData,
-                  child: _isRefreshingMarket
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Text(context.l10n.tr('refresh_market_data')),
-                ),
-                if (_refreshMarketMessage.isNotEmpty) ...<Widget>[
-                  const SizedBox(height: 8),
-                  Text(
-                    _localizedRefreshMessage(context, _refreshMarketMessage),
-                  ),
-                ],
-                const SizedBox(height: 12),
-                ExpansionTile(
-                  key: const Key('marketAdvancedOverrideTile'),
-                  title: Text(context.l10n.tr('advanced_manual_override')),
-                  initiallyExpanded: _manualOverrideExpanded,
-                  onExpansionChanged: (bool expanded) {
-                    setState(() => _manualOverrideExpanded = expanded);
-                  },
-                  childrenPadding: const EdgeInsets.symmetric(
-                    horizontal: 2,
-                    vertical: 12,
-                  ),
-                  children: <Widget>[
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 2),
-                      child: Column(
-                        children: <Widget>[
-                          TextFormField(
-                            key: const Key('marketGoldField'),
-                            controller: _goldController,
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                            ),
-                            decoration: InputDecoration(
-                              labelText: context.l10n.tr(
-                                'gold_24k_price_per_gram_egp',
-                              ),
-                              border: OutlineInputBorder(),
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          TextFormField(
-                            key: const Key('marketSilverField'),
-                            controller: _silverController,
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                            ),
-                            decoration: InputDecoration(
-                              labelText: context.l10n.tr(
-                                'silver_price_per_gram_egp',
-                              ),
-                              border: OutlineInputBorder(),
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          TextFormField(
-                            key: const Key('marketUsdField'),
-                            controller: _usdController,
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                            ),
-                            decoration: InputDecoration(
-                              labelText: context.l10n.tr('usd_to_egp'),
-                              border: OutlineInputBorder(),
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          TextFormField(
-                            key: const Key('marketSarField'),
-                            controller: _sarController,
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                            ),
-                            decoration: InputDecoration(
-                              labelText: context.l10n.tr('sar_to_egp'),
-                              border: OutlineInputBorder(),
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          TextFormField(
-                            key: const Key('marketAedField'),
-                            controller: _aedController,
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                            ),
-                            decoration: InputDecoration(
-                              labelText: context.l10n.tr('aed_to_egp'),
-                              border: OutlineInputBorder(),
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          TextFormField(
-                            key: const Key('marketKwdField'),
-                            controller: _kwdController,
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                            ),
-                            decoration: InputDecoration(
-                              labelText: context.l10n.tr('kwd_to_egp'),
-                              border: OutlineInputBorder(),
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          TextFormField(
-                            key: const Key('marketQarField'),
-                            controller: _qarController,
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                            ),
-                            decoration: InputDecoration(
-                              labelText: context.l10n.tr('qar_to_egp'),
-                              border: OutlineInputBorder(),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: FilledButton(
-                              key: const Key('saveMarketDataButton'),
-                              onPressed: _saveMarketData,
-                              child: Text(context.l10n.tr('save_market_data')),
-                            ),
-                          ),
-                        ],
+                    const SizedBox(height: 12),
+                    ExpansionTile(
+                      key: const Key('marketAdvancedOverrideTile'),
+                      title: Text(context.l10n.tr('advanced_manual_override')),
+                      initiallyExpanded: _manualOverrideExpanded,
+                      onExpansionChanged: (bool expanded) {
+                        setState(() => _manualOverrideExpanded = expanded);
+                      },
+                      childrenPadding: const EdgeInsets.symmetric(
+                        horizontal: 2,
+                        vertical: 12,
                       ),
+                      children: <Widget>[
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 2),
+                          child: Column(
+                            children: <Widget>[
+                              TextFormField(
+                                key: const Key('marketGoldField'),
+                                controller: _goldController,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                decoration: InputDecoration(
+                                  labelText: context.l10n.tr(
+                                    'gold_24k_price_per_gram_egp',
+                                  ),
+                                  border: OutlineInputBorder(),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              TextFormField(
+                                key: const Key('marketSilverField'),
+                                controller: _silverController,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                decoration: InputDecoration(
+                                  labelText: context.l10n.tr(
+                                    'silver_price_per_gram_egp',
+                                  ),
+                                  border: OutlineInputBorder(),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              TextFormField(
+                                key: const Key('marketUsdField'),
+                                controller: _usdController,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                decoration: InputDecoration(
+                                  labelText: context.l10n.tr('usd_to_egp'),
+                                  border: OutlineInputBorder(),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              TextFormField(
+                                key: const Key('marketSarField'),
+                                controller: _sarController,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                decoration: InputDecoration(
+                                  labelText: context.l10n.tr('sar_to_egp'),
+                                  border: OutlineInputBorder(),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              TextFormField(
+                                key: const Key('marketAedField'),
+                                controller: _aedController,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                decoration: InputDecoration(
+                                  labelText: context.l10n.tr('aed_to_egp'),
+                                  border: OutlineInputBorder(),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              TextFormField(
+                                key: const Key('marketKwdField'),
+                                controller: _kwdController,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                decoration: InputDecoration(
+                                  labelText: context.l10n.tr('kwd_to_egp'),
+                                  border: OutlineInputBorder(),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              TextFormField(
+                                key: const Key('marketQarField'),
+                                controller: _qarController,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                decoration: InputDecoration(
+                                  labelText: context.l10n.tr('qar_to_egp'),
+                                  border: OutlineInputBorder(),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: FilledButton(
+                                  key: const Key('saveMarketDataButton'),
+                                  onPressed: _saveMarketData,
+                                  child: Text(
+                                    context.l10n.tr('save_market_data'),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          _SectionCard(
-            title: context.l10n.tr('backup_sync_section'),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(_syncHealthSummary(state.syncHealth)),
-                const SizedBox(height: 8),
-                Text(
-                  _cloudBackupSummary(cloudBackupController, authController),
-                ),
-                if (cloudBackupController != null &&
-                    cloudBackupController.latestBackup?.effectiveUpdatedAt !=
-                        null) ...<Widget>[
-                  const SizedBox(height: 6),
-                  Text(
-                    'Last cloud backup: ${_formatLastUpdatedForDisplay(cloudBackupController.latestBackup!.effectiveUpdatedAt!.toIso8601String())}',
-                  ),
-                ],
-                if (cloudBackupController != null &&
-                    cloudBackupController.statusMessage
-                        .trim()
-                        .isNotEmpty) ...<Widget>[
-                  const SizedBox(height: 6),
-                  Text(cloudBackupController.statusMessage),
-                ],
-                if (cloudBackupController != null &&
-                    cloudBackupController.lastError
-                        .trim()
-                        .isNotEmpty) ...<Widget>[
-                  const SizedBox(height: 6),
-                  Text(
-                    cloudBackupController.lastError,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
+              ),
+              const SizedBox(height: 12),
+              _SectionCard(
+                title: context.l10n.tr('backup_sync_section'),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    FilledButton.tonal(
-                      key: const Key('driveBackupNowButton'),
-                      onPressed:
-                          authController == null ||
-                              !authController.isSignedIn ||
-                              cloudBackupController == null ||
-                              cloudBackupController.isBackingUp ||
-                              cloudBackupController.isRestoring
-                          ? null
-                          : () => _handleCloudBackup(
-                              context,
-                              cloudBackupController,
-                            ),
-                      child: cloudBackupController?.isBackingUp == true
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Text('Backup Now'),
-                    ),
-                    OutlinedButton(
-                      key: const Key('driveRestoreFromCloudButton'),
-                      onPressed:
-                          authController == null ||
-                              !authController.isSignedIn ||
-                              cloudBackupController == null ||
-                              cloudBackupController.isBackingUp ||
-                              cloudBackupController.isRestoring
-                          ? null
-                          : () => _handleCloudRestore(
-                              context,
-                              cloudBackupController,
-                            ),
-                      child: cloudBackupController?.isRestoring == true
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Text('Restore from Cloud'),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                BackupRestoreCard(controller: controller),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          _SectionCard(
-            title: context.l10n.tr('security_section'),
-            child: ExpansionTile(
-              key: const Key('settingsSecurityTile'),
-              title: Text(context.l10n.tr('danger_zone')),
-              initiallyExpanded: _securityExpanded,
-              onExpansionChanged: (bool v) =>
-                  setState(() => _securityExpanded = v),
-              children: <Widget>[
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: FilledButton(
-                    key: const Key('deleteAllDataButton'),
-                    style: FilledButton.styleFrom(backgroundColor: Colors.red),
-                    onPressed: () => _confirmDeleteAllData(context),
-                    child: Text(context.l10n.tr('delete_all_data')),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          _SectionCard(
-            title: context.l10n.tr('ai_section'),
-            child: ExpansionTile(
-              key: const Key('settingsAiTile'),
-              title: const Text('Gemini'),
-              initiallyExpanded: _aiExpanded,
-              onExpansionChanged: (bool v) => setState(() => _aiExpanded = v),
-              children: <Widget>[
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 4.0,
-                    vertical: 8.0,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      TextFormField(
-                        key: const Key('geminiKey1Field'),
-                        controller: _aiKey1Controller,
-                        obscureText: true,
-                        decoration: InputDecoration(
-                          labelText:
-                              Localizations.localeOf(context).languageCode ==
-                                  'ar'
-                              ? 'مفتاح Gemini 1'
-                              : 'Gemini Key 1',
-                          border: const OutlineInputBorder(),
-                          prefixIcon: const Icon(Icons.vpn_key),
+                    Row(
+                      children: <Widget>[
+                        Icon(
+                          authController?.isSignedIn == true
+                              ? Icons.cloud_done_outlined
+                              : Icons.cloud_off_outlined,
+                          size: 18,
+                          color: authController?.isSignedIn == true
+                              ? Colors.green
+                              : Colors.grey,
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        key: const Key('geminiKey2Field'),
-                        controller: _aiKey2Controller,
-                        obscureText: true,
-                        decoration: InputDecoration(
-                          labelText:
-                              Localizations.localeOf(context).languageCode ==
-                                  'ar'
-                              ? 'مفتاح Gemini 2'
-                              : 'Gemini Key 2',
-                          border: const OutlineInputBorder(),
-                          prefixIcon: const Icon(Icons.vpn_key),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<int>(
-                        key: const Key('geminiDefaultKeyIndexField'),
-                        initialValue: _selectedAiKeyIndex,
-                        decoration: InputDecoration(
-                          labelText:
-                              Localizations.localeOf(context).languageCode ==
-                                  'ar'
-                              ? 'المفتاح الافتراضي'
-                              : 'Default Key',
-                          border: const OutlineInputBorder(),
-                        ),
-                        items: <DropdownMenuItem<int>>[
-                          DropdownMenuItem<int>(
-                            value: 0,
-                            child: Text(
-                              Localizations.localeOf(context).languageCode ==
-                                      'ar'
-                                  ? 'المفتاح 1'
-                                  : 'Key 1',
-                            ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            authController?.isSignedIn == true
+                                ? 'Google Drive Connected'
+                                : 'Google Drive Disconnected',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
                           ),
-                          DropdownMenuItem<int>(
-                            value: 1,
-                            child: Text(
-                              Localizations.localeOf(context).languageCode ==
-                                      'ar'
-                                  ? 'المفتاح 2'
-                                  : 'Key 2',
-                            ),
-                          ),
-                        ],
-                        onChanged: (int? value) {
-                          if (value == null) return;
-                          setState(() {
-                            _selectedAiKeyIndex = value;
-                          });
-                        },
+                        ),
+                      ],
+                    ),
+                    if (cloudBackupController != null &&
+                        cloudBackupController
+                                .latestBackup
+                                ?.effectiveUpdatedAt !=
+                            null) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        'Last backup: ${_formatLastUpdatedForDisplay(cloudBackupController.latestBackup!.effectiveUpdatedAt!.toIso8601String())}',
+                        style: Theme.of(context).textTheme.bodySmall,
                       ),
-                      const SizedBox(height: 16),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: <Widget>[
-                          OutlinedButton.icon(
-                            key: const Key('testGeminiConnectionButton'),
-                            onPressed: _isTestingConnection
+                    ],
+                    if (cloudBackupController != null &&
+                        cloudBackupController.statusMessage
+                            .trim()
+                            .isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        cloudBackupController.statusMessage,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: FilledButton.tonal(
+                            key: const Key('driveBackupNowButton'),
+                            onPressed:
+                                authController == null ||
+                                    !authController.isSignedIn ||
+                                    cloudBackupController == null ||
+                                    cloudBackupController.isBackingUp ||
+                                    cloudBackupController.isRestoring
                                 ? null
-                                : _testAiConnection,
-                            icon: _isTestingConnection
+                                : () => _handleCloudBackup(
+                                    context,
+                                    cloudBackupController,
+                                  ),
+                            child: cloudBackupController?.isBackingUp == true
                                 ? const SizedBox(
                                     width: 16,
                                     height: 16,
@@ -815,80 +911,282 @@ class _AccountScreenState extends State<AccountScreen> {
                                       strokeWidth: 2,
                                     ),
                                   )
-                                : const Icon(Icons.wifi),
-                            label: Text(
-                              Localizations.localeOf(context).languageCode ==
+                                : const Text('Backup Now'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: OutlinedButton(
+                            key: const Key('driveRestoreFromCloudButton'),
+                            onPressed:
+                                authController == null ||
+                                    !authController.isSignedIn ||
+                                    cloudBackupController == null ||
+                                    cloudBackupController.isBackingUp ||
+                                    cloudBackupController.isRestoring
+                                ? null
+                                : () => _handleCloudRestore(
+                                    context,
+                                    cloudBackupController,
+                                  ),
+                            child: cloudBackupController?.isRestoring == true
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Text('Restore'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    ExpansionTile(
+                      title: Text(
+                        context.l10n.tr('local_backup_options') ??
+                            'Local Import/Export',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      tilePadding: EdgeInsets.zero,
+                      children: <Widget>[
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8.0),
+                          child: BackupRestoreCard(controller: controller),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              _SectionCard(
+                title: context.l10n.tr('security_section'),
+                child: ExpansionTile(
+                  key: const Key('settingsSecurityTile'),
+                  title: Text(context.l10n.tr('danger_zone')),
+                  initiallyExpanded: _securityExpanded,
+                  onExpansionChanged: (bool v) =>
+                      setState(() => _securityExpanded = v),
+                  children: <Widget>[
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: FilledButton(
+                        key: const Key('deleteAllDataButton'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.red,
+                        ),
+                        onPressed: () => _confirmDeleteAllData(context),
+                        child: Text(context.l10n.tr('delete_all_data')),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              _SectionCard(
+                title: context.l10n.tr('ai_section'),
+                child: ExpansionTile(
+                  key: const Key('settingsAiTile'),
+                  title: const Text('Gemini'),
+                  initiallyExpanded: _aiExpanded,
+                  onExpansionChanged: (bool v) =>
+                      setState(() => _aiExpanded = v),
+                  children: <Widget>[
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4.0,
+                        vertical: 8.0,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: <Widget>[
+                          TextFormField(
+                            key: const Key('geminiKey1Field'),
+                            controller: _aiKey1Controller,
+                            obscureText: true,
+                            decoration: InputDecoration(
+                              labelText:
+                                  Localizations.localeOf(
+                                        context,
+                                      ).languageCode ==
                                       'ar'
-                                  ? 'اختبار الاتصال'
-                                  : 'Test Connection',
+                                  ? 'مفتاح Gemini 1'
+                                  : 'Gemini Key 1',
+                              border: const OutlineInputBorder(),
+                              prefixIcon: const Icon(Icons.vpn_key),
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          FilledButton.icon(
-                            key: const Key('saveGeminiKeysButton'),
-                            onPressed: _saveAiKeys,
-                            icon: const Icon(Icons.save),
-                            label: Text(
-                              Localizations.localeOf(context).languageCode ==
+                          const SizedBox(height: 12),
+                          TextFormField(
+                            key: const Key('geminiKey2Field'),
+                            controller: _aiKey2Controller,
+                            obscureText: true,
+                            decoration: InputDecoration(
+                              labelText:
+                                  Localizations.localeOf(
+                                        context,
+                                      ).languageCode ==
                                       'ar'
-                                  ? 'حفظ'
-                                  : 'Save AI Keys',
+                                  ? 'مفتاح Gemini 2'
+                                  : 'Gemini Key 2',
+                              border: const OutlineInputBorder(),
+                              prefixIcon: const Icon(Icons.vpn_key),
                             ),
+                          ),
+                          const SizedBox(height: 12),
+                          DropdownButtonFormField<int>(
+                            key: const Key('geminiDefaultKeyIndexField'),
+                            initialValue: _selectedAiKeyIndex,
+                            decoration: InputDecoration(
+                              labelText:
+                                  Localizations.localeOf(
+                                        context,
+                                      ).languageCode ==
+                                      'ar'
+                                  ? 'المفتاح الافتراضي'
+                                  : 'Default Key',
+                              border: const OutlineInputBorder(),
+                            ),
+                            items: <DropdownMenuItem<int>>[
+                              DropdownMenuItem<int>(
+                                value: 0,
+                                child: Text(
+                                  Localizations.localeOf(
+                                            context,
+                                          ).languageCode ==
+                                          'ar'
+                                      ? 'المفتاح 1'
+                                      : 'Key 1',
+                                ),
+                              ),
+                              DropdownMenuItem<int>(
+                                value: 1,
+                                child: Text(
+                                  Localizations.localeOf(
+                                            context,
+                                          ).languageCode ==
+                                          'ar'
+                                      ? 'المفتاح 2'
+                                      : 'Key 2',
+                                ),
+                              ),
+                            ],
+                            onChanged: (int? value) {
+                              if (value == null) return;
+                              setState(() {
+                                _selectedAiKeyIndex = value;
+                              });
+                            },
+                          ),
+                          const SizedBox(height: 16),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: <Widget>[
+                              OutlinedButton.icon(
+                                key: const Key('testGeminiConnectionButton'),
+                                onPressed: _isTestingConnection
+                                    ? null
+                                    : _testAiConnection,
+                                icon: _isTestingConnection
+                                    ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.wifi),
+                                label: Text(
+                                  Localizations.localeOf(
+                                            context,
+                                          ).languageCode ==
+                                          'ar'
+                                      ? 'اختبار الاتصال'
+                                      : 'Test Connection',
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              FilledButton.icon(
+                                key: const Key('saveGeminiKeysButton'),
+                                onPressed: _saveAiKeys,
+                                icon: const Icon(Icons.save),
+                                label: Text(
+                                  Localizations.localeOf(
+                                            context,
+                                          ).languageCode ==
+                                          'ar'
+                                      ? 'حفظ'
+                                      : 'Save AI Keys',
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          _SectionCard(
-            title: context.l10n.tr('appearance_section'),
-            child: DropdownButtonFormField<String>(
-              key: const Key('settingsThemeModeField'),
-              initialValue: themeMode,
-              decoration: InputDecoration(
-                labelText: context.l10n.tr('theme_mode'),
-                border: OutlineInputBorder(),
               ),
-              items: <DropdownMenuItem<String>>[
-                DropdownMenuItem<String>(
-                  value: 'system',
-                  child: Text(context.l10n.tr('theme_system')),
+              const SizedBox(height: 12),
+              _SectionCard(
+                title: context.l10n.tr('appearance_section'),
+                child: DropdownButtonFormField<String>(
+                  key: const Key('settingsThemeModeField'),
+                  initialValue: themeMode,
+                  decoration: InputDecoration(
+                    labelText: context.l10n.tr('theme_mode'),
+                    border: OutlineInputBorder(),
+                  ),
+                  items: <DropdownMenuItem<String>>[
+                    DropdownMenuItem<String>(
+                      value: 'system',
+                      child: Text(context.l10n.tr('theme_system')),
+                    ),
+                    DropdownMenuItem<String>(
+                      value: 'light',
+                      child: Text(context.l10n.tr('theme_light')),
+                    ),
+                    DropdownMenuItem<String>(
+                      value: 'dark',
+                      child: Text(context.l10n.tr('theme_dark')),
+                    ),
+                  ],
+                  onChanged: (String? value) {
+                    if (value == null) return;
+                    context.read<AppStateController>().updateThemeMode(value);
+                  },
                 ),
-                DropdownMenuItem<String>(
-                  value: 'light',
-                  child: Text(context.l10n.tr('theme_light')),
+              ),
+              const SizedBox(height: 12),
+              _SectionCard(
+                title: context.l10n.tr('about_section'),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    const _CompactInfoRow(
+                      icon: Icons.account_balance_wallet_outlined,
+                      label: 'Zakah Wealth',
+                    ),
+                    _CompactInfoRow(
+                      icon: Icons.info_outline,
+                      label: context.l10n.tr('about_version'),
+                    ),
+                    _CompactInfoRow(
+                      icon: Icons.build_outlined,
+                      label: context.l10n.tr('about_build'),
+                    ),
+                  ],
                 ),
-                DropdownMenuItem<String>(
-                  value: 'dark',
-                  child: Text(context.l10n.tr('theme_dark')),
-                ),
-              ],
-              onChanged: (String? value) {
-                if (value == null) return;
-                context.read<AppStateController>().updateThemeMode(value);
-              },
-            ),
+              ),
+            ],
           ),
-          const SizedBox(height: 12),
-          _SectionCard(
-            title: context.l10n.tr('about_section'),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                const Text('ZakatApp'),
-                SizedBox(height: 4),
-                Text(context.l10n.tr('about_version')),
-                SizedBox(height: 4),
-                Text(context.l10n.tr('about_build')),
-              ],
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -1132,6 +1430,15 @@ class _AccountScreenState extends State<AccountScreen> {
   }
 
   Future<void> _confirmDeleteAllData(BuildContext context) async {
+    final state = context.read<AppStateController>().state;
+    if (state.biometricExportEnabled &&
+        await BiometricService.canAuthenticate()) {
+      final auth = await BiometricService.authenticate(
+        reason: 'Confirm identity to delete all local database data',
+        isSensitiveAction: true,
+      );
+      if (!auth) return;
+    }
     final bool? ok = await showDialog<bool>(
       context: context,
       builder: (BuildContext ctx) => AlertDialog(
@@ -1155,32 +1462,19 @@ class _AccountScreenState extends State<AccountScreen> {
     }
   }
 
-  String _cloudBackupSummary(
-    CloudBackupController? cloudBackupController,
-    AuthController? authController,
-  ) {
-    if (authController == null || !authController.isSignedIn) {
-      return 'Sign in with Google to enable hidden Google Drive backup.';
-    }
-    if (cloudBackupController == null) {
-      return 'Google Drive backup is unavailable in this build.';
-    }
-    if (cloudBackupController.isChecking) {
-      return 'Checking Google Drive backup...';
-    }
-    if (!cloudBackupController.hasCloudBackup) {
-      return 'No cloud backup found yet.';
-    }
-    if (cloudBackupController.cloudBackupNewerThanLocal) {
-      return 'A newer cloud backup is available.';
-    }
-    return 'Google Drive backup is connected.';
-  }
-
   Future<void> _handleCloudBackup(
     BuildContext context,
     CloudBackupController cloudBackupController,
   ) async {
+    final state = context.read<AppStateController>().state;
+    if (state.biometricExportEnabled &&
+        await BiometricService.canAuthenticate()) {
+      final auth = await BiometricService.authenticate(
+        reason: 'Confirm identity to initiate cloud backup',
+        isSensitiveAction: true,
+      );
+      if (!auth) return;
+    }
     bool force = false;
     if (cloudBackupController.cloudBackupNewerThanLocal) {
       final bool? overwrite = await showDialog<bool>(
@@ -1221,6 +1515,15 @@ class _AccountScreenState extends State<AccountScreen> {
     BuildContext context,
     CloudBackupController cloudBackupController,
   ) async {
+    final state = context.read<AppStateController>().state;
+    if (state.biometricRestoreEnabled &&
+        await BiometricService.canAuthenticate()) {
+      final auth = await BiometricService.authenticate(
+        reason: 'Confirm identity to restore data from cloud backup',
+        isSensitiveAction: true,
+      );
+      if (!auth) return;
+    }
     final BackupPreview? preview = await cloudBackupController
         .previewLatestBackup();
     if (!mounted) return;
@@ -1261,17 +1564,6 @@ class _AccountScreenState extends State<AccountScreen> {
       this.context,
       ok ? 'Cloud restore completed.' : cloudBackupController.statusMessage,
     );
-  }
-
-  String _syncHealthSummary(SyncHealth health) {
-    final String success = health.lastSuccessAt.isEmpty
-        ? 'None'
-        : health.lastSuccessAt;
-    final String failure = health.lastFailureAt.isEmpty
-        ? 'None'
-        : health.lastFailureAt;
-    final String error = health.lastError.isEmpty ? 'None' : health.lastError;
-    return 'Last success: $success | Last failure: $failure | Pending writes: ${health.pendingWrites} | Last error: $error';
   }
 
   Future<void> _openCurrencyExchangeDialog(BuildContext context) async {
@@ -1648,6 +1940,81 @@ class _AccountScreenState extends State<AccountScreen> {
       }
     }
   }
+
+  Widget _buildSecuritySwitch({
+    required BuildContext context,
+    required IconData icon,
+    required String title,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      child: Row(
+        children: <Widget>[
+          Icon(icon, size: 20, color: colors.primary),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              title,
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+            ),
+          ),
+          Switch(
+            value: value,
+            onChanged: onChanged,
+            activeColor: colors.primary,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSecurityDropdown({
+    required BuildContext context,
+    required IconData icon,
+    required String title,
+    required String value,
+    required ValueChanged<String?> onChanged,
+  }) {
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 12),
+      child: Row(
+        children: <Widget>[
+          Icon(icon, size: 20, color: colors.primary),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              title,
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+            ),
+          ),
+          DropdownButton<String>(
+            value: value,
+            underline: const SizedBox(),
+            icon: Icon(
+              Icons.keyboard_arrow_down_rounded,
+              color: colors.onSurfaceVariant,
+            ),
+            style: TextStyle(
+              color: colors.primary,
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+            ),
+            items: const [
+              DropdownMenuItem(value: 'immediate', child: Text('Immediately')),
+              DropdownMenuItem(value: '30_seconds', child: Text('30 Seconds')),
+              DropdownMenuItem(value: '1_minute', child: Text('1 Minute')),
+              DropdownMenuItem(value: '5_minutes', child: Text('5 Minutes')),
+            ],
+            onChanged: onChanged,
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _AnnualDate {
@@ -1668,22 +2035,611 @@ class _AnnualDate {
 }
 
 class _SectionCard extends StatelessWidget {
-  const _SectionCard({required this.title, required this.child});
+  const _SectionCard({super.key, required this.title, required this.child});
 
   final String title;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
     return Card(
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      color: colors.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(color: colors.outlineVariant.withValues(alpha: 0.55)),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text(title, style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 10),
+            Row(
+              children: <Widget>[
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: colors.primary.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    _sectionIcon(title),
+                    size: 18,
+                    color: colors.primary,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
             child,
+          ],
+        ),
+      ),
+    );
+  }
+
+  IconData _sectionIcon(String value) {
+    final String title = value.toLowerCase();
+    if (title.contains('currency') || title.contains('عملة')) {
+      return Icons.account_balance_wallet_outlined;
+    }
+    if (title.contains('zakat') || title.contains('زكاة')) {
+      return Icons.auto_awesome_outlined;
+    }
+    if (title.contains('backup') || title.contains('نسخ')) {
+      return Icons.cloud_outlined;
+    }
+    if (title.contains('market') || title.contains('سوق')) {
+      return Icons.show_chart_rounded;
+    }
+    if (title.contains('security') || title.contains('أمان')) {
+      return Icons.security_outlined;
+    }
+    if (title.contains('language') || title.contains('لغة')) {
+      return Icons.language_outlined;
+    }
+    if (title.contains('appearance') || title.contains('مظهر')) {
+      return Icons.palette_outlined;
+    }
+    if (title.contains('categor') || title.contains('فئات')) {
+      return Icons.folder_outlined;
+    }
+    if (title.contains('recurring') || title.contains('متكررة')) {
+      return Icons.event_repeat_outlined;
+    }
+    if (title.contains('about') || title.contains('حول')) {
+      return Icons.info_outline;
+    }
+    if (title.contains('ai') || title.contains('ذكاء')) {
+      return Icons.auto_awesome_outlined;
+    }
+    return Icons.tune_rounded;
+  }
+}
+
+class _SettingsProfileHeader extends StatelessWidget {
+  const _SettingsProfileHeader({
+    required this.name,
+    required this.email,
+    required this.photoUrl,
+    required this.connected,
+    required this.lastBackupAt,
+    required this.isLoading,
+    required this.onSignIn,
+    required this.onSignOut,
+  });
+
+  final String? name;
+  final String? email;
+  final String? photoUrl;
+  final bool connected;
+  final DateTime? lastBackupAt;
+  final bool isLoading;
+  final VoidCallback? onSignIn;
+  final VoidCallback? onSignOut;
+
+  @override
+  Widget build(BuildContext context) {
+    final String displayName = (name ?? '').trim().isEmpty
+        ? 'Zakah Wealth'
+        : name!.trim();
+    final String initial = displayName.characters.first.toUpperCase();
+
+    return Container(
+      key: const Key('settingsProfileHeader'),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[Color(0xFF073D32), Color(0xFF01251F)],
+        ),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: const Color(0xFF073D32).withValues(alpha: 0.22),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        children: <Widget>[
+          CircleAvatar(
+            radius: 29,
+            backgroundColor: const Color(0xFFD4AF37),
+            backgroundImage: (photoUrl != null && photoUrl!.trim().isNotEmpty)
+                ? NetworkImage(photoUrl!)
+                : null,
+            child: (photoUrl != null && photoUrl!.trim().isNotEmpty)
+                ? null
+                : Text(
+                    initial,
+                    style: const TextStyle(
+                      color: Color(0xFF073D32),
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  displayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                if ((email ?? '').trim().isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 2),
+                  Text(
+                    email!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.70),
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 9),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: <Widget>[
+                    _StatusPill(
+                      icon: connected
+                          ? Icons.cloud_done_outlined
+                          : Icons.cloud_off_outlined,
+                      label: connected
+                          ? 'Google Drive Connected'
+                          : 'Google Drive Not Connected',
+                      positive: connected,
+                    ),
+                    if (lastBackupAt != null)
+                      _StatusPill(
+                        icon: Icons.history_rounded,
+                        label: 'Backup ${_relativeTime(lastBackupAt!)}',
+                        positive: true,
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 9),
+                SizedBox(
+                  height: 32,
+                  child: connected
+                      ? OutlinedButton.icon(
+                          key: const Key('googleSignOutButton'),
+                          onPressed: isLoading ? null : onSignOut,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            side: BorderSide(
+                              color: Colors.white.withValues(alpha: 0.24),
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                          ),
+                          icon: const Icon(Icons.logout_rounded, size: 15),
+                          label: const Text('Sign Out'),
+                        )
+                      : FilledButton.icon(
+                          key: const Key('googleSignInButton'),
+                          onPressed: isLoading ? null : onSignIn,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFFD4AF37),
+                            foregroundColor: const Color(0xFF073D32),
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                          ),
+                          icon: const Icon(Icons.login_rounded, size: 15),
+                          label: const Text('Sign in with Google'),
+                        ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _relativeTime(DateTime value) {
+    final Duration difference = DateTime.now().difference(value.toLocal());
+    if (difference.inMinutes < 1) return 'now';
+    if (difference.inHours < 1) return '${difference.inMinutes}m ago';
+    if (difference.inDays < 1) return '${difference.inHours}h ago';
+    return '${difference.inDays}d ago';
+  }
+}
+
+class _StatusPill extends StatelessWidget {
+  const _StatusPill({
+    required this.icon,
+    required this.label,
+    required this.positive,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool positive;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color color = positive
+        ? const Color(0xFF9BE5C5)
+        : Colors.white.withValues(alpha: 0.65);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(99),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(icon, size: 13, color: color),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SettingsOverview extends StatelessWidget {
+  const _SettingsOverview({
+    required this.mainCurrency,
+    required this.defaultCurrency,
+    required this.zakatMethod,
+    required this.nisabBasis,
+    required this.goldPrice,
+    required this.silverPrice,
+    required this.lastUpdated,
+    required this.refreshing,
+    required this.onRefresh,
+    required this.isArabic,
+    required this.onTapMainCurrency,
+    required this.onTapDefaultCurrency,
+    required this.onTapZakatMethod,
+    required this.onTapNisabBasis,
+    required this.onTapMarket,
+  });
+
+  final String mainCurrency;
+  final String defaultCurrency;
+  final String zakatMethod;
+  final String nisabBasis;
+  final double goldPrice;
+  final double silverPrice;
+  final String lastUpdated;
+  final bool refreshing;
+  final VoidCallback? onRefresh;
+  final bool isArabic;
+  final VoidCallback onTapMainCurrency;
+  final VoidCallback onTapDefaultCurrency;
+  final VoidCallback onTapZakatMethod;
+  final VoidCallback onTapNisabBasis;
+  final VoidCallback onTapMarket;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        _OverviewCard(
+          icon: Icons.account_balance_wallet_outlined,
+          title: isArabic ? 'الثروة والزكاة' : 'Wealth & Zakat',
+          children: <Widget>[
+            _OverviewRow(
+              label: isArabic ? 'العملة الرئيسية' : 'Main Currency',
+              value: mainCurrency,
+              onTap: onTapMainCurrency,
+            ),
+            _OverviewRow(
+              label: isArabic ? 'عملة الإدخال' : 'Default Entry Currency',
+              value: defaultCurrency,
+              onTap: onTapDefaultCurrency,
+            ),
+            _OverviewRow(
+              label: isArabic ? 'طريقة الزكاة' : 'Zakat Method',
+              value: zakatMethod == 'annual' ? 'Annual' : 'Monthly Hawl',
+              onTap: onTapZakatMethod,
+            ),
+            _OverviewRow(
+              label: isArabic ? 'أساس النصاب' : 'Nisab Basis',
+              value: nisabBasis.contains('silver') ? 'Silver' : 'Gold',
+              onTap: onTapNisabBasis,
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        _OverviewCard(
+          icon: Icons.show_chart_rounded,
+          title: isArabic ? 'ملخص الأسعار' : 'Market Snapshot',
+          trailing: IconButton(
+            key: const Key('refreshMarketDataOverviewButton'),
+            tooltip: isArabic ? 'تحديث البيانات' : 'Refresh Data',
+            onPressed: onRefresh,
+            icon: refreshing
+                ? const SizedBox(
+                    width: 17,
+                    height: 17,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh_rounded, size: 20),
+          ),
+          children: <Widget>[
+            _OverviewRow(
+              label: isArabic ? 'الذهب' : 'Gold',
+              value: _price(goldPrice),
+              onTap: onTapMarket,
+            ),
+            _OverviewRow(
+              label: isArabic ? 'الفضة' : 'Silver',
+              value: _price(silverPrice),
+              onTap: onTapMarket,
+            ),
+            _OverviewRow(
+              label: isArabic ? 'آخر تحديث' : 'Last Refresh',
+              value: lastUpdated,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  String _price(double value) =>
+      value <= 0 ? '-' : 'E£ ${value.toStringAsFixed(2)}/g';
+}
+
+class _OverviewCard extends StatelessWidget {
+  const _OverviewCard({
+    required this.icon,
+    required this.title,
+    required this.children,
+    this.trailing,
+  });
+
+  final IconData icon;
+  final String title;
+  final List<Widget> children;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: colors.outlineVariant.withValues(alpha: 0.5)),
+      ),
+      child: Column(
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(icon, size: 19, color: colors.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+                ),
+              ),
+              if (trailing != null) trailing!,
+            ],
+          ),
+          const SizedBox(height: 6),
+          ...children,
+        ],
+      ),
+    );
+  }
+}
+
+class _OverviewRow extends StatelessWidget {
+  const _OverviewRow({required this.label, required this.value, this.onTap});
+
+  final String label;
+  final String value;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget content = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Row(
+        children: <Widget>[
+          Expanded(child: Text(label)),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.w700)),
+          if (onTap != null) ...[
+            const SizedBox(width: 2),
+            const Icon(Icons.chevron_right_rounded, size: 17),
+          ],
+        ],
+      ),
+    );
+
+    if (onTap == null) return content;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: content,
+    );
+  }
+}
+
+class _MarketSummary extends StatelessWidget {
+  const _MarketSummary({required this.goldPrice, required this.silverPrice});
+
+  final double goldPrice;
+  final double silverPrice;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: _MarketValue(label: 'Gold', value: goldPrice),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _MarketValue(label: 'Silver', value: silverPrice),
+        ),
+      ],
+    );
+  }
+}
+
+class _MarketValue extends StatelessWidget {
+  const _MarketValue({required this.label, required this.value});
+
+  final String label;
+  final double value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(label, style: Theme.of(context).textTheme.labelSmall),
+          const SizedBox(height: 3),
+          Text(
+            value <= 0 ? '-' : 'E£ ${value.toStringAsFixed(2)}/g',
+            style: const TextStyle(fontWeight: FontWeight.w800),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CompactInfoRow extends StatelessWidget {
+  const _CompactInfoRow({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Row(
+        children: <Widget>[
+          Icon(icon, size: 18),
+          const SizedBox(width: 10),
+          Expanded(child: Text(label)),
+        ],
+      ),
+    );
+  }
+}
+
+class _SettingsRowTile extends StatelessWidget {
+  const _SettingsRowTile({
+    super.key,
+    required this.icon,
+    required this.title,
+    this.value = '',
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String value;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 12),
+        child: Row(
+          children: <Widget>[
+            Icon(icon, size: 20, color: colors.primary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+            if (value.isNotEmpty) ...[
+              Text(
+                value,
+                style: TextStyle(
+                  color: colors.onSurfaceVariant,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(width: 6),
+            ],
+            Icon(
+              Icons.chevron_right_rounded,
+              size: 20,
+              color: colors.onSurfaceVariant.withValues(alpha: 0.7),
+            ),
           ],
         ),
       ),

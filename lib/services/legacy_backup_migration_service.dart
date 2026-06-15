@@ -17,7 +17,6 @@ class LegacyMigrationReport {
 class LegacyBackupMigrationService {
   static const List<String> _unsupportedRootFields = <String>[
     'syncHealth',
-    'aiSettings',
     'marketHistory',
   ];
 

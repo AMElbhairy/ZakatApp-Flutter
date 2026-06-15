@@ -2,22 +2,27 @@ class UserProfile {
   const UserProfile({
     required this.id,
     required this.email,
-    required this.name,
+    required this.displayName,
+    required this.provider,
     this.photoUrl,
     this.accessToken,
   });
 
   final String id;
   final String email;
-  final String name;
+  final String displayName;
+  final String provider;
   final String? photoUrl;
   final String? accessToken;
+
+  String get name => displayName;
 
   factory UserProfile.fromJson(Map<String, dynamic> json) {
     return UserProfile(
       id: (json['id'] ?? json['sub'] ?? '').toString(),
       email: (json['email'] ?? '').toString(),
-      name: (json['name'] ?? '').toString(),
+      displayName: (json['displayName'] ?? json['name'] ?? '').toString(),
+      provider: (json['provider'] ?? 'google').toString(),
       photoUrl: (json['photoUrl'] ?? json['picture'])?.toString(),
       accessToken: json['accessToken']?.toString(),
     );
@@ -28,7 +33,9 @@ class UserProfile {
       'id': id,
       'sub': id,
       'email': email,
-      'name': name,
+      'displayName': displayName,
+      'name': displayName,
+      'provider': provider,
       'photoUrl': photoUrl,
       'picture': photoUrl,
       'accessToken': accessToken,
@@ -38,14 +45,16 @@ class UserProfile {
   UserProfile copyWith({
     String? id,
     String? email,
-    String? name,
+    String? displayName,
+    String? provider,
     String? photoUrl,
     String? accessToken,
   }) {
     return UserProfile(
       id: id ?? this.id,
       email: email ?? this.email,
-      name: name ?? this.name,
+      displayName: displayName ?? this.displayName,
+      provider: provider ?? this.provider,
       photoUrl: photoUrl ?? this.photoUrl,
       accessToken: accessToken ?? this.accessToken,
     );

@@ -22,7 +22,7 @@ class _FakeAuthService implements AuthService {
   Future<UserProfile?> restoreSession() async => null;
 
   @override
-  Future<UserProfile?> signIn() async => null;
+  Future<UserProfile?> signIn({AuthProvider provider = AuthProvider.google}) async => null;
 
   @override
   Future<void> signOut() async {}
@@ -427,6 +427,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    await tester.ensureVisible(find.byKey(const Key('refreshMarketDataButton')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('refreshMarketDataButton')));
     await tester.pumpAndSettle();
 
@@ -471,6 +473,8 @@ void main() {
     );
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('settingsSecurityTile')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('deleteAllDataButton')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('deleteAllDataButton')));
     await tester.pumpAndSettle();

@@ -20,7 +20,9 @@ class _FakeAuthService implements AuthService {
   final UserProfile? user;
   _FakeAuthService(this.user);
   @override
-  Future<UserProfile?> signIn() async => user;
+  Future<UserProfile?> signIn({
+    AuthProvider provider = AuthProvider.google,
+  }) async => user;
   @override
   Future<UserProfile?> restoreSession() async => user;
   @override
@@ -65,24 +67,37 @@ class _FakeSheets extends GoogleSheetsService {
   String? lastWrittenId;
 
   @override
-  Future<Map<String, String>?> createSpreadsheet(String accessToken, {String title = 'ZakatApp Backup'}) async {
+  Future<Map<String, String>?> createSpreadsheet(
+    String accessToken, {
+    String title = 'ZakatApp Backup',
+  }) async {
     final String id = 'sheet_${store.length + 1}';
     store[id] = {};
     return <String, String>{'id': id, 'title': title};
   }
 
   @override
-  Future<bool> connectSpreadsheet(String spreadsheetId, String accessToken) async {
+  Future<bool> connectSpreadsheet(
+    String spreadsheetId,
+    String accessToken,
+  ) async {
     return store.containsKey(spreadsheetId);
   }
 
   @override
-  Future<Map<String, dynamic>?> readAppState(String spreadsheetId, String accessToken) async {
+  Future<Map<String, dynamic>?> readAppState(
+    String spreadsheetId,
+    String accessToken,
+  ) async {
     return store[spreadsheetId];
   }
 
   @override
-  Future<bool> writeAppState(String spreadsheetId, Map<String, dynamic> appStateJson, String accessToken) async {
+  Future<bool> writeAppState(
+    String spreadsheetId,
+    Map<String, dynamic> appStateJson,
+    String accessToken,
+  ) async {
     if (!store.containsKey(spreadsheetId)) return false;
     store[spreadsheetId] = Map<String, dynamic>.from(appStateJson);
     lastWrittenId = spreadsheetId;
@@ -108,7 +123,10 @@ void main() {
     );
     await appStateController.load();
 
-    authController = AuthController(authService: _FakeAuthService(null), localStorage: localStorage);
+    authController = AuthController(
+      authService: _FakeAuthService(null),
+      localStorage: localStorage,
+    );
     await authController.load();
 
     fakeSheets = _FakeSheets();
@@ -122,15 +140,32 @@ void main() {
   test('signed out sync cannot create spreadsheet', () async {
     final ok = await syncController.createAndConnectSpreadsheet();
     expect(ok, isFalse);
-    expect(syncController.status.status, 'localOnly', reason: 'should remain localOnly when signed out');
+    expect(
+      syncController.status.status,
+      'localOnly',
+      reason: 'should remain localOnly when signed out',
+    );
   });
 
   test('create spreadsheet updates sync status when signed in', () async {
     // sign in
-    final profile = UserProfile(id: '1', email: 'a@b', name: 'A', accessToken: 'token');
-    authController = AuthController(authService: _FakeAuthService(profile), localStorage: LocalStorageService());
+    final profile = UserProfile(
+      id: '1',
+      email: 'a@b',
+      displayName: 'A',
+      provider: 'google',
+      accessToken: 'token',
+    );
+    authController = AuthController(
+      authService: _FakeAuthService(profile),
+      localStorage: LocalStorageService(),
+    );
     await authController.load();
-    syncController = SyncController(appStateController: appStateController, authController: authController, googleSheetsService: fakeSheets);
+    syncController = SyncController(
+      appStateController: appStateController,
+      authController: authController,
+      googleSheetsService: fakeSheets,
+    );
 
     final ok = await syncController.createAndConnectSpreadsheet();
     expect(ok, isTrue);
@@ -139,13 +174,28 @@ void main() {
   });
 
   test('connect spreadsheet hydrates local when cloud has data', () async {
-    final profile = UserProfile(id: '1', email: 'a@b', name: 'A', accessToken: 'token');
-    authController = AuthController(authService: _FakeAuthService(profile), localStorage: LocalStorageService());
+    final profile = UserProfile(
+      id: '1',
+      email: 'a@b',
+      displayName: 'A',
+      provider: 'google',
+      accessToken: 'token',
+    );
+    authController = AuthController(
+      authService: _FakeAuthService(profile),
+      localStorage: LocalStorageService(),
+    );
     await authController.load();
-    syncController = SyncController(appStateController: appStateController, authController: authController, googleSheetsService: fakeSheets);
+    syncController = SyncController(
+      appStateController: appStateController,
+      authController: authController,
+      googleSheetsService: fakeSheets,
+    );
 
     // create sheet and populate cloud
-    final Map<String, String>? created = await fakeSheets.createSpreadsheet('token');
+    final Map<String, String>? created = await fakeSheets.createSpreadsheet(
+      'token',
+    );
     final String sid = created!['id']!;
     fakeSheets.store[sid] = appStateController.state.toJson();
 
@@ -155,12 +205,27 @@ void main() {
   });
 
   test('push writes local AppState after hydration', () async {
-    final profile = UserProfile(id: '1', email: 'a@b', name: 'A', accessToken: 'token');
-    authController = AuthController(authService: _FakeAuthService(profile), localStorage: LocalStorageService());
+    final profile = UserProfile(
+      id: '1',
+      email: 'a@b',
+      displayName: 'A',
+      provider: 'google',
+      accessToken: 'token',
+    );
+    authController = AuthController(
+      authService: _FakeAuthService(profile),
+      localStorage: LocalStorageService(),
+    );
     await authController.load();
-    syncController = SyncController(appStateController: appStateController, authController: authController, googleSheetsService: fakeSheets);
+    syncController = SyncController(
+      appStateController: appStateController,
+      authController: authController,
+      googleSheetsService: fakeSheets,
+    );
 
-    final Map<String, String>? created = await fakeSheets.createSpreadsheet('token');
+    final Map<String, String>? created = await fakeSheets.createSpreadsheet(
+      'token',
+    );
     final String sid = created!['id']!;
     // connect and mark as hydrated by writing cloud with empty app state
     fakeSheets.store[sid] = {};
@@ -179,49 +244,83 @@ void main() {
     expect(fakeSheets.lastWrittenId, sid);
   });
 
-  test('conflict state when both local and cloud have differing data', () async {
-    final profile = UserProfile(id: '1', email: 'a@b', name: 'A', accessToken: 'token');
-    authController = AuthController(authService: _FakeAuthService(profile), localStorage: LocalStorageService());
-    await authController.load();
-    syncController = SyncController(appStateController: appStateController, authController: authController, googleSheetsService: fakeSheets);
+  test(
+    'conflict state when both local and cloud have differing data',
+    () async {
+      final profile = UserProfile(
+        id: '1',
+        email: 'a@b',
+        displayName: 'A',
+        provider: 'google',
+        accessToken: 'token',
+      );
+      authController = AuthController(
+        authService: _FakeAuthService(profile),
+        localStorage: LocalStorageService(),
+      );
+      await authController.load();
+      syncController = SyncController(
+        appStateController: appStateController,
+        authController: authController,
+        googleSheetsService: fakeSheets,
+      );
 
-    final Map<String, String>? created = await fakeSheets.createSpreadsheet('token');
-    final String sid = created!['id']!;
-    // cloud has different data
-    fakeSheets.store[sid] = <String, dynamic>{
-      'transactions': <dynamic>[
-        <String, dynamic>{
-          'id': 'remote',
-          'type': 'expense',
-          'date': '2024-01-01',
-          'amount': 100.0,
-          'currency': 'EGP',
-          'category': 'Test',
-          'description': '',
-          'createdAt': DateTime.now().toIso8601String(),
-          'rolledOver': false,
-          'rolledAmount': 0.0,
-        }
-      ]
-    };
-    // local has its existing state (likely empty)
-    final ok = await syncController.connectSpreadsheetById(sid);
-    expect(ok, isTrue);
-    // Since local is empty, it should hydrate and sync, not conflict.
-    expect(syncController.status.status, 'synced');
-  });
+      final Map<String, String>? created = await fakeSheets.createSpreadsheet(
+        'token',
+      );
+      final String sid = created!['id']!;
+      // cloud has different data
+      fakeSheets.store[sid] = <String, dynamic>{
+        'transactions': <dynamic>[
+          <String, dynamic>{
+            'id': 'remote',
+            'type': 'expense',
+            'date': '2024-01-01',
+            'amount': 100.0,
+            'currency': 'EGP',
+            'category': 'Test',
+            'description': '',
+            'createdAt': DateTime.now().toIso8601String(),
+            'rolledOver': false,
+            'rolledAmount': 0.0,
+          },
+        ],
+      };
+      // local has its existing state (likely empty)
+      final ok = await syncController.connectSpreadsheetById(sid);
+      expect(ok, isTrue);
+      // Since local is empty, it should hydrate and sync, not conflict.
+      expect(syncController.status.status, 'synced');
+    },
+  );
 
   test('failed pull does not wipe local data', () async {
-    final profile = UserProfile(id: '1', email: 'a@b', name: 'A', accessToken: 'token');
+    final profile = UserProfile(
+      id: '1',
+      email: 'a@b',
+      displayName: 'A',
+      provider: 'google',
+      accessToken: 'token',
+    );
     final localStorage = LocalStorageService();
-    authController = AuthController(authService: _FakeAuthService(profile), localStorage: LocalStorageService());
+    authController = AuthController(
+      authService: _FakeAuthService(profile),
+      localStorage: LocalStorageService(),
+    );
     await authController.load();
     // make fakeSheets return null for reads
     final badSheets = _FakeSheets();
     badSheets.store.clear();
     final initialStatus = SyncStatus(status: 'synced', spreadsheetId: 'nope');
-    SharedPreferences.setMockInitialValues(<String, Object>{'sync_status_v1': jsonEncode(initialStatus.toJson())});
-    final sc = SyncController(appStateController: appStateController, authController: authController, googleSheetsService: badSheets, storage: localStorage);
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'sync_status_v1': jsonEncode(initialStatus.toJson()),
+    });
+    final sc = SyncController(
+      appStateController: appStateController,
+      authController: authController,
+      googleSheetsService: badSheets,
+      storage: localStorage,
+    );
     await Future.delayed(Duration.zero);
 
     final before = appStateController.state.toJson();
@@ -231,14 +330,34 @@ void main() {
     expect(jsonEncode(before), jsonEncode(after));
   });
   test('failed push keeps local unchanged', () async {
-    final profile = UserProfile(id: '1', email: 'a@b', name: 'A', accessToken: 'token');
+    final profile = UserProfile(
+      id: '1',
+      email: 'a@b',
+      displayName: 'A',
+      provider: 'google',
+      accessToken: 'token',
+    );
     final localStorage = LocalStorageService();
-    authController = AuthController(authService: _FakeAuthService(profile), localStorage: LocalStorageService());
+    authController = AuthController(
+      authService: _FakeAuthService(profile),
+      localStorage: LocalStorageService(),
+    );
     await authController.load();
     final badSheets = _FakeSheets();
-    final initialStatus = SyncStatus(status: 'synced', spreadsheetId: 'missing', cloudHydrated: true);
-    SharedPreferences.setMockInitialValues(<String, Object>{'sync_status_v1': jsonEncode(initialStatus.toJson())});
-    final sc = SyncController(appStateController: appStateController, authController: authController, googleSheetsService: badSheets, storage: localStorage);
+    final initialStatus = SyncStatus(
+      status: 'synced',
+      spreadsheetId: 'missing',
+      cloudHydrated: true,
+    );
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'sync_status_v1': jsonEncode(initialStatus.toJson()),
+    });
+    final sc = SyncController(
+      appStateController: appStateController,
+      authController: authController,
+      googleSheetsService: badSheets,
+      storage: localStorage,
+    );
     await Future.delayed(Duration.zero);
 
     final before = appStateController.state.toJson();

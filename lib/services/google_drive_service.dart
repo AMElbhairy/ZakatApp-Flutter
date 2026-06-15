@@ -9,6 +9,10 @@ class DriveBackupFile {
     this.createdTime,
     this.modifiedTime,
     this.rawJson,
+    this.backupVersion,
+    this.userId,
+    this.provider,
+    this.email,
     this.backupCreatedAt,
     this.backupUpdatedAt,
     this.devicePlatform,
@@ -20,12 +24,17 @@ class DriveBackupFile {
   final DateTime? createdTime;
   final DateTime? modifiedTime;
   final String? rawJson;
+  final int? backupVersion;
+  final String? userId;
+  final String? provider;
+  final String? email;
   final DateTime? backupCreatedAt;
   final DateTime? backupUpdatedAt;
   final String? devicePlatform;
   final String? appVersion;
 
-  DateTime? get effectiveUpdatedAt => backupUpdatedAt ?? modifiedTime ?? createdTime;
+  DateTime? get effectiveUpdatedAt =>
+      backupUpdatedAt ?? modifiedTime ?? createdTime;
 
   DriveBackupFile copyWith({
     String? rawJson,
@@ -33,6 +42,10 @@ class DriveBackupFile {
     DateTime? backupUpdatedAt,
     String? devicePlatform,
     String? appVersion,
+    int? backupVersion,
+    String? userId,
+    String? provider,
+    String? email,
   }) {
     return DriveBackupFile(
       id: id,
@@ -40,6 +53,10 @@ class DriveBackupFile {
       createdTime: createdTime,
       modifiedTime: modifiedTime,
       rawJson: rawJson ?? this.rawJson,
+      backupVersion: backupVersion ?? this.backupVersion,
+      userId: userId ?? this.userId,
+      provider: provider ?? this.provider,
+      email: email ?? this.email,
       backupCreatedAt: backupCreatedAt ?? this.backupCreatedAt,
       backupUpdatedAt: backupUpdatedAt ?? this.backupUpdatedAt,
       devicePlatform: devicePlatform ?? this.devicePlatform,
@@ -50,11 +67,12 @@ class DriveBackupFile {
 
 class GoogleDriveService {
   GoogleDriveService({http.Client? httpClient})
-      : _httpClient = httpClient ?? http.Client();
+    : _httpClient = httpClient ?? http.Client();
 
   static const String backupFileName = 'zakatapp_backup.json';
   static const String _baseUrl = 'https://www.googleapis.com/drive/v3/files';
-  static const String _uploadUrl = 'https://www.googleapis.com/upload/drive/v3/files';
+  static const String _uploadUrl =
+      'https://www.googleapis.com/upload/drive/v3/files';
 
   final http.Client _httpClient;
 
@@ -116,9 +134,11 @@ class GoogleDriveService {
 
     enriched.sort((DriveBackupFile a, DriveBackupFile b) {
       final DateTime aTime =
-          a.effectiveUpdatedAt ?? DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+          a.effectiveUpdatedAt ??
+          DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
       final DateTime bTime =
-          b.effectiveUpdatedAt ?? DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+          b.effectiveUpdatedAt ??
+          DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
       return bTime.compareTo(aTime);
     });
     return enriched.first;
@@ -130,7 +150,9 @@ class GoogleDriveService {
   }) async {
     final DriveBackupFile? existingFile = await fetchLatestBackup(accessToken);
     if (existingFile != null) {
-      final Uri updateUri = Uri.parse("$_uploadUrl/${existingFile.id}?uploadType=media");
+      final Uri updateUri = Uri.parse(
+        "$_uploadUrl/${existingFile.id}?uploadType=media",
+      );
       final http.Response updateResponse = await _httpClient.patch(
         updateUri,
         headers: <String, String>{
@@ -178,10 +200,7 @@ class GoogleDriveService {
 
     final Map<String, dynamic> createdJson =
         jsonDecode(createResponse.body) as Map<String, dynamic>;
-    return _applyBackupMetadata(
-      _driveFileFromJson(createdJson),
-      jsonString,
-    );
+    return _applyBackupMetadata(_driveFileFromJson(createdJson), jsonString);
   }
 
   Map<String, String> _authHeaders(String accessToken) {
@@ -201,13 +220,22 @@ class GoogleDriveService {
     try {
       final Map<String, dynamic> decoded =
           jsonDecode(rawJson) as Map<String, dynamic>;
-      final Map<String, dynamic> metadata = decoded['cloudBackupMetadata'] is Map
+      final Map<String, dynamic> metadata =
+          decoded['cloudBackupMetadata'] is Map
           ? Map<String, dynamic>.from(decoded['cloudBackupMetadata'] as Map)
           : <String, dynamic>{};
       return file.copyWith(
         rawJson: rawJson,
+        backupVersion: _parseInt(
+          decoded['backupVersion'] ?? decoded['schemaVersion'],
+        ),
+        userId: decoded['userId']?.toString(),
+        provider: decoded['provider']?.toString(),
+        email: decoded['email']?.toString(),
         backupCreatedAt: _parseDateTime(metadata['createdAt']),
-        backupUpdatedAt: _parseDateTime(metadata['updatedAt'] ?? decoded['exportedAt']),
+        backupUpdatedAt: _parseDateTime(
+          metadata['updatedAt'] ?? decoded['exportedAt'],
+        ),
         devicePlatform: metadata['devicePlatform']?.toString(),
         appVersion: metadata['appVersion']?.toString(),
       );
@@ -220,5 +248,10 @@ class GoogleDriveService {
     final String raw = (value ?? '').toString().trim();
     if (raw.isEmpty) return null;
     return DateTime.tryParse(raw)?.toUtc();
+  }
+
+  int? _parseInt(dynamic value) {
+    if (value is int) return value;
+    return int.tryParse((value ?? '').toString());
   }
 }

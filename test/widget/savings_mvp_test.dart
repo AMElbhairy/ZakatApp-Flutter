@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zakatapp_flutter/main.dart';
@@ -18,7 +19,7 @@ class _FakeAuthService implements AuthService {
   @override
   Future<UserProfile?> restoreSession() async => null;
   @override
-  Future<UserProfile?> signIn() async => null;
+  Future<UserProfile?> signIn({AuthProvider provider = AuthProvider.google}) async => null;
   @override
   Future<void> signOut() async {}
 }
@@ -257,9 +258,14 @@ void main() {
     await tester.tap(find.text('Cash').first);
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byIcon(Icons.delete_outline).first);
+    // Swipe left on the saving tile to reveal the delete action
+    await tester.drag(find.byType(Slidable).first, const Offset(-500.0, 0.0));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Delete'));
+
+    // Tap the revealed delete action button
+    await tester.tap(find.byType(CustomSlidableAction).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete').last);
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('assetsEmptyState')), findsOneWidget);

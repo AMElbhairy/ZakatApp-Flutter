@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zakatapp_flutter/main.dart';
 import 'package:zakatapp_flutter/models/saving.dart';
@@ -20,7 +21,7 @@ class _FakeAuthService implements AuthService {
   @override
   Future<UserProfile?> restoreSession() async => null;
   @override
-  Future<UserProfile?> signIn() async => null;
+  Future<UserProfile?> signIn({AuthProvider provider = AuthProvider.google}) async => null;
   @override
   Future<void> signOut() async {}
 }
@@ -152,9 +153,9 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Team lunch downtown'), findsOneWidget);
-      expect(find.text('June consulting payment'), findsNothing);
-      expect(find.text('Coffee beans'), findsNothing);
+      expect(find.textContaining('Team lunch downtown'), findsOneWidget);
+      expect(find.textContaining('June consulting payment'), findsNothing);
+      expect(find.textContaining('Coffee beans'), findsNothing);
 
       await tester.tap(find.text('Income').first);
       await tester.pumpAndSettle();
@@ -162,7 +163,7 @@ void main() {
 
       await tester.tap(find.byKey(const Key('clearActivitySearch')));
       await tester.pumpAndSettle();
-      expect(find.text('June consulting payment'), findsOneWidget);
+      expect(find.textContaining('June consulting payment'), findsOneWidget);
     },
   );
 
@@ -181,9 +182,11 @@ void main() {
 
     expect(find.byType(ListTile), findsOneWidget);
 
-    await tester.tap(find.byIcon(Icons.delete_outline).first);
+    await tester.drag(find.byType(Slidable).first, const Offset(-500.0, 0.0));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Delete'));
+    await tester.tap(find.text('Delete').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete').last);
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('activityEmptyState')), findsOneWidget);
@@ -268,7 +271,7 @@ void main() {
     await tester.tap(find.text('Transfer').first);
     await tester.pumpAndSettle();
     expect(find.text('Currency Exchange'), findsOneWidget);
-    expect(find.textContaining('USD 40.00 → EGP 2000.00'), findsOneWidget);
+    expect(find.textContaining('\u200E\$ 40.00 → \u200EE£ 2,000.00'), findsOneWidget);
   });
 
   testWidgets('funded gold purchase appears under Transfer', (
@@ -325,7 +328,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Gold Purchase'), findsOneWidget);
-    expect(find.textContaining('2.00g Gold • EGP 10000.00'), findsOneWidget);
+    expect(find.textContaining('2g Gold • \u200EE£ 10,000.00'), findsOneWidget);
     expect(find.text('Precious Metals Purchase'), findsNothing);
   });
 
@@ -404,7 +407,7 @@ void main() {
       await tester.tap(find.text('Transfer').first);
       await tester.pumpAndSettle();
       expect(find.text('Gold Sale'), findsOneWidget);
-      expect(find.textContaining('5.00g Gold -> EGP 40000.00'), findsOneWidget);
+      expect(find.textContaining('5g Gold • \u200EE£ 40,000.00'), findsOneWidget);
     },
   );
 }

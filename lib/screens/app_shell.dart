@@ -29,8 +29,39 @@ class _AppShellState extends State<AppShell> {
   int _index = 2;
   final GlobalKey<ActivityScreenState> _activityKey =
       GlobalKey<ActivityScreenState>();
+  final List<ScrollController> _tabScrollControllers =
+      List<ScrollController>.generate(
+        5,
+        (int index) => ScrollController(
+          debugLabel: 'app-shell-tab-$index',
+          keepScrollOffset: true,
+        ),
+      );
   bool _restorePromptVisible = false;
   double? _edgeDragDistance;
+
+  @override
+  void dispose() {
+    for (final ScrollController controller in _tabScrollControllers) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  void _handleTabTap(int index) {
+    if (index != _index) {
+      setState(() => _index = index);
+      return;
+    }
+
+    final ScrollController controller = _tabScrollControllers[index];
+    if (!controller.hasClients) return;
+    controller.animateTo(
+      0,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -39,7 +70,7 @@ class _AppShellState extends State<AppShell> {
     final CloudBackupController? cloudBackupController = context
         .watch<CloudBackupController?>();
     _maybeShowRestorePrompt(context, cloudBackupController);
-    final List<Widget> tabs = <Widget>[
+    final List<Widget> tabContents = <Widget>[
       AssetsScreen(
         onViewAllActivity: () {
           setState(() => _index = 1);
@@ -76,6 +107,13 @@ class _AppShellState extends State<AppShell> {
       const PlansScreen(),
       const AccountScreen(),
     ];
+    final List<Widget> tabs = List<Widget>.generate(
+      tabContents.length,
+      (int index) => PrimaryScrollController(
+        controller: _tabScrollControllers[index],
+        child: tabContents[index],
+      ),
+    );
 
     final double navTouchBlockHeight = 90 + bottomInset;
     final bool allowEdgeSwipe = defaultTargetPlatform == TargetPlatform.iOS;
@@ -238,8 +276,9 @@ class _AppShellState extends State<AppShell> {
                                       start: i == 3 ? 12 : 0,
                                     ),
                                     child: GestureDetector(
+                                      key: Key('bottomNavTab_$i'),
                                       behavior: HitTestBehavior.opaque,
-                                      onTap: () => setState(() => _index = i),
+                                      onTap: () => _handleTabTap(i),
                                       child: i == dashboardIndex
                                           ? const SizedBox.shrink()
                                           : Column(
@@ -327,9 +366,9 @@ class _AppShellState extends State<AppShell> {
                           left: selectedLeft,
                           bottom: -4,
                           child: GestureDetector(
+                            key: const Key('bottomNavDashboardTab'),
                             behavior: HitTestBehavior.opaque,
-                            onTap: () =>
-                                setState(() => _index = dashboardIndex),
+                            onTap: () => _handleTabTap(dashboardIndex),
                             child: _dashboardRaisedItem(
                               item: items[dashboardIndex],
                               selected: _index == dashboardIndex,

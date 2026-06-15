@@ -21,7 +21,7 @@ class _FakeAuthService implements AuthService {
   final UserProfile? user;
   _FakeAuthService(this.user);
   @override
-  Future<UserProfile?> signIn() async => user;
+  Future<UserProfile?> signIn({AuthProvider provider = AuthProvider.google}) async => user;
   @override
   Future<UserProfile?> restoreSession() async => user;
   @override

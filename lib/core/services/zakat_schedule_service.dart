@@ -40,6 +40,33 @@ class ZakatScheduleService {
       return <Map<String, dynamic>>[];
     }
 
+    final List<Saving> savingModels = parsedSavings
+        .map((SavingLike s) => s.toSavingModel())
+        .toList(growable: false);
+
+    final Set<String> eventDateStrings = <String>{};
+    for (final Map<String, dynamic> lot in lots) {
+      final String d = (lot['date'] ?? '').toString();
+      if (d.isNotEmpty) eventDateStrings.add(d);
+    }
+    for (final SavingLike s in parsedSavings) {
+      if (s.dateAcquired.isNotEmpty) eventDateStrings.add(s.dateAcquired);
+      for (final SavingZakatSegment seg in s.zakatSegments()) {
+        if (seg.date.isNotEmpty) eventDateStrings.add(seg.date);
+      }
+    }
+    final List<DateTime> eventDates = eventDateStrings
+        .map((String s) {
+          try {
+            return DateTime.parse(s);
+          } catch (_) {
+            return DateTime(1970);
+          }
+        })
+        .where((d) => d.year > 1970)
+        .toList()
+      ..sort();
+
     final Map<String, Map<String, dynamic>> byMonth =
         <String, Map<String, dynamic>>{};
 
@@ -47,7 +74,15 @@ class ZakatScheduleService {
       final double remainingAmount = _asDouble(lot['remainingAmount']);
       if (remainingAmount < 0.01) continue;
 
-      final DateTime lotDate = _dateOnly((lot['date'] ?? '').toString());
+      final DateTime lotDateRaw = _dateOnly((lot['date'] ?? '').toString());
+      final DateTime lotDate = ZakatEngineService.getEffectiveZakatStartDate(
+        startDate: lotDateRaw,
+        lots: lots,
+        savings: savingModels,
+        marketData: marketData,
+        zakatNisabBasis: zakatNisabBasis,
+        eventDates: eventDates,
+      );
 
       for (int year = 1; year <= 30; year++) {
         final int daysRequired =
@@ -131,6 +166,33 @@ class ZakatScheduleService {
       return <Map<String, dynamic>>[];
     }
 
+    final List<Saving> savingModels = parsedSavings
+        .map((SavingLike s) => s.toSavingModel())
+        .toList(growable: false);
+
+    final Set<String> eventDateStrings = <String>{};
+    for (final Map<String, dynamic> lot in lots) {
+      final String d = (lot['date'] ?? '').toString();
+      if (d.isNotEmpty) eventDateStrings.add(d);
+    }
+    for (final SavingLike s in parsedSavings) {
+      if (s.dateAcquired.isNotEmpty) eventDateStrings.add(s.dateAcquired);
+      for (final SavingZakatSegment seg in s.zakatSegments()) {
+        if (seg.date.isNotEmpty) eventDateStrings.add(seg.date);
+      }
+    }
+    final List<DateTime> eventDates = eventDateStrings
+        .map((String s) {
+          try {
+            return DateTime.parse(s);
+          } catch (_) {
+            return DateTime(1970);
+          }
+        })
+        .where((d) => d.year > 1970)
+        .toList()
+      ..sort();
+
     final DateTime today = now ?? DateTime.now();
     final DateTime futureLimit = DateTime(
       today.year + 3,
@@ -169,7 +231,15 @@ class ZakatScheduleService {
         }
         if (zakatValueEgp < 0.01) continue;
 
-        final DateTime savingDate = _dateOnly(segment.date);
+        final DateTime savingDateRaw = _dateOnly(segment.date);
+        final DateTime savingDate = ZakatEngineService.getEffectiveZakatStartDate(
+          startDate: savingDateRaw,
+          lots: lots,
+          savings: savingModels,
+          marketData: marketData,
+          zakatNisabBasis: zakatNisabBasis,
+          eventDates: eventDates,
+        );
 
         for (int year = 1; year <= 30; year++) {
           final int daysRequired =
@@ -476,7 +546,7 @@ class SavingLike {
       description: description,
       linkedCashEntryId: null,
       purchaseCurrency: '',
-      purchaseAmount: 0,
+      purchaseAmount: purchaseAmount,
       createdAt: '',
       sourceIncomeId: null,
       exchangeSourceSavingId: null,

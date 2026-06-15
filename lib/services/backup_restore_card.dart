@@ -10,20 +10,34 @@ import '../models/backup_preview.dart';
 import 'app_state_controller.dart';
 import 'backup_restore_service.dart';
 import 'backup_service.dart';
+import 'biometric_service.dart';
 
 class BackupRestoreCard extends StatelessWidget {
-  const BackupRestoreCard({
-    super.key,
-    required this.controller,
-  });
+  const BackupRestoreCard({super.key, required this.controller});
 
   final AppStateController controller;
 
   Future<void> _exportBackup(BuildContext context) async {
+    if (controller.state.biometricExportEnabled &&
+        await BiometricService.canAuthenticate()) {
+      final auth = await BiometricService.authenticate(
+        reason: 'Confirm identity to export local backup JSON file',
+        isSensitiveAction: true,
+      );
+      if (!auth) return;
+    }
     try {
-      final String jsonStr = BackupService.exportBackup(controller.state.toJson());
+      final String jsonStr = BackupService.exportBackup(
+        controller.state.toJson(),
+        userId: controller.state.userId ?? '',
+        provider: controller.state.userProvider ?? 'local',
+        email: controller.state.userEmail ?? '',
+      );
       final Directory dir = await getTemporaryDirectory();
-      final String dateStamp = DateTime.now().toIso8601String().split('T').first;
+      final String dateStamp = DateTime.now()
+          .toIso8601String()
+          .split('T')
+          .first;
       final File file = File('${dir.path}/zakatapp-backup-$dateStamp.json');
       await file.writeAsString(jsonStr);
 
@@ -32,7 +46,9 @@ class BackupRestoreCard extends StatelessWidget {
       await Share.shareXFiles(
         <XFile>[XFile(file.path)],
         subject: 'ZakatApp Backup',
-        sharePositionOrigin: box != null ? box.localToGlobal(Offset.zero) & box.size : null,
+        sharePositionOrigin: box != null
+            ? box.localToGlobal(Offset.zero) & box.size
+            : null,
       );
     } catch (e) {
       if (!context.mounted) return;
@@ -41,13 +57,23 @@ class BackupRestoreCard extends StatelessWidget {
   }
 
   Future<void> _importBackup(BuildContext context) async {
+    if (controller.state.biometricRestoreEnabled &&
+        await BiometricService.canAuthenticate()) {
+      final auth = await BiometricService.authenticate(
+        reason: 'Confirm identity to import a backup JSON file',
+        isSensitiveAction: true,
+      );
+      if (!auth) return;
+    }
     try {
       final FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: <String>['json'],
       );
       if (result == null || result.files.single.path == null) return;
-      final String rawJson = await File(result.files.single.path!).readAsString();
+      final String rawJson = await File(
+        result.files.single.path!,
+      ).readAsString();
       final BackupPreview preview = BackupService.parseBackupPreview(rawJson);
       if (!context.mounted) return;
       _showPreviewDialog(context, preview);
@@ -70,17 +96,25 @@ class BackupRestoreCard extends StatelessWidget {
               if (!preview.canRestore)
                 const Text(
                   'This file is not a valid backup and cannot be restored.',
-                  style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    color: Colors.red,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               if (preview.isLegacy)
                 const Text(
                   'Legacy backup detected. Migration will be applied before restore.',
-                  style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    color: Colors.orange,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               const SizedBox(height: 8),
               Text('Source: ${preview.sourceType}'),
               Text('Schema/Version: ${preview.schemaOrVersion}'),
-              Text('Exported At: ${preview.exportedAt.isEmpty ? 'Unknown' : preview.exportedAt}'),
+              Text(
+                'Exported At: ${preview.exportedAt.isEmpty ? 'Unknown' : preview.exportedAt}',
+              ),
               const Divider(),
               Text('Transactions: ${preview.transactionsCount}'),
               Text('Savings: ${preview.savingsCount}'),
@@ -90,14 +124,20 @@ class BackupRestoreCard extends StatelessWidget {
               Text('Has Market Data: ${preview.hasMarketData ? 'Yes' : 'No'}'),
               if (preview.warnings.isNotEmpty) ...<Widget>[
                 const SizedBox(height: 8),
-                const Text('Warnings:', style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text(
+                  'Warnings:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
                 ...preview.warnings.map((String w) => Text('• $w')),
               ],
             ],
           ),
         ),
         actions: <Widget>[
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
           ElevatedButton(
             onPressed: preview.canRestore
                 ? () {
@@ -120,7 +160,10 @@ class BackupRestoreCard extends StatelessWidget {
           title: const Text('Local Data Conflict'),
           content: const Text('Local data exists. Choose an explicit action.'),
           actions: <Widget>[
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
             TextButton(
               onPressed: () {
                 Navigator.pop(ctx);
@@ -155,15 +198,35 @@ class BackupRestoreCard extends StatelessWidget {
     BackupPreview preview, {
     required bool replace,
   }) async {
+    if (controller.state.biometricRestoreEnabled &&
+        await BiometricService.canAuthenticate()) {
+      final auth = await BiometricService.authenticate(
+        reason:
+            'Confirm identity to restore and replace/merge local database data',
+        isSensitiveAction: true,
+      );
+      if (!auth) return;
+    }
     try {
-      final BackupRestoreService service = BackupRestoreService(controller: controller);
+      final BackupRestoreService service = BackupRestoreService(
+        controller: controller,
+      );
       final RestoreResult result = replace
-          ? await service.restoreReplace(preview.rawJson, allowWhenLocalDataExists: true)
-          : await service.restoreMerge(preview.rawJson, allowWhenLocalDataExists: true);
+          ? await service.restoreReplace(
+              preview.rawJson,
+              allowWhenLocalDataExists: true,
+            )
+          : await service.restoreMerge(
+              preview.rawJson,
+              allowWhenLocalDataExists: true,
+            );
       if (!context.mounted) return;
       final String counts =
           'tx:${result.counts['transactions']} sav:${result.counts['savings']} inv:${result.counts['investments']}';
-      showTopSnackBar(context, '${result.mode.toUpperCase()} restore success. $counts');
+      showTopSnackBar(
+        context,
+        '${result.mode.toUpperCase()} restore success. $counts',
+      );
       if (result.warnings.isNotEmpty) {
         showDialog<void>(
           context: context,
@@ -173,11 +236,16 @@ class BackupRestoreCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
-                children: result.warnings.map((String e) => Text('• $e')).toList(growable: false),
+                children: result.warnings
+                    .map((String e) => Text('• $e'))
+                    .toList(growable: false),
               ),
             ),
             actions: <Widget>[
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('OK'),
+              ),
             ],
           ),
         );

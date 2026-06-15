@@ -25,7 +25,9 @@ class _FakeAuthService implements AuthService {
   Future<UserProfile?> restoreSession() async => user;
 
   @override
-  Future<UserProfile?> signIn() async => user;
+  Future<UserProfile?> signIn({
+    AuthProvider provider = AuthProvider.google,
+  }) async => user;
 
   @override
   Future<void> signOut() async {}
@@ -136,7 +138,8 @@ void main() {
     final UserProfile user = const UserProfile(
       id: 'u1',
       email: 'a@example.com',
-      name: 'User',
+      displayName: 'User',
+      provider: 'google',
       accessToken: 'token',
     );
     final controllers = await _buildControllers(
@@ -155,7 +158,10 @@ void main() {
     final Map<String, dynamic> payload =
         jsonDecode(driveService.uploadedJson!) as Map<String, dynamic>;
     expect(payload['appState']['transactions'], isNotEmpty);
-    expect(payload['cloudBackupMetadata']['backupVersion'], 1);
+    expect(payload['backupVersion'], 3);
+    expect(payload['userId'], 'u1');
+    expect(payload['provider'], 'google');
+    expect(payload['email'], 'a@example.com');
     expect(payload['cloudBackupMetadata']['devicePlatform'], isNotEmpty);
     expect(payload['cloudBackupMetadata']['appVersion'], isNotEmpty);
   });
@@ -163,7 +169,7 @@ void main() {
   test('restore into app state applies latest cloud backup', () async {
     final String rawJson = jsonEncode(<String, dynamic>{
       'appName': 'ZakatApp',
-      'schemaVersion': 1,
+      'schemaVersion': 3,
       'exportedAt': '2026-06-02T00:00:00.000Z',
       'counts': <String, int>{'transactions': 1},
       'appState': <String, dynamic>{
@@ -172,7 +178,7 @@ void main() {
         'lastModifiedAt': '2026-06-02T00:00:00.000Z',
       },
       'cloudBackupMetadata': <String, dynamic>{
-        'backupVersion': 1,
+        'backupVersion': 3,
         'createdAt': '2026-06-01T00:00:00.000Z',
         'updatedAt': '2026-06-02T00:00:00.000Z',
       },
@@ -188,7 +194,8 @@ void main() {
     final UserProfile user = const UserProfile(
       id: 'u1',
       email: 'a@example.com',
-      name: 'User',
+      displayName: 'User',
+      provider: 'google',
       accessToken: 'token',
     );
     final controllers = await _buildControllers(
@@ -220,7 +227,8 @@ void main() {
     final UserProfile user = const UserProfile(
       id: 'u1',
       email: 'a@example.com',
-      name: 'User',
+      displayName: 'User',
+      provider: 'google',
       accessToken: 'token',
     );
     final controllers = await _buildControllers(
@@ -246,7 +254,8 @@ void main() {
     final UserProfile user = const UserProfile(
       id: 'u1',
       email: 'a@example.com',
-      name: 'User',
+      displayName: 'User',
+      provider: 'google',
       accessToken: 'token',
     );
     final controllers = await _buildControllers(
@@ -267,7 +276,8 @@ void main() {
     final UserProfile user = const UserProfile(
       id: 'u1',
       email: 'a@example.com',
-      name: 'User',
+      displayName: 'User',
+      provider: 'google',
       accessToken: 'token',
     );
     final controllers = await _buildControllers(
@@ -291,7 +301,8 @@ void main() {
       final UserProfile user = const UserProfile(
         id: 'u1',
         email: 'a@example.com',
-        name: 'User',
+        displayName: 'User',
+        provider: 'google',
         accessToken: 'token',
       );
       final controllers = await _buildControllers(

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 
 import '../../core/i18n/app_localizations.dart';
 import '../../core/services/zakat_engine.dart';
@@ -13,6 +14,8 @@ import '../entry/add_saving_screen.dart';
 import '../entry/add_transaction_screen.dart';
 import '../../core/widgets/currency_exchange_dialog.dart';
 import '../../core/widgets/sell_metal_dialog.dart';
+import '../account/notifications_screen.dart';
+import '../../models/pending_transaction.dart';
 
 enum _ActivityFilter { all, income, expense, transfer }
 
@@ -256,8 +259,10 @@ class ActivityScreenState extends State<ActivityScreen> {
               .where(
                 (Saving saving) =>
                     saving.fundingAllocations.isNotEmpty ||
-                    ZakatEngineService.normaliseAssetType(saving.assetType) == 'gold' ||
-                    ZakatEngineService.normaliseAssetType(saving.assetType) == 'silver',
+                    ZakatEngineService.normaliseAssetType(saving.assetType) ==
+                        'gold' ||
+                    ZakatEngineService.normaliseAssetType(saving.assetType) ==
+                        'silver',
               )
               .map(_ActivityEntry.metalTransfer),
           ...state.savings
@@ -344,10 +349,7 @@ class ActivityScreenState extends State<ActivityScreen> {
         })
         .where((_ActivityEntry entry) {
           if (searchQuery.isEmpty) return true;
-          return entry.transaction?.description.toLowerCase().contains(
-                searchQuery,
-              ) ??
-              false;
+          return entry.description.toLowerCase().contains(searchQuery);
         })
         .toList(growable: false);
 
@@ -377,8 +379,12 @@ class ActivityScreenState extends State<ActivityScreen> {
               title: context.l10n.tr('activity'),
               balancesHidden: balancesHidden,
               onTogglePrivacy: () => controller.togglePrivacyMode(),
-              hasNotifications: false,
-              onTapNotifications: () {},
+              hasNotifications: state.pendingTransactions.any(
+                (t) => t.status == CaptureStatus.pendingReview,
+              ),
+              onTapNotifications: () {
+                Navigator.of(context).push(NotificationsScreen.route());
+              },
             ),
             const SizedBox(height: 18),
             SegmentedButton<_ActivitySection>(
@@ -451,61 +457,219 @@ class ActivityScreenState extends State<ActivityScreen> {
     final double navSafeBottomPadding =
         112 + MediaQuery.paddingOf(context).bottom;
     final tokens = context.premiumTokens;
+    final controller = context.read<AppStateController>();
+    final state = controller.state;
+    final String mainCurrency = state.mainCurrency;
+    final MarketData market = MarketData.fromJson(state.marketData);
+    final bool isArabic =
+        Localizations.localeOf(context).languageCode.toLowerCase() == 'ar';
 
     String catFilterLabel = _selectedCategory == 'All'
         ? context.l10n.tr('all_categories')
         : _selectedCategory;
 
+    // Filtered by type and date only for Summary Strip calculations
+    final List<Transaction> transactions = state.transactions;
+    final Map<String, List<Transaction>> exchangePairs =
+        <String, List<Transaction>>{};
+    for (final Transaction transaction in transactions.where(
+      (Transaction transaction) =>
+          transaction.category == 'Currency Exchange' &&
+          (transaction.exchangePairId ?? '').isNotEmpty,
+    )) {
+      exchangePairs
+          .putIfAbsent(transaction.exchangePairId!, () => <Transaction>[])
+          .add(transaction);
+    }
+    final Map<String, List<Saving>> exchangeSavings = <String, List<Saving>>{};
+    for (final Saving saving in state.savings.where(
+      (Saving saving) =>
+          (saving.transferActivityId ?? '').isNotEmpty &&
+          saving.internalTransferType == 'savings_currency_exchange',
+    )) {
+      exchangeSavings
+          .putIfAbsent(saving.transferActivityId!, () => <Saving>[])
+          .add(saving);
+    }
+    final Set<String> exchangeActivityIds = <String>{
+      ...exchangePairs.keys,
+      ...exchangeSavings.keys,
+    };
+    final Set<String> fundedMetalIds = state.savings
+        .where((Saving saving) => saving.fundingAllocations.isNotEmpty)
+        .map((Saving saving) => saving.id)
+        .toSet();
+
+    final List<_ActivityEntry> sortedForSummary = <_ActivityEntry>[
+      ...transactions
+          .where(
+            (Transaction transaction) =>
+                !transaction.isTransferActivity ||
+                transaction.category == 'Gold Sale' ||
+                transaction.category == 'Silver Sale' ||
+                ((transaction.exchangePairId ?? '').isEmpty &&
+                    !fundedMetalIds.contains(transaction.exchangePairId)),
+          )
+          .map(_ActivityEntry.transaction),
+      ...exchangeActivityIds.map(
+        (String id) => _ActivityEntry.currencyExchange(
+          exchangePairs[id] ?? const <Transaction>[],
+          exchangeSavings[id] ?? const <Saving>[],
+        ),
+      ),
+      ...state.savings
+          .where(
+            (Saving saving) =>
+                (saving.exchangeSourceSavingId ?? '').isNotEmpty &&
+                (saving.transferActivityId ?? '').isEmpty,
+          )
+          .map(_ActivityEntry.legacySavingExchange),
+      ...state.savings
+          .where(
+            (Saving saving) =>
+                saving.fundingAllocations.isNotEmpty ||
+                ZakatEngineService.normaliseAssetType(saving.assetType) ==
+                    'gold' ||
+                ZakatEngineService.normaliseAssetType(saving.assetType) ==
+                    'silver',
+          )
+          .map(_ActivityEntry.metalTransfer),
+      ...state.savings
+          .where(
+            (Saving saving) =>
+                saving.assetType == 'cash' &&
+                (saving.exchangeSourceSavingId ?? '').isEmpty &&
+                (saving.exchangeSourceIncomeId ?? '').isEmpty &&
+                (saving.transferActivityId ?? '').isEmpty,
+          )
+          .map(_ActivityEntry.cashSaving),
+    ];
+
+    final List<_ActivityEntry> filteredByTypeAndDate = sortedForSummary
+        .where((_ActivityEntry entry) {
+          switch (_filter) {
+            case _ActivityFilter.income:
+              return entry.isIncome;
+            case _ActivityFilter.expense:
+              return entry.isExpense;
+            case _ActivityFilter.transfer:
+              return entry.isTransfer;
+            case _ActivityFilter.all:
+              return true;
+          }
+        })
+        .where((_ActivityEntry entry) {
+          if (_selectedDateFilter == 'All Time') return true;
+          final DateTime date = _parseDate(entry.date);
+          final DateTime now = DateTime.now();
+          if (_selectedDateFilter == '30D') {
+            return date.isAfter(now.subtract(const Duration(days: 30))) ||
+                date.isAtSameMomentAs(now.subtract(const Duration(days: 30)));
+          } else if (_selectedDateFilter == '90D') {
+            return date.isAfter(now.subtract(const Duration(days: 90))) ||
+                date.isAtSameMomentAs(now.subtract(const Duration(days: 90)));
+          } else if (_selectedDateFilter == 'YTD') {
+            return date.year == now.year;
+          } else if (_selectedDateFilter == 'Custom' &&
+              _customDateRange != null) {
+            return (date.isAfter(_customDateRange!.start) ||
+                    date.isAtSameMomentAs(_customDateRange!.start)) &&
+                (date.isBefore(_customDateRange!.end) ||
+                    date.isAtSameMomentAs(_customDateRange!.end));
+          }
+          return true;
+        })
+        .toList(growable: false);
+
+    double totalIncome = 0.0;
+    double totalExpenses = 0.0;
+    double totalTransfers = 0.0;
+
+    for (final entry in filteredByTypeAndDate) {
+      final double amtEgp = ZakatEngineService.convertToEgp(
+        entry.amount,
+        entry.currency,
+        market,
+      );
+      final double amtMain = ZakatEngineService.convertFromEgp(
+        amtEgp,
+        mainCurrency,
+        market,
+      );
+      if (entry.isTransfer) {
+        totalTransfers += amtMain;
+      } else if (entry.isIncome) {
+        totalIncome += amtMain;
+      } else if (entry.isExpense) {
+        totalExpenses += amtMain;
+      }
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        SegmentedButton<_ActivityFilter>(
-          showSelectedIcon: false,
-          style: SegmentedButton.styleFrom(
-            selectedBackgroundColor: tokens.colors.gold.withValues(alpha: 0.1),
-            selectedForegroundColor: tokens.colors.textPrimary,
-            side: BorderSide(color: tokens.colors.gold.withValues(alpha: 0.15)),
-            textStyle: const TextStyle(fontSize: 12),
-          ),
-          segments: <ButtonSegment<_ActivityFilter>>[
-            ButtonSegment<_ActivityFilter>(
-              value: _ActivityFilter.all,
-              label: Text(context.l10n.tr('all'), maxLines: 1, softWrap: false),
-            ),
-            ButtonSegment<_ActivityFilter>(
-              value: _ActivityFilter.income,
-              label: Text(
-                context.l10n.tr('income'),
-                maxLines: 1,
-                softWrap: false,
+        // Compact pill chips for: All, Income, Expense, Transfer
+        Row(
+          children: _ActivityFilter.values.map((filterVal) {
+            final bool isSelected = _filter == filterVal;
+            String label = '';
+            switch (filterVal) {
+              case _ActivityFilter.all:
+                label = context.l10n.tr('all');
+                break;
+              case _ActivityFilter.income:
+                label = context.l10n.tr('income');
+                break;
+              case _ActivityFilter.expense:
+                label = context.l10n.tr('expense');
+                break;
+              case _ActivityFilter.transfer:
+                label = context.l10n.tr('transfer');
+                break;
+            }
+            return Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 3),
+                child: GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _filter = filterVal;
+                      _selectedCategory = 'All';
+                    });
+                  },
+                  child: Container(
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? tokens.colors.gold
+                          : (Theme.of(context).brightness == Brightness.dark
+                                ? const Color(0xFF1E2725)
+                                : const Color(0xFFF0F4F3)),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Center(
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        softWrap: false,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: isSelected
+                              ? FontWeight.bold
+                              : FontWeight.w500,
+                          color: isSelected
+                              ? Colors.white
+                              : tokens.colors.textPrimary,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               ),
-            ),
-            ButtonSegment<_ActivityFilter>(
-              value: _ActivityFilter.expense,
-              label: Text(
-                context.l10n.tr('expense'),
-                maxLines: 1,
-                softWrap: false,
-              ),
-            ),
-            ButtonSegment<_ActivityFilter>(
-              value: _ActivityFilter.transfer,
-              label: Text(
-                context.l10n.tr('transfer'),
-                maxLines: 1,
-                softWrap: false,
-              ),
-            ),
-          ],
-          selected: <_ActivityFilter>{_filter},
-          onSelectionChanged: (Set<_ActivityFilter> selected) {
-            setState(() {
-              _filter = selected.first;
-              _selectedCategory = 'All';
-            });
-          },
+            );
+          }).toList(),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
 
         // Date Filter Row
         LayoutBuilder(
@@ -519,10 +683,10 @@ class ActivityScreenState extends State<ActivityScreen> {
                   children: <Widget>[
                     Icon(
                       Icons.calendar_month_outlined,
-                      size: 18,
+                      size: 16,
                       color: tokens.colors.textPrimary.withValues(alpha: 0.6),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 6),
                     ...<String>['All Time', '30D', '90D', 'YTD', 'Custom'].map((
                       filter,
                     ) {
@@ -542,21 +706,21 @@ class ActivityScreenState extends State<ActivityScreen> {
                       }
 
                       return Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 3),
+                        padding: const EdgeInsets.symmetric(horizontal: 2),
                         child: ChoiceChip(
                           labelPadding: EdgeInsets.zero,
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 4,
+                            horizontal: 8,
+                            vertical: 3,
                           ),
                           visualDensity: const VisualDensity(
-                            horizontal: -2,
+                            horizontal: -3,
                             vertical: -3,
                           ),
                           materialTapTargetSize:
                               MaterialTapTargetSize.shrinkWrap,
                           labelStyle: TextStyle(
-                            fontSize: 12,
+                            fontSize: 11,
                             fontWeight: isSelected
                                 ? FontWeight.w700
                                 : FontWeight.w500,
@@ -583,59 +747,84 @@ class ActivityScreenState extends State<ActivityScreen> {
         ),
         const SizedBox(height: 10),
 
-        // Category and note search filters
+        // Merged Category + Search Row
         Row(
           children: <Widget>[
-            Icon(
-              Icons.filter_list_rounded,
-              size: 18,
-              color: tokens.colors.textPrimary.withValues(alpha: 0.6),
-            ),
-            const SizedBox(width: 8),
-            ChoiceChip(
-              visualDensity: const VisualDensity(horizontal: -2, vertical: -3),
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              avatar: Icon(
-                Icons.filter_list_rounded,
-                size: 14,
-                color: _selectedCategory != 'All'
-                    ? Theme.of(context).colorScheme.onSecondaryContainer
-                    : tokens.colors.textPrimary.withValues(alpha: 0.6),
+            GestureDetector(
+              onTap: () => _showCategoryPicker(context, sortedCategories),
+              child: Container(
+                height: 28,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(
+                  color: _selectedCategory != 'All'
+                      ? tokens.colors.gold.withValues(alpha: 0.15)
+                      : (Theme.of(context).brightness == Brightness.dark
+                            ? const Color(0xFF1E2725)
+                            : const Color(0xFFF0F4F3)),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: _selectedCategory != 'All'
+                        ? tokens.colors.gold.withValues(alpha: 0.3)
+                        : Colors.transparent,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.filter_list_rounded,
+                      size: 13,
+                      color: _selectedCategory != 'All'
+                          ? tokens.colors.gold
+                          : tokens.colors.textPrimary.withValues(alpha: 0.6),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      catFilterLabel,
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: _selectedCategory != 'All'
+                            ? FontWeight.bold
+                            : FontWeight.w500,
+                        color: _selectedCategory != 'All'
+                            ? tokens.colors.gold
+                            : tokens.colors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(width: 2),
+                    Icon(
+                      Icons.arrow_drop_down_rounded,
+                      size: 13,
+                      color: _selectedCategory != 'All'
+                          ? tokens.colors.gold
+                          : tokens.colors.textPrimary.withValues(alpha: 0.6),
+                    ),
+                  ],
+                ),
               ),
-              labelStyle: TextStyle(
-                fontSize: 12,
-                fontWeight: _selectedCategory != 'All'
-                    ? FontWeight.bold
-                    : FontWeight.w500,
-              ),
-              label: Text(catFilterLabel),
-              selected: _selectedCategory != 'All',
-              onSelected: (bool selected) =>
-                  _showCategoryPicker(context, sortedCategories),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
             Expanded(
               child: SizedBox(
-                height: 34,
+                height: 28,
                 child: TextField(
                   key: const Key('activitySearchField'),
                   controller: _searchController,
                   onChanged: (_) => setState(() {}),
                   textInputAction: TextInputAction.search,
-                  style: const TextStyle(fontSize: 12),
+                  style: const TextStyle(fontSize: 11),
                   decoration: InputDecoration(
                     hintText: context.l10n.tr('search_notes'),
                     hintStyle: TextStyle(
-                      fontSize: 12,
+                      fontSize: 10,
                       color: tokens.colors.textSecondary,
                     ),
                     prefixIcon: Icon(
                       Icons.search_rounded,
-                      size: 17,
+                      size: 13,
                       color: tokens.colors.textPrimary.withValues(alpha: 0.6),
                     ),
-                    prefixIconConstraints: const BoxConstraints(minWidth: 34),
+                    prefixIconConstraints: const BoxConstraints(minWidth: 26),
                     suffixIcon: _searchController.text.isEmpty
                         ? null
                         : IconButton(
@@ -644,7 +833,7 @@ class ActivityScreenState extends State<ActivityScreen> {
                             visualDensity: VisualDensity.compact,
                             icon: Icon(
                               Icons.close_rounded,
-                              size: 16,
+                              size: 13,
                               color: tokens.colors.textSecondary,
                             ),
                             onPressed: () {
@@ -652,32 +841,32 @@ class ActivityScreenState extends State<ActivityScreen> {
                               setState(() {});
                             },
                           ),
-                    suffixIconConstraints: const BoxConstraints(minWidth: 32),
+                    suffixIconConstraints: const BoxConstraints(minWidth: 26),
                     filled: true,
                     fillColor: Theme.of(context)
                         .colorScheme
                         .surfaceContainerHighest
-                        .withValues(alpha: 0.5),
+                        .withValues(alpha: 0.3),
                     contentPadding: const EdgeInsets.symmetric(
                       horizontal: 8,
                       vertical: 0,
                     ),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(18),
+                      borderRadius: BorderRadius.circular(14),
                       borderSide: BorderSide(
                         color: tokens.colors.gold.withValues(alpha: 0.15),
                       ),
                     ),
                     enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(18),
+                      borderRadius: BorderRadius.circular(14),
                       borderSide: BorderSide(
                         color: tokens.colors.gold.withValues(alpha: 0.15),
                       ),
                     ),
                     focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(18),
+                      borderRadius: BorderRadius.circular(14),
                       borderSide: BorderSide(
-                        color: tokens.colors.gold.withValues(alpha: 0.7),
+                        color: tokens.colors.gold.withValues(alpha: 0.5),
                       ),
                     ),
                   ),
@@ -686,7 +875,80 @@ class ActivityScreenState extends State<ActivityScreen> {
             ),
           ],
         ),
-        const SizedBox(height: 12),
+
+        // Summary Strip Card
+        Container(
+          margin: const EdgeInsets.only(top: 10),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: Theme.of(
+              context,
+            ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.2),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: Theme.of(context).dividerColor.withValues(alpha: 0.5),
+            ),
+          ),
+          child: Row(
+            children: [
+              if (_filter == _ActivityFilter.all ||
+                  _filter == _ActivityFilter.income)
+                Expanded(
+                  child: _buildSummaryItem(
+                    context,
+                    title: _filter == _ActivityFilter.all
+                        ? context.l10n.tr('income')
+                        : (isArabic ? 'إجمالي الدخل' : 'Income Total'),
+                    amount: totalIncome,
+                    color: const Color(0xFF2E7D32),
+                    mainCurrency: mainCurrency,
+                    isArabic: isArabic,
+                  ),
+                ),
+              if (_filter == _ActivityFilter.all)
+                Container(
+                  height: 20,
+                  width: 1,
+                  color: Theme.of(context).dividerColor.withValues(alpha: 0.5),
+                ),
+              if (_filter == _ActivityFilter.all ||
+                  _filter == _ActivityFilter.expense)
+                Expanded(
+                  child: _buildSummaryItem(
+                    context,
+                    title: _filter == _ActivityFilter.all
+                        ? context.l10n.tr('expense')
+                        : (isArabic ? 'إجمالي المصروفات' : 'Expense Total'),
+                    amount: totalExpenses,
+                    color: const Color(0xFFC62828),
+                    mainCurrency: mainCurrency,
+                    isArabic: isArabic,
+                  ),
+                ),
+              if (_filter == _ActivityFilter.all)
+                Container(
+                  height: 20,
+                  width: 1,
+                  color: Theme.of(context).dividerColor.withValues(alpha: 0.5),
+                ),
+              if (_filter == _ActivityFilter.all ||
+                  _filter == _ActivityFilter.transfer)
+                Expanded(
+                  child: _buildSummaryItem(
+                    context,
+                    title: _filter == _ActivityFilter.all
+                        ? context.l10n.tr('transfer')
+                        : (isArabic ? 'إجمالي التحويلات' : 'Transfer Total'),
+                    amount: totalTransfers,
+                    color: tokens.colors.gold,
+                    mainCurrency: mainCurrency,
+                    isArabic: isArabic,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
 
         Expanded(
           child: filtered.isEmpty
@@ -705,171 +967,249 @@ class ActivityScreenState extends State<ActivityScreen> {
                   itemBuilder: (BuildContext context, int index) {
                     final _ActivityEntry entry = filtered[index];
 
-                    return PremiumCard(
-                      child: ListTile(
-                        key: Key('activityTile_${entry.key}'),
-                        onTap: () {
-                          final AppStateController controller = context
-                              .read<AppStateController>();
-                          if (entry.isTransfer) {
-                            final String titleStr =
-                                (entry.transferTitle ?? entry.title(context))
-                                    .toLowerCase();
-                            if (titleStr.contains('gold sale') ||
-                                titleStr.contains('silver sale')) {
-                              if (entry.transaction != null) {
-                                openSellMetalDialog(
-                                  context,
-                                  editTransaction: entry.transaction,
-                                );
-                              }
-                            } else if (titleStr.contains('gold') ||
-                                titleStr.contains('silver')) {
-                              Saving? targetSaving;
-                              if (entry.saving != null) {
-                                targetSaving = entry.saving;
-                              } else if (entry.transaction != null) {
-                                final String? pairId =
-                                    entry.transaction!.exchangePairId;
-                                if (pairId != null && pairId.isNotEmpty) {
-                                  targetSaving = controller.state.savings
-                                      .where((Saving s) => s.id == pairId)
-                                      .firstOrNull;
+                    return Slidable(
+                      key: Key('dismiss_${entry.key}'),
+                      endActionPane: ActionPane(
+                        motion: const ScrollMotion(),
+                        extentRatio: 0.28,
+                        children: [
+                          CustomSlidableAction(
+                            key: Key('delete_action_${entry.key}'),
+                            onPressed: (BuildContext context) async {
+                              final AppStateController controller = context
+                                  .read<AppStateController>();
+                              final bool isTx = entry.transaction != null;
+                              final String titleKey = isTx
+                                  ? 'delete_transaction'
+                                  : 'delete_saving';
+                              final String messageKey = isTx
+                                  ? 'delete_transaction_message'
+                                  : 'delete_saving_message';
+                              final bool? confirmed = await showDialog<bool>(
+                                context: context,
+                                builder: (BuildContext context) {
+                                  return AlertDialog(
+                                    title: Text(context.l10n.tr(titleKey)),
+                                    content: Text(context.l10n.tr(messageKey)),
+                                    actions: <Widget>[
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.of(context).pop(false),
+                                        child: Text(context.l10n.tr('cancel')),
+                                      ),
+                                      FilledButton(
+                                        style: FilledButton.styleFrom(
+                                          backgroundColor: const Color(
+                                            0xFFC62828,
+                                          ),
+                                          foregroundColor: Colors.white,
+                                        ),
+                                        onPressed: () =>
+                                            Navigator.of(context).pop(true),
+                                        child: Text(context.l10n.tr('delete')),
+                                      ),
+                                    ],
+                                  );
+                                },
+                              );
+                              if (confirmed == true) {
+                                if (entry.transaction != null) {
+                                  await controller.deleteTransaction(
+                                    entry.transaction!.id,
+                                  );
+                                } else if (entry.saving != null) {
+                                  await controller.deleteSaving(
+                                    entry.saving!.id,
+                                  );
                                 }
-                                if (targetSaving == null) {
-                                  final String targetType =
-                                      titleStr.contains('gold')
-                                      ? 'gold'
-                                      : 'silver';
-                                  targetSaving = controller.state.savings
-                                      .where(
-                                        (Saving s) => s.assetType == targetType,
-                                      )
-                                      .firstOrNull;
-                                }
                               }
-                              if (targetSaving != null) {
-                                Navigator.of(context).push(
-                                  MaterialPageRoute<void>(
-                                    builder: (_) => AddSavingScreen(
-                                      initialSaving: targetSaving,
-                                    ),
+                            },
+                            backgroundColor: const Color(0xFFC62828),
+                            foregroundColor: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(
+                                  Icons.delete_outline_rounded,
+                                  color: Colors.white,
+                                  size: 22,
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  context.l10n.tr('delete'),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
                                   ),
-                                );
-                              }
-                            } else if (titleStr.contains('exchange')) {
-                              final dynamic item =
-                                  entry.saving ?? entry.transaction;
-                              if (item != null) {
-                                openEditCurrencyExchangeDialog(context, item);
-                              }
-                            } else {
-                              if (entry.transaction != null) {
-                                Navigator.of(context).push(
-                                  MaterialPageRoute<void>(
-                                    builder: (_) => AddTransactionScreen(
-                                      initialTransaction: entry.transaction,
-                                    ),
-                                  ),
-                                );
-                              }
-                            }
-                          } else if (entry.transaction != null) {
-                            Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) => AddTransactionScreen(
-                                  initialTransaction: entry.transaction,
                                 ),
-                              ),
-                            );
-                          } else if (entry.saving != null) {
-                            Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) => AddSavingScreen(
-                                  initialSaving: entry.saving,
-                                ),
-                              ),
-                            );
-                          }
-                        },
-                        contentPadding: const EdgeInsets.symmetric(
-                          vertical: 2,
-                          horizontal: 4,
-                        ),
-                        title: Row(
-                          children: <Widget>[
-                            _TypeBadge(type: entry.type),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                entry.title(context),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
+                              ],
                             ),
-                          ],
-                        ),
-                        subtitle: Padding(
-                          padding: const EdgeInsets.only(top: 6),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: <Widget>[
-                              Text(
-                                '${entry.date} • '
-                                '${ZakatEngineService.getCurrencySymbol(entry.currency, isArabic: Localizations.localeOf(context).languageCode.toLowerCase() == 'ar')}',
-                                style: TextStyle(
-                                  color: tokens.colors.textSecondary,
-                                ),
-                              ),
-                              if (entry.description.trim().isNotEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 2),
-                                  child: Text(
-                                    entry.description,
-                                    style: TextStyle(
-                                      color: tokens.colors.textSecondary
-                                          .withValues(alpha: 0.8),
+                          ),
+                        ],
+                      ),
+                      child: PremiumCard(
+                        child: ListTile(
+                          key: Key('activityTile_${entry.key}'),
+                          onTap: () {
+                            final AppStateController controller = context
+                                .read<AppStateController>();
+                            if (entry.isTransfer) {
+                              final String titleStr =
+                                  (entry.transferTitle ?? entry.title(context))
+                                      .toLowerCase();
+                              if (titleStr.contains('gold sale') ||
+                                  titleStr.contains('silver sale')) {
+                                if (entry.transaction != null) {
+                                  openSellMetalDialog(
+                                    context,
+                                    editTransaction: entry.transaction,
+                                  );
+                                }
+                              } else if (titleStr.contains('gold') ||
+                                  titleStr.contains('silver')) {
+                                Saving? targetSaving;
+                                if (entry.saving != null) {
+                                  targetSaving = entry.saving;
+                                } else if (entry.transaction != null) {
+                                  final String? pairId =
+                                      entry.transaction!.exchangePairId;
+                                  if (pairId != null && pairId.isNotEmpty) {
+                                    targetSaving = controller.state.savings
+                                        .where((Saving s) => s.id == pairId)
+                                        .firstOrNull;
+                                  }
+                                  if (targetSaving == null) {
+                                    final String targetType =
+                                        titleStr.contains('gold')
+                                        ? 'gold'
+                                        : 'silver';
+                                    targetSaving = controller.state.savings
+                                        .where(
+                                          (Saving s) =>
+                                              s.assetType == targetType,
+                                        )
+                                        .firstOrNull;
+                                  }
+                                }
+                                if (targetSaving != null) {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute<void>(
+                                      builder: (_) => AddSavingScreen(
+                                        initialSaving: targetSaving,
+                                      ),
                                     ),
+                                  );
+                                }
+                              } else if (titleStr.contains('exchange')) {
+                                final dynamic item =
+                                    entry.saving ?? entry.transaction;
+                                if (item != null) {
+                                  openEditCurrencyExchangeDialog(context, item);
+                                }
+                              } else {
+                                if (entry.transaction != null) {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute<void>(
+                                      builder: (_) => AddTransactionScreen(
+                                        initialTransaction: entry.transaction,
+                                      ),
+                                    ),
+                                  );
+                                }
+                              }
+                            } else if (entry.transaction != null) {
+                              Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) => AddTransactionScreen(
+                                    initialTransaction: entry.transaction,
                                   ),
                                 ),
+                              );
+                            } else if (entry.saving != null) {
+                              Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) => AddSavingScreen(
+                                    initialSaving: entry.saving,
+                                  ),
+                                ),
+                              );
+                            }
+                          },
+                          contentPadding: const EdgeInsets.symmetric(
+                            vertical: 2,
+                            horizontal: 6,
+                          ),
+                          leading: _buildActivityIcon(context, entry),
+                          title: Row(
+                            children: <Widget>[
+                              Expanded(
+                                child: Text(
+                                  entry.isTransfer
+                                      ? (entry.transferTitle ??
+                                            entry.title(context))
+                                      : entry.title(context),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
                             ],
                           ),
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: <Widget>[
-                            Text(
-                              balancesHidden
-                                  ? '••••••'
-                                  : ZakatEngineService.formatCurrency(
-                                      entry.signedAmount,
-                                      entry.currency,
-                                      isArabic:
-                                          Localizations.localeOf(
-                                            context,
-                                          ).languageCode.toLowerCase() ==
-                                          'ar',
-                                      showSign: !entry.isTransfer,
-                                    ),
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              entry.isTransfer
+                                  ? _getTransferSubtitle(
+                                      context,
+                                      entry,
+                                      mainCurrency,
+                                      market,
+                                      isArabic,
+                                    )
+                                  : '${entry.date} • ${entry.description.isNotEmpty ? entry.description : entry.title(context)}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                color: entry.isTransfer
-                                    ? const Color(0xFFB8860B)
-                                    : (entry.isIncome
-                                          ? const Color(0xFF2E7D32)
-                                          : const Color(0xFFC62828)),
-                                fontWeight: FontWeight.bold,
-                                fontSize: 15,
+                                color: tokens.colors.textSecondary,
+                                fontSize: 12,
                               ),
                             ),
-                            IconButton(
-                              key: Key('deleteActivityEntry_${entry.key}'),
-                              icon: const Icon(Icons.delete_outline, size: 20),
-                              color: tokens.colors.textSecondary,
-                              onPressed: () =>
-                                  _confirmDeleteActivityEntry(context, entry),
-                            ),
-                          ],
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              Text(
+                                balancesHidden
+                                    ? '••••••'
+                                    : ZakatEngineService.formatCurrency(
+                                        entry.signedAmount,
+                                        entry.currency,
+                                        isArabic: isArabic,
+                                        showSign: !entry.isTransfer,
+                                      ),
+                                style: TextStyle(
+                                  color: entry.isTransfer
+                                      ? tokens.colors.textPrimary
+                                      : (entry.isIncome
+                                            ? const Color(0xFF2E7D32)
+                                            : tokens.colors.danger),
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 15,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Icon(
+                                Icons.chevron_right_rounded,
+                                color: tokens.colors.textSecondary.withValues(
+                                  alpha: 0.5,
+                                ),
+                                size: 20,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     );
@@ -1300,77 +1640,217 @@ class ActivityScreenState extends State<ActivityScreen> {
           lastRollover: lastRollover,
           zakatNisabBasis: zakatNisabBasis,
         );
-    return <Map<String, dynamic>>[...monthly, ...savingsSchedule];
+
+    final Map<String, Map<String, dynamic>> merged =
+        <String, Map<String, dynamic>>{};
+    for (final Map<String, dynamic> item in [...monthly, ...savingsSchedule]) {
+      final String monthKey = item['monthKey']?.toString() ?? '';
+      if (monthKey.isEmpty) continue;
+      if (!merged.containsKey(monthKey)) {
+        merged[monthKey] = <String, dynamic>{
+          'monthKey': monthKey,
+          'paymentDate': item['paymentDate'],
+          'totalZakat': (item['totalZakat'] as num).toDouble(),
+          'isPast': item['isPast'],
+          'isCurrentMonth': item['isCurrentMonth'],
+          'entries': List<Map<String, dynamic>>.from(
+            item['entries'] as Iterable,
+          ),
+        };
+      } else {
+        final Map<String, dynamic> existing = merged[monthKey]!;
+        existing['totalZakat'] =
+            (existing['totalZakat'] as num).toDouble() +
+            (item['totalZakat'] as num).toDouble();
+        (existing['entries'] as List<Map<String, dynamic>>).addAll(
+          List<Map<String, dynamic>>.from(item['entries'] as Iterable),
+        );
+      }
+    }
+
+    final List<Map<String, dynamic>> sorted = merged.values.toList()
+      ..sort(
+        (a, b) => a['monthKey'].toString().compareTo(b['monthKey'].toString()),
+      );
+    return sorted;
   }
 
-  Future<void> _confirmDelete(BuildContext context, Transaction tx) async {
-    final bool confirmed =
-        await showDialog<bool>(
-          context: context,
-          builder: (BuildContext context) {
-            return AlertDialog(
-              title: Text(context.l10n.tr('delete_transaction')),
-              content: Text(context.l10n.tr('delete_transaction_message')),
-              actions: <Widget>[
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(false),
-                  child: Text(context.l10n.tr('cancel')),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.of(context).pop(true),
-                  child: Text(context.l10n.tr('delete')),
-                ),
-              ],
-            );
-          },
-        ) ??
-        false;
-
-    if (!confirmed || !context.mounted) return;
-    await context.read<AppStateController>().deleteTransaction(tx.id);
-  }
-
-  Future<void> _confirmDeleteSaving(BuildContext context, Saving saving) async {
-    final bool confirmed =
-        await showDialog<bool>(
-          context: context,
-          builder: (BuildContext context) {
-            return AlertDialog(
-              title: Text(context.l10n.tr('delete_saving')),
-              content: Text(context.l10n.tr('delete_saving_message')),
-              actions: <Widget>[
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(false),
-                  child: Text(context.l10n.tr('cancel')),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.of(context).pop(true),
-                  child: Text(context.l10n.tr('delete')),
-                ),
-              ],
-            );
-          },
-        ) ??
-        false;
-
-    if (!confirmed || !context.mounted) return;
-    await context.read<AppStateController>().deleteSaving(saving.id);
-  }
-
-  Future<void> _confirmDeleteActivityEntry(
+  String _getTransferSubtitle(
     BuildContext context,
     _ActivityEntry entry,
-  ) async {
-    final Transaction? tx = entry.transaction;
-    if (tx != null) {
-      await _confirmDelete(context, tx);
-      return;
+    String mainCurrency,
+    MarketData market,
+    bool isArabic,
+  ) {
+    if (entry.transferTitle == 'Currency Exchange') {
+      final RegExp reg = RegExp(
+        r'([A-Z$£€¥a-z]+)\s+([0-9.,]+)\s+→\s+([A-Z$£€¥a-z]+)\s+([0-9.,]+)',
+      );
+      final Match? match = reg.firstMatch(entry.description);
+      if (match != null) {
+        final String srcCurr = match.group(1)!;
+        final double srcAmt =
+            double.tryParse(match.group(2)!.replaceAll(',', '')) ?? 0;
+        final String tgtCurr = match.group(3)!;
+        final double tgtAmt =
+            double.tryParse(match.group(4)!.replaceAll(',', '')) ?? 0;
+
+        final String srcFormatted = ZakatEngineService.formatCurrency(
+          srcAmt,
+          srcCurr,
+          isArabic: isArabic,
+        );
+        final String tgtFormatted = ZakatEngineService.formatCurrency(
+          tgtAmt,
+          tgtCurr,
+          isArabic: isArabic,
+        );
+        return '$srcFormatted → $tgtFormatted';
+      }
+      return entry.description;
     }
 
-    final Saving? saving = entry.saving;
-    if (saving != null) {
-      await _confirmDeleteSaving(context, saving);
+    final String titleLower = (entry.transferTitle ?? entry.title(context))
+        .toLowerCase();
+    if (titleLower.contains('gold purchase')) {
+      final Saving? s = entry.saving;
+      if (s != null) {
+        final String formattedCost = ZakatEngineService.formatCurrency(
+          s.purchaseAmount,
+          s.purchaseCurrency,
+          isArabic: isArabic,
+        );
+        return '${s.amount.toStringAsFixed(s.amount.truncateToDouble() == s.amount ? 0 : 2)}g Gold • $formattedCost';
+      }
     }
+    if (titleLower.contains('gold sale')) {
+      final Transaction? tx = entry.transaction;
+      if (tx != null) {
+        double weight = 0.0;
+        final RegExp regex = RegExp(r'([0-9.]+)\s*g');
+        final Match? match = regex.firstMatch(tx.description);
+        if (match != null) {
+          weight = double.tryParse(match.group(1) ?? '') ?? 0.0;
+        }
+        final String formattedCost = ZakatEngineService.formatCurrency(
+          tx.amount,
+          tx.currency,
+          isArabic: isArabic,
+        );
+        return '${weight.toStringAsFixed(weight.truncateToDouble() == weight ? 0 : 2)}g Gold • $formattedCost';
+      }
+    }
+    if (titleLower.contains('silver purchase')) {
+      final Saving? s = entry.saving;
+      if (s != null) {
+        final String formattedCost = ZakatEngineService.formatCurrency(
+          s.purchaseAmount,
+          s.purchaseCurrency,
+          isArabic: isArabic,
+        );
+        return '${s.amount.toStringAsFixed(s.amount.truncateToDouble() == s.amount ? 0 : 2)}g Silver • $formattedCost';
+      }
+    }
+    if (titleLower.contains('silver sale')) {
+      final Transaction? tx = entry.transaction;
+      if (tx != null) {
+        double weight = 0.0;
+        final RegExp regex = RegExp(r'([0-9.]+)\s*g');
+        final Match? match = regex.firstMatch(tx.description);
+        if (match != null) {
+          weight = double.tryParse(match.group(1) ?? '') ?? 0.0;
+        }
+        final String formattedCost = ZakatEngineService.formatCurrency(
+          tx.amount,
+          tx.currency,
+          isArabic: isArabic,
+        );
+        return '${weight.toStringAsFixed(weight.truncateToDouble() == weight ? 0 : 2)}g Silver • $formattedCost';
+      }
+    }
+    return entry.description;
+  }
+
+  Widget _buildActivityIcon(BuildContext context, _ActivityEntry entry) {
+    final String titleLower = (entry.transferTitle ?? entry.title(context))
+        .toLowerCase();
+
+    IconData iconData = Icons.swap_horiz_rounded;
+    Color iconColor = const Color(0xFFD4AF37);
+    Color bg = const Color(0xFFD4AF37).withValues(alpha: 0.12);
+
+    if (entry.isTransfer) {
+      if (titleLower.contains('gold')) {
+        iconData = Icons.circle_rounded;
+        iconColor = const Color(0xFFD4AF37);
+        bg = const Color(0xFFD4AF37).withValues(alpha: 0.12);
+      } else if (titleLower.contains('silver')) {
+        iconData = Icons.circle_outlined;
+        iconColor = const Color(0xFF94A3B8);
+        bg = const Color(0xFF94A3B8).withValues(alpha: 0.12);
+      } else if (titleLower.contains('exchange')) {
+        iconData = Icons.swap_horiz_rounded;
+        iconColor = const Color(0xFFD4AF37);
+        bg = const Color(0xFFD4AF37).withValues(alpha: 0.12);
+      } else {
+        iconData = Icons.swap_horiz_rounded;
+        iconColor = const Color(0xFFD4AF37);
+        bg = const Color(0xFFD4AF37).withValues(alpha: 0.12);
+      }
+    } else if (entry.isIncome) {
+      iconData = Icons.north_east_rounded;
+      iconColor = const Color(0xFF2E7D32);
+      bg = const Color(0xFF2E7D32).withValues(alpha: 0.12);
+    } else if (entry.isExpense) {
+      iconData = Icons.south_east_rounded;
+      iconColor = const Color(0xFFC62828);
+      bg = const Color(0xFFC62828).withValues(alpha: 0.12);
+    }
+
+    return Container(
+      width: 38,
+      height: 38,
+      decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
+      child: Center(child: Icon(iconData, color: iconColor, size: 20)),
+    );
+  }
+
+  Widget _buildSummaryItem(
+    BuildContext context, {
+    required String title,
+    required double amount,
+    required Color color,
+    required String mainCurrency,
+    required bool isArabic,
+  }) {
+    return Column(
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+            color: Theme.of(context).hintColor,
+          ),
+        ),
+        const SizedBox(height: 4),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            ZakatEngineService.formatCurrency(
+              amount,
+              mainCurrency,
+              isArabic: isArabic,
+            ),
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   static DateTime _parseDate(String raw) {
@@ -1587,46 +2067,6 @@ class _ActivityEntry {
     if (transferTitle != null) return transferTitle!;
     if (isCashSaving) return context.l10n.tr('cash_in');
     return transaction!.category;
-  }
-}
-
-class _TypeBadge extends StatelessWidget {
-  const _TypeBadge({required this.type});
-
-  final String type;
-
-  @override
-  Widget build(BuildContext context) {
-    final bool isIncome = type == 'income';
-    final bool isSavings = type == 'savings';
-    final bool isTransfer = type == 'transfer';
-    final Color bg = isTransfer
-        ? const Color(0xFFFFF4CC)
-        : isSavings
-        ? const Color(0xFFEAF3FF)
-        : (isIncome ? const Color(0xFFE8F5E9) : const Color(0xFFFFEBEE));
-    final Color fg = isTransfer
-        ? const Color(0xFF8A6500)
-        : isSavings
-        ? const Color(0xFF174A7C)
-        : (isIncome ? const Color(0xFF1B5E20) : const Color(0xFFB71C1C));
-    final String label = isTransfer
-        ? context.l10n.tr('transfer')
-        : isSavings
-        ? context.l10n.tr('savings')
-        : (isIncome ? context.l10n.tr('income') : context.l10n.tr('expense'));
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: fg),
-      ),
-    );
   }
 }
 

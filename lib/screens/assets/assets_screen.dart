@@ -11,6 +11,8 @@ import '../../models/saving.dart';
 import '../../models/transaction.dart';
 import '../../services/app_state_controller.dart';
 import 'category_details_screen.dart';
+import '../account/notifications_screen.dart';
+import '../../models/pending_transaction.dart';
 
 class AssetsScreen extends StatefulWidget {
   const AssetsScreen({super.key, this.onViewAllActivity});
@@ -372,8 +374,12 @@ class _AssetsScreenState extends State<AssetsScreen> {
             title: context.l10n.tr('assets'),
             balancesHidden: balancesHidden,
             onTogglePrivacy: () => controller.togglePrivacyMode(),
-            hasNotifications: false,
-            onTapNotifications: () {},
+            hasNotifications: controller.state.pendingTransactions.any(
+              (t) => t.status == CaptureStatus.pendingReview,
+            ),
+            onTapNotifications: () {
+              Navigator.of(context).push(NotificationsScreen.route());
+            },
           ),
           const SizedBox(height: 18),
 

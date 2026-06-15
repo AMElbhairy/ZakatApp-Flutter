@@ -1021,4 +1021,38 @@ void main() {
       <String>['available'],
     );
   });
+
+  test('gold sale reduces gold saving remaining amount', () {
+    final state = makeState(
+      transactions: <Map<String, dynamic>>[
+        <String, dynamic>{
+          'id': 'tx-sale-1',
+          'type': 'income',
+          'date': '2026-06-02',
+          'amount': 30000,
+          'currency': 'EGP',
+          'category': 'Gold Sale',
+          'description': 'Sold 10 g of 24k gold',
+          'exchangePairId': 'gold-1',
+        },
+      ],
+      savings: <Map<String, dynamic>>[
+        <String, dynamic>{
+          'id': 'gold-1',
+          'assetType': 'gold',
+          'unit': '24',
+          'amount': 25.5,
+          'remainingAmount': 25.5,
+          'dateAcquired': '2026-01-01',
+        },
+      ],
+    );
+
+    final out = service.reconcileExpensesWithSavings(state).state;
+
+    expect(
+      out.savings.firstWhere((Saving s) => s.id == 'gold-1').remainingAmount,
+      15.5,
+    );
+  });
 }

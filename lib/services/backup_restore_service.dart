@@ -27,11 +27,13 @@ class BackupRestoreService {
   Future<RestoreResult> restoreReplace(
     String rawJson, {
     bool allowWhenLocalDataExists = false,
+    String? expectedUserId,
   }) async {
     _ensureConflictSafety(allowWhenLocalDataExists);
 
     final LegacyMigrationReport report = _migrationService
         .parseAndMigrateWithReport(rawJson);
+    _ensureOwnership(report.state, expectedUserId);
     final AppStateModel next = AppStateModel.fromJson(report.state);
     await controller.updateState(next);
 
@@ -45,11 +47,13 @@ class BackupRestoreService {
   Future<RestoreResult> restoreMerge(
     String rawJson, {
     bool allowWhenLocalDataExists = false,
+    String? expectedUserId,
   }) async {
     _ensureConflictSafety(allowWhenLocalDataExists);
 
     final LegacyMigrationReport report = _migrationService
         .parseAndMigrateWithReport(rawJson);
+    _ensureOwnership(report.state, expectedUserId);
     final Map<String, dynamic> current = controller.state.toJson();
     final Map<String, dynamic> incoming = report.state;
 
@@ -98,6 +102,9 @@ class BackupRestoreService {
     merged['marketData'] = incoming['marketData'] is Map
         ? Map<String, dynamic>.from(incoming['marketData'] as Map)
         : current['marketData'];
+    merged['aiSettings'] = incoming['aiSettings'] is Map
+        ? Map<String, dynamic>.from(incoming['aiSettings'] as Map)
+        : current['aiSettings'];
 
     _resetRemainingAmountsIfNeeded(merged, report.warnings);
     report.warnings.add(
@@ -120,6 +127,17 @@ class BackupRestoreService {
       throw StateError(
         'Local data exists. Explicit restore action is required.',
       );
+    }
+  }
+
+  void _ensureOwnership(Map<String, dynamic> state, [String? expectedUserId]) {
+    final String backupUserId = (state['userId'] ?? '').toString().trim();
+    final String currentUserId =
+        (expectedUserId ?? controller.state.userId ?? '').trim();
+    if (backupUserId.isNotEmpty &&
+        currentUserId.isNotEmpty &&
+        backupUserId != currentUserId) {
+      throw StateError('This backup belongs to another account.');
     }
   }
 

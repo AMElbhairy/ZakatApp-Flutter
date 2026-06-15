@@ -4,14 +4,11 @@ import 'package:flutter/foundation.dart';
 
 import '../core/constants/storage_keys.dart';
 import '../models/user_profile.dart';
-import 'auth_service.dart';
+import '../features/auth/auth_service.dart';
 import 'local_storage_service.dart';
 
 class AuthController extends ChangeNotifier {
-  AuthController({
-    required this.authService,
-    required this.localStorage,
-  });
+  AuthController({required this.authService, required this.localStorage});
 
   final AuthService authService;
   final LocalStorageService localStorage;
@@ -31,8 +28,9 @@ class AuthController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final String? raw =
-          await localStorage.loadString(StorageKeys.userProfileKey);
+      final String? raw = await localStorage.loadString(
+        StorageKeys.userProfileKey,
+      );
       if (raw != null && raw.trim().isNotEmpty) {
         try {
           final Map<String, dynamic> json =
@@ -43,10 +41,17 @@ class AuthController extends ChangeNotifier {
         }
       }
 
-      final UserProfile? restored = await authService.restoreSession();
-      if (restored != null) {
-        _currentUser = restored;
-        await _persistCurrentUser();
+      final UserProfile? persistedUser = _currentUser;
+      if (persistedUser != null &&
+          AuthProviderX.parse(persistedUser.provider) == AuthProvider.apple) {
+        // Apple sign-in is restored from local profile state; there is no silent
+        // Apple session to rehydrate on startup.
+      } else {
+        final UserProfile? restored = await authService.restoreSession();
+        if (restored != null) {
+          _currentUser = restored;
+          await _persistCurrentUser();
+        }
       }
     } catch (error, stackTrace) {
       debugPrint('AuthController.load failed: $error');
@@ -58,13 +63,13 @@ class AuthController extends ChangeNotifier {
     }
   }
 
-  Future<void> signIn() async {
+  Future<void> signIn({AuthProvider provider = AuthProvider.google}) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      final UserProfile? user = await authService.signIn();
+      final UserProfile? user = await authService.signIn(provider: provider);
       if (user != null) {
         _currentUser = user;
         await _persistCurrentUser();
@@ -100,6 +105,9 @@ class AuthController extends ChangeNotifier {
 
   Future<bool> ensureSession() async {
     if (!isSignedIn) return false;
+    if (AuthProviderX.parse(_currentUser?.provider) == AuthProvider.apple) {
+      return true;
+    }
     final bool isValid = await authService.ensureSession();
     if (!isValid) {
       // Session is stale/invalid, try restoring it (signInSilently).

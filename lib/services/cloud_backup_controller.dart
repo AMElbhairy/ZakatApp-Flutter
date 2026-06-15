@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 import '../models/backup_preview.dart';
+import '../models/user_profile.dart';
 import 'app_state_controller.dart';
 import 'auth_controller.dart';
 import 'backup_restore_service.dart';
@@ -45,6 +46,7 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
   bool _pendingRestorePrompt = false;
   bool _hasPendingAutoBackup = false;
   bool _cloudBackupNewerThanLocal = false;
+  bool _backupOwnershipMismatch = false;
   String? _lastObservedStateHash;
   String? _lastSignedInUserId;
   Future<void>? _refreshCloudStateInFlight;
@@ -59,6 +61,7 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
   bool get hasPendingAutoBackup => _hasPendingAutoBackup;
   bool get shouldPromptRestore => _pendingRestorePrompt;
   bool get cloudBackupNewerThanLocal => _cloudBackupNewerThanLocal;
+  bool get backupOwnershipMismatch => _backupOwnershipMismatch;
   String get statusMessage => _statusMessage;
   String get lastError => _lastError;
   DriveBackupFile? get latestBackup => _latestBackup;
@@ -69,6 +72,7 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
       _latestBackup = null;
       _pendingRestorePrompt = false;
       _cloudBackupNewerThanLocal = false;
+      _backupOwnershipMismatch = false;
       _statusMessage = '';
       notifyListeners();
       return;
@@ -105,9 +109,13 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
       if (accessToken == null) return;
 
       _latestBackup = await _googleDriveService.fetchLatestBackup(accessToken);
+      _backupOwnershipMismatch =
+          _latestBackup != null && !_isBackupOwnedByCurrentUser(_latestBackup);
       _cloudBackupNewerThanLocal = _isCloudNewerThanLocal(_latestBackup);
       if (_latestBackup == null) {
         _statusMessage = 'No cloud backup found.';
+      } else if (_backupOwnershipMismatch) {
+        _statusMessage = 'This backup belongs to another account.';
       } else if (_cloudBackupNewerThanLocal) {
         _statusMessage = 'Cloud backup available and newer than local data.';
       } else {
@@ -131,6 +139,12 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
     bool automatic = false,
   }) async {
     if (_accessToken == null || _accessToken!.isEmpty) {
+      _statusMessage = 'Sign in to use Google Drive backup.';
+      notifyListeners();
+      return false;
+    }
+    final UserProfile? currentUser = authController.currentUser;
+    if (currentUser == null || currentUser.id.trim().isEmpty) {
       _statusMessage = 'Sign in to use Google Drive backup.';
       notifyListeners();
       return false;
@@ -171,8 +185,10 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
       final Map<String, dynamic> appState = appStateController.state.toJson();
       final String payload = BackupService.exportBackup(
         appState,
+        userId: currentUser.id,
+        provider: currentUser.provider,
+        email: currentUser.email,
         cloudBackupMetadata: <String, dynamic>{
-          'backupVersion': 1,
           'createdAt': createdAt.toIso8601String(),
           'updatedAt': now.toIso8601String(),
           'devicePlatform': defaultTargetPlatform.name,
@@ -190,6 +206,7 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
       }
 
       _latestBackup = uploaded;
+      _backupOwnershipMismatch = false;
       _hasPendingAutoBackup = false;
       _autoBackupTimer?.cancel();
       _cloudBackupNewerThanLocal = false;
@@ -239,6 +256,11 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
       notifyListeners();
       return false;
     }
+    if (_backupOwnershipMismatch) {
+      _statusMessage = 'This backup belongs to another account.';
+      notifyListeners();
+      return false;
+    }
     if (_isRestoring || _isBackingUp) {
       debugPrint(
         'CloudBackupController.restoreLatestBackup: blocked isRestoring=$_isRestoring, isBackingUp=$_isBackingUp',
@@ -275,11 +297,13 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
       await _backupRestoreService.restoreReplace(
         rawJson,
         allowWhenLocalDataExists: allowOverwrite,
+        expectedUserId: authController.currentUser?.id,
       );
       _pendingRestorePrompt = false;
       _hasPendingAutoBackup = false;
       _autoBackupTimer?.cancel();
       _cloudBackupNewerThanLocal = false;
+      _backupOwnershipMismatch = false;
       _statusMessage = 'Cloud restore completed.';
       _lastObservedStateHash = _stateHash(appStateController.state.toJson());
       return true;
@@ -357,6 +381,7 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
 
   bool _shouldPromptRestoreAfterSignIn(DriveBackupFile? latest) {
     if (latest == null) return false;
+    if (_backupOwnershipMismatch) return false;
     if (BackupService.hasData(appStateController.state.toJson())) return false;
     return true;
   }
@@ -376,4 +401,11 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
   String _stateHash(Map<String, dynamic> json) => jsonEncode(json);
 
   String? get _accessToken => authController.currentUser?.accessToken;
+
+  bool _isBackupOwnedByCurrentUser(DriveBackupFile? latest) {
+    final UserProfile? currentUser = authController.currentUser;
+    if (latest == null || currentUser == null) return false;
+    final String ownerId = (latest.userId ?? '').trim();
+    return ownerId.isEmpty || ownerId == currentUser.id;
+  }
 }

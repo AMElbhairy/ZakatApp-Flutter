@@ -8,6 +8,7 @@ import 'package:zakatapp_flutter/core/i18n/app_localizations.dart';
 import 'package:zakatapp_flutter/core/theme/app_theme.dart';
 import 'package:zakatapp_flutter/models/user_profile.dart';
 import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
+import 'package:zakatapp_flutter/screens/account/account_screen.dart';
 import 'package:zakatapp_flutter/screens/app_shell.dart';
 import 'package:zakatapp_flutter/services/app_state_controller.dart';
 import 'package:zakatapp_flutter/services/auth_controller.dart';
@@ -22,7 +23,7 @@ class _FakeAuthService implements AuthService {
   Future<UserProfile?> restoreSession() async => null;
 
   @override
-  Future<UserProfile?> signIn() async => null;
+  Future<UserProfile?> signIn({AuthProvider provider = AuthProvider.google}) async => null;
 
   @override
   Future<void> signOut() async {}
@@ -31,7 +32,9 @@ class _FakeAuthService implements AuthService {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('App shell renders locked navigation', (WidgetTester tester) async {
+  testWidgets('App shell renders locked navigation', (
+    WidgetTester tester,
+  ) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
 
     const LocalStorageService localStorage = LocalStorageService();
@@ -46,7 +49,9 @@ void main() {
     await tester.pumpWidget(
       MultiProvider(
         providers: [
-          ChangeNotifierProvider<AppStateController>.value(value: appStateController),
+          ChangeNotifierProvider<AppStateController>.value(
+            value: appStateController,
+          ),
           ChangeNotifierProvider<AuthController>.value(value: authController),
         ],
         child: MaterialApp(
@@ -74,5 +79,31 @@ void main() {
     expect(find.text('Dashboard'), findsWidgets);
     expect(find.text('Plans'), findsOneWidget);
     expect(find.text('Account'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('bottomNavTab_4')));
+    await tester.pumpAndSettle();
+
+    final ScrollController accountScrollController = PrimaryScrollController.of(
+      tester.element(find.byType(AccountScreen)),
+    );
+    expect(accountScrollController.hasClients, isTrue);
+
+    await tester.drag(
+      find.byType(SingleChildScrollView).last,
+      const Offset(0, -500),
+    );
+    await tester.pumpAndSettle();
+    final double savedOffset = accountScrollController.offset;
+    expect(savedOffset, greaterThan(0));
+
+    await tester.tap(find.byKey(const Key('bottomNavDashboardTab')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('bottomNavTab_4')));
+    await tester.pumpAndSettle();
+    expect(accountScrollController.offset, closeTo(savedOffset, 0.1));
+
+    await tester.tap(find.byKey(const Key('bottomNavTab_4')));
+    await tester.pumpAndSettle();
+    expect(accountScrollController.offset, 0);
   });
 }

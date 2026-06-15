@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 
 import '../../core/i18n/app_localizations.dart';
 import '../../core/services/zakat_engine.dart';
@@ -333,6 +334,7 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
     double profitPct = 0.0;
     bool showProfitLoss = false;
     double totalGold24kGrams = 0.0;
+    double totalSilverGrams = 0.0;
 
     if (widget.categoryType == 'gold') {
       double totalPurchaseCost = 0.0;
@@ -341,6 +343,34 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
           totalGold24kGrams += ZakatEngineService.convertToGold24k(
             item.remainingAmount,
             item.unit,
+          );
+          final String pCurr = item.purchaseCurrency.trim().isEmpty
+              ? mainCurrency
+              : item.purchaseCurrency;
+          final double pCostEgp = ZakatEngineService.convertToEgp(
+            item.purchaseAmount,
+            pCurr,
+            market,
+          );
+          final double pCostMain = ZakatEngineService.convertFromEgp(
+            pCostEgp,
+            mainCurrency,
+            market,
+          );
+          totalPurchaseCost += pCostMain;
+        }
+      }
+      if (totalPurchaseCost > 0) {
+        profitAmount = categoryTotalVal - totalPurchaseCost;
+        profitPct = (profitAmount / totalPurchaseCost) * 100;
+        showProfitLoss = true;
+      }
+    } else if (widget.categoryType == 'silver') {
+      double totalPurchaseCost = 0.0;
+      for (final item in filteredItems) {
+        if (item is Saving && item.assetType == 'silver') {
+          totalSilverGrams += ZakatEngineService.convertToSilverGrams(
+            item.remainingAmount,
           );
           final String pCurr = item.purchaseCurrency.trim().isEmpty
               ? mainCurrency
@@ -687,6 +717,52 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                                             ],
                                           ),
                                         ),
+                                      if (widget.categoryType == 'silver' &&
+                                          totalSilverGrams > 0)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white.withValues(
+                                              alpha: 0.1,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
+                                            border: Border.all(
+                                              color: const Color(
+                                                0xFFFFC928,
+                                              ).withValues(alpha: 0.3),
+                                              width: 1,
+                                            ),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Text(
+                                                '${totalSilverGrams.toStringAsFixed(1)} g',
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                'SILVER',
+                                                style: TextStyle(
+                                                  color: const Color(
+                                                    0xFFFFC928,
+                                                  ),
+                                                  fontWeight: FontWeight.w800,
+                                                  fontSize: 8,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
                                     ],
                                   ),
                                   const SizedBox(height: 12),
@@ -993,114 +1069,146 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: PremiumCard(
-        onTap: () {
-          if (saving.exchangeSourceSavingId != null &&
-              saving.exchangeSourceSavingId!.isNotEmpty) {
-            _openEditCurrencyExchangeDialog(context, saving);
-          } else {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => AddSavingScreen(initialSaving: saving),
-              ),
-            );
-          }
-        },
-        child: Row(
-          children: <Widget>[
-            Expanded(
+      child: Slidable(
+        key: Key('dismiss_saving_${saving.id}'),
+        endActionPane: ActionPane(
+          motion: const ScrollMotion(),
+          extentRatio: 0.28,
+          children: [
+            CustomSlidableAction(
+              key: Key('delete_action_saving_${saving.id}'),
+              onPressed: (BuildContext slidableContext) {
+                _confirmDeleteSaving(context, saving);
+              },
+              backgroundColor: const Color(0xFFC62828),
+              foregroundColor: Colors.white,
+              borderRadius: BorderRadius.circular(16),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    displayTitle,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 16,
-                    ),
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.delete_outline_rounded,
+                    color: Colors.white,
+                    size: 22,
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '${_savingDisplayDate(saving).split('T').first} • $originalAmountStr',
-                    style: TextStyle(
-                      color: Theme.of(context).hintColor,
-                      fontSize: 13,
+                    context.l10n.tr('delete'),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
                 ],
               ),
             ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: <Widget>[
-                Text(
-                  formattedValue,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                  ),
-                ),
-                if (saving.assetType == 'gold' || saving.assetType == 'silver')
-                  PopupMenuButton<String>(
-                    icon: const Icon(Icons.more_vert, size: 20),
-                    onSelected: (String val) {
-                      if (val == 'buy_more') {
-                        Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => AddSavingScreen(initialAssetType: saving.assetType),
-                          ),
-                        );
-                      } else if (val == 'sell') {
-                        openSellMetalDialog(context, saving: saving);
-                      } else if (val == 'edit') {
-                        Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => AddSavingScreen(initialSaving: saving),
-                          ),
-                        );
-                      } else if (val == 'delete') {
-                        _confirmDeleteSaving(context, saving);
-                      }
-                    },
-                    itemBuilder: (BuildContext ctx) => <PopupMenuEntry<String>>[
-                      PopupMenuItem<String>(
-                        value: 'buy_more',
-                        child: Text(
-                          saving.assetType == 'gold'
-                              ? context.l10n.tr('buy_more_gold')
-                              : context.l10n.tr('buy_more_silver'),
-                        ),
-                      ),
-                      PopupMenuItem<String>(
-                        value: 'sell',
-                        child: Text(
-                          saving.assetType == 'gold'
-                              ? context.l10n.tr('sell_gold')
-                              : context.l10n.tr('sell_silver'),
-                        ),
-                      ),
-                      PopupMenuItem<String>(
-                        value: 'edit',
-                        child: Text(
-                          saving.assetType == 'gold'
-                              ? context.l10n.tr('edit_gold')
-                              : context.l10n.tr('edit_silver'),
-                        ),
-                      ),
-                      PopupMenuItem<String>(
-                        value: 'delete',
-                        child: Text(context.l10n.tr('delete')),
-                      ),
-                    ],
-                  )
-                else
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline, size: 20),
-                    onPressed: () => _confirmDeleteSaving(context, saving),
-                  ),
-              ],
-            ),
           ],
+        ),
+        child: PremiumCard(
+          onTap: () {
+            if (saving.exchangeSourceSavingId != null &&
+                saving.exchangeSourceSavingId!.isNotEmpty) {
+              _openEditCurrencyExchangeDialog(context, saving);
+            } else {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => AddSavingScreen(initialSaving: saving),
+                ),
+              );
+            }
+          },
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      displayTitle,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${_savingDisplayDate(saving).split('T').first} • $originalAmountStr',
+                      style: TextStyle(
+                        color: Theme.of(context).hintColor,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: <Widget>[
+                  Text(
+                    formattedValue,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                    ),
+                  ),
+                  if (saving.assetType == 'gold' || saving.assetType == 'silver')
+                    PopupMenuButton<String>(
+                      icon: const Icon(Icons.more_vert, size: 20),
+                      onSelected: (String val) {
+                        if (val == 'buy_more') {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => AddSavingScreen(initialAssetType: saving.assetType),
+                            ),
+                          );
+                        } else if (val == 'sell') {
+                          openSellMetalDialog(context, saving: saving);
+                        } else if (val == 'edit') {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => AddSavingScreen(initialSaving: saving),
+                            ),
+                          );
+                        } else if (val == 'delete') {
+                          _confirmDeleteSaving(context, saving);
+                        }
+                      },
+                      itemBuilder: (BuildContext ctx) => <PopupMenuEntry<String>>[
+                        PopupMenuItem<String>(
+                          value: 'buy_more',
+                          child: Text(
+                            saving.assetType == 'gold'
+                                ? context.l10n.tr('buy_more_gold')
+                                : context.l10n.tr('buy_more_silver'),
+                          ),
+                        ),
+                        PopupMenuItem<String>(
+                          value: 'sell',
+                          child: Text(
+                            saving.assetType == 'gold'
+                                ? context.l10n.tr('sell_gold')
+                                : context.l10n.tr('sell_silver'),
+                          ),
+                        ),
+                        PopupMenuItem<String>(
+                          value: 'edit',
+                          child: Text(
+                            saving.assetType == 'gold'
+                                ? context.l10n.tr('edit_gold')
+                                : context.l10n.tr('edit_silver'),
+                          ),
+                        ),
+                        PopupMenuItem<String>(
+                          value: 'delete',
+                          child: Text(context.l10n.tr('delete')),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1149,62 +1257,93 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: PremiumCard(
-        onTap: () {
-          if (saving != null) {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => AddSavingScreen(initialSaving: saving),
-              ),
-            );
-          } else if (transaction != null) {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => AddTransactionScreen(
-                  initialTransaction: transaction,
-                  cashMode: true,
+      child: Slidable(
+        key: Key('dismiss_cash_source_${source.sourceType}_${source.id}'),
+        endActionPane: (saving != null || transaction != null)
+            ? ActionPane(
+                motion: const ScrollMotion(),
+                extentRatio: 0.28,
+                children: [
+                  CustomSlidableAction(
+                    key: Key('delete_action_cash_source_${source.id}'),
+                    onPressed: (BuildContext slidableContext) {
+                      if (saving != null) {
+                        _confirmDeleteSaving(context, saving);
+                      } else if (transaction != null) {
+                        _confirmDeleteTransaction(context, transaction);
+                      }
+                    },
+                    backgroundColor: const Color(0xFFC62828),
+                    foregroundColor: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(
+                          Icons.delete_outline_rounded,
+                          color: Colors.white,
+                          size: 22,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          context.l10n.tr('delete'),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              )
+            : null,
+        child: PremiumCard(
+          onTap: () {
+            if (saving != null) {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => AddSavingScreen(initialSaving: saving),
                 ),
-              ),
-            );
-          }
-        },
-        child: ListTile(
-          key: Key('cashSource_${source.sourceType}_${source.id}'),
-          contentPadding: EdgeInsets.zero,
-          leading: const CircleAvatar(
-            child: Icon(Icons.account_balance_wallet_outlined),
-          ),
-          title: Text(
-            title,
-            style: const TextStyle(fontWeight: FontWeight.w600),
-          ),
-          subtitle: Text(
-            '${source.date.split('T').first} • Original: $original • Remaining: $remaining',
-          ),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Text(
-                ZakatEngineService.formatCurrency(
-                  valueInMain,
-                  mainCurrency,
-                  isArabic: isArabic,
+              );
+            } else if (transaction != null) {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => AddTransactionScreen(
+                    initialTransaction: transaction,
+                    cashMode: true,
+                  ),
                 ),
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              if (saving != null || transaction != null)
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.delete_outline, size: 20),
-                  onPressed: () {
-                    if (saving != null) {
-                      _confirmDeleteSaving(context, saving);
-                    } else if (transaction != null) {
-                      _confirmDeleteTransaction(context, transaction);
-                    }
-                  },
+              );
+            }
+          },
+          child: ListTile(
+            key: Key('cashSource_${source.sourceType}_${source.id}'),
+            contentPadding: EdgeInsets.zero,
+            leading: const CircleAvatar(
+              child: Icon(Icons.account_balance_wallet_outlined),
+            ),
+            title: Text(
+              title,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            subtitle: Text(
+              '${source.date.split('T').first} • Original: $original • Remaining: $remaining',
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  ZakatEngineService.formatCurrency(
+                    valueInMain,
+                    mainCurrency,
+                    isArabic: isArabic,
+                  ),
+                  style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -1245,77 +1384,111 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: PremiumCard(
-        onTap: () {
-          if (tx.category == 'Currency Exchange') {
-            _openEditCurrencyExchangeDialog(context, tx);
-          } else {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => AddTransactionScreen(
-                  initialTransaction: tx,
-                  cashMode: tx.type == 'income',
-                ),
-              ),
-            );
-          }
-        },
-        child: Row(
-          children: <Widget>[
-            CircleAvatar(
-              backgroundColor: isExpense
-                  ? const Color(0xFFFFE4E6)
-                  : const Color(0xFFD1FAE5),
-              radius: 18,
-              child: Icon(
-                _cashCategoryIcon(tx.category),
-                color: isExpense
-                    ? const Color(0xFFBE123C)
-                    : const Color(0xFF047857),
-                size: 16,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
+      child: Slidable(
+        key: Key('dismiss_transaction_${tx.id}'),
+        endActionPane: ActionPane(
+          motion: const ScrollMotion(),
+          extentRatio: 0.28,
+          children: [
+            CustomSlidableAction(
+              key: Key('delete_action_transaction_${tx.id}'),
+              onPressed: (BuildContext slidableContext) {
+                _confirmDeleteTransaction(context, tx);
+              },
+              backgroundColor: const Color(0xFFC62828),
+              foregroundColor: Colors.white,
+              borderRadius: BorderRadius.circular(16),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    displayTitle,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 16,
-                    ),
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.delete_outline_rounded,
+                    color: Colors.white,
+                    size: 22,
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '${tx.date} • $originalAmountStr • ${tx.category}',
-                    style: TextStyle(
-                      color: Theme.of(context).hintColor,
-                      fontSize: 13,
+                    context.l10n.tr('delete'),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
                 ],
               ),
             ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: <Widget>[
-                Text(
-                  formattedValue,
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                    color: isExpense ? const Color(0xFFBE123C) : null,
+          ],
+        ),
+        child: PremiumCard(
+          onTap: () {
+            if (tx.category == 'Currency Exchange') {
+              _openEditCurrencyExchangeDialog(context, tx);
+            } else {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => AddTransactionScreen(
+                    initialTransaction: tx,
+                    cashMode: tx.type == 'income',
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline, size: 20),
-                  onPressed: () => _confirmDeleteTransaction(context, tx),
+              );
+            }
+          },
+          child: Row(
+            children: <Widget>[
+              CircleAvatar(
+                backgroundColor: isExpense
+                    ? const Color(0xFFFFE4E6)
+                    : const Color(0xFFD1FAE5),
+                radius: 18,
+                child: Icon(
+                  _cashCategoryIcon(tx.category),
+                  color: isExpense
+                      ? const Color(0xFFBE123C)
+                      : const Color(0xFF047857),
+                  size: 16,
                 ),
-              ],
-            ),
-          ],
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      displayTitle,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${tx.date} • $originalAmountStr • ${tx.category}',
+                      style: TextStyle(
+                        color: Theme.of(context).hintColor,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  Text(
+                    formattedValue,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                      color: isExpense ? const Color(0xFFBE123C) : null,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1377,116 +1550,150 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: PremiumCard(
-        onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => AddInvestmentScreen(initialInvestment: asset),
-            ),
-          );
-        },
-        child: Row(
-          children: <Widget>[
-            Expanded(
+      child: Slidable(
+        key: Key('dismiss_investment_${asset.id}'),
+        endActionPane: ActionPane(
+          motion: const ScrollMotion(),
+          extentRatio: 0.28,
+          children: [
+            CustomSlidableAction(
+              key: Key('delete_action_investment_${asset.id}'),
+              onPressed: (BuildContext slidableContext) {
+                _confirmDeleteInvestment(context, asset);
+              },
+              backgroundColor: const Color(0xFFC62828),
+              foregroundColor: Colors.white,
+              borderRadius: BorderRadius.circular(16),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    displayTitle,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 16,
-                    ),
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.delete_outline_rounded,
+                    color: Colors.white,
+                    size: 22,
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '${asset.valuationDate} • ${asset.ownershipSharePct.toStringAsFixed(0)}% • '
-                    '${ZakatEngineService.formatCurrency(asset.marketValue, asset.currency, isArabic: isArabic)}',
-                    style: TextStyle(
-                      color: Theme.of(context).hintColor,
-                      fontSize: 13,
+                    context.l10n.tr('delete'),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
-                  if (asset.loanBalance > 0) ...[
-                    const SizedBox(height: 6),
-                    Align(
-                      alignment: AlignmentDirectional.centerStart,
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: () => _showInstallmentSchedule(context, asset),
-                          borderRadius: BorderRadius.circular(6),
-                          child: Ink(
-                            width: double.infinity,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(
-                                0xFFFFC928,
-                              ).withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(
+                ],
+              ),
+            ),
+          ],
+        ),
+        child: PremiumCard(
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => AddInvestmentScreen(initialInvestment: asset),
+              ),
+            );
+          },
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      displayTitle,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${asset.valuationDate} • ${asset.ownershipSharePct.toStringAsFixed(0)}% • '
+                      '${ZakatEngineService.formatCurrency(asset.marketValue, asset.currency, isArabic: isArabic)}',
+                      style: TextStyle(
+                        color: Theme.of(context).hintColor,
+                        fontSize: 13,
+                      ),
+                    ),
+                    if (asset.loanBalance > 0) ...[
+                      const SizedBox(height: 6),
+                      Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () => _showInstallmentSchedule(context, asset),
+                            borderRadius: BorderRadius.circular(6),
+                            child: Ink(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
                                 color: const Color(
                                   0xFFFFC928,
-                                ).withValues(alpha: 0.45),
-                                width: 0.7,
-                              ),
-                            ),
-                            child: Row(
-                              children: <Widget>[
-                                const Icon(
-                                  Icons.calendar_today,
-                                  color: Color(0xFFFFC928),
-                                  size: 10,
+                                ).withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: const Color(
+                                    0xFFFFC928,
+                                  ).withValues(alpha: 0.45),
+                                  width: 0.7,
                                 ),
-                                const SizedBox(width: 4),
-                                Expanded(
-                                  child: Text(
-                                    'Installments: ${ZakatEngineService.formatCurrency(asset.loanBalance, asset.currency, isArabic: isArabic)} remaining',
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: Color(0xFFFFC928),
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
+                              ),
+                              child: Row(
+                                children: <Widget>[
+                                  const Icon(
+                                    Icons.calendar_today,
+                                    color: Color(0xFFFFC928),
+                                    size: 10,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: Text(
+                                      'Installments: ${ZakatEngineService.formatCurrency(asset.loanBalance, asset.currency, isArabic: isArabic)} remaining',
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Color(0xFFFFC928),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                     ),
                                   ),
-                                ),
-                                const SizedBox(width: 4),
-                                const Icon(
-                                  Icons.arrow_forward_ios,
-                                  color: Color(0xFFFFC928),
-                                  size: 8,
-                                ),
-                              ],
+                                  const SizedBox(width: 4),
+                                  const Icon(
+                                    Icons.arrow_forward_ios,
+                                    color: Color(0xFFFFC928),
+                                    size: 8,
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
+                    ],
                   ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  Text(
+                    formattedValue,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                    ),
+                  ),
                 ],
               ),
-            ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: <Widget>[
-                Text(
-                  formattedValue,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline, size: 20),
-                  onPressed: () => _confirmDeleteInvestment(context, asset),
-                ),
-              ],
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1503,7 +1710,13 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
         widget.categoryType == 'silver') {
       Navigator.of(
         context,
-      ).push(MaterialPageRoute<void>(builder: (_) => const AddSavingScreen()));
+      ).push(
+        MaterialPageRoute<void>(
+          builder: (_) => AddSavingScreen(
+            initialAssetType: widget.categoryType,
+          ),
+        ),
+      );
     } else if (widget.categoryType == 'investments' ||
         widget.categoryType == 'property') {
       Navigator.of(context).push(

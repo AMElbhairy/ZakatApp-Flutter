@@ -6,6 +6,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart' as image_picker;
 
 import '../../core/i18n/app_localizations.dart';
 import '../../core/services/zakat_engine.dart';
@@ -427,43 +428,97 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       return;
     }
 
-    final FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.image,
+    final bool isArabic = Localizations.localeOf(context).languageCode == 'ar';
+    final String? source = await showModalBottomSheet<String>(
+      context: context,
+      builder: (BuildContext ctx) {
+        return SafeArea(
+          child: Wrap(
+            children: <Widget>[
+              ListTile(
+                leading: const Icon(Icons.camera_alt),
+                title: Text(isArabic ? 'الكاميرا' : 'Camera'),
+                onTap: () => Navigator.pop(ctx, 'camera'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library),
+                title: Text(isArabic ? 'معرض الصور' : 'Photo Gallery'),
+                onTap: () => Navigator.pop(ctx, 'gallery'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.insert_drive_file),
+                title: Text(isArabic ? 'ملف مستند / صورة' : 'Document / File Picker'),
+                onTap: () => Navigator.pop(ctx, 'file'),
+              ),
+            ],
+          ),
+        );
+      },
     );
-    if (result == null || result.files.isEmpty) {
-      return;
-    }
-    final PlatformFile file = result.files.first;
-    final Uint8List? fileBytes = file.bytes;
-    final String? filePath = file.path;
 
-    setState(() => _scanningReceipt = true);
+    if (source == null) return;
 
-    try {
-      Uint8List bytes;
+    Uint8List? bytes;
+    String mimeType = 'image/jpeg';
+
+    if (source == 'camera' || source == 'gallery') {
+      final imagePicker = image_picker.ImagePicker();
+      final image_picker.XFile? pickedFile = await imagePicker.pickImage(
+        source: source == 'camera'
+            ? image_picker.ImageSource.camera
+            : image_picker.ImageSource.gallery,
+      );
+      if (pickedFile == null) return;
+      bytes = await pickedFile.readAsBytes();
+      final String ext = pickedFile.name.split('.').last.toLowerCase();
+      mimeType = ext == 'png' ? 'image/png' : 'image/jpeg';
+    } else {
+      final FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
+      );
+      if (result == null || result.files.isEmpty) {
+        return;
+      }
+      final PlatformFile file = result.files.first;
+      final Uint8List? fileBytes = file.bytes;
+      final String? filePath = file.path;
+
       if (fileBytes != null) {
         bytes = fileBytes;
       } else if (filePath != null) {
         bytes = await File(filePath).readAsBytes();
-      } else {
-        setState(() => _scanningReceipt = false);
-        return;
       }
+      final String ext = (file.extension ?? '').toLowerCase();
+      if (ext == 'png') {
+        mimeType = 'image/png';
+      } else if (ext == 'pdf') {
+        mimeType = 'application/pdf';
+      } else {
+        mimeType = 'image/jpeg';
+      }
+    }
+
+    if (bytes == null) return;
+
+    setState(() => _scanningReceipt = true);
+
+    try {
       final String base64Image = base64Encode(bytes);
-      final String mimeType = file.extension == 'png'
-          ? 'image/png'
-          : 'image/jpeg';
       final List<String> expenseCategories =
           controller.state.categories.expense;
 
       final String prompt =
-          'Analyze this receipt image. Extract all transactions. For each transaction, identify:\n'
+          'Analyze this receipt image. Extract all individual transactions. '
+          'CRITICAL: If the invoice or receipt contains multiple separate items, DO NOT combine them into a single transaction. '
+          'Extract each itemized purchase or category entry as a separate transaction in the list so they can be reviewed individually.\n'
+          'For each transaction, identify:\n'
           '- merchant (name of store/vendor)\n'
           '- date (YYYY-MM-DD format, estimate based on current date if missing or metadata)\n'
           '- amount (decimal value)\n'
           '- category (classify into one of these expense categories: ${expenseCategories.join(", ")})\n'
           '- currency (3-letter code, e.g., EGP, SAR, USD, AED, KWD, QAR)\n'
-          '- description (brief summary of items purchased)\n\n'
+          '- description (brief summary of item purchased)\n\n'
           'Return ONLY a valid JSON object matching this schema:\n'
           '{\n'
           '  "transactions": [\n'

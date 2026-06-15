@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_component_tokens.dart';
 import '../theme/app_radii.dart';
 import '../theme/app_spacing.dart';
+import '../theme/app_theme_extensions.dart';
 
 class PremiumCard extends StatelessWidget {
   const PremiumCard({
@@ -197,7 +198,13 @@ class AppTextField extends StatelessWidget {
 
 OverlayEntry? _activeTopToastEntry;
 
-void showTopSnackBar(BuildContext context, String message) {
+enum AppToastKind { info, success, warning, error }
+
+void showTopSnackBar(
+  BuildContext context,
+  String message, {
+  AppToastKind kind = AppToastKind.info,
+}) {
   if (_activeTopToastEntry != null) {
     try {
       _activeTopToastEntry!.remove();
@@ -205,13 +212,14 @@ void showTopSnackBar(BuildContext context, String message) {
     _activeTopToastEntry = null;
   }
 
-  final OverlayState overlayState = Overlay.of(context);
+  final OverlayState overlayState = Overlay.of(context, rootOverlay: true);
 
   late OverlayEntry entry;
   entry = OverlayEntry(
     builder: (BuildContext context) {
       return _TopToastWidget(
         message: message,
+        kind: kind,
         onDismiss: () {
           if (_activeTopToastEntry == entry) {
             _activeTopToastEntry = null;
@@ -229,9 +237,14 @@ void showTopSnackBar(BuildContext context, String message) {
 }
 
 class _TopToastWidget extends StatefulWidget {
-  const _TopToastWidget({required this.message, required this.onDismiss});
+  const _TopToastWidget({
+    required this.message,
+    required this.kind,
+    required this.onDismiss,
+  });
 
   final String message;
+  final AppToastKind kind;
   final VoidCallback onDismiss;
 
   @override
@@ -292,14 +305,30 @@ class _TopToastWidgetState extends State<_TopToastWidget>
   Widget build(BuildContext context) {
     final double topPadding = MediaQuery.of(context).padding.top;
     final bool dark = Theme.of(context).brightness == Brightness.dark;
+    final tokens = context.premiumTokens;
+
+    final Color accent = switch (widget.kind) {
+      AppToastKind.success => tokens.colors.success,
+      AppToastKind.warning => tokens.colors.warning,
+      AppToastKind.error => tokens.colors.danger,
+      AppToastKind.info => tokens.colors.emerald,
+    };
 
     final Color bgColor = dark
-        ? const Color(0xFF1E293B).withValues(alpha: 0.95)
-        : const Color(0xFFFFFFFF).withValues(alpha: 0.95);
-    final Color textColor = dark ? Colors.white : const Color(0xFF1E293B);
-    final Color borderColor = dark
-        ? const Color(0xFF334155).withValues(alpha: 0.5)
-        : const Color(0xFFE2E8F0);
+        ? Color.lerp(
+            tokens.colors.surface,
+            accent,
+            0.12,
+          )!.withValues(alpha: 0.98)
+        : Colors.white.withValues(alpha: 0.98);
+    final Color textColor = tokens.colors.textPrimary;
+    final Color borderColor = accent.withValues(alpha: dark ? 0.35 : 0.24);
+    final IconData icon = switch (widget.kind) {
+      AppToastKind.success => Icons.check_circle_rounded,
+      AppToastKind.warning => Icons.report_rounded,
+      AppToastKind.error => Icons.error_rounded,
+      AppToastKind.info => Icons.info_rounded,
+    };
 
     return Positioned(
       top: topPadding + 12,
@@ -320,16 +349,16 @@ class _TopToastWidgetState extends State<_TopToastWidget>
               color: Colors.transparent,
               child: Container(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
+                  horizontal: 14,
                   vertical: 14,
                 ),
                 decoration: BoxDecoration(
                   color: bgColor,
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(18),
                   border: Border.all(color: borderColor, width: 1.0),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: dark ? 0.4 : 0.08),
+                      color: Colors.black.withValues(alpha: dark ? 0.34 : 0.08),
                       blurRadius: 16,
                       offset: const Offset(0, 4),
                     ),
@@ -337,12 +366,14 @@ class _TopToastWidgetState extends State<_TopToastWidget>
                 ),
                 child: Row(
                   children: [
-                    Icon(
-                      Icons.info_outline,
-                      color: dark
-                          ? const Color(0xFF38BDF8)
-                          : const Color(0xFF0284C7),
-                      size: 20,
+                    Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: accent.withValues(alpha: dark ? 0.2 : 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(icon, color: accent, size: 18),
                     ),
                     const SizedBox(width: 12),
                     Expanded(

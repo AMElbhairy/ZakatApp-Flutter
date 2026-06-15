@@ -3,6 +3,11 @@ import 'investment_asset.dart';
 import 'recurring_transaction.dart';
 import 'saving.dart';
 import 'transaction.dart';
+import 'pending_transaction.dart';
+import 'merchant_rule.dart';
+import 'merchant_confirmation.dart';
+import 'capture_analytics.dart';
+import 'correction_feedback.dart';
 
 class AppStateModel {
   const AppStateModel({
@@ -11,6 +16,7 @@ class AppStateModel {
     required this.recurringTransactions,
     required this.investments,
     required this.financialPlans,
+    required this.pendingTransactions,
     required this.lastRollover,
     required this.categories,
     required this.zakatPaidMonths,
@@ -26,12 +32,29 @@ class AppStateModel {
     required this.marketHistory,
     required this.syncHealth,
     required this.lastModifiedAt,
+    this.userId,
+    this.userEmail,
+    this.userDisplayName,
+    this.userPhotoUrl,
+    this.userProvider,
     required this.languagePreference,
     required this.themeMode,
     this.aiSettings,
     this.cloudHydrated,
     this.hasUnsyncedAuthChanges,
     this.loadedUserId,
+    required this.biometricLockEnabled,
+    required this.biometricHideWealthEnabled,
+    required this.biometricExportEnabled,
+    required this.biometricRestoreEnabled,
+    required this.biometricAutoLockDelay,
+    required this.merchantRules,
+    required this.merchantAliases,
+    required this.captureAnalytics,
+    required this.correctionFeedback,
+    required this.merchantConfirmations,
+    required this.smartCaptureEnabled,
+    required this.smartCaptureAutoApproveEnabled,
   });
 
   final List<Transaction> transactions;
@@ -39,6 +62,7 @@ class AppStateModel {
   final List<RecurringTransaction> recurringTransactions;
   final List<InvestmentAsset> investments;
   final List<FinancialPlan> financialPlans;
+  final List<PendingTransaction> pendingTransactions;
   final String lastRollover;
   final AppCategories categories;
   final List<String> zakatPaidMonths;
@@ -54,12 +78,30 @@ class AppStateModel {
   final List<Map<String, dynamic>> marketHistory;
   final SyncHealth syncHealth;
   final String lastModifiedAt;
+  final String? userId;
+  final String? userEmail;
+  final String? userDisplayName;
+  final String? userPhotoUrl;
+  final String? userProvider;
   final String languagePreference;
   final String themeMode;
   final Map<String, dynamic>? aiSettings;
   final bool? cloudHydrated;
   final bool? hasUnsyncedAuthChanges;
   final String? loadedUserId;
+  final bool biometricLockEnabled;
+  final bool biometricHideWealthEnabled;
+  final bool biometricExportEnabled;
+  final bool biometricRestoreEnabled;
+  final String biometricAutoLockDelay;
+
+  final Map<String, MerchantRule> merchantRules;
+  final Map<String, String> merchantAliases;
+  final CaptureAnalytics captureAnalytics;
+  final List<CorrectionFeedback> correctionFeedback;
+  final List<MerchantConfirmation> merchantConfirmations;
+  final bool smartCaptureEnabled;
+  final bool smartCaptureAutoApproveEnabled;
 
   factory AppStateModel.fromJson(Map<String, dynamic> json) {
     return AppStateModel(
@@ -77,6 +119,9 @@ class AppStateModel {
           .toList(growable: false),
       financialPlans: _asList(json['financialPlans'])
           .map((dynamic e) => FinancialPlan.fromJson(_asMap(e)))
+          .toList(growable: false),
+      pendingTransactions: _asList(json['pendingTransactions'])
+          .map((dynamic e) => PendingTransaction.fromJson(_asMap(e)))
           .toList(growable: false),
       lastRollover: (json['lastRollover'] ?? '').toString(),
       categories: AppCategories.fromJson(_asMap(json['categories'])),
@@ -99,6 +144,11 @@ class AppStateModel {
       ).map((dynamic e) => _asMap(e)).toList(growable: false),
       syncHealth: SyncHealth.fromJson(_asMap(json['syncHealth'])),
       lastModifiedAt: (json['lastModifiedAt'] ?? '').toString(),
+      userId: json['userId']?.toString(),
+      userEmail: json['email']?.toString(),
+      userDisplayName: json['displayName']?.toString(),
+      userPhotoUrl: json['photoUrl']?.toString(),
+      userProvider: json['provider']?.toString(),
       languagePreference: (json['languagePreference'] ?? 'en').toString(),
       themeMode: (json['themeMode'] ?? 'system').toString(),
       aiSettings: json['aiSettings'] is Map
@@ -111,6 +161,42 @@ class AppStateModel {
           ? _asBool(json['hasUnsyncedAuthChanges'])
           : null,
       loadedUserId: json['_loadedUserId']?.toString(),
+      biometricLockEnabled: _asBool(json['biometricLockEnabled']),
+      biometricHideWealthEnabled: _asBool(json['biometricHideWealthEnabled']),
+      biometricExportEnabled: _asBool(json['biometricExportEnabled']),
+      biometricRestoreEnabled: _asBool(json['biometricRestoreEnabled']),
+      biometricAutoLockDelay: (json['biometricAutoLockDelay'] ?? '1_minute')
+          .toString(),
+      merchantRules: json['merchantRules'] is Map
+          ? (json['merchantRules'] as Map).map(
+              (dynamic k, dynamic v) => MapEntry<String, MerchantRule>(
+                k.toString(),
+                MerchantRule.fromJson(_asMap(v)),
+              ),
+            )
+          : const <String, MerchantRule>{},
+      merchantAliases: json['merchantAliases'] is Map
+          ? (json['merchantAliases'] as Map).map(
+              (dynamic k, dynamic v) =>
+                  MapEntry<String, String>(k.toString(), v.toString()),
+            )
+          : const <String, String>{},
+      captureAnalytics: json['captureAnalytics'] != null
+          ? CaptureAnalytics.fromJson(_asMap(json['captureAnalytics']))
+          : CaptureAnalytics.empty(),
+      correctionFeedback: _asList(json['correctionFeedback'])
+          .map((dynamic e) => CorrectionFeedback.fromJson(_asMap(e)))
+          .toList(growable: false),
+      merchantConfirmations: _asList(json['merchantConfirmations'])
+          .map((dynamic e) => MerchantConfirmation.fromJson(_asMap(e)))
+          .toList(growable: false),
+      smartCaptureEnabled: json['smartCaptureEnabled'] != null
+          ? _asBool(json['smartCaptureEnabled'])
+          : true,
+      smartCaptureAutoApproveEnabled:
+          json['smartCaptureAutoApproveEnabled'] != null
+          ? _asBool(json['smartCaptureAutoApproveEnabled'])
+          : false,
     );
   }
 
@@ -127,6 +213,9 @@ class AppStateModel {
       'financialPlans': financialPlans
           .map((FinancialPlan e) => e.toJson())
           .toList(),
+      'pendingTransactions': pendingTransactions
+          .map((PendingTransaction e) => e.toJson())
+          .toList(),
       'lastRollover': lastRollover,
       'categories': categories.toJson(),
       'zakatPaidMonths': zakatPaidMonths,
@@ -142,6 +231,11 @@ class AppStateModel {
       'marketHistory': marketHistory,
       'syncHealth': syncHealth.toJson(),
       'lastModifiedAt': lastModifiedAt,
+      if (userId != null) 'userId': userId,
+      if (userEmail != null) 'email': userEmail,
+      if (userDisplayName != null) 'displayName': userDisplayName,
+      if (userPhotoUrl != null) 'photoUrl': userPhotoUrl,
+      if (userProvider != null) 'provider': userProvider,
       'languagePreference': languagePreference,
       'themeMode': themeMode,
       if (aiSettings != null) 'aiSettings': aiSettings,
@@ -149,6 +243,22 @@ class AppStateModel {
       if (hasUnsyncedAuthChanges != null)
         'hasUnsyncedAuthChanges': hasUnsyncedAuthChanges,
       if (loadedUserId != null) '_loadedUserId': loadedUserId,
+      'biometricLockEnabled': biometricLockEnabled,
+      'biometricHideWealthEnabled': biometricHideWealthEnabled,
+      'biometricExportEnabled': biometricExportEnabled,
+      'biometricRestoreEnabled': biometricRestoreEnabled,
+      'biometricAutoLockDelay': biometricAutoLockDelay,
+      'merchantRules': merchantRules.map(
+        (k, v) => MapEntry<String, dynamic>(k, v.toJson()),
+      ),
+      'merchantAliases': merchantAliases,
+      'captureAnalytics': captureAnalytics.toJson(),
+      'correctionFeedback': correctionFeedback.map((e) => e.toJson()).toList(),
+      'merchantConfirmations': merchantConfirmations
+          .map((e) => e.toJson())
+          .toList(),
+      'smartCaptureEnabled': smartCaptureEnabled,
+      'smartCaptureAutoApproveEnabled': smartCaptureAutoApproveEnabled,
     };
   }
 

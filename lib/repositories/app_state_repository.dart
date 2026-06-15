@@ -3,6 +3,10 @@ import 'package:flutter/foundation.dart';
 
 import '../core/constants/storage_keys.dart';
 import '../models/app_state.dart';
+import '../models/merchant_rule.dart';
+import '../models/merchant_confirmation.dart';
+import '../models/capture_analytics.dart';
+import '../models/correction_feedback.dart';
 import '../services/local_storage_service.dart';
 
 class AppStateRepository {
@@ -10,10 +14,8 @@ class AppStateRepository {
 
   final LocalStorageService localStorage;
 
-  Future<AppStateModel> loadAppState() async {
-    final String? raw = await localStorage.loadString(
-      StorageKeys.appStateAnonymousKey,
-    );
+  Future<AppStateModel> loadAppState({String? userId}) async {
+    final String? raw = await _loadRawAppState(userId: userId);
     if (raw == null || raw.trim().isEmpty) {
       return AppStateDefaults.create();
     }
@@ -31,13 +33,33 @@ class AppStateRepository {
     }
   }
 
-  Future<void> saveAppState(AppStateModel state) async {
+  Future<void> saveAppState(AppStateModel state, {String? userId}) async {
     final String raw = jsonEncode(state.toJson());
-    await localStorage.saveString(StorageKeys.appStateAnonymousKey, raw);
+    final String? key = StorageKeys.appStateKeyForUser(userId ?? state.userId);
+    await localStorage.saveString(key ?? StorageKeys.appStateAnonymousKey, raw);
   }
 
-  Future<void> clearLocalData() async {
-    await localStorage.remove(StorageKeys.appStateAnonymousKey);
+  Future<void> clearLocalData({String? userId}) async {
+    final String? key = StorageKeys.appStateKeyForUser(userId);
+    await localStorage.remove(key ?? StorageKeys.appStateAnonymousKey);
+  }
+
+  Future<String?> _loadRawAppState({String? userId}) async {
+    final String? scopedKey = StorageKeys.appStateKeyForUser(userId);
+    if (scopedKey != null) {
+      final String? scopedRaw = await localStorage.loadString(scopedKey);
+      if (scopedRaw != null && scopedRaw.trim().isNotEmpty) {
+        return scopedRaw;
+      }
+    }
+
+    final String? legacyRaw = await localStorage.loadString(
+      StorageKeys.appStateAnonymousKey,
+    );
+    if (legacyRaw != null && legacyRaw.trim().isNotEmpty) {
+      return legacyRaw;
+    }
+    return null;
   }
 }
 
@@ -51,6 +73,7 @@ class AppStateDefaults {
       recurringTransactions: [],
       investments: [],
       financialPlans: [],
+      pendingTransactions: [],
       lastRollover: '',
       categories: AppCategories(
         income: <String>[
@@ -106,6 +129,11 @@ class AppStateDefaults {
         pendingWrites: 0,
       ),
       lastModifiedAt: '',
+      userId: null,
+      userEmail: null,
+      userDisplayName: null,
+      userPhotoUrl: null,
+      userProvider: null,
       languagePreference: 'en',
       themeMode: 'system',
       aiSettings: <String, dynamic>{
@@ -115,6 +143,29 @@ class AppStateDefaults {
       cloudHydrated: false,
       hasUnsyncedAuthChanges: false,
       loadedUserId: null,
+      biometricLockEnabled: false,
+      biometricHideWealthEnabled: false,
+      biometricExportEnabled: false,
+      biometricRestoreEnabled: false,
+      biometricAutoLockDelay: '1_minute',
+      merchantRules: <String, MerchantRule>{},
+      merchantAliases: <String, String>{},
+      captureAnalytics: CaptureAnalytics(
+        parsedMessages: 0,
+        autoApprovedMessages: 0,
+        duplicateMessages: 0,
+        ignoredMessages: 0,
+        correctedMessages: 0,
+        learnedRules: 0,
+        autoApprovedRules: 0,
+        capturedFromAppleShortcuts: 0,
+        capturedFromAppleShortcutsAutoApproved: 0,
+        capturedFromAppleShortcutsIgnored: 0,
+      ),
+      correctionFeedback: <CorrectionFeedback>[],
+      merchantConfirmations: <MerchantConfirmation>[],
+      smartCaptureEnabled: true,
+      smartCaptureAutoApproveEnabled: false,
     );
   }
 }

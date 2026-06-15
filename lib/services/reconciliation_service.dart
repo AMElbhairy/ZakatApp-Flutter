@@ -355,6 +355,36 @@ class ReconciliationService {
       }
     }
 
+    for (final Map<String, dynamic> tx in normalizedTransactions) {
+      final String category = (tx['category'] ?? '').toString().trim();
+      if (category == 'Gold Sale' || category == 'Silver Sale') {
+        final String date = (tx['date'] ?? '').toString();
+        if (lastRollover.isNotEmpty &&
+            date.isNotEmpty &&
+            date.compareTo(lastRollover) <= 0) {
+          continue;
+        }
+        final String? metalSavingId = tx['exchangePairId']?.toString();
+        if (metalSavingId != null && metalSavingId.isNotEmpty) {
+          double soldWeight = 0.0;
+          final RegExp regex = RegExp(r'([0-9.]+)\s*g');
+          final Match? match = regex.firstMatch((tx['description'] ?? '').toString());
+          if (match != null) {
+            soldWeight = double.tryParse(match.group(1) ?? '') ?? 0.0;
+          }
+          if (soldWeight > 0.0) {
+            for (final Map<String, dynamic> s in normalizedSavings) {
+              if ((s['id'] ?? '').toString() == metalSavingId) {
+                final double currentRemaining = _asDouble(s['remainingAmount']);
+                s['remainingAmount'] = _round6(_max(0.0, currentRemaining - soldWeight));
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+
     for (final String currency in currencies) {
       double runningBalance = 0;
       final List<Map<String, dynamic>> txForCurrency =

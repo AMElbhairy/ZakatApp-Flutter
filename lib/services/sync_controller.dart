@@ -48,9 +48,13 @@ class SyncController extends ChangeNotifier {
     _status = _status.copyWith(status: 'syncing');
     await _saveStatus();
     try {
-      final Map<String, String>? created = await googleSheetsService.createSpreadsheet(token);
+      final Map<String, String>? created = await googleSheetsService
+          .createSpreadsheet(token);
       if (created == null) {
-        _status = _status.copyWith(status: 'failed', lastError: 'create_failed');
+        _status = _status.copyWith(
+          status: 'failed',
+          lastError: 'create_failed',
+        );
         await _saveStatus();
         return false;
       }
@@ -76,15 +80,22 @@ class SyncController extends ChangeNotifier {
     _status = _status.copyWith(status: 'syncing');
     await _saveStatus();
     try {
-      final bool ok = await googleSheetsService.connectSpreadsheet(spreadsheetId, token);
+      final bool ok = await googleSheetsService.connectSpreadsheet(
+        spreadsheetId,
+        token,
+      );
       if (!ok) {
-        _status = _status.copyWith(status: 'failed', lastError: 'access_denied');
+        _status = _status.copyWith(
+          status: 'failed',
+          lastError: 'access_denied',
+        );
         await _saveStatus();
         return false;
       }
 
       // Try to read cloud state
-      final Map<String, dynamic>? cloud = await googleSheetsService.readAppState(spreadsheetId, token);
+      final Map<String, dynamic>? cloud = await googleSheetsService
+          .readAppState(spreadsheetId, token);
       final Map<String, dynamic> local = appStateController.state.toJson();
 
       if (cloud != null && cloud.isNotEmpty) {
@@ -93,24 +104,42 @@ class SyncController extends ChangeNotifier {
           // Local empty -> hydrate
           final AppStateModel newState = AppStateModel.fromJson(cloud);
           await appStateController.updateState(newState);
-          _status = _status.copyWith(status: 'synced', spreadsheetId: spreadsheetId, cloudHydrated: true, lastSyncAt: DateTime.now().toUtc().toIso8601String());
+          _status = _status.copyWith(
+            status: 'synced',
+            spreadsheetId: spreadsheetId,
+            cloudHydrated: true,
+            lastSyncAt: DateTime.now().toUtc().toIso8601String(),
+          );
           await _saveStatus();
           return true;
         }
         // Both have data -> conflict
         if (!_deepEquals(local, cloud)) {
-          _status = _status.copyWith(status: 'conflict', spreadsheetId: spreadsheetId, cloudHydrated: true);
+          _status = _status.copyWith(
+            status: 'conflict',
+            spreadsheetId: spreadsheetId,
+            cloudHydrated: true,
+          );
           await _saveStatus();
           return true;
         }
         // identical
-        _status = _status.copyWith(status: 'synced', spreadsheetId: spreadsheetId, cloudHydrated: true, lastSyncAt: DateTime.now().toUtc().toIso8601String());
+        _status = _status.copyWith(
+          status: 'synced',
+          spreadsheetId: spreadsheetId,
+          cloudHydrated: true,
+          lastSyncAt: DateTime.now().toUtc().toIso8601String(),
+        );
         await _saveStatus();
         return true;
       }
 
       // Cloud empty
-      _status = _status.copyWith(status: 'localOnly', spreadsheetId: spreadsheetId, cloudHydrated: false);
+      _status = _status.copyWith(
+        status: 'localOnly',
+        spreadsheetId: spreadsheetId,
+        cloudHydrated: false,
+      );
       await _saveStatus();
       return true;
     } catch (error) {
@@ -128,7 +157,8 @@ class SyncController extends ChangeNotifier {
     _status = _status.copyWith(status: 'syncing');
     await _saveStatus();
     try {
-      final Map<String, dynamic>? cloud = await googleSheetsService.readAppState(sid, token);
+      final Map<String, dynamic>? cloud = await googleSheetsService
+          .readAppState(sid, token);
       if (cloud == null) {
         _status = _status.copyWith(status: 'failed', lastError: 'pull_failed');
         await _saveStatus();
@@ -136,7 +166,11 @@ class SyncController extends ChangeNotifier {
       }
       final AppStateModel newState = AppStateModel.fromJson(cloud);
       await appStateController.updateState(newState);
-      _status = _status.copyWith(status: 'synced', cloudHydrated: true, lastSyncAt: DateTime.now().toUtc().toIso8601String());
+      _status = _status.copyWith(
+        status: 'synced',
+        cloudHydrated: true,
+        lastSyncAt: DateTime.now().toUtc().toIso8601String(),
+      );
       await _saveStatus();
       return true;
     } catch (error) {
@@ -153,7 +187,10 @@ class SyncController extends ChangeNotifier {
     if (token == null || sid == null) return false;
     // Safety: do not push before first successful pull/cloud hydration
     if (!_status.cloudHydrated) {
-      _status = _status.copyWith(status: 'needsPull', lastError: 'cloud_not_hydrated');
+      _status = _status.copyWith(
+        status: 'needsPull',
+        lastError: 'cloud_not_hydrated',
+      );
       await _saveStatus();
       return false;
     }
@@ -161,13 +198,20 @@ class SyncController extends ChangeNotifier {
     await _saveStatus();
     try {
       final Map<String, dynamic> payload = appStateController.state.toJson();
-      final bool ok = await googleSheetsService.writeAppState(sid, payload, token);
+      final bool ok = await googleSheetsService.writeAppState(
+        sid,
+        payload,
+        token,
+      );
       if (!ok) {
         _status = _status.copyWith(status: 'failed', lastError: 'push_failed');
         await _saveStatus();
         return false;
       }
-      _status = _status.copyWith(status: 'synced', lastSyncAt: DateTime.now().toUtc().toIso8601String());
+      _status = _status.copyWith(
+        status: 'synced',
+        lastSyncAt: DateTime.now().toUtc().toIso8601String(),
+      );
       await _saveStatus();
       return true;
     } catch (error) {
@@ -188,11 +232,20 @@ class SyncController extends ChangeNotifier {
 
   static bool _isAppStateEmpty(Map<String, dynamic> raw) {
     // Consider empty if transactions/savings/etc are empty lists and default fields are defaults
-    final List<dynamic> tx = raw['transactions'] as List<dynamic>? ?? <dynamic>[];
+    final List<dynamic> tx =
+        raw['transactions'] as List<dynamic>? ?? <dynamic>[];
     final List<dynamic> sv = raw['savings'] as List<dynamic>? ?? <dynamic>[];
-    final List<dynamic> inv = raw['investments'] as List<dynamic>? ?? <dynamic>[];
-    final List<dynamic> plans = raw['financialPlans'] as List<dynamic>? ?? <dynamic>[];
-    return tx.isEmpty && sv.isEmpty && inv.isEmpty && plans.isEmpty;
+    final List<dynamic> inv =
+        raw['investments'] as List<dynamic>? ?? <dynamic>[];
+    final List<dynamic> plans =
+        raw['financialPlans'] as List<dynamic>? ?? <dynamic>[];
+    final List<dynamic> pending =
+        raw['pendingTransactions'] as List<dynamic>? ?? <dynamic>[];
+    return tx.isEmpty &&
+        sv.isEmpty &&
+        inv.isEmpty &&
+        plans.isEmpty &&
+        pending.isEmpty;
   }
 
   static bool _deepEquals(Map<String, dynamic> a, Map<String, dynamic> b) {

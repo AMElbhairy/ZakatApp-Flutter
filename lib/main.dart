@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
@@ -5,20 +6,24 @@ import 'package:provider/provider.dart';
 import 'core/i18n/app_localizations.dart';
 import 'core/theme/app_theme.dart';
 import 'repositories/app_state_repository.dart';
-import 'screens/app_shell.dart';
 import 'services/app_state_controller.dart';
 import 'services/auth_controller.dart';
 import 'services/auth_service.dart';
+import 'services/apple_shortcuts_service.dart';
 import 'services/cloud_backup_controller.dart';
 import 'services/google_drive_service.dart';
 import 'services/google_sheets_service.dart';
 import 'services/sync_controller.dart';
 import 'services/local_storage_service.dart';
+import 'screens/account/app_initialization_screen.dart';
+import 'screens/account/security_lock_screen.dart';
+import 'features/auth/auth_gate.dart';
 
 void main() {
   const LocalStorageService localStorage = LocalStorageService();
-  final AppStateRepository repository =
-      AppStateRepository(localStorage: localStorage);
+  final AppStateRepository repository = AppStateRepository(
+    localStorage: localStorage,
+  );
   runApp(
     MultiProvider(
       providers: [
@@ -27,7 +32,7 @@ void main() {
         ),
         ChangeNotifierProvider<AuthController>(
           create: (_) => AuthController(
-            authService: GoogleAuthService(),
+            authService: CombinedAuthService(),
             localStorage: localStorage,
           ),
         ),
@@ -56,7 +61,8 @@ class ZakatApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final AppStateController appStateController = context.watch<AppStateController>();
+    final AppStateController appStateController = context
+        .watch<AppStateController>();
     final String languageCode = appStateController.state.languagePreference;
     final String themeModeRaw = appStateController.state.themeMode;
     final ThemeMode themeMode = switch (themeModeRaw) {
@@ -100,43 +106,83 @@ class _AppBootstrapper extends StatefulWidget {
   State<_AppBootstrapper> createState() => _AppBootstrapperState();
 }
 
-class _AppBootstrapperState extends State<_AppBootstrapper> {
-  late Future<void> _loadFuture;
+class _AppBootstrapperState extends State<_AppBootstrapper>
+    with WidgetsBindingObserver {
+  String _phase = 'initializing'; // initializing -> locked -> ready
+  DateTime? _pausedTime;
 
   @override
   void initState() {
     super.initState();
-    _loadFuture = _loadAndStartMarketRefresh();
+    WidgetsBinding.instance.addObserver(this);
   }
 
-  Future<void> _loadAndStartMarketRefresh() async {
-    final AppStateController controller = context.read<AppStateController>();
-    final AuthController authController = context.read<AuthController>();
-    await controller.load();
-    await authController.load();
-    await controller.startMarketAutoRefresh();
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    final appState = context.read<AppStateController>().state;
+
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      if (_pausedTime == null && _phase == 'ready') {
+        _pausedTime = DateTime.now();
+      }
+    } else if (state == AppLifecycleState.resumed) {
+      unawaited(context.read<AppStateController>().load());
+      if (_pausedTime != null &&
+          appState.biometricLockEnabled &&
+          _phase == 'ready') {
+        final secondsPaused = DateTime.now().difference(_pausedTime!).inSeconds;
+        final delaySeconds = switch (appState.biometricAutoLockDelay) {
+          'immediate' => 0,
+          '30_seconds' => 30,
+          '5_minutes' => 300,
+          _ => 60, // 1_minute default
+        };
+
+        if (secondsPaused >= delaySeconds) {
+          setState(() {
+            _phase = 'locked';
+          });
+        }
+      }
+      _pausedTime = null;
+    }
+  }
+
+  void _onInitializationComplete() {
+    final appStateController = context.read<AppStateController>();
+    final authController = context.read<AuthController>();
+    AppleShortcutsService.initialize(appStateController);
+    setState(() {
+      _phase =
+          authController.isSignedIn &&
+              appStateController.state.biometricLockEnabled
+          ? 'locked'
+          : 'ready';
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<void>(
-      future: _loadFuture,
-      builder: (BuildContext context, AsyncSnapshot<void> snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return const Scaffold(
-            body: SafeArea(
-              child: Center(
-                child: SizedBox(
-                  width: 28,
-                  height: 28,
-                  child: CircularProgressIndicator(strokeWidth: 2.6),
-                ),
-              ),
-            ),
-          );
-        }
-        return const AppShell();
-      },
-    );
+    return switch (_phase) {
+      'initializing' => AppInitializationScreen(
+        onComplete: _onInitializationComplete,
+      ),
+      'locked' => SecurityLockScreen(
+        onUnlock: () {
+          setState(() {
+            _phase = 'ready';
+          });
+        },
+      ),
+      _ => const AuthGate(),
+    };
   }
 }

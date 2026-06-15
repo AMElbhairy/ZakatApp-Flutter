@@ -424,6 +424,95 @@ class ZakatEngineService {
     return amountInEgp >= nisabValueEgp;
   }
 
+  static double getWealthAtDate({
+    required DateTime targetDate,
+    required List<Map<String, dynamic>> lots,
+    required List<Saving> savings,
+    required MarketData marketData,
+  }) {
+    double cash = 0.0;
+    for (final Map<String, dynamic> lot in lots) {
+      final String lotDateStr = (lot['date'] ?? '').toString();
+      if (lotDateStr.isNotEmpty) {
+        try {
+          final DateTime ld = DateTime.parse(lotDateStr);
+          if (!ld.isAfter(targetDate)) {
+            cash += _asDouble(lot['remainingAmount']);
+          }
+        } catch (_) {}
+      }
+    }
+
+    double savingsVal = 0.0;
+    for (final Saving s in savings) {
+      final String assetType = normaliseAssetType(s.assetType);
+      for (final _SavingZakatSegment segment in _savingZakatSegments(s)) {
+        if (segment.date.isNotEmpty) {
+          try {
+            final DateTime sd = DateTime.parse(segment.date);
+            if (!sd.isAfter(targetDate)) {
+              if (assetType == 'cash') {
+                savingsVal += convertToEgp(segment.amount, s.unit, marketData);
+              } else if (assetType == 'gold') {
+                savingsVal +=
+                    convertToGold24k(segment.amount, s.unit) *
+                    marketData.goldPrice24kEgp;
+              } else if (assetType == 'silver') {
+                savingsVal +=
+                    convertToSilverGrams(segment.amount) *
+                    marketData.silverPriceEgp;
+              }
+            }
+          } catch (_) {}
+        }
+      }
+    }
+    return cash + savingsVal;
+  }
+
+  static DateTime getEffectiveZakatStartDate({
+    required DateTime startDate,
+    required List<Map<String, dynamic>> lots,
+    required List<Saving> savings,
+    required MarketData marketData,
+    String? zakatNisabBasis,
+    required List<DateTime> eventDates,
+  }) {
+    final double wealthAtStart = getWealthAtDate(
+      targetDate: startDate,
+      lots: lots,
+      savings: savings,
+      marketData: marketData,
+    );
+    if (checkCashNisab(
+      wealthAtStart,
+      marketData,
+      zakatNisabBasis: zakatNisabBasis,
+    )) {
+      return startDate;
+    }
+
+    final double nisabThreshold = cashNisabThresholdEgp(
+      marketData,
+      zakatNisabBasis: zakatNisabBasis,
+    );
+    for (final DateTime ev in eventDates) {
+      if (ev.isAfter(startDate)) {
+        final double wealthAtEv = getWealthAtDate(
+          targetDate: ev,
+          lots: lots,
+          savings: savings,
+          marketData: marketData,
+        );
+        if (wealthAtEv >= nisabThreshold) {
+          return ev;
+        }
+      }
+    }
+
+    return startDate;
+  }
+
   static bool checkGoldNisab(double weight24k) {
     return weight24k >= defaultConfig.nisabGoldGrams;
   }
@@ -892,7 +981,8 @@ class ZakatEngineService {
     required MarketData marketData,
   }) {
     return investments.fold<double>(0, (double sum, InvestmentAsset asset) {
-      final double nativeLoan = asset.loanBalance.isFinite
+      final double nativeLoan =
+          (asset.loanBalance.isFinite && asset.loanBalance > 0)
           ? asset.loanBalance
           : asset.remainingAmount;
       return sum +
@@ -1247,6 +1337,31 @@ class ZakatEngineService {
     )) {
       return const <ZakatScheduleEntry>[];
     }
+
+    final Set<String> eventDateStrings = <String>{};
+    for (final Map<String, dynamic> lot in lots) {
+      final String d = (lot['date'] ?? '').toString();
+      if (d.isNotEmpty) eventDateStrings.add(d);
+    }
+    for (final Saving s in savings) {
+      if (s.dateAcquired.isNotEmpty) eventDateStrings.add(s.dateAcquired);
+      for (final _SavingZakatSegment seg in _savingZakatSegments(s)) {
+        if (seg.date.isNotEmpty) eventDateStrings.add(seg.date);
+      }
+    }
+    final List<DateTime> eventDates =
+        eventDateStrings
+            .map((String s) {
+              try {
+                return DateTime.parse(s);
+              } catch (_) {
+                return DateTime(1970);
+              }
+            })
+            .where((d) => d.year > 1970)
+            .toList()
+          ..sort();
+
     final DateTime today = now ?? DateTime.now();
     final DateTime futureLimit = DateTime(
       today.year + 3,
@@ -1261,7 +1376,15 @@ class ZakatEngineService {
       final double remainingAmount = _asDouble(lot['remainingAmount']);
       if (remainingAmount < 0.01) continue;
 
-      final DateTime lotDate = _dateOnly(lot['date'].toString());
+      final DateTime lotDateRaw = _dateOnly(lot['date'].toString());
+      final DateTime lotDate = getEffectiveZakatStartDate(
+        startDate: lotDateRaw,
+        lots: lots,
+        savings: savings,
+        marketData: marketData,
+        zakatNisabBasis: zakatNisabBasis,
+        eventDates: eventDates,
+      );
 
       for (int year = 1; year <= 30; year++) {
         final int daysRequired = year * defaultConfig.nisabDays;
@@ -1334,6 +1457,30 @@ class ZakatEngineService {
       return const <ZakatScheduleEntry>[];
     }
 
+    final Set<String> eventDateStrings = <String>{};
+    for (final Map<String, dynamic> lot in lots) {
+      final String d = (lot['date'] ?? '').toString();
+      if (d.isNotEmpty) eventDateStrings.add(d);
+    }
+    for (final Saving s in savings) {
+      if (s.dateAcquired.isNotEmpty) eventDateStrings.add(s.dateAcquired);
+      for (final _SavingZakatSegment seg in _savingZakatSegments(s)) {
+        if (seg.date.isNotEmpty) eventDateStrings.add(seg.date);
+      }
+    }
+    final List<DateTime> eventDates =
+        eventDateStrings
+            .map((String s) {
+              try {
+                return DateTime.parse(s);
+              } catch (_) {
+                return DateTime(1970);
+              }
+            })
+            .where((d) => d.year > 1970)
+            .toList()
+          ..sort();
+
     final DateTime today = now ?? DateTime.now();
     final DateTime futureLimit = DateTime(
       today.year + 3,
@@ -1366,7 +1513,15 @@ class ZakatEngineService {
         }
         if (zakatValueEgp < 0.01) continue;
 
-        final DateTime savingDate = _dateOnly(segment.date);
+        final DateTime savingDateRaw = _dateOnly(segment.date);
+        final DateTime savingDate = getEffectiveZakatStartDate(
+          startDate: savingDateRaw,
+          lots: lots,
+          savings: savings,
+          marketData: marketData,
+          zakatNisabBasis: zakatNisabBasis,
+          eventDates: eventDates,
+        );
 
         for (int year = 1; year <= 30; year++) {
           final int daysRequired = year * defaultConfig.nisabDays;
@@ -1404,6 +1559,7 @@ class ZakatEngineService {
             'assetType': assetType,
             'amount': segment.amount,
             'unit': saving.unit,
+
             'description': saving.description,
             'fundingSourceId': segment.sourceId,
             'year': year,

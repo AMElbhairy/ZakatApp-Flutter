@@ -80,7 +80,7 @@ void main() {
     expect(saving.purchaseCurrency, 'GBP');
     expect(investment.currency, 'SAR');
     expect(recurring.currency, 'AED');
-    expect(plan.currency, 'KWD');
+    expect(plan.projectionCurrency, 'KWD');
   });
 
   test('saving parsing', () {

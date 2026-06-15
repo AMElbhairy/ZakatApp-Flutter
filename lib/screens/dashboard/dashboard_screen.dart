@@ -22,6 +22,8 @@ import '../entry/add_saving_screen.dart';
 import '../entry/add_transaction_screen.dart';
 import '../../core/widgets/currency_exchange_dialog.dart';
 import '../../core/widgets/sell_metal_dialog.dart';
+import '../account/notifications_screen.dart';
+import '../../models/pending_transaction.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({
@@ -238,8 +240,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
               .where(
                 (Saving saving) =>
                     saving.fundingAllocations.isNotEmpty ||
-                    ZakatEngineService.normaliseAssetType(saving.assetType) == 'gold' ||
-                    ZakatEngineService.normaliseAssetType(saving.assetType) == 'silver',
+                    ZakatEngineService.normaliseAssetType(saving.assetType) ==
+                        'gold' ||
+                    ZakatEngineService.normaliseAssetType(saving.assetType) ==
+                        'silver',
               )
               .map(_DashboardActivityEntry.metalTransfer),
           ...savings
@@ -264,6 +268,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final bool hasAnyData =
         transactions.isNotEmpty || savings.isNotEmpty || investments.isNotEmpty;
 
+    final List<PendingTransaction> pendingItems = state.pendingTransactions
+        .where((t) => t.status == CaptureStatus.pendingReview)
+        .toList();
+    final bool hasPending = pendingItems.isNotEmpty;
+
     final tokens = context.premiumTokens;
     final double navSafeBottomPadding =
         112 + MediaQuery.paddingOf(context).bottom;
@@ -277,10 +286,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
             firstName: firstName,
             balancesHidden: balancesHidden,
             onTogglePrivacy: () => controller.togglePrivacyMode(),
-            hasNotifications:
-                false, // You can update this based on actual state if available
-            onTapNotifications: () {}, // No-op for now
+            hasNotifications: hasPending,
+            onTapNotifications: () {
+              Navigator.of(context).push(NotificationsScreen.route());
+            },
           ),
+          if (hasPending) ...<Widget>[
+            const SizedBox(height: 12),
+            _buildSmartCaptureWidget(context, pendingItems.length),
+          ],
           const SizedBox(height: 18),
           if (!hasAnyData)
             EmptyStateCard(
@@ -985,6 +999,75 @@ class _DashboardScreenState extends State<DashboardScreen> {
       cursor = DateTime(cursor.year, cursor.month + 1, 1);
     }
     return points.length >= 2 ? points : const <double>[];
+  }
+
+  Widget _buildSmartCaptureWidget(BuildContext context, int count) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF02362E),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFC5A059).withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFC5A059).withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.camera_alt_outlined,
+              color: Color(0xFFC5A059),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Smart Capture',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '$count transactions need review',
+                  style: TextStyle(color: Colors.grey[300], fontSize: 13),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).push(NotificationsScreen.route());
+            },
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Review',
+                  style: TextStyle(
+                    color: Color(0xFFC5A059),
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Icon(
+                  Icons.arrow_forward_ios,
+                  size: 14,
+                  color: Color(0xFFC5A059),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   static double? _asDouble(dynamic value) {
@@ -2272,9 +2355,14 @@ class _NisabStatusCard extends StatelessWidget {
       if (s.dateAcquired.compareTo(dateStr) <= 0) {
         final String type = ZakatEngineService.normaliseAssetType(s.assetType);
         if (type == 'gold') {
-          totalGold24k += ZakatEngineService.convertToGold24k(s.remainingAmount, s.unit);
+          totalGold24k += ZakatEngineService.convertToGold24k(
+            s.remainingAmount,
+            s.unit,
+          );
         } else if (type == 'silver') {
-          totalSilverGrams += ZakatEngineService.convertToSilverGrams(s.remainingAmount);
+          totalSilverGrams += ZakatEngineService.convertToSilverGrams(
+            s.remainingAmount,
+          );
         }
       }
     }
@@ -3180,35 +3268,45 @@ class _ActivityRowState extends State<_ActivityRow>
     final bool isExpense = widget.entry.isExpense;
     final bool isTransfer = widget.entry.isTransfer;
     final String entryTitle = widget.entry.title(context).toLowerCase();
-    final bool isGold = isTransfer && entryTitle.contains('gold');
-    final bool isSilver = isTransfer && entryTitle.contains('silver');
     final bool dark = Theme.of(context).brightness == Brightness.dark;
 
+    IconData iconData = Icons.swap_horiz_rounded;
+    Color iconColor = const Color(0xFFD4AF37);
+    Color bg = const Color(0xFFD4AF37).withValues(alpha: 0.12);
+
+    if (isTransfer) {
+      if (entryTitle.contains('gold')) {
+        iconData = Icons.circle_rounded;
+        iconColor = const Color(0xFFD4AF37);
+        bg = const Color(0xFFD4AF37).withValues(alpha: 0.12);
+      } else if (entryTitle.contains('silver')) {
+        iconData = Icons.circle_outlined;
+        iconColor = const Color(0xFF94A3B8);
+        bg = const Color(0xFF94A3B8).withValues(alpha: 0.12);
+      } else if (entryTitle.contains('exchange')) {
+        iconData = Icons.swap_horiz_rounded;
+        iconColor = const Color(0xFFD4AF37);
+        bg = const Color(0xFFD4AF37).withValues(alpha: 0.12);
+      } else {
+        iconData = Icons.swap_horiz_rounded;
+        iconColor = const Color(0xFFD4AF37);
+        bg = const Color(0xFFD4AF37).withValues(alpha: 0.12);
+      }
+    } else if (isExpense) {
+      iconData = Icons.south_east_rounded;
+      iconColor = context.premiumTokens.colors.danger;
+      bg = context.premiumTokens.colors.danger.withValues(alpha: 0.12);
+    } else {
+      iconData = Icons.north_east_rounded;
+      iconColor = const Color(0xFF2E7D32);
+      bg = const Color(0xFF2E7D32).withValues(alpha: 0.12);
+    }
+
     final Color valueColor = isTransfer
-        ? (isSilver
-              ? (dark ? const Color(0xFF94A3B8) : const Color(0xFF64748B))
-              : const Color(0xFFB8860B))
+        ? (dark ? Colors.white : const Color(0xFF0F172A))
         : isExpense
-        ? (dark ? const Color(0xFFF87171) : const Color(0xFFB91C1C))
-        : (dark ? const Color(0xFF34D399) : const Color(0xFF047857));
-
-    final Color iconBg = isTransfer
-        ? (isSilver
-              ? const Color(0xFF94A3B8).withValues(alpha: 0.16)
-              : const Color(0xFFD4AF37).withValues(alpha: 0.16))
-        : isExpense
-        ? (dark
-              ? const Color(0xFF7F1D1D).withValues(alpha: 0.2)
-              : const Color(0xFFFFF1F2))
-        : (dark
-              ? const Color(0xFF064E3B).withValues(alpha: 0.2)
-              : const Color(0xFFF0FDF4));
-
-    final Color iconColor = isTransfer
-        ? (isSilver ? const Color(0xFF94A3B8) : const Color(0xFFD4AF37))
-        : isExpense
-        ? const Color(0xFFDC2626)
-        : const Color(0xFF16A34A);
+        ? context.premiumTokens.colors.danger
+        : const Color(0xFF2E7D32);
 
     final Color pressedOverlay = dark
         ? const Color(0xFF10B981).withValues(alpha: 0.08)
@@ -3250,27 +3348,20 @@ class _ActivityRowState extends State<_ActivityRow>
           child: Row(
             children: <Widget>[
               Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: iconBg,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(
-                  key: Key(
-                    isTransfer
-                        ? 'dashboardRecentTransferIcon'
-                        : 'dashboardRecentTransactionIcon',
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
+                child: Center(
+                  child: Icon(
+                    key: Key(
+                      isTransfer
+                          ? 'dashboardRecentTransferIcon'
+                          : 'dashboardRecentTransactionIcon',
+                    ),
+                    iconData,
+                    color: iconColor,
+                    size: 20,
                   ),
-                  isTransfer
-                      ? (isGold || isSilver
-                            ? Icons.circle
-                            : Icons.swap_horiz_rounded)
-                      : isExpense
-                      ? Icons.south_west_rounded
-                      : Icons.north_east_rounded,
-                  color: iconColor,
-                  size: isTransfer && (isGold || isSilver) ? 12 : 16,
                 ),
               ),
               const SizedBox(width: 10),
@@ -3279,19 +3370,6 @@ class _ActivityRowState extends State<_ActivityRow>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
-                    if (isTransfer) ...[
-                      Text(
-                        '[TRANSFER]',
-                        style: TextStyle(
-                          fontSize: 10.0,
-                          fontWeight: FontWeight.bold,
-                          color: dark
-                              ? const Color(0xFFD4AF37)
-                              : const Color(0xFF8A6500),
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                    ],
                     Text(
                       widget.entry.title(context),
                       maxLines: 1,
@@ -3304,9 +3382,13 @@ class _ActivityRowState extends State<_ActivityRow>
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      widget.entry.date,
+                      isTransfer
+                          ? widget.entry.description
+                          : '${widget.entry.date} • ${widget.entry.description.isNotEmpty ? widget.entry.description : widget.entry.title(context)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 11.0,
+                        fontSize: 11.5,
                         color: dark
                             ? const Color(0xFF9CA3AF)
                             : const Color(0xFF6B7280),
@@ -3322,7 +3404,12 @@ class _ActivityRowState extends State<_ActivityRow>
                     widget.balancesHidden
                         ? '••••••'
                         : isTransfer
-                        ? widget.entry.description
+                        ? ZakatEngineService.formatCurrency(
+                            widget.entry.amount,
+                            widget.entry.currency,
+                            isArabic: _DashboardScreenState._isArabic(context),
+                            showSign: false,
+                          )
                         : ZakatEngineService.formatCurrency(
                             isExpense
                                 ? -widget.entry.amount
@@ -3332,18 +3419,20 @@ class _ActivityRowState extends State<_ActivityRow>
                             showSign: true,
                           ),
                     style: TextStyle(
-                      fontSize: isTransfer ? 12.5 : 14.0,
-                      fontWeight: isTransfer
-                          ? FontWeight.bold
-                          : FontWeight.w800,
+                      fontSize: 14.0,
+                      fontWeight: FontWeight.bold,
                       color: valueColor,
                     ),
                   ),
                   const SizedBox(width: 4),
                   Icon(
                     Icons.chevron_right_rounded,
-                    color: iconColor.withValues(alpha: 0.8),
-                    size: 16,
+                    color:
+                        (dark
+                                ? const Color(0xFF9CA3AF)
+                                : const Color(0xFF6B7280))
+                            .withValues(alpha: 0.5),
+                    size: 18,
                   ),
                 ],
               ),
@@ -3819,9 +3908,7 @@ class _TopExpenseCategoriesCardState extends State<_TopExpenseCategoriesCard>
                         style: TextStyle(
                           fontSize: 14.0,
                           fontWeight: FontWeight.w800,
-                          color: dark
-                              ? const Color(0xFF34D399)
-                              : const Color(0xFF0F766E),
+                          color: context.premiumTokens.colors.danger,
                         ),
                       ),
                     ],

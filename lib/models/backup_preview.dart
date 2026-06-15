@@ -14,6 +14,10 @@ class BackupPreview {
     required this.unsupportedFields,
     required this.canRestore,
     required this.rawJson,
+    this.backupVersion,
+    this.backupUserId,
+    this.backupProvider,
+    this.backupEmail,
   });
 
   final String exportedAt;
@@ -30,4 +34,8 @@ class BackupPreview {
   final List<String> unsupportedFields;
   final bool canRestore;
   final String rawJson;
+  final int? backupVersion;
+  final String? backupUserId;
+  final String? backupProvider;
+  final String? backupEmail;
 }

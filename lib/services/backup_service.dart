@@ -5,18 +5,31 @@ import 'legacy_backup_migration_service.dart';
 
 class BackupService {
   static const String _appName = 'ZakatApp';
-  static const int _schemaVersion = 1;
+  static const int _schemaVersion = 3;
 
   static String exportBackup(
     Map<String, dynamic> appStateJson, {
     Map<String, dynamic>? cloudBackupMetadata,
+    required String userId,
+    required String provider,
+    required String email,
   }) {
     final Map<String, dynamic> counts = _getCounts(appStateJson);
+    final DateTime now = DateTime.now().toUtc();
+    final Map<String, dynamic> metadata = <String, dynamic>{
+      'backupVersion': _schemaVersion,
+      'userId': userId,
+      'provider': provider,
+      'email': email,
+      'createdAt': cloudBackupMetadata?['createdAt'] ?? now.toIso8601String(),
+      'updatedAt': now.toIso8601String(),
+    };
     final Map<String, dynamic> root = <String, dynamic>{
       'appName': _appName,
       'schemaVersion': _schemaVersion,
-      'exportedAt': DateTime.now().toUtc().toIso8601String(),
+      'exportedAt': now.toIso8601String(),
       'counts': counts,
+      ...metadata,
       'appState': appStateJson,
     };
     if (cloudBackupMetadata != null && cloudBackupMetadata.isNotEmpty) {
@@ -40,7 +53,8 @@ class BackupService {
 
       if (root['appName'] == _appName && root['appState'] is Map) {
         sourceType = 'flutter';
-        schemaOrVersion = 'schemaVersion=${root['schemaVersion'] ?? _schemaVersion}';
+        schemaOrVersion =
+            'schemaVersion=${root['schemaVersion'] ?? _schemaVersion}';
       } else if (root['version'] != null && root['data'] is String) {
         sourceType = 'legacyV1';
         isLegacy = true;
@@ -48,8 +62,16 @@ class BackupService {
       } else if (root['schema'] == 'zakatapp.backup' && root['data'] is Map) {
         sourceType = 'legacyV2';
         isLegacy = true;
-        schemaOrVersion = 'schema=${root['schema']}, version=${root['version'] ?? 'unknown'}';
+        schemaOrVersion =
+            'schema=${root['schema']}, version=${root['version'] ?? 'unknown'}';
       }
+
+      final int backupVersion = _asInt(
+        root['backupVersion'] ?? root['schemaVersion'],
+      );
+      final String? backupUserId = root['userId']?.toString();
+      final String? backupProvider = root['provider']?.toString();
+      final String? backupEmail = root['email']?.toString();
 
       if (sourceType == 'unknown') {
         return BackupPreview(
@@ -67,11 +89,15 @@ class BackupService {
           unsupportedFields: const <String>[],
           canRestore: false,
           rawJson: rawJson,
+          backupVersion: backupVersion,
+          backupUserId: backupUserId,
+          backupProvider: backupProvider,
+          backupEmail: backupEmail,
         );
       }
 
-      final LegacyMigrationReport report =
-          LegacyBackupMigrationService().parseAndMigrateWithReport(rawJson);
+      final LegacyMigrationReport report = LegacyBackupMigrationService()
+          .parseAndMigrateWithReport(rawJson);
       final Map<String, dynamic> counts = _getCounts(report.state);
 
       return BackupPreview(
@@ -84,12 +110,17 @@ class BackupService {
         investmentsCount: counts['investments'] as int,
         recurringTransactionsCount: counts['recurringTransactions'] as int,
         financialPlansCount: counts['financialPlans'] as int,
-        hasMarketData: report.state['marketData'] is Map &&
+        hasMarketData:
+            report.state['marketData'] is Map &&
             (report.state['marketData'] as Map).isNotEmpty,
         warnings: report.warnings,
         unsupportedFields: report.unsupportedFields,
         canRestore: true,
         rawJson: rawJson,
+        backupVersion: backupVersion,
+        backupUserId: backupUserId,
+        backupProvider: backupProvider,
+        backupEmail: backupEmail,
       );
     } on FormatException catch (e) {
       return BackupPreview(
@@ -138,7 +169,8 @@ class BackupService {
             (counts['savings'] as int) +
             (counts['investments'] as int) +
             (counts['recurringTransactions'] as int) +
-            (counts['financialPlans'] as int) >
+            (counts['financialPlans'] as int) +
+            (counts['pendingTransactions'] as int) >
         0;
   }
 
@@ -151,6 +183,12 @@ class BackupService {
       'investments': safeCount(state['investments']),
       'recurringTransactions': safeCount(state['recurringTransactions']),
       'financialPlans': safeCount(state['financialPlans']),
+      'pendingTransactions': safeCount(state['pendingTransactions']),
     };
+  }
+
+  static int _asInt(dynamic value) {
+    if (value is int) return value;
+    return int.tryParse((value ?? '').toString()) ?? 0;
   }
 }

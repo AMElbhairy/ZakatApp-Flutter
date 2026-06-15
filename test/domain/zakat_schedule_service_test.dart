@@ -262,6 +262,7 @@ void main() {
       ],
       marketData: marketData,
       now: DateTime(2025, 7),
+      zakatNisabBasis: 'silver595',
     );
 
     final jan2026 = schedule.firstWhere(
