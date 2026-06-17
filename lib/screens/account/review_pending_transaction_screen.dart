@@ -9,6 +9,7 @@ import '../../models/merchant_rule.dart';
 import '../../models/pending_transaction.dart';
 import '../../services/app_state_controller.dart';
 import '../../services/smart_capture_parser.dart';
+import '../../core/i18n/app_localizations.dart';
 
 class ReviewPendingTransactionScreen extends StatefulWidget {
   const ReviewPendingTransactionScreen({
@@ -372,7 +373,7 @@ class _ReviewPendingTransactionScreenState
                           .map(
                             (String category) => DropdownMenuItem<String>(
                               value: category,
-                              child: Text(category),
+                              child: Text(context.l10n.translateCategory(category)),
                             ),
                           )
                           .toList(),
@@ -631,7 +632,7 @@ class _ReviewPendingTransactionScreenState
                         .map(
                           (c) => DropdownMenuItem<String>(
                             value: c,
-                            child: Text(c),
+                            child: Text(context.l10n.translateCategory(c)),
                           ),
                         )
                         .toList(),

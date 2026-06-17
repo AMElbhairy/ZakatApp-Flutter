@@ -9,6 +9,7 @@ import '../../core/widgets/app_ui.dart';
 import '../../models/backup_preview.dart';
 import '../../models/market_snapshot.dart';
 import '../../models/recurring_transaction.dart';
+import 'categories_screen.dart';
 import '../../core/services/zakat_engine.dart';
 import '../../core/utils/amount_parser.dart';
 import '../../models/user_profile.dart';
@@ -56,7 +57,6 @@ class _AccountScreenState extends State<AccountScreen> {
   bool _isRefreshingMarket = false;
   String _refreshMarketMessage = '';
   bool _manualOverrideExpanded = false;
-  bool _categoriesExpanded = false;
   bool _recurringExpanded = false;
   bool _securityExpanded = false;
   bool _aiExpanded = false;
@@ -307,26 +307,9 @@ class _AccountScreenState extends State<AccountScreen> {
                       icon: Icons.folder_outlined,
                       title: context.l10n.tr('categories_section'),
                       onTap: () {
-                        setState(
-                          () => _categoriesExpanded = !_categoriesExpanded,
-                        );
+                        Navigator.of(context).push(CategoriesScreen.route());
                       },
                     ),
-                    if (_categoriesExpanded)
-                      Padding(
-                        padding: const EdgeInsets.only(
-                          left: 36,
-                          top: 4,
-                          bottom: 8,
-                        ),
-                        child: Column(
-                          children: [
-                            _buildCategoryBlock(context, type: 'income'),
-                            const SizedBox(height: 8),
-                            _buildCategoryBlock(context, type: 'expense'),
-                          ],
-                        ),
-                      ),
                     const Divider(height: 1, indent: 36),
                     _SettingsRowTile(
                       key: const Key('settingsRecurringTile'),
@@ -1190,123 +1173,6 @@ class _AccountScreenState extends State<AccountScreen> {
         ),
       ],
     );
-  }
-
-  Widget _buildCategoryBlock(BuildContext context, {required String type}) {
-    final AppStateController controller = context.read<AppStateController>();
-    final List<String> categories = type == 'income'
-        ? controller.state.categories.income
-        : controller.state.categories.expense;
-    final bool income = type == 'income';
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Text(
-          income
-              ? context.l10n.tr('income_categories')
-              : context.l10n.tr('expense_categories'),
-          style: Theme.of(context).textTheme.titleSmall,
-        ),
-        ...categories.map(
-          (String category) => ListTile(
-            dense: true,
-            title: Text(category),
-            trailing: Wrap(
-              spacing: 8,
-              children: <Widget>[
-                TextButton(
-                  onPressed: () =>
-                      _promptCategoryRename(context, type, category),
-                  child: Text(context.l10n.tr('edit')),
-                ),
-                TextButton(
-                  onPressed: () => _deleteCategory(context, type, category),
-                  child: Text(context.l10n.tr('delete')),
-                ),
-              ],
-            ),
-          ),
-        ),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: OutlinedButton(
-            key: Key('addCategory_$type'),
-            onPressed: () => _promptAddCategory(context, type),
-            child: Text(context.l10n.tr('add')),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Future<void> _promptAddCategory(BuildContext context, String type) async {
-    final TextEditingController text = TextEditingController();
-    final String? value = await showDialog<String>(
-      context: context,
-      builder: (BuildContext ctx) => AlertDialog(
-        title: Text(context.l10n.tr('add_category')),
-        content: TextField(controller: text),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(context.l10n.tr('cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, text.text.trim()),
-            child: Text(context.l10n.tr('save')),
-          ),
-        ],
-      ),
-    );
-    if (value == null || value.trim().isEmpty || !context.mounted) return;
-    await context.read<AppStateController>().addCategory(
-      type: type,
-      name: value.trim(),
-    );
-  }
-
-  Future<void> _promptCategoryRename(
-    BuildContext context,
-    String type,
-    String currentName,
-  ) async {
-    final TextEditingController text = TextEditingController(text: currentName);
-    final String? value = await showDialog<String>(
-      context: context,
-      builder: (BuildContext ctx) => AlertDialog(
-        title: Text(context.l10n.tr('edit')),
-        content: TextField(controller: text),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(context.l10n.tr('cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, text.text.trim()),
-            child: Text(context.l10n.tr('save')),
-          ),
-        ],
-      ),
-    );
-    if (value == null || value.trim().isEmpty || !context.mounted) return;
-    await context.read<AppStateController>().renameCategory(
-      type: type,
-      from: currentName,
-      to: value.trim(),
-    );
-  }
-
-  Future<void> _deleteCategory(
-    BuildContext context,
-    String type,
-    String name,
-  ) async {
-    final bool deleted = await context
-        .read<AppStateController>()
-        .deleteCategory(type: type, name: name);
-    if (!deleted && context.mounted) {
-      showTopSnackBar(context, context.l10n.tr('category_in_use'));
-    }
   }
 
   Future<void> _showAddRecurringDialog(BuildContext context) async {

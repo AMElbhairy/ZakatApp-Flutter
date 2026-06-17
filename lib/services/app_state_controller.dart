@@ -736,6 +736,30 @@ class AppStateController extends ChangeNotifier {
     return true;
   }
 
+  Future<void> reorderCategories({
+    required String type,
+    required int oldIndex,
+    required int newIndex,
+  }) async {
+    final bool income = type == 'income';
+    final List<String> source = List<String>.from(
+      income ? _state.categories.income : _state.categories.expense,
+    );
+    if (oldIndex < 0 || oldIndex >= source.length) return;
+    int targetIndex = newIndex;
+    if (targetIndex > oldIndex) {
+      targetIndex -= 1;
+    }
+    if (targetIndex < 0 || targetIndex >= source.length) return;
+    final String element = source.removeAt(oldIndex);
+    source.insert(targetIndex, element);
+    final AppCategories nextCategories = AppCategories(
+      income: income ? source : _state.categories.income,
+      expense: income ? _state.categories.expense : source,
+    );
+    await updateState(_state.copyWith(categories: nextCategories));
+  }
+
   Future<void> addFinancialPlan(FinancialPlan plan) async {
     await updateState(
       _state.copyWith(

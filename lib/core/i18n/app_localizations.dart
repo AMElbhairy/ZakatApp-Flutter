@@ -346,6 +346,36 @@ class AppLocalizations {
           'Add expenses to see spending insights.',
       'expense_analysis_screen_coming_soon':
           'Expense Analysis screen coming soon',
+      'savings_category': 'Savings',
+      'zakat_category': 'Zakat',
+      'salary': 'Salary',
+      'freelance': 'Freelance',
+      'business': 'Business',
+      'investment returns': 'Investment Returns',
+      'rental income': 'Rental Income',
+      'gift': 'Gift',
+      'bonus': 'Bonus',
+      'other income': 'Other Income',
+      'food & dining': 'Food & Dining',
+      'groceries': 'Groceries',
+      'housing & rent': 'Housing & Rent',
+      'utilities': 'Utilities',
+      'internet & phone': 'Internet & Phone',
+      'transportation': 'Transportation',
+      'fuel & parking': 'Fuel & Parking',
+      'healthcare': 'Healthcare',
+      'education': 'Education',
+      'clothing & apparel': 'Clothing & Apparel',
+      'entertainment': 'Entertainment',
+      'travel': 'Travel',
+      'shopping': 'Shopping',
+      'home maintenance': 'Home Maintenance',
+      'insurance': 'Insurance',
+      'charitable giving': 'Charitable Giving',
+      'childcare': 'Childcare',
+      'subscriptions': 'Subscriptions',
+      'loan payment': 'Loan Payment',
+      'other': 'Other',
     },
     'ar': <String, String>{
       'brand_title': 'Zakah Wealth',
@@ -678,6 +708,40 @@ class AppLocalizations {
           'أضف مصروفات لعرض تفاصيل الإنفاق.',
       'expense_analysis_screen_coming_soon':
           'شاشة تحليل المصروفات ستتوفر قريباً',
+
+      // Default Income Categories
+      'salary': 'الراتب',
+      'freelance': 'العمل الحر',
+      'business': 'العمل التجاري',
+      'investment returns': 'عوائد الاستثمار',
+      'rental income': 'إيراد الإيجار',
+      'gift': 'هدية',
+      'bonus': 'مكافأة',
+      'savings_category': 'المدخرات',
+      'other income': 'دخل آخر',
+
+      // Default Expense Categories
+      'food & dining': 'الطعام والشراب',
+      'groceries': 'البقالة',
+      'housing & rent': 'السكن والإيجار',
+      'utilities': 'المرافق والخدمات',
+      'internet & phone': 'الإنترنت والهاتف',
+      'transportation': 'المواصلات',
+      'fuel & parking': 'الوقود والمواقف',
+      'healthcare': 'الرعاية الصحية',
+      'education': 'التعليم',
+      'clothing & apparel': 'الملابس والكسوة',
+      'entertainment': 'الترفيه',
+      'travel': 'السفر',
+      'shopping': 'التسوق',
+      'home maintenance': 'صيانة المنزل',
+      'insurance': 'التأمين',
+      'charitable giving': 'التبرعات والصدقات',
+      'zakat_category': 'الزكاة',
+      'childcare': 'رعاية الأطفال',
+      'subscriptions': 'الاشتراكات',
+      'loan payment': 'سداد القروض',
+      'other': 'أخرى',
     },
   };
 
@@ -694,6 +758,30 @@ class AppLocalizations {
         ? locale.languageCode
         : 'en';
     return _values[lang]?[key] ?? _values['en']?[key] ?? key;
+  }
+
+  String translateCategory(String categoryName) {
+    final String clean = categoryName.trim();
+    final String lower = clean.toLowerCase();
+    String key = lower;
+    if (lower == 'savings') {
+      key = 'savings_category';
+    } else if (lower == 'zakat') {
+      key = 'zakat_category';
+    }
+
+    final String lang = _values.containsKey(locale.languageCode)
+        ? locale.languageCode
+        : 'en';
+    
+    // Check if the lowercase string exists in our localization map for English.
+    // If it does, we treat it as a default category and translate it.
+    // If it does not, we return the original name (as it is user-added/custom).
+    final bool isDefaultCategory = _values['en']?.containsKey(key) ?? false;
+    if (isDefaultCategory) {
+      return _values[lang]?[key] ?? _values['en']?[key] ?? categoryName;
+    }
+    return categoryName;
   }
 
   static AppLocalizations of(BuildContext context) {
