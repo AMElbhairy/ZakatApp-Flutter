@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/theme/app_theme_extensions.dart';
 import '../../models/merchant_rule.dart';
@@ -42,9 +43,9 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
               ),
               title: Text(
                 'Add Custom Rule',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleLarge?.copyWith(color: tokens.colors.textPrimary),
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  color: tokens.colors.textPrimary,
+                ),
               ),
               content: SingleChildScrollView(
                 child: Column(
@@ -289,7 +290,10 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
                   DropdownButtonFormField<String>(
                     initialValue: selectedCategory,
                     dropdownColor: tokens.colors.card,
-                    decoration: _fieldDecoration(context, labelText: 'Category'),
+                    decoration: _fieldDecoration(
+                      context,
+                      labelText: 'Category',
+                    ),
                     items: categories
                         .map(
                           (String category) => DropdownMenuItem<String>(
@@ -464,302 +468,256 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
 
     return Scaffold(
       backgroundColor: tokens.colors.background,
-      appBar: AppBar(title: const Text('Merchant Rules')),
+      appBar: AppBar(
+        title: const Text('Merchant Rules'),
+        actions: <Widget>[
+          IconButton(
+            tooltip: 'Add Rule',
+            onPressed: () => _showAddCustomRuleDialog(context, controller),
+            icon: Icon(Icons.add, color: tokens.colors.gold),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showAddCustomRuleDialog(context, controller),
         elevation: 10,
         child: const Icon(Icons.add),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-      body: Column(
-        children: [
-          // Settings Header
-          Container(
-            color: tokens.colors.surface,
-            padding: const EdgeInsets.only(left: 16, right: 16, top: 12),
-            child: Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Enable Auto Approval',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    Switch(
-                      value: state.smartCaptureAutoApproveEnabled,
-                      activeThumbColor: tokens.colors.gold,
-                      onChanged: (val) {
-                        controller.setSmartCaptureAutoApproveEnabled(val);
-                      },
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'When enabled, transactions matching rules with >=95% confidence will be approved automatically.',
-                    style: Theme.of(context).textTheme.bodySmall,
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.lg,
+          AppSpacing.md,
+          AppSpacing.lg,
+          120,
+        ),
+        children: <Widget>[
+          _buildRulesHeader(context, controller, state),
+          const SizedBox(height: AppSpacing.lg),
+          _buildSectionTabs(
+            context,
+            customCount: customRules.length,
+            learnedCount: learnedRules.length,
+            builtinCount: builtinRules.length,
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          if (displayedRules.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 72),
+              child: Center(
+                child: Text(
+                  'No rules in this section',
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    color: tokens.colors.textSecondary,
                   ),
                 ),
-              ],
-            ),
-          ),
-
-          // Search Input Field
-          Container(
-            color: tokens.colors.surface,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: TextField(
-              controller: _searchController,
-              onChanged: (val) {
-                setState(() {
-                  _searchQuery = val.trim();
-                });
-              },
-              style: TextStyle(color: tokens.colors.textPrimary, fontSize: 14),
-              decoration: InputDecoration(
-                hintText: 'Search merchants...',
-                prefixIcon: Icon(
-                  Icons.search,
-                  color: tokens.colors.gold,
-                  size: 20,
+              ),
+            )
+          else if (_selectedSection == 'All' && _searchQuery.isEmpty)
+            Column(
+              children: <Widget>[
+                _buildRuleGroup(
+                  context,
+                  title: 'Built-in Rules',
+                  rules: builtinRules,
+                  controller: controller,
+                  showHeader: true,
                 ),
-                suffixIcon: _searchQuery.isNotEmpty
-                    ? IconButton(
-                        icon: Icon(
-                          Icons.clear,
-                          color: tokens.colors.textSecondary,
-                          size: 18,
-                        ),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() {
-                            _searchQuery = '';
-                          });
-                        },
-                      )
-                    : null,
+                const SizedBox(height: AppSpacing.lg),
+                _buildRuleGroup(
+                  context,
+                  title: 'Learned Rules',
+                  rules: learnedRules,
+                  controller: controller,
+                  showHeader: true,
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                _buildRuleGroup(
+                  context,
+                  title: 'Custom Rules',
+                  rules: customRules,
+                  controller: controller,
+                  showHeader: true,
+                ),
+              ],
+            )
+          else
+            _buildRuleGroup(
+              context,
+              title: 'Results',
+              rules: displayedRules,
+              controller: controller,
+              showHeader: false,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRulesHeader(
+    BuildContext context,
+    AppStateController controller,
+    dynamic state,
+  ) {
+    final tokens = context.premiumTokens;
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+    final Color surfaceColor = dark
+        ? tokens.colors.surface.withValues(alpha: 0.74)
+        : const Color(0xFFF9F7F0);
+    final Color fieldColor = dark
+        ? tokens.colors.card.withValues(alpha: 0.88)
+        : const Color(0xFFEBE7DD);
+
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: surfaceColor,
+        borderRadius: AppRadii.card,
+        border: Border.all(
+          color: tokens.colors.divider.withValues(alpha: 0.65),
+        ),
+      ),
+      child: Column(
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  'Enable Auto Approval',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: tokens.colors.textPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Switch(
+                value: state.smartCaptureAutoApproveEnabled,
+                activeThumbColor: tokens.colors.gold,
+                activeTrackColor: tokens.colors.emerald.withValues(alpha: 0.35),
+                onChanged: controller.setSmartCaptureAutoApproveEnabled,
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: Text(
+              'Transactions matching rules with >=95% confidence are approved automatically.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: tokens.colors.textSecondary,
+                height: 1.35,
               ),
             ),
           ),
-
-          // Sections Bar
-          Container(
-            color: tokens.colors.surface,
-            padding: const EdgeInsets.only(bottom: 12, left: 16, right: 16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                _buildSectionButton('All'),
-                _buildSectionButton('Custom', count: customRules.length),
-                _buildSectionButton('Learned', count: learnedRules.length),
-                _buildSectionButton('Built-in', count: builtinRules.length),
-              ],
+          const SizedBox(height: AppSpacing.md),
+          TextField(
+            controller: _searchController,
+            onChanged: (val) {
+              setState(() {
+                _searchQuery = val.trim();
+              });
+            },
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: tokens.colors.textPrimary),
+            decoration: InputDecoration(
+              hintText: 'Search merchants...',
+              filled: true,
+              fillColor: fieldColor,
+              prefixIcon: Icon(Icons.search, color: tokens.colors.gold),
+              suffixIcon: _searchQuery.isNotEmpty
+                  ? IconButton(
+                      icon: Icon(
+                        Icons.clear_rounded,
+                        color: tokens.colors.textSecondary,
+                      ),
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() {
+                          _searchQuery = '';
+                        });
+                      },
+                    )
+                  : null,
+              border: OutlineInputBorder(
+                borderRadius: AppRadii.card,
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: AppRadii.card,
+                borderSide: BorderSide(
+                  color: tokens.colors.divider.withValues(alpha: 0.55),
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: AppRadii.card,
+                borderSide: BorderSide(color: tokens.colors.gold),
+              ),
             ),
-          ),
-
-          Expanded(
-            child: displayedRules.isEmpty
-                ? Center(
-                    child: Text(
-                      'No rules in this section',
-                      style: Theme.of(context).textTheme.bodyLarge,
-                    ),
-                  )
-                : _selectedSection == 'All' && _searchQuery.isEmpty
-                ? ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 140),
-                    children: [
-                      _buildRuleSection(
-                        context,
-                        'Built-in Rules',
-                        builtinRules,
-                        controller,
-                        initiallyExpanded: true,
-                      ),
-                      _buildRuleSection(
-                        context,
-                        'Learned Rules',
-                        learnedRules,
-                        controller,
-                        initiallyExpanded: true,
-                      ),
-                      _buildRuleSection(
-                        context,
-                        'Custom Rules',
-                        customRules,
-                        controller,
-                        initiallyExpanded: true,
-                      ),
-                    ],
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 140),
-                    itemCount: displayedRules.length,
-                    itemBuilder: (context, index) {
-                      final rule = displayedRules[index];
-                      return _buildRuleCard(context, rule, controller);
-                    },
-                  ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildSectionButton(String label, {int? count}) {
+  Widget _buildSectionTabs(
+    BuildContext context, {
+    required int customCount,
+    required int learnedCount,
+    required int builtinCount,
+  }) {
     final tokens = context.premiumTokens;
-    final bool isSelected = _selectedSection == label;
-    final String text = count != null ? '$label ($count)' : label;
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          _selectedSection = label;
-        });
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: isSelected ? tokens.colors.gold : tokens.colors.hero,
-          borderRadius: AppRadii.pill,
-          boxShadow: isSelected ? tokens.floatingShadow : const <BoxShadow>[],
-        ),
-        child: Text(
-          text,
-          style: TextStyle(
-            color: isSelected ? tokens.colors.hero : Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 12,
-          ),
-        ),
-      ),
+    final Color inactiveColor = tokens.colors.textSecondary;
+    return Row(
+      children: <Widget>[
+        _buildSectionTab(context, 'All', null, inactiveColor),
+        const SizedBox(width: AppSpacing.md),
+        _buildSectionTab(context, 'Custom', customCount, inactiveColor),
+        const SizedBox(width: AppSpacing.md),
+        _buildSectionTab(context, 'Learned', learnedCount, inactiveColor),
+        const SizedBox(width: AppSpacing.md),
+        _buildSectionTab(context, 'Built-in', builtinCount, inactiveColor),
+      ],
     );
   }
 
-  Widget _buildRuleCard(
+  Widget _buildSectionTab(
     BuildContext context,
-    MerchantRule rule,
-    AppStateController controller,
+    String label,
+    int? count,
+    Color inactiveColor,
   ) {
     final tokens = context.premiumTokens;
-    Color badgeColor;
-    String badgeText;
-    switch (rule.source) {
-      case 'custom':
-        badgeColor = Theme.of(context).colorScheme.primary;
-        badgeText = 'Custom';
-        break;
-      case 'learned':
-        badgeColor = tokens.colors.warning;
-        badgeText = 'Learned';
-        break;
-      default:
-        badgeColor = tokens.colors.textSecondary;
-        badgeText = 'Built-in';
-    }
-
-    return Card(
-      color: tokens.colors.hero,
-      elevation: 0,
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(
-        borderRadius: AppRadii.card,
-        side: BorderSide(color: tokens.colors.divider),
-      ),
+    final bool selected = _selectedSection == label;
+    final String text = count == null ? label : '$label ($count)';
+    return Expanded(
       child: InkWell(
-        onTap: () => _showEditRuleDialog(context, controller, rule),
-        borderRadius: AppRadii.card,
+        onTap: () => setState(() => _selectedSection = label),
+        borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          rule.merchantName,
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(color: Colors.white),
-                        ),
-                        if (rule.source != 'builtin') ...[
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: badgeColor.withValues(alpha: 0.2),
-                              borderRadius: BorderRadius.circular(4),
-                              border: Border.all(color: badgeColor, width: 0.5),
-                            ),
-                            child: Text(
-                              badgeText,
-                              style: TextStyle(
-                                color: badgeColor,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Category: ${rule.categoryId}',
-                      style: TextStyle(
-                        color: tokens.colors.textSecondary,
-                        fontSize: 13,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Type: ${rule.defaultType.toUpperCase()}',
-                      style: TextStyle(color: tokens.colors.gold, fontSize: 12),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Confidence: ${(rule.confidence * 100).toStringAsFixed(0)}% • Usages: ${rule.usageCount}',
-                      style: TextStyle(
-                        color: tokens.colors.textSecondary,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ],
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(
+                text,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: selected ? tokens.colors.hero : inactiveColor,
+                  fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
                 ),
               ),
-              Row(
-                children: [
-                  if (rule.source == 'custom' && !rule.isBuiltinOverride)
-                    IconButton(
-                      icon: Icon(Icons.delete, color: tokens.colors.danger),
-                      onPressed: () {
-                        controller.deleteMerchantRule(rule.merchantName);
-                      },
-                    ),
-                  IconButton(
-                    tooltip: rule.enabled ? 'Disable Rule' : 'Enable Rule',
-                    onPressed: () {
-                      controller.setMerchantRuleEnabled(rule, !rule.enabled);
-                    },
-                    icon: Icon(
-                      rule.enabled && rule.autoApprove
-                          ? Icons.check_circle
-                          : Icons.radio_button_off,
-                      color: rule.enabled && rule.autoApprove
-                          ? tokens.colors.success
-                          : tokens.colors.textSecondary,
-                      size: 20,
-                    ),
-                  ),
-                ],
+              const SizedBox(height: 6),
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                height: 2,
+                width: 26,
+                decoration: BoxDecoration(
+                  color: selected ? tokens.colors.gold : Colors.transparent,
+                  borderRadius: BorderRadius.circular(99),
+                ),
               ),
             ],
           ),
@@ -768,50 +726,226 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
     );
   }
 
-  Widget _buildRuleSection(
-    BuildContext context,
-    String title,
-    List<MerchantRule> rules,
-    AppStateController controller, {
-    bool initiallyExpanded = false,
+  Widget _buildRuleGroup(
+    BuildContext context, {
+    required String title,
+    required List<MerchantRule> rules,
+    required AppStateController controller,
+    required bool showHeader,
   }) {
     final tokens = context.premiumTokens;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: ExpansionTile(
-        initiallyExpanded: initiallyExpanded,
-        collapsedBackgroundColor: tokens.colors.surface,
-        backgroundColor: tokens.colors.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: AppRadii.card,
-          side: BorderSide(color: tokens.colors.divider),
-        ),
-        collapsedShape: RoundedRectangleBorder(
-          borderRadius: AppRadii.card,
-          side: BorderSide(color: tokens.colors.divider),
-        ),
-        iconColor: tokens.colors.gold,
-        collapsedIconColor: tokens.colors.textSecondary,
-        title: Text(
-          '$title (${rules.length})',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            color: tokens.colors.textPrimary,
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+    final Color groupColor = dark
+        ? tokens.colors.surface.withValues(alpha: 0.78)
+        : const Color(0xFFFAF8F2);
+    if (rules.isEmpty && !showHeader) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 72),
+        child: Center(
+          child: Text(
+            'No rules in this section',
+            style: Theme.of(
+              context,
+            ).textTheme.bodyLarge?.copyWith(color: tokens.colors.textSecondary),
           ),
         ),
-        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        children: rules.isEmpty
-            ? <Widget>[
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'No rules yet',
-                    style: TextStyle(color: tokens.colors.textSecondary),
-                  ),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: groupColor,
+        borderRadius: AppRadii.card,
+        border: Border.all(color: tokens.colors.divider.withValues(alpha: 0.5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          if (showHeader) ...<Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.md,
+                AppSpacing.md,
+                AppSpacing.md,
+                AppSpacing.sm,
+              ),
+              child: Text(
+                '$title (${rules.length})',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: tokens.colors.textPrimary,
+                  fontWeight: FontWeight.w800,
                 ),
-              ]
-            : rules
-                .map((rule) => _buildRuleCard(context, rule, controller))
-                .toList(growable: false),
+              ),
+            ),
+            Divider(
+              height: 1,
+              color: tokens.colors.divider.withValues(alpha: 0.5),
+            ),
+          ],
+          if (rules.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              child: Text(
+                'No rules yet',
+                style: TextStyle(color: tokens.colors.textSecondary),
+              ),
+            )
+          else
+            ...List<Widget>.generate(
+              rules.length,
+              (int index) => Column(
+                children: <Widget>[
+                  _buildRuleRow(context, rules[index], controller),
+                  if (index != rules.length - 1)
+                    Divider(
+                      height: 1,
+                      indent: 16,
+                      endIndent: 16,
+                      color: tokens.colors.divider.withValues(alpha: 0.55),
+                    ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRuleRow(
+    BuildContext context,
+    MerchantRule rule,
+    AppStateController controller,
+  ) {
+    final tokens = context.premiumTokens;
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+    final Color titleColor = dark
+        ? tokens.colors.textPrimary
+        : const Color(0xFF042F2B);
+    final Color subdued = tokens.colors.textSecondary;
+    final String sourceLabel = rule.source == 'builtin'
+        ? 'Built-in'
+        : rule.source == 'learned'
+        ? 'Learned'
+        : 'Custom';
+    final Color sourceColor = switch (rule.source) {
+      'builtin' => tokens.colors.textSecondary,
+      'learned' => tokens.colors.warning,
+      _ => tokens.colors.emerald,
+    };
+
+    return InkWell(
+      onTap: () => _showEditRuleDialog(context, controller, rule),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.md,
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: <Widget>[
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    rule.merchantName,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: titleColor,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 18,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Category: ${rule.categoryId} • Type: ${rule.defaultType.toUpperCase()}',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: subdued,
+                      height: 1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: <Widget>[
+                      _smallBadge(
+                        context,
+                        label: sourceLabel,
+                        color: sourceColor,
+                      ),
+                      _smallBadge(
+                        context,
+                        label: '${(rule.confidence * 100).toStringAsFixed(0)}%',
+                        color: tokens.colors.gold,
+                      ),
+                      _smallBadge(
+                        context,
+                        label: rule.enabled ? 'Enabled' : 'Disabled',
+                        color: rule.enabled
+                            ? tokens.colors.success
+                            : tokens.colors.textSecondary,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: <Widget>[
+                Icon(
+                  rule.enabled && rule.autoApprove
+                      ? Icons.check_circle_rounded
+                      : Icons.radio_button_unchecked,
+                  color: rule.enabled && rule.autoApprove
+                      ? tokens.colors.gold
+                      : tokens.colors.textSecondary,
+                ),
+                if (rule.source == 'custom' &&
+                    !rule.isBuiltinOverride) ...<Widget>[
+                  const SizedBox(height: 8),
+                  GestureDetector(
+                    onTap: () =>
+                        controller.deleteMerchantRule(rule.merchantName),
+                    child: Icon(
+                      Icons.delete_outline_rounded,
+                      color: tokens.colors.danger,
+                      size: 20,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _smallBadge(
+    BuildContext context, {
+    required String label,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: AppRadii.pill,
+        border: Border.all(color: color.withValues(alpha: 0.28)),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: color,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }

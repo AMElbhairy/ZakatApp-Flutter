@@ -81,8 +81,8 @@ class ReconciliationService {
             (saving) => CashSource(
               id: saving.id,
               sourceType: 'savings',
-              date: saving.dateAcquired,
-              createdAt: saving.createdAt,
+              date: _fallbackDate(saving.dateAcquired, saving.createdAt),
+              createdAt: _fallbackDate(saving.createdAt, saving.dateAcquired),
               availableAmount: saving.remainingAmount,
               originalAmount: saving.amount,
               currency: normalizedCurrency,
@@ -847,6 +847,8 @@ class ReconciliationService {
       throw Exception('Not enough funds to exchange');
     }
 
+    final String normalizedDate = _normalizeDate(date);
+
     final String exchangePairId =
         'exch_${DateTime.now().millisecondsSinceEpoch}';
     final String exchangeCreatedAt = DateTime.now().toUtc().toIso8601String();
@@ -872,7 +874,7 @@ class ReconciliationService {
         final Map<String, dynamic> outTx = <String, dynamic>{
           'id': outId,
           'type': 'expense',
-          'date': date,
+          'date': normalizedDate,
           'amount': d['deductedAmount'],
           'currency': sourceCurrency,
           'category': 'Currency Exchange',
@@ -907,10 +909,16 @@ class ReconciliationService {
       if (alloc > remainingTarget) alloc = remainingTarget;
 
       if (d['sourceType'] == 'savings') {
+        final String sourceDate = _datePart(
+          _fallbackDate(
+            d['date']?.toString() ?? '',
+            normalizedDate,
+          ),
+        );
         final Map<String, dynamic> ns = <String, dynamic>{
           'id': 'sav_${DateTime.now().millisecondsSinceEpoch}_$i',
           'assetType': 'cash',
-          'dateAcquired': d['date'],
+          'dateAcquired': sourceDate,
           'amount': alloc,
           'remainingAmount': alloc,
           'unit': targetCurrency,
@@ -928,7 +936,7 @@ class ReconciliationService {
         final Map<String, dynamic> inTx = <String, dynamic>{
           'id': 'tx_${DateTime.now().millisecondsSinceEpoch}_${d['id']}_in',
           'type': 'income',
-          'date': date,
+          'date': normalizedDate,
           'amount': alloc,
           'currency': targetCurrency,
           'category': 'Currency Exchange',
@@ -1191,6 +1199,26 @@ class ReconciliationService {
   double _min(double a, double b) => a < b ? a : b;
 
   double _max(double a, double b) => a > b ? a : b;
+
+  String _fallbackDate(String primary, String fallback) {
+    final String cleanPrimary = primary.trim();
+    if (cleanPrimary.isNotEmpty) return cleanPrimary;
+    final String cleanFallback = fallback.trim();
+    if (cleanFallback.isNotEmpty) return cleanFallback;
+    return '1970-01-01';
+  }
+
+  String _normalizeDate(String value) {
+    final String clean = value.trim();
+    if (clean.isNotEmpty) return clean;
+    return DateTime.now().toUtc().toIso8601String().split('T').first;
+  }
+
+  String _datePart(String value) {
+    final String clean = value.trim();
+    if (clean.isEmpty) return '1970-01-01';
+    return clean.contains('T') ? clean.split('T').first : clean;
+  }
 }
 
 class DeductResult {

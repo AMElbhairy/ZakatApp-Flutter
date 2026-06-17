@@ -1,3 +1,4 @@
+// ignore_for_file: avoid_print
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
@@ -45,6 +46,14 @@ class AppStateController extends ChangeNotifier {
   AppStateModel get state => _state;
   MarketSnapshot get currentMarketSnapshot =>
       MarketSnapshot.fromAppStateJson(_state.marketData);
+
+  Future<void> loadAuthenticated(String userId) async {
+    assert(
+      userId.trim().isNotEmpty,
+      'AppStateController.loadAuthenticated requires a non-empty authenticated userId.',
+    );
+    await load(userId: userId);
+  }
 
   Future<void> load({String? userId}) async {
     try {
@@ -112,6 +121,32 @@ class AppStateController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> markRestorePromptDismissedForCurrentUser({
+    required String userId,
+  }) async {
+    assert(
+      userId.trim().isNotEmpty,
+      'AppStateController.markRestorePromptDismissedForCurrentUser requires userId.',
+    );
+    _state = _state.copyWith(restorePromptDismissedUserId: userId);
+    await save();
+    notifyListeners();
+  }
+
+  Future<void> clearRestorePromptDismissedForCurrentUser({
+    required String userId,
+  }) async {
+    assert(
+      userId.trim().isNotEmpty,
+      'AppStateController.clearRestorePromptDismissedForCurrentUser requires userId.',
+    );
+    if (_state.restorePromptDismissedUserId == userId) {
+      _state = _state.copyWith(restorePromptDismissedUserId: null);
+      await save();
+      notifyListeners();
+    }
+  }
+
   Future<void> startMarketAutoRefresh() async {
     if (_marketAutoRefreshStarted) return;
     _marketAutoRefreshStarted = true;
@@ -135,6 +170,16 @@ class AppStateController extends ChangeNotifier {
 
   Future<void> clearLocalData() async {
     await repository.clearLocalData(userId: _state.userId);
+    _state = AppStateDefaults.create();
+    notifyListeners();
+  }
+
+  Future<void> clearLocalDataForUser({required String userId}) async {
+    assert(
+      userId.trim().isNotEmpty,
+      'AppStateController.clearLocalDataForUser requires userId.',
+    );
+    await repository.clearLocalData(userId: userId);
     _state = AppStateDefaults.create();
     notifyListeners();
   }
@@ -174,6 +219,9 @@ class AppStateController extends ChangeNotifier {
   }
 
   Future<void> deleteTransaction(String transactionId) async {
+    if (kDebugMode) {
+      print('[ExchangeDebug][deleteTransaction] id=$transactionId');
+    }
     Transaction? target;
     for (final tx in _state.transactions) {
       if (tx.id == transactionId) {
@@ -183,6 +231,23 @@ class AppStateController extends ChangeNotifier {
     }
     if (target == null) return;
     final Transaction txTarget = target;
+
+    final String? exchangeActivityId =
+        txTarget.exchangePairId != null &&
+            txTarget.exchangePairId!.trim().isNotEmpty
+        ? txTarget.exchangePairId!.trim()
+        : null;
+    if (exchangeActivityId != null &&
+        txTarget.category != 'Gold Sale' &&
+        txTarget.category != 'Silver Sale') {
+      if (kDebugMode) {
+        print(
+          '[ExchangeDebug][deleteTransaction] deleting exchange activityId=$exchangeActivityId',
+        );
+      }
+      await _deleteCurrencyExchangeActivity(exchangeActivityId);
+      return;
+    }
 
     List<Saving> nextSavings = List<Saving>.from(_state.savings);
 
@@ -289,6 +354,9 @@ class AppStateController extends ChangeNotifier {
   }
 
   Future<void> deleteSaving(String savingId) async {
+    if (kDebugMode) {
+      print('[ExchangeDebug][deleteSaving] id=$savingId');
+    }
     Saving? target;
     for (final s in _state.savings) {
       if (s.id == savingId) {
@@ -296,30 +364,43 @@ class AppStateController extends ChangeNotifier {
         break;
       }
     }
+    if (target == null) return;
+
+    final String? exchangeActivityId =
+        target.transferActivityId != null &&
+            target.transferActivityId!.trim().isNotEmpty
+        ? target.transferActivityId!.trim()
+        : null;
+    if (exchangeActivityId != null) {
+      if (kDebugMode) {
+        print(
+          '[ExchangeDebug][deleteSaving] deleting exchange activityId=$exchangeActivityId',
+        );
+      }
+      await _deleteCurrencyExchangeActivity(exchangeActivityId);
+      return;
+    }
+
     List<Saving> nextSavings = _state.savings
         .where((Saving entry) => entry.id != savingId)
         .toList(growable: false);
 
-    if (target != null &&
-        target.exchangeSourceSavingId != null &&
+    if (target.exchangeSourceSavingId != null &&
         target.exchangeSourceSavingId!.isNotEmpty) {
       final String srcId = target.exchangeSourceSavingId!;
-      double deducted = 0.0;
-      final RegExp regExp = RegExp(r'Savings exchange:\s*([0-9.]+)\s');
-      final Match? match = regExp.firstMatch(target.description);
-      if (match != null) {
-        deducted = double.tryParse(match.group(1) ?? '') ?? 0.0;
-      }
+      final double deducted = _parseSavingsExchangeAmount(target.description);
       if (deducted > 0) {
-        nextSavings = nextSavings.map((Saving s) {
-          if (s.id == srcId) {
-            return s.copyWith(
-              amount: s.amount + deducted,
-              remainingAmount: s.remainingAmount + deducted,
-            );
-          }
-          return s;
-        }).toList();
+        nextSavings = nextSavings
+            .map((Saving s) {
+              if (s.id == srcId) {
+                return s.copyWith(
+                  amount: s.amount + deducted,
+                  remainingAmount: s.remainingAmount + deducted,
+                );
+              }
+              return s;
+            })
+            .toList(growable: false);
       }
     }
 
@@ -335,9 +416,70 @@ class AppStateController extends ChangeNotifier {
     );
   }
 
+  Future<void> _deleteCurrencyExchangeActivity(String activityId) async {
+    final List<Saving> exchangeSavings = _state.savings
+        .where((Saving saving) => saving.transferActivityId == activityId)
+        .toList(growable: false);
+
+    final Map<String, double> sourceRestorations = <String, double>{};
+    for (final Saving saving in exchangeSavings) {
+      final String? sourceId = saving.exchangeSourceSavingId;
+      if (sourceId == null || sourceId.trim().isEmpty) continue;
+      final double restored = _parseSavingsExchangeAmount(saving.description);
+      if (restored <= 0) continue;
+      sourceRestorations[sourceId] =
+          (sourceRestorations[sourceId] ?? 0) + restored;
+    }
+
+    final List<Saving> nextSavings = _state.savings
+        .where((Saving saving) => saving.transferActivityId != activityId)
+        .map((Saving saving) {
+          final double restored = sourceRestorations[saving.id] ?? 0;
+          if (restored <= 0) return saving;
+          return saving.copyWith(
+            amount: saving.amount + restored,
+            remainingAmount: saving.remainingAmount + restored,
+          );
+        })
+        .toList(growable: false);
+
+    final List<Transaction> nextTransactions = _state.transactions
+        .where((Transaction tx) => tx.exchangePairId != activityId)
+        .toList(growable: false);
+
+    await updateState(
+      _state.copyWith(transactions: nextTransactions, savings: nextSavings),
+    );
+  }
+
+  Future<void> deleteCurrencyExchangeActivity(String activityId) async {
+    if (kDebugMode) {
+      print(
+        '[ExchangeDebug][deleteCurrencyExchangeActivity] activityId=$activityId',
+      );
+    }
+    await _deleteCurrencyExchangeActivity(activityId);
+  }
+
+  static double _parseSavingsExchangeAmount(String description) {
+    final Match? match = RegExp(
+      r'Savings exchange:\s*([0-9.]+)\s',
+    ).firstMatch(description);
+    return double.tryParse(match?.group(1) ?? '') ?? 0.0;
+  }
+
   Future<void> updateCurrencyExchange(
     CurrencyExchangeEditRequest request,
   ) async {
+    if (kDebugMode) {
+      print(
+        '[ExchangeDebug][updateCurrencyExchange] activityId=${request.oldActivityId} '
+        'date=${request.date} source=${request.sourceCurrency} ${request.sourceAmount} '
+        'target=${request.targetCurrency} ${request.targetAmount} '
+        'targets=${request.oldTargetSavingIds} '
+        'sourceDeductions=${request.oldSourceSavingDeductions}',
+      );
+    }
     List<Transaction> nextTransactions = _state.transactions;
     List<Saving> nextSavings = _state.savings;
     final Set<String> targetSavingIds = request.oldTargetSavingIds.toSet();
@@ -1780,7 +1922,9 @@ class AppStateController extends ChangeNotifier {
     debugPrint(
       '[Shortcut] AppState transactions count after: ${_state.transactions.length}',
     );
-    debugPrint('[Shortcut] AppState captureAnalytics after: ${_state.captureAnalytics.toJson()}');
+    debugPrint(
+      '[Shortcut] AppState captureAnalytics after: ${_state.captureAnalytics.toJson()}',
+    );
   }
 
   double getAvailableBalance({required String currency}) {
@@ -1838,9 +1982,9 @@ class AppStateController extends ChangeNotifier {
         merchant == 'captured message') {
       return '';
     }
-    return SmartCaptureParser.normalizeMerchantName(merchant)
-        .trim()
-        .toLowerCase();
+    return SmartCaptureParser.normalizeMerchantName(
+      merchant,
+    ).trim().toLowerCase();
   }
 
   Future<void> updateMarketSnapshot(MarketSnapshot snapshot) async {
@@ -1890,10 +2034,18 @@ class AppStateController extends ChangeNotifier {
     required double sourceAmount,
     required double targetAmount,
   }) async {
+    final String normalizedDate = date.trim().isEmpty
+        ? DateTime.now().toUtc().toIso8601String().split('T').first
+        : date.trim();
+    if (kDebugMode) {
+      print(
+        '[ExchangeDebug][executeCurrencyExchange] date=$normalizedDate source=$sourceCurrency $sourceAmount target=$targetCurrency $targetAmount',
+      );
+    }
     final ReconciliationResult out = reconciliationService
         .executeCurrencyExchange(
           input: _state,
-          date: date,
+          date: normalizedDate,
           sourceCurrency: sourceCurrency,
           targetCurrency: targetCurrency,
           sourceAmount: sourceAmount,
@@ -2083,6 +2235,7 @@ extension AppStateModelCopyWith on AppStateModel {
     bool? biometricExportEnabled,
     bool? biometricRestoreEnabled,
     String? biometricAutoLockDelay,
+    String? restorePromptDismissedUserId,
     Map<String, MerchantRule>? merchantRules,
     Map<String, String>? merchantAliases,
     CaptureAnalytics? captureAnalytics,
@@ -2126,6 +2279,8 @@ extension AppStateModelCopyWith on AppStateModel {
       hasUnsyncedAuthChanges:
           hasUnsyncedAuthChanges ?? this.hasUnsyncedAuthChanges,
       loadedUserId: loadedUserId ?? this.loadedUserId,
+      restorePromptDismissedUserId:
+          restorePromptDismissedUserId ?? this.restorePromptDismissedUserId,
       biometricLockEnabled: biometricLockEnabled ?? this.biometricLockEnabled,
       biometricHideWealthEnabled:
           biometricHideWealthEnabled ?? this.biometricHideWealthEnabled,

@@ -299,6 +299,12 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
         allowWhenLocalDataExists: allowOverwrite,
         expectedUserId: authController.currentUser?.id,
       );
+      final String? currentUserId = authController.currentUser?.id;
+      if (currentUserId != null && currentUserId.trim().isNotEmpty) {
+        await appStateController.clearRestorePromptDismissedForCurrentUser(
+          userId: currentUserId,
+        );
+      }
       _pendingRestorePrompt = false;
       _hasPendingAutoBackup = false;
       _autoBackupTimer?.cancel();
@@ -383,6 +389,14 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
     if (latest == null) return false;
     if (_backupOwnershipMismatch) return false;
     if (BackupService.hasData(appStateController.state.toJson())) return false;
+    final String? dismissedUserId =
+        appStateController.state.restorePromptDismissedUserId;
+    final String? currentUserId = authController.currentUser?.id;
+    if (dismissedUserId != null &&
+        currentUserId != null &&
+        dismissedUserId == currentUserId) {
+      return false;
+    }
     return true;
   }
 

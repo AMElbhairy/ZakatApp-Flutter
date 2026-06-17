@@ -1,3 +1,5 @@
+// ignore_for_file: avoid_print
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -14,16 +16,34 @@ import 'currency_dropdown_form_field.dart';
 Future<void> openEditCurrencyExchangeDialog(
   BuildContext context,
   dynamic item,
+  {String? activityId}
 ) async {
   final AppStateController controller = context.read<AppStateController>();
   final CurrencyExchangeEditRequest? editRequest =
-      (item is Transaction || item is Saving)
+      activityId != null && activityId.trim().isNotEmpty
+      ? resolveCurrencyExchangeEditRequestByActivityId(
+          transactions: controller.state.transactions,
+          savings: controller.state.savings,
+          activityId: activityId,
+        )
+      : (item is Transaction || item is Saving)
       ? resolveCurrencyExchangeEditRequest(
           transactions: controller.state.transactions,
           savings: controller.state.savings,
           item: item,
         )
       : null;
+  if (kDebugMode) {
+    print(
+      '[ExchangeDebug][openEditDialog] item=${item.runtimeType} '
+      'activityId=$activityId '
+      'resolved=${editRequest != null} '
+      'txId=${item is Transaction ? item.id : null} '
+      'txPair=${item is Transaction ? item.exchangePairId : null} '
+      'savingId=${item is Saving ? item.id : null} '
+      'savingActivity=${item is Saving ? item.transferActivityId : null}',
+    );
+  }
   if (editRequest == null) return;
 
   final String initSourceCurrency = editRequest.sourceCurrency;
@@ -190,6 +210,12 @@ Future<void> openEditCurrencyExchangeDialog(
   final double tAmount = tryParseAmount(targetAmountController.text) ?? 0;
 
   try {
+    if (kDebugMode) {
+      print(
+        '[ExchangeDebug][submitEditDialog] activityId=${editRequest.oldActivityId} '
+        'date=$date source=$sourceCurrency $sAmount target=$targetCurrency $tAmount',
+      );
+    }
     await controller.updateCurrencyExchange(
       CurrencyExchangeEditRequest(
         oldActivityId: editRequest.oldActivityId,

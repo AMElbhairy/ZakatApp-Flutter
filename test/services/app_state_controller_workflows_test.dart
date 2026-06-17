@@ -62,6 +62,41 @@ void main() {
   });
 
   test(
+    'controller executeCurrencyExchange fills missing source saving date',
+    () async {
+      final controller = await makeController();
+      await controller.addSaving(
+        const Saving(
+          id: 'cash-blank-date',
+          assetType: 'cash',
+          dateAcquired: '',
+          amount: 100,
+          remainingAmount: 100,
+          unit: 'USD',
+          description: 'Blank date cash',
+          purchaseCurrency: 'USD',
+          purchaseAmount: 100,
+          createdAt: '2026-06-01T10:30:00.000Z',
+        ),
+      );
+
+      await controller.executeCurrencyExchange(
+        date: '',
+        sourceCurrency: 'USD',
+        targetCurrency: 'EGP',
+        sourceAmount: 40,
+        targetAmount: 2000,
+      );
+
+      final Saving exchanged = controller.state.savings.firstWhere(
+        (Saving saving) => saving.transferActivityId != null,
+      );
+      expect(exchanged.dateAcquired, isNotEmpty);
+      expect(exchanged.dateAcquired, '2026-06-01');
+    },
+  );
+
+  test(
     'currency exchange edit request resolves the full parent activity',
     () async {
       final controller = await makeController();
@@ -205,6 +240,51 @@ void main() {
           (Saving saving) => original.oldTargetSavingIds.contains(saving.id),
         ),
         isFalse,
+      );
+    },
+  );
+
+  test(
+    'controller deleteTransaction removes the whole currency exchange group',
+    () async {
+      final controller = await makeController();
+      await controller.addTransaction(
+        const Transaction(
+          id: 'income-delete',
+          type: 'income',
+          date: '2026-06-01',
+          amount: 100,
+          currency: 'USD',
+          category: 'Salary',
+          description: '',
+          createdAt: '2026-06-01T00:00:00.000Z',
+          rolledOver: false,
+        ),
+      );
+
+      await controller.executeCurrencyExchange(
+        date: '2026-06-11',
+        sourceCurrency: 'USD',
+        targetCurrency: 'EGP',
+        sourceAmount: 50,
+        targetAmount: 2500,
+      );
+
+      final Transaction exchangeTransaction = controller.state.transactions
+          .firstWhere((Transaction tx) => tx.exchangePairId != null);
+      final String exchangePairId = exchangeTransaction.exchangePairId!;
+
+      await controller.deleteTransaction(exchangeTransaction.id);
+
+      expect(
+        controller.state.transactions.any(
+          (Transaction tx) => tx.exchangePairId == exchangePairId,
+        ),
+        isFalse,
+      );
+      expect(
+        controller.state.transactions.any((Transaction tx) => tx.id == 'income-delete'),
+        isTrue,
       );
     },
   );

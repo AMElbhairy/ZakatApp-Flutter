@@ -1,3 +1,5 @@
+// ignore_for_file: avoid_print
+import 'package:flutter/foundation.dart';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' hide TextDirection;
@@ -1007,14 +1009,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
       decoration: BoxDecoration(
         color: const Color(0xFF02362E),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFC5A059).withOpacity(0.3)),
+        border: Border.all(
+          color: const Color(0xFFC5A059).withValues(alpha: 0.3),
+        ),
       ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: const Color(0xFFC5A059).withOpacity(0.1),
+              color: const Color(0xFFC5A059).withValues(alpha: 0.1),
               shape: BoxShape.circle,
             ),
             child: const Icon(
@@ -3047,6 +3051,7 @@ class _DashboardActivityEntry {
     this.transferTitle,
     this.transferDescription,
     this.transferKey,
+    this.exchangeActivityId,
     this.transferDate,
     this.transferCreatedAt,
     this.transferCurrency,
@@ -3142,8 +3147,20 @@ class _DashboardActivityEntry {
       transferDescription:
           '$sourceCurrency ${_formatVal(sourceAmount)} → $targetCurrency ${_formatVal(targetAmount)}',
       transferKey: 'exchange_${source.exchangePairId ?? source.id}',
-      transferDate: source.date,
-      transferCreatedAt: source.createdAt,
+      exchangeActivityId:
+          source.exchangePairId?.trim().isNotEmpty == true
+          ? source.exchangePairId!.trim()
+          : (targetSaving?.transferActivityId?.trim().isNotEmpty == true
+                ? targetSaving!.transferActivityId!.trim()
+                : null),
+      transferDate: (sourceTransaction?.createdAt.isNotEmpty == true
+              ? sourceTransaction!.createdAt
+              : (targetSaving?.createdAt ?? source.createdAt))
+          .split('T')
+          .first,
+      transferCreatedAt: sourceTransaction?.createdAt.isNotEmpty == true
+          ? sourceTransaction!.createdAt
+          : (targetSaving?.createdAt ?? source.createdAt),
       transferCurrency: sourceCurrency,
       transferAmount: sourceAmount,
     );
@@ -3162,7 +3179,13 @@ class _DashboardActivityEntry {
       transferDescription:
           '$sourceCurrency ${_formatVal(sourceAmount)} → ${saving.unit} ${_formatVal(saving.amount)}',
       transferKey: 'legacy_exchange_${saving.id}',
-      transferDate: saving.dateAcquired,
+      exchangeActivityId:
+          saving.transferActivityId?.trim().isNotEmpty == true
+          ? saving.transferActivityId!.trim()
+          : null,
+      transferDate: saving.dateAcquired.trim().isNotEmpty
+          ? saving.dateAcquired
+          : saving.createdAt.split('T').first,
       transferCreatedAt: saving.createdAt,
       transferCurrency: sourceCurrency,
       transferAmount: sourceAmount,
@@ -3177,7 +3200,13 @@ class _DashboardActivityEntry {
       transferDescription:
           '${_formatVal(saving.amount)}g $metal • ${saving.purchaseCurrency} ${_formatVal(saving.purchaseAmount)}',
       transferKey: 'metal_${saving.id}',
-      transferDate: saving.dateAcquired,
+      exchangeActivityId:
+          saving.transferActivityId?.trim().isNotEmpty == true
+          ? saving.transferActivityId!.trim()
+          : null,
+      transferDate: saving.dateAcquired.trim().isNotEmpty
+          ? saving.dateAcquired
+          : saving.createdAt.split('T').first,
       transferCreatedAt: saving.createdAt,
       transferCurrency: saving.purchaseCurrency,
       transferAmount: saving.purchaseAmount,
@@ -3189,6 +3218,7 @@ class _DashboardActivityEntry {
   final String? transferTitle;
   final String? transferDescription;
   final String? transferKey;
+  final String? exchangeActivityId;
   final String? transferDate;
   final String? transferCreatedAt;
   final String? transferCurrency;
@@ -3483,8 +3513,23 @@ class _ActivityRowState extends State<_ActivityRow>
       }
     } else if (title.contains('exchange')) {
       final dynamic item = entry.saving ?? entry.transaction;
+      if (kDebugMode) {
+        print(
+          '[Dashboard][Edit] title=$title '
+          'using=${item.runtimeType} '
+          'activityId=${entry.exchangeActivityId} '
+          'txId=${entry.transaction?.id} '
+          'txPair=${entry.transaction?.exchangePairId} '
+          'savingId=${entry.saving?.id} '
+          'savingActivity=${entry.saving?.transferActivityId}',
+        );
+      }
       if (item != null) {
-        openEditCurrencyExchangeDialog(context, item);
+        openEditCurrencyExchangeDialog(
+          context,
+          item,
+          activityId: entry.exchangeActivityId,
+        );
       }
     } else if (entry.isTransfer) {
       if (entry.transaction != null) {

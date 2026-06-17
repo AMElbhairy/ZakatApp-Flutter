@@ -11,6 +11,7 @@ import '../../models/market_snapshot.dart';
 import '../../models/recurring_transaction.dart';
 import '../../core/services/zakat_engine.dart';
 import '../../core/utils/amount_parser.dart';
+import '../../models/user_profile.dart';
 import '../../services/app_state_controller.dart';
 import '../../services/auth_controller.dart';
 import '../../features/auth/auth_service.dart';
@@ -142,6 +143,11 @@ class _AccountScreenState extends State<AccountScreen> {
                             .read<AppStateController>();
                         final CloudBackupController? cloud =
                             cloudBackupController;
+                        final UserProfile? user = authController.currentUser;
+                        if (user == null) {
+                          await authController.signOut();
+                          return;
+                        }
                         if (appStateController.state.biometricExportEnabled &&
                             await BiometricService.canAuthenticate()) {
                           final bool auth = await BiometricService.authenticate(
@@ -151,53 +157,50 @@ class _AccountScreenState extends State<AccountScreen> {
                           );
                           if (!auth) return;
                         }
-                        final bool backupNeeded =
-                            cloud != null && cloud.hasPendingAutoBackup;
-                        bool backupOk = true;
-                        if (backupNeeded) {
-                          backupOk = await cloud.backupNow(
-                            forceIfCloudNewer: true,
+
+                        final bool? backupChoice = await showDialog<bool>(
+                          context: context,
+                          builder: (BuildContext dialogContext) => AlertDialog(
+                            title: Text(
+                              context.l10n.tr('backup_before_sign_out'),
+                            ),
+                            content: Text(
+                              context.l10n.tr('backup_before_sign_out_message'),
+                            ),
+                            actions: <Widget>[
+                              TextButton(
+                                onPressed: () =>
+                                    Navigator.of(dialogContext).pop(null),
+                                child: Text(context.l10n.tr('cancel')),
+                              ),
+                              TextButton(
+                                onPressed: () =>
+                                    Navigator.of(dialogContext).pop(false),
+                                child: Text(context.l10n.tr('sign_out_anyway')),
+                              ),
+                              FilledButton(
+                                onPressed: () =>
+                                    Navigator.of(dialogContext).pop(true),
+                                child: Text(context.l10n.tr('backup_now')),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (backupChoice == null) return;
+
+                        bool shouldContinue = backupChoice == false;
+                        if (backupChoice == true) {
+                          shouldContinue = await _backupBeforeSigningOut(
+                            context,
+                            cloud,
                           );
                         }
-                        if (!backupOk) {
-                          if (!context.mounted) return;
-                          final bool? action = await showDialog<bool>(
-                            context: context,
-                            builder: (BuildContext dialogContext) {
-                              return AlertDialog(
-                                title: const Text('Backup failed.'),
-                                content: Text(
-                                  cloud?.statusMessage ?? 'Backup failed.',
-                                ),
-                                actions: <Widget>[
-                                  TextButton(
-                                    onPressed: () =>
-                                        Navigator.of(dialogContext).pop(false),
-                                    child: const Text('Retry'),
-                                  ),
-                                  TextButton(
-                                    onPressed: () =>
-                                        Navigator.of(dialogContext).pop(true),
-                                    child: const Text('Sign Out Anyway'),
-                                  ),
-                                  TextButton(
-                                    onPressed: () =>
-                                        Navigator.of(dialogContext).pop(),
-                                    child: const Text('Cancel'),
-                                  ),
-                                ],
-                              );
-                            },
-                          );
-                          if (action != true) {
-                            if (action == false && cloud != null) {
-                              await cloud.backupNow(forceIfCloudNewer: true);
-                            }
-                            if (action != true) return;
-                          }
-                        }
-                        await authController?.signOut();
-                        await appStateController.resetForSignedOutUser();
+                        if (!shouldContinue) return;
+
+                        await appStateController.clearLocalDataForUser(
+                          userId: user.id,
+                        );
+                        await authController.signOut();
                       },
               ),
               const SizedBox(height: 18),
@@ -945,8 +948,7 @@ class _AccountScreenState extends State<AccountScreen> {
                     const SizedBox(height: 8),
                     ExpansionTile(
                       title: Text(
-                        context.l10n.tr('local_backup_options') ??
-                            'Local Import/Export',
+                        context.l10n.tr('local_backup_options'),
                         style: const TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.bold,
@@ -2287,6 +2289,70 @@ class _SettingsProfileHeader extends StatelessWidget {
     if (difference.inDays < 1) return '${difference.inHours}h ago';
     return '${difference.inDays}d ago';
   }
+}
+
+Future<bool> _backupBeforeSigningOut(
+  BuildContext context,
+  CloudBackupController? cloud,
+) async {
+  if (cloud == null) return true;
+  final bool ok = await cloud.backupNow(forceIfCloudNewer: true);
+  if (ok) return true;
+  if (!context.mounted) return false;
+
+  final bool? action = await showDialog<bool>(
+    context: context,
+    builder: (BuildContext dialogContext) => AlertDialog(
+      title: Text(context.l10n.tr('backup_failed_title')),
+      content: Text(
+        cloud.statusMessage.isEmpty
+            ? context.l10n.tr('backup_failed_message')
+            : cloud.statusMessage,
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: Text(context.l10n.tr('sign_out_anyway')),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          child: Text(context.l10n.tr('retry_backup')),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(null),
+          child: Text(context.l10n.tr('cancel')),
+        ),
+      ],
+    ),
+  );
+
+  if (action != true) return action == false;
+  final bool retryOk = await cloud.backupNow(forceIfCloudNewer: true);
+  if (retryOk) return true;
+  if (!context.mounted) return false;
+
+  final bool? afterRetry = await showDialog<bool>(
+    context: context,
+    builder: (BuildContext dialogContext) => AlertDialog(
+      title: Text(context.l10n.tr('backup_failed_title')),
+      content: Text(
+        cloud.statusMessage.isEmpty
+            ? context.l10n.tr('backup_failed_message')
+            : cloud.statusMessage,
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: Text(context.l10n.tr('sign_out_anyway')),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(null),
+          child: Text(context.l10n.tr('cancel')),
+        ),
+      ],
+    ),
+  );
+  return afterRetry == false;
 }
 
 class _StatusPill extends StatelessWidget {

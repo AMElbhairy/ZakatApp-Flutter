@@ -43,6 +43,7 @@ class AppStateModel {
     this.cloudHydrated,
     this.hasUnsyncedAuthChanges,
     this.loadedUserId,
+    this.restorePromptDismissedUserId,
     required this.biometricLockEnabled,
     required this.biometricHideWealthEnabled,
     required this.biometricExportEnabled,
@@ -89,6 +90,7 @@ class AppStateModel {
   final bool? cloudHydrated;
   final bool? hasUnsyncedAuthChanges;
   final String? loadedUserId;
+  final String? restorePromptDismissedUserId;
   final bool biometricLockEnabled;
   final bool biometricHideWealthEnabled;
   final bool biometricExportEnabled;
@@ -161,6 +163,8 @@ class AppStateModel {
           ? _asBool(json['hasUnsyncedAuthChanges'])
           : null,
       loadedUserId: json['_loadedUserId']?.toString(),
+      restorePromptDismissedUserId: json['_restorePromptDismissedUserId']
+          ?.toString(),
       biometricLockEnabled: _asBool(json['biometricLockEnabled']),
       biometricHideWealthEnabled: _asBool(json['biometricHideWealthEnabled']),
       biometricExportEnabled: _asBool(json['biometricExportEnabled']),
@@ -243,6 +247,8 @@ class AppStateModel {
       if (hasUnsyncedAuthChanges != null)
         'hasUnsyncedAuthChanges': hasUnsyncedAuthChanges,
       if (loadedUserId != null) '_loadedUserId': loadedUserId,
+      if (restorePromptDismissedUserId != null)
+        '_restorePromptDismissedUserId': restorePromptDismissedUserId,
       'biometricLockEnabled': biometricLockEnabled,
       'biometricHideWealthEnabled': biometricHideWealthEnabled,
       'biometricExportEnabled': biometricExportEnabled,

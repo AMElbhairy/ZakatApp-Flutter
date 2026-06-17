@@ -1,32 +1,35 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:provider/provider.dart';
 
-import '../../core/theme/app_component_tokens.dart';
+import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/theme/app_theme_extensions.dart';
 import '../../core/widgets/app_ui.dart';
 import '../../models/pending_transaction.dart';
-import '../../models/app_state.dart';
 import '../../services/app_state_controller.dart';
 import 'review_pending_transaction_screen.dart';
 import 'add_smart_capture_message_screen.dart';
 import 'merchant_rules_screen.dart';
 
+enum _CaptureStatusFilter { pending, approved, rejected }
+
+enum _CaptureDateFilter {
+  allTime,
+  today,
+  thisWeek,
+  thisMonth,
+  previousMonth,
+  custom,
+}
+
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
 
   static Route<void> route() {
-    return PageRouteBuilder<void>(
-      pageBuilder: (_, _, _) => const NotificationsScreen(),
-      transitionsBuilder: (_, animation, _, child) {
-        return SlideTransition(
-          position: Tween<Offset>(begin: const Offset(0, -1), end: Offset.zero)
-              .animate(
-                CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
-              ),
-          child: child,
-        );
-      },
+    return CupertinoPageRoute<void>(
+      builder: (_) => const NotificationsScreen(),
     );
   }
 
@@ -36,19 +39,26 @@ class NotificationsScreen extends StatefulWidget {
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
   static const String _screenTitle = 'Capture Inbox';
-  String _selectedTab = 'Needs Review'; // Needs Review, Approved, Ignored
-  bool _isEditMode = false;
-  bool _isReady = false;
-  final Set<String> _selectedIds = {};
+  _CaptureStatusFilter _selectedStatus = _CaptureStatusFilter.approved;
+  _CaptureDateFilter _selectedDateFilter = _CaptureDateFilter.allTime;
+  DateTimeRange? _customRange;
+  final bool _isEditMode = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      context.read<AppStateController>().markPendingTransactionsAsRead();
-      setState(() {
-        _isReady = true;
+      Future<void>.delayed(const Duration(milliseconds: 250), () async {
+        if (!mounted) return;
+        final AppStateController controller = context
+            .read<AppStateController>();
+        final bool hasUnread = controller.state.pendingTransactions.any(
+          (PendingTransaction t) => !t.isRead,
+        );
+        if (hasUnread) {
+          await controller.markPendingTransactionsAsRead();
+        }
       });
     });
   }
@@ -71,79 +81,122 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
   }
 
-  Widget _buildAnalyticsCard(AppStateModel state) {
-    final tokens = context.premiumTokens;
-    // Derived stats from actual state to avoid mistrust
-    int rulesLearned = state.merchantRules.values
-        .where((r) => r.source == 'learned')
-        .length;
-    int autoApprovedCount = state.pendingTransactions
-        .where((t) => t.approvalSource == ApprovalSource.auto)
-        .length;
-    int ignoredCount = state.pendingTransactions
-        .where((t) => t.status == CaptureStatus.ignored)
-        .length;
-    int pendingCount = state.pendingTransactions
-        .where((t) => t.status == CaptureStatus.pendingReview)
-        .length;
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      padding: const EdgeInsets.all(16),
-      decoration: AppComponentTokens.heroCard(context),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Smart Capture Stats',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleMedium?.copyWith(color: Colors.white),
-              ),
-              Icon(
-                Icons.analytics_outlined,
-                color: tokens.colors.gold,
-                size: 18,
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _buildStatItem('Rules Learned', '$rulesLearned'),
-              _buildStatItem('Auto Approved', '$autoApprovedCount'),
-              _buildStatItem('Ignored', '$ignoredCount'),
-              _buildStatItem('Pending', '$pendingCount'),
-            ],
-          ),
-        ],
-      ),
-    );
+  DateTime _entryTimestamp(PendingTransaction item) {
+    final DateTime? reviewed = _tryParseDate(item.reviewedAt);
+    final DateTime? created = _tryParseDate(item.createdAt);
+    return reviewed ?? created ?? DateTime.fromMillisecondsSinceEpoch(0);
   }
 
-  Widget _buildStatItem(String label, String value) {
-    final tokens = context.premiumTokens;
-    return Column(
-      children: [
-        Text(
-          value,
-          style: Theme.of(
-            context,
-          ).textTheme.titleMedium?.copyWith(color: tokens.colors.gold),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            color: Colors.white.withValues(alpha: 0.72),
-          ),
-        ),
-      ],
-    );
+  DateTime? _tryParseDate(String? value) {
+    final String clean = (value ?? '').trim();
+    if (clean.isEmpty) return null;
+    return DateTime.tryParse(clean);
+  }
+
+  String _dateKey(DateTime date) {
+    final DateTime local = date.toLocal();
+    return '${local.year.toString().padLeft(4, '0')}-'
+        '${local.month.toString().padLeft(2, '0')}-'
+        '${local.day.toString().padLeft(2, '0')}';
+  }
+
+  String _formatDateHeader(String dateKey) {
+    try {
+      final DateTime dt = DateTime.parse(dateKey);
+      return '${dt.day.toString().padLeft(2, '0')} '
+          '${_monthShort(dt.month)} ${dt.year}';
+    } catch (_) {
+      return dateKey;
+    }
+  }
+
+  String _monthShort(int month) {
+    const List<String> months = <String>[
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return months[(month - 1).clamp(0, 11)];
+  }
+
+  bool _matchesDateFilter(PendingTransaction item) {
+    final DateTime ts = _entryTimestamp(item);
+    final DateTime now = DateTime.now();
+    switch (_selectedDateFilter) {
+      case _CaptureDateFilter.allTime:
+        return true;
+      case _CaptureDateFilter.today:
+        return ts.year == now.year &&
+            ts.month == now.month &&
+            ts.day == now.day;
+      case _CaptureDateFilter.thisWeek:
+        return ts.isAfter(now.subtract(const Duration(days: 7))) ||
+            ts.isAtSameMomentAs(now.subtract(const Duration(days: 7)));
+      case _CaptureDateFilter.thisMonth:
+        return ts.year == now.year && ts.month == now.month;
+      case _CaptureDateFilter.previousMonth:
+        final DateTime firstOfThisMonth = DateTime(now.year, now.month, 1);
+        final DateTime firstOfPreviousMonth = DateTime(
+          firstOfThisMonth.year,
+          firstOfThisMonth.month - 1,
+          1,
+        );
+        return ts.year == firstOfPreviousMonth.year &&
+            ts.month == firstOfPreviousMonth.month;
+      case _CaptureDateFilter.custom:
+        if (_customRange == null) return true;
+        return (ts.isAfter(_customRange!.start) ||
+                ts.isAtSameMomentAs(_customRange!.start)) &&
+            (ts.isBefore(_customRange!.end) ||
+                ts.isAtSameMomentAs(_customRange!.end));
+    }
+  }
+
+  bool _matchesStatusFilter(PendingTransaction item) {
+    switch (_selectedStatus) {
+      case _CaptureStatusFilter.pending:
+        return item.status == CaptureStatus.pendingReview;
+      case _CaptureStatusFilter.approved:
+        return item.status == CaptureStatus.autoApproved ||
+            item.status == CaptureStatus.manuallyApproved;
+      case _CaptureStatusFilter.rejected:
+        return item.status == CaptureStatus.ignored;
+    }
+  }
+
+  List<PendingTransaction> _sortedNewestFirst(
+    Iterable<PendingTransaction> items,
+  ) {
+    final List<PendingTransaction> list = items.toList(growable: false);
+    list.sort((PendingTransaction a, PendingTransaction b) {
+      final int byCreated = _entryTimestamp(b).compareTo(_entryTimestamp(a));
+      if (byCreated != 0) return byCreated;
+      return b.id.compareTo(a.id);
+    });
+    return list;
+  }
+
+  List<_LogRow> _buildRows(List<PendingTransaction> items) {
+    final List<_LogRow> rows = <_LogRow>[];
+    String? lastDate;
+    for (final PendingTransaction item in items) {
+      final String dateKey = _dateKey(_entryTimestamp(item));
+      if (dateKey != lastDate) {
+        rows.add(_LogRow.header(dateKey));
+        lastDate = dateKey;
+      }
+      rows.add(_LogRow.item(item));
+    }
+    return rows;
   }
 
   void _clearIgnoredWithConfirmation(AppStateController controller) {
@@ -192,235 +245,86 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final controller = context.read<AppStateController>();
     final tokens = context.premiumTokens;
 
-    if (!_isReady) {
-      return Scaffold(
-        backgroundColor: tokens.colors.background,
-        appBar: AppBar(title: const Text(_screenTitle)),
-        body: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            Container(
-              height: 110,
-              decoration: BoxDecoration(
-                color: tokens.colors.surface,
-                borderRadius: BorderRadius.circular(20),
-              ),
-            ),
-            const SizedBox(height: 16),
-            ...List<Widget>.generate(
-              4,
-              (int index) => Padding(
-                padding: EdgeInsets.only(bottom: index == 3 ? 0 : 12),
-                child: Container(
-                  height: 108,
-                  decoration: BoxDecoration(
-                    color: tokens.colors.hero,
-                    borderRadius: AppRadii.card,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
+    final List<PendingTransaction> newestFirst = _sortedNewestFirst(
+      state.pendingTransactions,
+    );
+    final List<PendingTransaction> dateFiltered = newestFirst
+        .where(_matchesDateFilter)
+        .toList(growable: false);
+    final List<PendingTransaction> activeList = dateFiltered
+        .where(_matchesStatusFilter)
+        .toList(growable: false);
 
-    // Filter lists according to new CaptureStatus enums
-    final List<PendingTransaction> reviewItems = state.pendingTransactions
-        .where((t) => t.status == CaptureStatus.pendingReview)
-        .toList();
-
-    final List<PendingTransaction> approvedItems = state.pendingTransactions
+    final int pendingCount = dateFiltered
         .where(
-          (t) =>
+          (PendingTransaction t) => t.status == CaptureStatus.pendingReview,
+        )
+        .length;
+    final int approvedCount = dateFiltered
+        .where(
+          (PendingTransaction t) =>
               t.status == CaptureStatus.autoApproved ||
               t.status == CaptureStatus.manuallyApproved,
         )
-        .toList();
-
-    final List<PendingTransaction> ignoredItems = state.pendingTransactions
-        .where((t) => t.status == CaptureStatus.ignored)
-        .toList();
-
-    List<PendingTransaction> activeList = [];
-    if (_selectedTab == 'Needs Review') {
-      activeList = reviewItems;
-    } else if (_selectedTab == 'Approved') {
-      activeList = approvedItems;
-    } else if (_selectedTab == 'Ignored') {
-      activeList = ignoredItems;
-    }
+        .length;
+    final int rejectedCount = dateFiltered
+        .where((PendingTransaction t) => t.status == CaptureStatus.ignored)
+        .length;
+    final List<PendingTransaction> ignoredItems = dateFiltered
+        .where((PendingTransaction t) => t.status == CaptureStatus.ignored)
+        .toList(growable: false);
+    final List<_LogRow> activeRows = _buildRows(activeList);
 
     return Scaffold(
       backgroundColor: tokens.colors.background,
       appBar: AppBar(
-        title: Text(
-          _isEditMode ? '${_selectedIds.length} Selected' : _screenTitle,
-        ),
+        title: Text(_screenTitle),
         actions: [
-          if (!_isEditMode) ...[
-            TextButton(
-              onPressed: activeList.isEmpty
-                  ? null
-                  : () {
-                      setState(() {
-                        _isEditMode = true;
-                        _selectedIds.clear();
-                      });
-                    },
-              child: Text(
-                'Select',
-                style: TextStyle(
-                  color: tokens.colors.gold,
-                  fontWeight: FontWeight.bold,
+          IconButton(
+            icon: Icon(Icons.date_range_rounded, color: tokens.colors.gold),
+            tooltip: 'Filter by date',
+            onPressed: () => _showDateFilterSheet(context),
+          ),
+          IconButton(
+            icon: Icon(Icons.rule, color: tokens.colors.gold),
+            tooltip: 'Rules Config',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const MerchantRulesScreen(),
                 ),
-              ),
-            ),
-            IconButton(
-              icon: Icon(Icons.rule, color: tokens.colors.gold),
-              tooltip: 'Rules Config',
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const MerchantRulesScreen(),
-                  ),
-                );
-              },
-            ),
-            IconButton(
-              icon: Icon(Icons.add, color: tokens.colors.gold),
-              tooltip: 'Test Message',
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const AddSmartCaptureMessageScreen(),
-                  ),
-                );
-              },
-            ),
-          ] else ...[
-            TextButton(
-              onPressed: () {
-                setState(() {
-                  _isEditMode = false;
-                  _selectedIds.clear();
-                });
-              },
-              child: Text(
-                'Cancel',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.78)),
-              ),
-            ),
-          ],
-          const SizedBox(width: 8),
+              );
+            },
+          ),
+          IconButton(
+            icon: Icon(Icons.add, color: tokens.colors.gold),
+            tooltip: 'Test Message',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const AddSmartCaptureMessageScreen(),
+                ),
+              );
+            },
+          ),
         ],
       ),
-      bottomNavigationBar: _isEditMode
-          ? Container(
-              color: tokens.colors.surface,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  TextButton(
-                    onPressed: () {
-                      setState(() {
-                        if (_selectedIds.length == activeList.length) {
-                          _selectedIds.clear();
-                        } else {
-                          _selectedIds.addAll(
-                            activeList.map((item) => item.id),
-                          );
-                        }
-                      });
-                    },
-                    child: Text(
-                      _selectedIds.length == activeList.length
-                          ? 'Deselect All'
-                          : 'Select All',
-                      style: TextStyle(
-                        color: tokens.colors.gold,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  Row(
-                    children: [
-                      if (_selectedTab == 'Ignored')
-                        ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: tokens.colors.gold,
-                            foregroundColor: tokens.colors.hero,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          onPressed: _selectedIds.isEmpty
-                              ? null
-                              : () {
-                                  controller.restorePendingTransactionsBulk(
-                                    _selectedIds.toList(),
-                                  );
-                                  setState(() {
-                                    _isEditMode = false;
-                                    _selectedIds.clear();
-                                  });
-                                },
-                          child: const Text('Restore'),
-                        ),
-                      const SizedBox(width: 8),
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: tokens.colors.danger,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        onPressed: _selectedIds.isEmpty
-                            ? null
-                            : () {
-                                controller.deletePendingTransactionsBulk(
-                                  _selectedIds.toList(),
-                                );
-                                setState(() {
-                                  _isEditMode = false;
-                                  _selectedIds.clear();
-                                });
-                              },
-                        child: const Text('Delete Selected'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            )
-          : null,
       body: Column(
         children: [
-          if (state.smartCaptureEnabled) _buildAnalyticsCard(state),
-
-          // Tabs layout
-          Container(
-            color: tokens.colors.surface,
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildTabButton('Needs Review', count: reviewItems.length),
-                _buildTabButton('Approved', count: approvedItems.length),
-                _buildTabButton('Ignored', count: ignoredItems.length),
-              ],
-            ),
+          _buildCaptureHeader(
+            controller,
+            pendingCount: pendingCount,
+            approvedCount: approvedCount,
+            rejectedCount: rejectedCount,
           ),
 
-          if (_selectedTab == 'Ignored' &&
+          if (_selectedStatus == _CaptureStatusFilter.rejected &&
               ignoredItems.isNotEmpty &&
               !_isEditMode)
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
               child: Align(
                 alignment: Alignment.centerRight,
                 child: TextButton.icon(
@@ -431,7 +335,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     size: 18,
                   ),
                   label: Text(
-                    'Clear Ignored',
+                    'Clear Rejected',
                     style: TextStyle(
                       color: tokens.colors.danger,
                       fontSize: 13,
@@ -443,19 +347,37 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             ),
 
           Expanded(
-            child: activeList.isEmpty
+            child: activeRows.isEmpty
                 ? Center(
                     child: Text(
-                      'No items in this section',
+                      'No items match the selected filters',
                       style: Theme.of(context).textTheme.bodyLarge,
                     ),
                   )
                 : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 140),
-                    itemCount: activeList.length,
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.lg,
+                      AppSpacing.sm,
+                      AppSpacing.lg,
+                      120,
+                    ),
+                    itemCount: activeRows.length,
                     itemBuilder: (context, index) {
-                      final item = activeList[index];
-                      return _buildCardWrapper(context, item, controller);
+                      final row = activeRows[index];
+                      if (row.header != null) {
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 6, top: 8),
+                          child: Text(
+                            _formatDateHeader(row.header!),
+                            style: Theme.of(context).textTheme.labelLarge
+                                ?.copyWith(
+                                  color: tokens.colors.textSecondary,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                          ),
+                        );
+                      }
+                      return _buildCaptureRow(context, row.item!, controller);
                     },
                   ),
           ),
@@ -464,542 +386,626 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     );
   }
 
-  Widget _buildTabButton(String label, {int? count}) {
+  Widget _buildCaptureHeader(
+    AppStateController controller, {
+    required int pendingCount,
+    required int approvedCount,
+    required int rejectedCount,
+  }) {
     final tokens = context.premiumTokens;
-    final bool isSelected = _selectedTab == label;
-    final String displayLabel = count != null && count > 0
-        ? '$label ($count)'
-        : label;
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+    final Color surfaceColor = dark
+        ? tokens.colors.surface.withValues(alpha: 0.74)
+        : const Color(0xFFF9F7F0);
+    final Color fieldColor = dark
+        ? tokens.colors.card.withValues(alpha: 0.88)
+        : const Color(0xFFEBE7DD);
+    final int resultsCount = _sortedNewestFirst(
+      controller.state.pendingTransactions,
+    ).where(_matchesDateFilter).where(_matchesStatusFilter).length;
 
-    return ChoiceChip(
-      label: Text(displayLabel),
-      selected: isSelected,
-      selectedColor: tokens.colors.gold,
-      backgroundColor: tokens.colors.hero,
-      labelStyle: TextStyle(
-        color: isSelected ? tokens.colors.hero : Colors.white,
-        fontWeight: FontWeight.bold,
-        fontSize: 12,
+    return Container(
+      margin: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.md,
+        AppSpacing.lg,
+        AppSpacing.sm,
       ),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-        side: BorderSide(
-          color: isSelected ? tokens.colors.gold : tokens.colors.divider,
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: surfaceColor,
+        borderRadius: AppRadii.card,
+        border: Border.all(
+          color: tokens.colors.divider.withValues(alpha: 0.55),
         ),
       ),
-      onSelected: (bool selected) {
-        if (selected) {
-          setState(() {
-            _selectedTab = label;
-            _isEditMode = false;
-            _selectedIds.clear();
-          });
-        }
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  'Smart Capture Log',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: tokens.colors.textPrimary,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              Text(
+                '$resultsCount',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: tokens.colors.gold,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: _buildStatusTab(
+                  label: 'Pending',
+                  count: pendingCount,
+                  selected: _selectedStatus == _CaptureStatusFilter.pending,
+                  onTap: () => setState(
+                    () => _selectedStatus = _CaptureStatusFilter.pending,
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: _buildStatusTab(
+                  label: 'Approved',
+                  count: approvedCount,
+                  selected: _selectedStatus == _CaptureStatusFilter.approved,
+                  onTap: () => setState(
+                    () => _selectedStatus = _CaptureStatusFilter.approved,
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: _buildStatusTab(
+                  label: 'Rejected',
+                  count: rejectedCount,
+                  selected: _selectedStatus == _CaptureStatusFilter.rejected,
+                  onTap: () => setState(
+                    () => _selectedStatus = _CaptureStatusFilter.rejected,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          TextField(
+            readOnly: true,
+            onTap: () => _showDateFilterSheet(context),
+            decoration: InputDecoration(
+              hintText: _dateFilterLabel(),
+              prefixIcon: Icon(Icons.tune_rounded, color: tokens.colors.gold),
+              filled: true,
+              fillColor: fieldColor,
+              border: OutlineInputBorder(
+                borderRadius: AppRadii.card,
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: AppRadii.card,
+                borderSide: BorderSide(
+                  color: tokens.colors.divider.withValues(alpha: 0.50),
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: AppRadii.card,
+                borderSide: BorderSide(color: tokens.colors.gold),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _dateFilterLabel() {
+    switch (_selectedDateFilter) {
+      case _CaptureDateFilter.allTime:
+        return 'All Time';
+      case _CaptureDateFilter.today:
+        return 'Today';
+      case _CaptureDateFilter.thisWeek:
+        return 'This Week';
+      case _CaptureDateFilter.thisMonth:
+        return 'This Month';
+      case _CaptureDateFilter.previousMonth:
+        return 'Previous Month';
+      case _CaptureDateFilter.custom:
+        return 'Custom Range';
+    }
+  }
+
+  Future<void> _showDateFilterSheet(BuildContext context) async {
+    final ThemeData theme = Theme.of(context);
+    final AppStateController controller = context.read<AppStateController>();
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: theme.colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (BuildContext context) {
+        final tokens = context.premiumTokens;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Text(
+                  'Filter by Date',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: tokens.colors.textPrimary,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                ...<Widget>[
+                  _dateOptionTile(
+                    context,
+                    label: 'All Time',
+                    onTap: () => _applyDateFilter(
+                      controller,
+                      context,
+                      _CaptureDateFilter.allTime,
+                    ),
+                  ),
+                  _dateOptionTile(
+                    context,
+                    label: 'Today',
+                    onTap: () => _applyDateFilter(
+                      controller,
+                      context,
+                      _CaptureDateFilter.today,
+                    ),
+                  ),
+                  _dateOptionTile(
+                    context,
+                    label: 'This Week',
+                    onTap: () => _applyDateFilter(
+                      controller,
+                      context,
+                      _CaptureDateFilter.thisWeek,
+                    ),
+                  ),
+                  _dateOptionTile(
+                    context,
+                    label: 'This Month',
+                    onTap: () => _applyDateFilter(
+                      controller,
+                      context,
+                      _CaptureDateFilter.thisMonth,
+                    ),
+                  ),
+                  _dateOptionTile(
+                    context,
+                    label: 'Previous Month',
+                    onTap: () => _applyDateFilter(
+                      controller,
+                      context,
+                      _CaptureDateFilter.previousMonth,
+                    ),
+                  ),
+                  _dateOptionTile(
+                    context,
+                    label: 'Custom Range',
+                    onTap: () async {
+                      Navigator.pop(context);
+                      final DateTimeRange? picked = await showDateRangePicker(
+                        context: this.context,
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime(2100),
+                        initialDateRange:
+                            _customRange ??
+                            DateTimeRange(
+                              start: DateTime.now().subtract(
+                                const Duration(days: 30),
+                              ),
+                              end: DateTime.now(),
+                            ),
+                      );
+                      if (!mounted || picked == null) return;
+                      setState(() {
+                        _customRange = picked;
+                        _selectedDateFilter = _CaptureDateFilter.custom;
+                      });
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
       },
     );
   }
 
-  Widget _buildCardWrapper(
+  Widget _dateOptionTile(
+    BuildContext context, {
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    final tokens = context.premiumTokens;
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      title: Text(
+        label,
+        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+          color: tokens.colors.textPrimary,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      trailing: Icon(Icons.chevron_right_rounded, color: tokens.colors.gold),
+      onTap: onTap,
+    );
+  }
+
+  void _applyDateFilter(
+    AppStateController controller,
+    BuildContext context,
+    _CaptureDateFilter filter,
+  ) {
+    Navigator.pop(context);
+    setState(() {
+      _selectedDateFilter = filter;
+      if (filter != _CaptureDateFilter.custom) {
+        _customRange = null;
+      }
+    });
+  }
+
+  Widget _buildCaptureRow(
     BuildContext context,
     PendingTransaction item,
     AppStateController controller,
   ) {
     final tokens = context.premiumTokens;
-    if (_isEditMode) {
-      final isSelected = _selectedIds.contains(item.id);
-      return Card(
-        color: tokens.colors.hero,
-        margin: const EdgeInsets.only(bottom: 12),
-        shape: RoundedRectangleBorder(
-          borderRadius: AppRadii.card,
-          side: BorderSide(
-            color: isSelected ? tokens.colors.gold : tokens.colors.divider,
-            width: isSelected ? 1 : 0.5,
-          ),
-        ),
-        child: InkWell(
-          borderRadius: AppRadii.card,
-          onTap: () {
-            setState(() {
-              if (isSelected) {
-                _selectedIds.remove(item.id);
-              } else {
-                _selectedIds.add(item.id);
-              }
-            });
-          },
-          child: Row(
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(left: 16),
-                child: Icon(
-                  isSelected ? Icons.check_box : Icons.check_box_outline_blank,
-                  color: isSelected
-                      ? tokens.colors.gold
-                      : Colors.white.withValues(alpha: 0.72),
-                ),
-              ),
-              Expanded(
-                child: _buildInnerCard(
-                  context,
-                  item,
-                  controller,
-                  displayActions: false,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return _buildInnerCard(context, item, controller, displayActions: true);
-  }
-
-  Widget _buildInnerCard(
-    BuildContext context,
-    PendingTransaction item,
-    AppStateController controller, {
-    required bool displayActions,
-  }) {
-    if (_selectedTab == 'Needs Review') {
-      return _buildPendingCard(
-        context,
-        item,
-        controller,
-        displayActions: displayActions,
-      );
-    } else if (_selectedTab == 'Approved') {
-      return _buildApprovedCard(
-        context,
-        item,
-        controller,
-        displayActions: displayActions,
-      );
-    } else {
-      return _buildIgnoredCard(
-        context,
-        item,
-        controller,
-        displayActions: displayActions,
-      );
-    }
-  }
-
-  Widget _buildPendingCard(
-    BuildContext context,
-    PendingTransaction item,
-    AppStateController controller, {
-    required bool displayActions,
-  }) {
-    final tokens = context.premiumTokens;
-    final sourceIdText =
-        item.sourceIdentifier != null &&
-            item.sourceIdentifier != item.sourceDisplayLabel
-        ? ' • ${item.sourceIdentifier}'
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+    final Color surfaceColor = dark
+        ? tokens.colors.surface.withValues(alpha: 0.78)
+        : const Color(0xFFFAF8F2);
+    final Color titleColor = dark
+        ? tokens.colors.textPrimary
+        : const Color(0xFF042F2B);
+    final Color subtitleColor = tokens.colors.textSecondary;
+    final String amount = item.suggestedAmount != null
+        ? '${item.suggestedCurrency ?? 'EGP'} ${item.suggestedAmount!.toStringAsFixed(2)}'
         : '';
-    return Card(
-      color: tokens.colors.hero,
-      elevation: 0,
-      margin: displayActions
-          ? const EdgeInsets.only(bottom: 12)
-          : EdgeInsets.zero,
-      shape: displayActions
-          ? RoundedRectangleBorder(
-              borderRadius: AppRadii.card,
-              side: BorderSide(color: tokens.colors.divider),
-            )
-          : const RoundedRectangleBorder(
-              borderRadius: BorderRadius.only(
-                topRight: Radius.circular(12),
-                bottomRight: Radius.circular(12),
-              ),
-            ),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  '${item.sourceDisplayLabel}$sourceIdText',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.white.withValues(alpha: 0.72),
-                  ),
+    final String statusLabel = switch (item.status) {
+      CaptureStatus.pendingReview => 'PENDING',
+      CaptureStatus.autoApproved => 'AUTO',
+      CaptureStatus.manuallyApproved => 'MANUAL',
+      CaptureStatus.ignored => 'REJECTED',
+    };
+    final Color statusColor = switch (item.status) {
+      CaptureStatus.pendingReview => tokens.colors.warning,
+      CaptureStatus.autoApproved => tokens.colors.success,
+      CaptureStatus.manuallyApproved => tokens.colors.emerald,
+      CaptureStatus.ignored => tokens.colors.danger,
+    };
+
+    final SlidableActionData actions = switch (item.status) {
+      CaptureStatus.pendingReview => SlidableActionData(
+        actions: <Widget>[
+          _slideAction(
+            context,
+            icon: Icons.edit_rounded,
+            label: 'Edit',
+            color: tokens.colors.gold,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) =>
+                      ReviewPendingTransactionScreen(pendingTransaction: item),
                 ),
-                Text(
-                  _formatRelativeDate(item.createdAt),
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.white.withValues(alpha: 0.72),
-                  ),
+              );
+            },
+          ),
+          _slideAction(
+            context,
+            icon: Icons.delete_outline_rounded,
+            label: 'Delete',
+            color: tokens.colors.danger,
+            onTap: () {
+              controller.deletePendingTransactionsBulk(<String>[item.id]);
+            },
+          ),
+        ],
+      ),
+      CaptureStatus.autoApproved ||
+      CaptureStatus.manuallyApproved => SlidableActionData(
+        actions: <Widget>[
+          _slideAction(
+            context,
+            icon: Icons.edit_rounded,
+            label: 'Edit',
+            color: tokens.colors.gold,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) =>
+                      ReviewPendingTransactionScreen(pendingTransaction: item),
                 ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        item.merchantName ?? 'Unknown Merchant',
-                        style: Theme.of(
-                          context,
-                        ).textTheme.titleMedium?.copyWith(color: Colors.white),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Suggested Type: ${item.suggestedType.toUpperCase()}',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Colors.white.withValues(alpha: 0.78),
-                        ),
-                      ),
-                      if (item.suggestedCategory != null)
-                        Text(
-                          'Category: ${item.suggestedCategory}',
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(
-                                color: Colors.white.withValues(alpha: 0.72),
+              );
+            },
+          ),
+          _slideAction(
+            context,
+            icon: Icons.undo_rounded,
+            label: 'Undo',
+            color: tokens.colors.warning,
+            onTap: () {
+              controller.undoPendingTransaction(item.id);
+              showTopSnackBar(
+                context,
+                'Approval undone. Transaction returned to Needs Review.',
+                kind: AppToastKind.info,
+              );
+            },
+          ),
+          _slideAction(
+            context,
+            icon: Icons.delete_outline_rounded,
+            label: 'Delete',
+            color: tokens.colors.danger,
+            onTap: () {
+              controller.deletePendingTransactionsBulk(<String>[item.id]);
+            },
+          ),
+        ],
+      ),
+      CaptureStatus.ignored => SlidableActionData(
+        actions: <Widget>[
+          _slideAction(
+            context,
+            icon: Icons.restore_rounded,
+            label: 'Restore',
+            color: tokens.colors.gold,
+            onTap: () {
+              controller.restorePendingTransactionsBulk(<String>[item.id]);
+            },
+          ),
+          _slideAction(
+            context,
+            icon: Icons.delete_outline_rounded,
+            label: 'Delete',
+            color: tokens.colors.danger,
+            onTap: () {
+              controller.deletePendingTransactionsBulk(<String>[item.id]);
+            },
+          ),
+        ],
+      ),
+    };
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.md),
+      child: Slidable(
+        key: Key('capture_${item.id}'),
+        endActionPane: ActionPane(
+          motion: const ScrollMotion(),
+          extentRatio: actions.actions.length == 2 ? 0.42 : 0.60,
+          children: actions.actions,
+        ),
+        child: Material(
+          color: surfaceColor,
+          borderRadius: AppRadii.card,
+          child: InkWell(
+            borderRadius: AppRadii.card,
+            onTap: () {
+              if (item.status == CaptureStatus.ignored) return;
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) =>
+                      ReviewPendingTransactionScreen(pendingTransaction: item),
+                ),
+              );
+            },
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Row(
+                          children: <Widget>[
+                            Expanded(
+                              child: Text(
+                                item.merchantName ?? item.sourceDisplayLabel,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(
+                                      color: titleColor,
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 18,
+                                      height: 1.15,
+                                    ),
                               ),
+                            ),
+                            if (amount.isNotEmpty) ...<Widget>[
+                              const SizedBox(width: AppSpacing.sm),
+                              Text(
+                                amount,
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(
+                                      color: tokens.colors.gold,
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 18,
+                                    ),
+                              ),
+                            ],
+                          ],
                         ),
-                      Text(
-                        'Confidence: ${(item.confidence * 100).toStringAsFixed(0)}%'
-                        '${item.merchantRuleSource != null ? ' • Rule: ${_ruleSourceLabel(item.merchantRuleSource!)}' : ''}',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.white.withValues(alpha: 0.72),
+                        const SizedBox(height: 6),
+                        Text(
+                          '${item.suggestedType.toUpperCase()} • ${item.suggestedCategory ?? 'Other'}',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: subtitleColor, height: 1.2),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (item.suggestedAmount != null)
-                  Text(
-                    '${item.suggestedCurrency ?? 'EGP'} ${item.suggestedAmount!.toStringAsFixed(2)}',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: tokens.colors.gold,
-                      fontSize: 18,
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: tokens.colors.hero,
-                borderRadius: const BorderRadius.all(
-                  Radius.circular(AppRadii.sm),
-                ),
-                border: Border.all(color: tokens.colors.divider),
-              ),
-              child: Text(
-                item.rawMessage,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.white.withValues(alpha: 0.78),
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
-            ),
-            if (displayActions) ...[
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: () {
-                      controller.rejectPendingTransaction(item.id);
-                    },
-                    child: Text(
-                      'Ignore',
-                      style: TextStyle(color: tokens.colors.danger),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: tokens.colors.gold,
-                      foregroundColor: tokens.colors.hero,
-                    ),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => ReviewPendingTransactionScreen(
-                            pendingTransaction: item,
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: <Widget>[
+                            _badge(context, statusLabel, statusColor),
+                            _badge(
+                              context,
+                              'Confidence ${(item.confidence * 100).toStringAsFixed(0)}%',
+                              tokens.colors.textSecondary,
+                            ),
+                            _badge(
+                              context,
+                              _formatRelativeDate(item.createdAt),
+                              tokens.colors.textSecondary,
+                            ),
+                          ],
+                        ),
+                        if (item.rawMessage.isNotEmpty) ...<Widget>[
+                          const SizedBox(height: 8),
+                          Text(
+                            item.rawMessage,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: subtitleColor,
+                                  fontStyle: FontStyle.italic,
+                                  height: 1.25,
+                                ),
                           ),
-                        ),
-                      );
-                    },
-                    child: const Text('Review →'),
+                        ],
+                      ],
+                    ),
                   ),
                 ],
               ),
-            ],
-          ],
+            ),
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildApprovedCard(
-    BuildContext context,
-    PendingTransaction item,
-    AppStateController controller, {
-    required bool displayActions,
+  Widget _slideAction(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
   }) {
-    final tokens = context.premiumTokens;
-    final bool isAuto = item.approvalSource == ApprovalSource.auto;
-    final badgeColor = isAuto
-        ? tokens.colors.success
-        : Theme.of(context).colorScheme.primary;
-    final badgeText = isAuto ? 'AUTO' : 'MANUAL';
-
-    return Card(
-      color: tokens.colors.hero,
-      elevation: 0,
-      margin: displayActions
-          ? const EdgeInsets.only(bottom: 12)
-          : EdgeInsets.zero,
-      shape: displayActions
-          ? RoundedRectangleBorder(
-              borderRadius: AppRadii.card,
-              side: BorderSide(color: tokens.colors.divider),
-            )
-          : const RoundedRectangleBorder(
-              borderRadius: BorderRadius.only(
-                topRight: Radius.circular(12),
-                bottomRight: Radius.circular(12),
-              ),
-            ),
+    return CustomSlidableAction(
+      onPressed: (BuildContext context) => onTap(),
+      backgroundColor: color.withValues(alpha: 0.14),
+      foregroundColor: color,
       child: Column(
-        children: [
-          ListTile(
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 8,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: <Widget>[
+          Icon(icon, color: color),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w700,
             ),
-            title: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: badgeColor.withValues(alpha: 0.18),
-                    border: Border.all(color: badgeColor, width: 0.5),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    badgeText,
-                    style: TextStyle(
-                      color: badgeColor,
-                      fontSize: 9,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    item.merchantName ?? 'Unknown Merchant',
-                    style: Theme.of(
-                      context,
-                    ).textTheme.titleMedium?.copyWith(color: Colors.white),
-                  ),
-                ),
-              ],
-            ),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 6),
-                Text(
-                  '${item.suggestedType.toUpperCase()} • Category: ${item.suggestedCategory ?? "Other"}',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.78)),
-                ),
-                Text(
-                  'Confidence: ${(item.confidence * 100).toStringAsFixed(0)}%',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.72)),
-                ),
-                if (item.reviewedAt != null)
-                  Text(
-                    'Processed: ${_formatRelativeDate(item.reviewedAt!)}',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.72),
-                    ),
-                  ),
-              ],
-            ),
-            trailing: item.suggestedAmount != null
-                ? Text(
-                    '${item.suggestedCurrency ?? 'EGP'} ${item.suggestedAmount!.toStringAsFixed(2)}',
-                    style: TextStyle(
-                      color: tokens.colors.gold,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  )
-                : null,
           ),
-          if (displayActions) ...[
-            Divider(color: tokens.colors.divider, height: 1),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton.icon(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => ReviewPendingTransactionScreen(
-                            pendingTransaction: item,
-                          ),
-                        ),
-                      );
-                    },
-                    icon: Icon(Icons.edit, size: 16, color: tokens.colors.gold),
-                    label: Text(
-                      'Edit',
-                      style: TextStyle(color: tokens.colors.gold, fontSize: 13),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  TextButton.icon(
-                    onPressed: () {
-                      controller.undoPendingTransaction(item.id);
-                      showTopSnackBar(
-                        context,
-                        'Approval undone. Transaction returned to Needs Review.',
-                        kind: AppToastKind.info,
-                      );
-                    },
-                    icon: Icon(
-                      Icons.undo,
-                      size: 16,
-                      color: Colors.white.withValues(alpha: 0.72),
-                    ),
-                    label: Text(
-                      'Undo Approval',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.72),
-                        fontSize: 13,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
         ],
       ),
     );
   }
 
-  Widget _buildIgnoredCard(
-    BuildContext context,
-    PendingTransaction item,
-    AppStateController controller, {
-    required bool displayActions,
-  }) {
-    final tokens = context.premiumTokens;
-    return Card(
-      color: tokens.colors.hero,
-      elevation: 0,
-      margin: displayActions
-          ? const EdgeInsets.only(bottom: 12)
-          : EdgeInsets.zero,
-      shape: displayActions
-          ? RoundedRectangleBorder(
-              borderRadius: AppRadii.card,
-              side: BorderSide(color: tokens.colors.divider),
-            )
-          : const RoundedRectangleBorder(
-              borderRadius: BorderRadius.only(
-                topRight: Radius.circular(12),
-                bottomRight: Radius.circular(12),
-              ),
-            ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.all(16),
-        title: Text(
-          item.merchantName ?? 'Unknown Merchant',
-          style: Theme.of(
-            context,
-          ).textTheme.titleMedium?.copyWith(color: Colors.white),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 4),
-            Text(
-              'Ignored\nReason: ${item.ignoreReason ?? 'Unknown'}',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.78)),
-            ),
-            Text(
-              'Confidence: ${(item.confidence * 100).toStringAsFixed(0)}%',
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.72),
-                fontSize: 11,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              item.rawMessage,
-              style: TextStyle(
-                fontSize: 11,
-                fontStyle: FontStyle.italic,
-                color: Colors.white.withValues(alpha: 0.78),
-              ),
-            ),
-          ],
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (item.suggestedAmount != null)
-              Text(
-                '${item.suggestedCurrency ?? 'EGP'} ${item.suggestedAmount!.toStringAsFixed(2)}',
-                style: TextStyle(
-                  color: tokens.colors.gold,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                ),
-              ),
-            if (displayActions) ...[
-              const SizedBox(width: 8),
-              IconButton(
-                icon: Icon(Icons.restore, color: tokens.colors.gold, size: 20),
-                tooltip: 'Restore to Pending',
-                onPressed: () {
-                  controller.restorePendingTransactionsBulk(<String>[item.id]);
-                },
-              ),
-            ],
-          ],
+  Widget _badge(BuildContext context, String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: AppRadii.pill,
+        border: Border.all(color: color.withValues(alpha: 0.22)),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: color,
+          fontWeight: FontWeight.w700,
         ),
       ),
     );
   }
 
-  String _ruleSourceLabel(String source) {
-    switch (source) {
-      case 'builtin':
-        return 'Built-in';
-      case 'custom':
-        return 'Custom';
-      case 'learned':
-        return 'Learned';
-      default:
-        return source;
-    }
+  Widget _buildStatusTab({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+    int? count,
+  }) {
+    final tokens = context.premiumTokens;
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              color: selected ? tokens.colors.gold : Colors.transparent,
+              width: 2.5,
+            ),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              count != null ? '$label ($count)' : label,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.visible,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                color: selected
+                    ? tokens.colors.gold
+                    : (isDark ? Colors.white : tokens.colors.hero),
+                fontWeight: FontWeight.w700,
+                fontSize: 13.5,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
+}
+
+class _LogRow {
+  _LogRow.header(this.header) : item = null;
+  _LogRow.item(this.item) : header = null;
+
+  final String? header;
+  final PendingTransaction? item;
+}
+
+class SlidableActionData {
+  SlidableActionData({required this.actions});
+
+  final List<Widget> actions;
 }

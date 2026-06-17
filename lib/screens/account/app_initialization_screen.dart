@@ -52,33 +52,35 @@ class _AppInitializationScreenState extends State<AppInitializationScreen> {
       final appStateController = context.read<AppStateController>();
       final authController = context.read<AuthController>();
 
-      // Step 1: Loading assets
-      setState(() => _loadingAssets = true);
+      // Step 1: Restoring session
+      setState(() => _restoringSession = true);
       final int t0 = stopwatch.elapsedMilliseconds;
-      await appStateController.load();
+      await authController.load();
       final int t1 = stopwatch.elapsedMilliseconds;
-      debugPrint('[Profile] Load AppState took ${t1 - t0}ms');
+      debugPrint('[Profile] Restore authentication session took ${t1 - t0}ms');
+      setState(() => _restoringSession = false);
+
+      // Step 2: Loading app state for the resolved user namespace
+      setState(() => _loadingAssets = true);
+      final int t2 = stopwatch.elapsedMilliseconds;
+      await appStateController.load(
+        userId: authController.currentUser?.id,
+      );
+      final int t3 = stopwatch.elapsedMilliseconds;
+      debugPrint('[Profile] Load AppState took ${t3 - t2}ms');
       setState(() {
         _loadingAssets = false;
         _localDataLoaded = true;
       });
 
-      // Step 2: Loading transactions & savings
+      // Step 3: Loading transactions & savings
       setState(() => _loadingTransactions = true);
-      final int t2 = stopwatch.elapsedMilliseconds;
+      final int t4 = stopwatch.elapsedMilliseconds;
       // Already hydrated in appStateController.load(), wait 100ms to simulate/yield UI thread
       await Future<void>.delayed(const Duration(milliseconds: 100));
-      final int t3 = stopwatch.elapsedMilliseconds;
-      debugPrint('[Profile] Load savings & transactions took ${t3 - t2}ms');
-      setState(() => _loadingTransactions = false);
-
-      // Step 3: Restoring session
-      setState(() => _restoringSession = true);
-      final int t4 = stopwatch.elapsedMilliseconds;
-      await authController.load();
       final int t5 = stopwatch.elapsedMilliseconds;
-      debugPrint('[Profile] Restore authentication session took ${t5 - t4}ms');
-      setState(() => _restoringSession = false);
+      debugPrint('[Profile] Load savings & transactions took ${t5 - t4}ms');
+      setState(() => _loadingTransactions = false);
 
       // Step 4: Preparing projections
       setState(() => _preparingProjections = true);

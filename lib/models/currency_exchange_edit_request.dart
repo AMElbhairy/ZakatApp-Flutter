@@ -1,3 +1,6 @@
+// ignore_for_file: avoid_print
+import 'package:flutter/foundation.dart';
+
 import '../core/utils/amount_parser.dart';
 import 'saving.dart';
 import 'transaction.dart';
@@ -29,6 +32,11 @@ CurrencyExchangeEditRequest? resolveCurrencyExchangeEditRequest({
   required List<Saving> savings,
   required Object item,
 }) {
+  if (kDebugMode) {
+    print(
+      '[ExchangeDebug][resolveRequest] item=${item.runtimeType}',
+    );
+  }
   if (item is Transaction) {
     final String activityId = item.exchangePairId ?? '';
     if (activityId.isEmpty) return null;
@@ -74,6 +82,20 @@ CurrencyExchangeEditRequest? resolveCurrencyExchangeEditRequest({
   }
 
   return null;
+}
+
+CurrencyExchangeEditRequest? resolveCurrencyExchangeEditRequestByActivityId({
+  required List<Transaction> transactions,
+  required List<Saving> savings,
+  required String activityId,
+}) {
+  final String cleanActivityId = activityId.trim();
+  if (cleanActivityId.isEmpty) return null;
+  return _buildFromActivityId(
+    transactions: transactions,
+    savings: savings,
+    activityId: cleanActivityId,
+  );
 }
 
 CurrencyExchangeEditRequest? _buildFromActivityId({
@@ -147,11 +169,25 @@ CurrencyExchangeEditRequest? _buildFromActivityId({
   final String targetCurrency = targetTransaction?.currency.isNotEmpty == true
       ? targetTransaction!.currency
       : (targetSaving?.unit ?? '');
-  final String date =
-      sourceTransaction?.date ??
-      targetTransaction?.date ??
-      targetSaving?.dateAcquired ??
-      '';
+  final String date = _firstNonEmpty(<String?>[
+    sourceTransaction?.date,
+    targetTransaction?.date,
+    targetSaving?.dateAcquired,
+    _datePart(sourceTransaction?.createdAt),
+    _datePart(targetTransaction?.createdAt),
+    _datePart(targetSaving?.createdAt),
+    DateTime.now().toUtc().toIso8601String().split('T').first,
+  ]);
+
+  if (kDebugMode) {
+    print(
+      '[ExchangeDebug][resolveRequest] activityId=$activityId '
+      'source=${sourceCurrency.isEmpty ? 'null' : sourceCurrency} '
+      'target=${targetCurrency.isEmpty ? 'null' : targetCurrency} '
+      'date=$date sourceAmount=$sourceAmount targetAmount=$targetAmount '
+      'targets=${targetSavings.map((Saving s) => s.id).toList(growable: false)}',
+    );
+  }
 
   if (sourceCurrency.isEmpty ||
       targetCurrency.isEmpty ||
@@ -173,6 +209,20 @@ CurrencyExchangeEditRequest? _buildFromActivityId({
     sourceAmount: sourceAmount,
     targetAmount: targetAmount,
   );
+}
+
+String _firstNonEmpty(List<String?> values) {
+  for (final String? value in values) {
+    final String clean = (value ?? '').trim();
+    if (clean.isNotEmpty) return clean;
+  }
+  return '';
+}
+
+String _datePart(String? value) {
+  final String clean = (value ?? '').trim();
+  if (clean.isEmpty) return '';
+  return clean.split('T').first;
 }
 
 class _SavingExchangeSource {

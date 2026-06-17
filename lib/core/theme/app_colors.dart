@@ -50,9 +50,9 @@ class AppColors {
   );
 
   static const AppColorTokens dark = AppColorTokens(
-    background: Color(0xFF000000),
-    surface: Color(0xFF080B0E),
-    card: Color(0xFF0B1014),
+    background: Color(0xFF04110F),
+    surface: Color(0xFF071714),
+    card: Color(0xFF0A1D19),
     hero: Color(0xFF062F31),
     emerald: Color(0xFF0FA18F),
     gold: Color(0xFFC8A75B),

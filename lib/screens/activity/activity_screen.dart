@@ -1,3 +1,5 @@
+// ignore_for_file: avoid_print
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
@@ -1013,7 +1015,27 @@ class ActivityScreenState extends State<ActivityScreen> {
                                 },
                               );
                               if (confirmed == true) {
-                                if (entry.transaction != null) {
+                                final bool isCurrencyExchange =
+                                    (entry.transferTitle ?? '').toLowerCase() ==
+                                    'currency exchange';
+                                if (kDebugMode) {
+                                  print(
+                                    '[Activity][Delete] title=${entry.transferTitle ?? entry.transaction?.category ?? entry.saving?.description ?? entry.key} '
+                                    'isExchange=$isCurrencyExchange '
+                                    'activityId=${entry.exchangeActivityId} '
+                                    'txId=${entry.transaction?.id} '
+                                    'txPair=${entry.transaction?.exchangePairId} '
+                                    'savingId=${entry.saving?.id} '
+                                    'savingActivity=${entry.saving?.transferActivityId} '
+                                    'key=${entry.key}',
+                                  );
+                                }
+                                if (isCurrencyExchange &&
+                                    entry.exchangeActivityId != null) {
+                                  await controller.deleteCurrencyExchangeActivity(
+                                    entry.exchangeActivityId!,
+                                  );
+                                } else if (entry.transaction != null) {
                                   await controller.deleteTransaction(
                                     entry.transaction!.id,
                                   );
@@ -1105,8 +1127,23 @@ class ActivityScreenState extends State<ActivityScreen> {
                               } else if (titleStr.contains('exchange')) {
                                 final dynamic item =
                                     entry.saving ?? entry.transaction;
+                                if (kDebugMode) {
+                                  print(
+                                    '[Activity][Edit] title=$titleStr '
+                                    'using=${item.runtimeType} '
+                                    'activityId=${entry.exchangeActivityId} '
+                                    'txId=${entry.transaction?.id} '
+                                    'txPair=${entry.transaction?.exchangePairId} '
+                                    'savingId=${entry.saving?.id} '
+                                    'savingActivity=${entry.saving?.transferActivityId}',
+                                  );
+                                }
                                 if (item != null) {
-                                  openEditCurrencyExchangeDialog(context, item);
+                                  openEditCurrencyExchangeDialog(
+                                    context,
+                                    item,
+                                    activityId: entry.exchangeActivityId,
+                                  );
                                 }
                               } else {
                                 if (entry.transaction != null) {
@@ -1886,6 +1923,7 @@ class _ActivityEntry {
     this.transferTitle,
     this.transferDescription,
     this.transferKey,
+    this.exchangeActivityId,
     this.transferDate,
     this.transferCreatedAt,
     this.transferCurrency,
@@ -1974,10 +2012,32 @@ class _ActivityEntry {
       transferDescription:
           '$sourceCurrency ${sourceAmount.toStringAsFixed(2)} → $targetCurrency ${targetAmount.toStringAsFixed(2)}',
       transferKey: 'exchange_${source.exchangePairId ?? source.id}',
-      transferDate: source.date,
-      transferCreatedAt: source.createdAt,
+      exchangeActivityId:
+          source.exchangePairId?.trim().isNotEmpty == true
+          ? source.exchangePairId!.trim()
+          : (targetSaving?.transferActivityId?.trim().isNotEmpty == true
+                ? targetSaving!.transferActivityId!.trim()
+                : null),
+      transferDate: (sourceTransaction?.createdAt.isNotEmpty == true
+              ? sourceTransaction!.createdAt
+              : (targetSaving?.createdAt ?? source.createdAt))
+          .split('T')
+          .first,
+      transferCreatedAt: sourceTransaction?.createdAt.isNotEmpty == true
+          ? sourceTransaction!.createdAt
+          : (targetSaving?.createdAt ?? source.createdAt),
       transferCurrency: sourceCurrency,
       transferAmount: sourceAmount,
+    ).._logExchangeBuild(
+      sourceCurrency: sourceCurrency,
+      targetCurrency: targetCurrency,
+      sourceAmount: sourceAmount,
+      targetAmount: targetAmount,
+      sourceCreatedAt: sourceTransaction?.createdAt.isNotEmpty == true
+          ? sourceTransaction!.createdAt
+          : (targetSaving?.createdAt ?? source.createdAt),
+      sourceId: source.id,
+      pairId: source.exchangePairId,
     );
   }
 
@@ -1994,7 +2054,13 @@ class _ActivityEntry {
       transferDescription:
           '$sourceCurrency ${sourceAmount.toStringAsFixed(2)} → ${saving.unit} ${saving.amount.toStringAsFixed(2)}',
       transferKey: 'legacy_exchange_${saving.id}',
-      transferDate: saving.dateAcquired,
+      exchangeActivityId:
+          saving.transferActivityId?.trim().isNotEmpty == true
+          ? saving.transferActivityId!.trim()
+          : null,
+      transferDate: saving.dateAcquired.trim().isNotEmpty
+          ? saving.dateAcquired
+          : saving.createdAt.split('T').first,
       transferCreatedAt: saving.createdAt,
       transferCurrency: sourceCurrency,
       transferAmount: sourceAmount,
@@ -2009,7 +2075,13 @@ class _ActivityEntry {
       transferDescription:
           '${saving.amount.toStringAsFixed(2)}g $metal • ${saving.purchaseCurrency} ${saving.purchaseAmount.toStringAsFixed(2)}',
       transferKey: 'metal_${saving.id}',
-      transferDate: saving.dateAcquired,
+      exchangeActivityId:
+          saving.transferActivityId?.trim().isNotEmpty == true
+          ? saving.transferActivityId!.trim()
+          : null,
+      transferDate: saving.dateAcquired.trim().isNotEmpty
+          ? saving.dateAcquired
+          : saving.createdAt.split('T').first,
       transferCreatedAt: saving.createdAt,
       transferCurrency: saving.purchaseCurrency,
       transferAmount: saving.purchaseAmount,
@@ -2021,6 +2093,7 @@ class _ActivityEntry {
   final String? transferTitle;
   final String? transferDescription;
   final String? transferKey;
+  final String? exchangeActivityId;
   final String? transferDate;
   final String? transferCreatedAt;
   final String? transferCurrency;
@@ -2067,6 +2140,28 @@ class _ActivityEntry {
     if (transferTitle != null) return transferTitle!;
     if (isCashSaving) return context.l10n.tr('cash_in');
     return transaction!.category;
+  }
+
+  void _logExchangeBuild({
+    required String sourceCurrency,
+    required String targetCurrency,
+    required double sourceAmount,
+    required double targetAmount,
+    required String sourceCreatedAt,
+    required String sourceId,
+    required String? pairId,
+  }) {
+    if (!kDebugMode) return;
+    print(
+      '[Activity][BuildExchange] key=$key '
+      'date=$date '
+      'createdAt=$createdAt '
+      'sourceId=$sourceId '
+      'pairId=$pairId '
+      'source=$sourceCurrency $sourceAmount '
+      'target=$targetCurrency $targetAmount '
+      'sourceCreatedAt=$sourceCreatedAt',
+    );
   }
 }
 
