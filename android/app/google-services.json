@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "413665925118",
+    "project_id": "zakah-wealth",
+    "storage_bucket": "zakah-wealth.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:413665925118:android:53f8afe64e09dceba792af",
+        "android_client_info": {
+          "package_name": "com.zakahwealth.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "413665925118-18dpvoahlr77fs53l29ua8g9puutp2rp.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAvUebhlIr6rhEiMkBWeSowVo3IXj5HeB4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "413665925118-18dpvoahlr77fs53l29ua8g9puutp2rp.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "413665925118-hg1l61pvc9k67g9p27epvtcsf5mpotdp.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.zakahwealth.app"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -47,6 +47,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   @override
   void initState() {
     super.initState();
+    final AppStateController controller = context.read<AppStateController>();
+    final int pendingCount = controller.state.pendingTransactions
+        .where((PendingTransaction t) => t.status == CaptureStatus.pendingReview)
+        .length;
+    if (pendingCount > 0) {
+      _selectedStatus = _CaptureStatusFilter.pending;
+    }
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       Future<void>.delayed(const Duration(milliseconds: 250), () async {
@@ -923,6 +931,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           const SizedBox(height: 4),
           Text(
             label,
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.visible,
             style: Theme.of(context).textTheme.labelMedium?.copyWith(
               color: color,
               fontWeight: FontWeight.w700,

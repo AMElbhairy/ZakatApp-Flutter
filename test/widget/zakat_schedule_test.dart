@@ -35,16 +35,25 @@ class _FakeAuthService implements AuthService {
   Future<UserProfile?> restoreSession() async => null;
 
   @override
-  Future<UserProfile?> signIn({AuthProvider provider = AuthProvider.google}) async => null;
+  Future<UserProfile?> signIn({
+    AuthProvider provider = AuthProvider.google,
+  }) async => null;
 
   @override
   Future<void> signOut() async {}
+
+  @override
+  Future<void> deleteAccount() async {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 Widget _buildApp() {
   const LocalStorageService localStorage = LocalStorageService();
-  final AppStateRepository repository =
-      AppStateRepository(localStorage: localStorage);
+  final AppStateRepository repository = AppStateRepository(
+    localStorage: localStorage,
+  );
   return MultiProvider(
     providers: <ChangeNotifierProvider<dynamic>>[
       ChangeNotifierProvider<AppStateController>(
@@ -74,7 +83,7 @@ Map<String, dynamic> _baseState() {
     'lastRollover': '',
     'categories': <String, dynamic>{
       'income': <String>['Salary'],
-      'expense': <String>['Food & Dining']
+      'expense': <String>['Food & Dining'],
     },
     'zakatPaidMonths': <dynamic>[],
     'processedExpenseIds': <dynamic>[],
@@ -89,7 +98,7 @@ Map<String, dynamic> _baseState() {
       'SILVER_PRICE_EGP': 40,
       'USD_TO_EGP': 50,
       'SAR_TO_EGP': 13.5,
-      'RATES_TO_EGP': <String, dynamic>{'EGP': 1, 'USD': 50, 'SAR': 13.5}
+      'RATES_TO_EGP': <String, dynamic>{'EGP': 1, 'USD': 50, 'SAR': 13.5},
     },
     'marketHistory': <dynamic>[],
     'syncHealth': <String, dynamic>{
@@ -133,8 +142,9 @@ void main() {
     expect(find.text('Zakat Schedule'), findsOneWidget);
   });
 
-  testWidgets('monthly schedule renders with sample data',
-      (WidgetTester tester) async {
+  testWidgets('monthly schedule renders with sample data', (
+    WidgetTester tester,
+  ) async {
     final Map<String, dynamic> state = _baseState();
     state['zakatMethod'] = 'hawl';
     state['transactions'] = <Map<String, dynamic>>[
@@ -148,7 +158,7 @@ void main() {
         'description': 'income',
         'createdAt': '2024-01-01T00:00:00.000Z',
         'rolledOver': false,
-      }
+      },
     ];
 
     await _seedState(state);
@@ -161,8 +171,9 @@ void main() {
     expect(find.byType(ExpansionTile), findsWidgets);
   });
 
-  testWidgets('annual schedule renders with sample data',
-      (WidgetTester tester) async {
+  testWidgets('annual schedule renders with sample data', (
+    WidgetTester tester,
+  ) async {
     final Map<String, dynamic> state = _baseState();
     state['zakatMethod'] = 'annual';
     state['zakatAnnualDate'] = '09-01';
@@ -177,7 +188,7 @@ void main() {
         'description': 'income',
         'createdAt': '2020-01-01T00:00:00.000Z',
         'rolledOver': false,
-      }
+      },
     ];
 
     await _seedState(state);
@@ -201,8 +212,9 @@ void main() {
     expect(find.textContaining('hawl and nisab'), findsOneWidget);
   });
 
-  testWidgets('dashboard tap navigates to schedule',
-      (WidgetTester tester) async {
+  testWidgets('dashboard tap navigates to schedule', (
+    WidgetTester tester,
+  ) async {
     final Map<String, dynamic> state = _baseState();
     state['transactions'] = <Map<String, dynamic>>[
       <String, dynamic>{
@@ -215,7 +227,7 @@ void main() {
         'description': 'income',
         'createdAt': '2024-01-01T00:00:00.000Z',
         'rolledOver': false,
-      }
+      },
     ];
 
     await _seedState(state);

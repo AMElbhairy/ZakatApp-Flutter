@@ -17,10 +17,45 @@ class AppLocalizations {
       'brand_tagline': 'Track Wealth. Calculate Zakat.',
       'brand_trust_message':
           'Sign in to securely backup and restore your wealth data.',
-      'login_intro': 'Continue with your trusted account',
+      'login_intro': 'Continue with your account',
+      'create_account_title': 'Create your secure account',
       'continue_with_google': 'Continue with Google',
       'continue_with_apple': 'Continue with Apple',
+      'sign_in_with_email': 'Sign in with Email',
+      'create_account': 'Create Account',
+      'email_address': 'Email address',
+      'password': 'Password',
+      'confirm_password': 'Confirm password',
+      'full_name': 'Full name',
+      'forgot_password': 'Forgot password?',
+      'need_account': 'Need an account? Create one',
+      'already_have_account': 'Already have an account? Sign in',
+      'or_continue_with': 'or continue with',
+      'password_requirements': 'Use at least 8 characters.',
+      'email_required': 'Email is required.',
+      'email_invalid': 'Please enter a valid email address.',
+      'password_required': 'Password is required.',
+      'full_name_required': 'Full name is required.',
+      'password_too_short': 'Password must be at least 8 characters.',
+      'confirm_password_required': 'Please confirm your password.',
+      'passwords_do_not_match': 'Passwords do not match.',
+      'enter_email_for_reset': 'Enter your email address first.',
+      'password_reset_sent': 'Password reset email sent.',
+      'signup_verification_sent':
+          'Account created. Verification email requested. Check inbox, spam, and promotions.',
       'login_note': 'Your data is protected and restored across your devices.',
+      'verify_email_title': 'Verify your email',
+      'verify_email_message':
+          'We sent a verification email to {email}. Verify your email, then come back and refresh.',
+      'refresh_verification_status': 'I verified my email',
+      'verify_email_still_pending': 'Email is not verified yet.',
+      'resend_verification_email': 'Resend verification email',
+      'resend_verification_email_in': 'Resend verification email in {seconds}s',
+      'verification_email_sent': 'Verification email sent.',
+      'verification_email_delivery_hint':
+          'If you do not receive it, check your inbox, spam, or promotions.',
+      'verification_email_rate_limited':
+          'Too many resend attempts. Wait a while before trying again.',
       'apple_signin_unavailable':
           'Apple Sign In is available on iPhone and iPad.',
       'loading_title': 'Preparing your secure account',
@@ -28,6 +63,7 @@ class AppLocalizations {
       'checking_cloud_backup': 'Checking cloud backup',
       'loading_entries': 'Loading entries',
       'loading_assets': 'Loading assets',
+      'loading_market_data': 'Loading market data',
       'loading_plans': 'Loading plans',
       'backup_date_unknown': 'Backup date unknown',
       'backup_date': 'Backup date',
@@ -146,6 +182,7 @@ class AppLocalizations {
       'theme_dark': 'Dark',
       'backup_sync_section': 'Backup & Sync',
       'categories_section': 'Categories',
+      'merchant_rules_section': 'Merchant Rules',
       'categories_manage': 'Manage categories',
       'income_categories': 'Income Categories',
       'expense_categories': 'Expense Categories',
@@ -158,13 +195,13 @@ class AppLocalizations {
       'day_of_month': 'Day of month',
       'security_section': 'Security',
       'danger_zone': 'Danger Zone',
-      'delete_all_data': 'Delete All Data',
-      'delete_all_confirm':
-          'This will permanently clear all local data on this device.',
+      'delete_account': 'Delete Account',
+      'delete_account_confirm':
+          'This will permanently delete your local data and cloud data for this account.',
       'ai_section': 'AI',
       'coming_soon': 'Coming soon',
       'ai_coming_soon': 'AI key settings are not enabled in this build.',
-      'drive_backup_coming_soon': 'Google Drive backup not available yet.',
+      'drive_backup_coming_soon': 'Cloud sync is handled automatically.',
       'about_section': 'About',
       'language_label': 'Language',
       'main_currency': 'Main Currency',
@@ -346,6 +383,36 @@ class AppLocalizations {
           'Add expenses to see spending insights.',
       'expense_analysis_screen_coming_soon':
           'Expense Analysis screen coming soon',
+      'savings_category': 'Savings',
+      'zakat_category': 'Zakat',
+      'salary': 'Salary',
+      'freelance': 'Freelance',
+      'business': 'Business',
+      'investment returns': 'Investment Returns',
+      'rental income': 'Rental Income',
+      'gift': 'Gift',
+      'bonus': 'Bonus',
+      'other income': 'Other Income',
+      'food & dining': 'Food & Dining',
+      'groceries': 'Groceries',
+      'housing & rent': 'Housing & Rent',
+      'utilities': 'Utilities',
+      'internet & phone': 'Internet & Phone',
+      'transportation': 'Transportation',
+      'fuel & parking': 'Fuel & Parking',
+      'healthcare': 'Healthcare',
+      'education': 'Education',
+      'clothing & apparel': 'Clothing & Apparel',
+      'entertainment': 'Entertainment',
+      'travel': 'Travel',
+      'shopping': 'Shopping',
+      'home maintenance': 'Home Maintenance',
+      'insurance': 'Insurance',
+      'charitable giving': 'Charitable Giving',
+      'childcare': 'Childcare',
+      'subscriptions': 'Subscriptions',
+      'loan payment': 'Loan Payment',
+      'other': 'Other',
     },
     'ar': <String, String>{
       'brand_title': 'Zakah Wealth',
@@ -353,9 +420,44 @@ class AppLocalizations {
       'brand_trust_message':
           'سجّل الدخول لنسخ بيانات الثروة احتياطياً واستعادتها بأمان.',
       'login_intro': 'تابع باستخدام حسابك الموثوق',
+      'create_account_title': 'أنشئ حسابك الآمن',
       'continue_with_google': 'المتابعة باستخدام Google',
       'continue_with_apple': 'المتابعة باستخدام Apple',
+      'sign_in_with_email': 'تسجيل الدخول بالبريد الإلكتروني',
+      'create_account': 'إنشاء حساب',
+      'email_address': 'البريد الإلكتروني',
+      'password': 'كلمة المرور',
+      'confirm_password': 'تأكيد كلمة المرور',
+      'full_name': 'الاسم الكامل',
+      'forgot_password': 'هل نسيت كلمة المرور؟',
+      'need_account': 'ليس لديك حساب؟ أنشئ حساباً',
+      'already_have_account': 'لديك حساب بالفعل؟ سجل الدخول',
+      'or_continue_with': 'أو تابع باستخدام',
+      'password_requirements': 'استخدم 8 أحرف على الأقل.',
+      'email_required': 'البريد الإلكتروني مطلوب.',
+      'email_invalid': 'الرجاء إدخال بريد إلكتروني صالح.',
+      'password_required': 'كلمة المرور مطلوبة.',
+      'full_name_required': 'الاسم الكامل مطلوب.',
+      'password_too_short': 'يجب أن تكون كلمة المرور 8 أحرف على الأقل.',
+      'confirm_password_required': 'الرجاء تأكيد كلمة المرور.',
+      'passwords_do_not_match': 'كلمتا المرور غير متطابقتين.',
+      'enter_email_for_reset': 'أدخل بريدك الإلكتروني أولاً.',
+      'password_reset_sent': 'تم إرسال رسالة إعادة تعيين كلمة المرور.',
+      'signup_verification_sent':
+          'تم إنشاء الحساب وطلب رسالة التحقق. افحص البريد الوارد والرسائل غير المرغوب فيها والعروض.',
       'login_note': 'بياناتك محمية وتتم استعادتها عبر أجهزتك.',
+      'verify_email_title': 'تحقق من بريدك الإلكتروني',
+      'verify_email_message':
+          'أرسلنا رسالة تحقق إلى {email}. تحقق من بريدك ثم عد واضغط تحديث.',
+      'refresh_verification_status': 'لقد تحققت من بريدي',
+      'verify_email_still_pending': 'لم يتم التحقق من البريد الإلكتروني بعد.',
+      'resend_verification_email': 'إعادة إرسال رسالة التحقق',
+      'resend_verification_email_in': 'أعد إرسال رسالة التحقق خلال {seconds} ث',
+      'verification_email_sent': 'تم إرسال رسالة التحقق.',
+      'verification_email_delivery_hint':
+          'إذا لم تصلك الرسالة، فتحقق من البريد الوارد أو الرسائل غير المرغوب فيها أو العروض.',
+      'verification_email_rate_limited':
+          'تمت محاولة الإرسال مرات كثيرة. انتظر قليلًا قبل إعادة المحاولة.',
       'apple_signin_unavailable':
           'تسجيل الدخول عبر Apple متاح على iPhone وiPad.',
       'loading_title': 'جارٍ تجهيز حسابك الآمن',
@@ -363,6 +465,7 @@ class AppLocalizations {
       'checking_cloud_backup': 'جارٍ فحص النسخة الاحتياطية السحابية',
       'loading_entries': 'جارٍ تحميل القيود',
       'loading_assets': 'جارٍ تحميل الأصول',
+      'loading_market_data': 'جارٍ تحميل بيانات السوق',
       'loading_plans': 'جارٍ تحميل الخطط',
       'backup_date_unknown': 'تاريخ النسخة الاحتياطية غير معروف',
       'backup_date': 'تاريخ النسخة الاحتياطية',
@@ -481,6 +584,7 @@ class AppLocalizations {
       'theme_dark': 'داكن',
       'backup_sync_section': 'النسخ الاحتياطي والمزامنة',
       'categories_section': 'الفئات',
+      'merchant_rules_section': 'قواعد التجار',
       'categories_manage': 'إدارة الفئات',
       'income_categories': 'فئات الدخل',
       'expense_categories': 'فئات المصروفات',
@@ -492,14 +596,14 @@ class AppLocalizations {
       'day_of_month': 'اليوم من الشهر',
       'security_section': 'الأمان',
       'danger_zone': 'منطقة الخطر',
-      'delete_all_data': 'حذف جميع البيانات',
-      'delete_all_confirm':
-          'سيؤدي هذا إلى مسح جميع البيانات المحلية على هذا الجهاز بشكل دائم.',
+      'delete_account': 'حذف الحساب',
+      'delete_account_confirm':
+          'سيؤدي هذا إلى حذف بياناتك المحلية وبياناتك السحابية لهذا الحساب بشكل دائم.',
       'ai_section': 'الذكاء الاصطناعي',
       'coming_soon': 'قريباً',
       'ai_coming_soon':
           'إعدادات مفتاح الذكاء الاصطناعي غير مفعّلة في هذه النسخة',
-      'drive_backup_coming_soon': 'النسخ الاحتياطي على جوجل درايف غير متاح بعد',
+      'drive_backup_coming_soon': 'تتم المزامنة السحابية تلقائياً.',
       'about_section': 'حول التطبيق',
       'language_label': 'اللغة',
       'main_currency': 'العملة الرئيسية',
@@ -678,6 +782,40 @@ class AppLocalizations {
           'أضف مصروفات لعرض تفاصيل الإنفاق.',
       'expense_analysis_screen_coming_soon':
           'شاشة تحليل المصروفات ستتوفر قريباً',
+
+      // Default Income Categories
+      'salary': 'الراتب',
+      'freelance': 'العمل الحر',
+      'business': 'العمل التجاري',
+      'investment returns': 'عوائد الاستثمار',
+      'rental income': 'إيراد الإيجار',
+      'gift': 'هدية',
+      'bonus': 'مكافأة',
+      'savings_category': 'المدخرات',
+      'other income': 'دخل آخر',
+
+      // Default Expense Categories
+      'food & dining': 'الطعام والشراب',
+      'groceries': 'البقالة',
+      'housing & rent': 'السكن والإيجار',
+      'utilities': 'المرافق والخدمات',
+      'internet & phone': 'الإنترنت والهاتف',
+      'transportation': 'المواصلات',
+      'fuel & parking': 'الوقود والمواقف',
+      'healthcare': 'الرعاية الصحية',
+      'education': 'التعليم',
+      'clothing & apparel': 'الملابس والكسوة',
+      'entertainment': 'الترفيه',
+      'travel': 'السفر',
+      'shopping': 'التسوق',
+      'home maintenance': 'صيانة المنزل',
+      'insurance': 'التأمين',
+      'charitable giving': 'التبرعات والصدقات',
+      'zakat_category': 'الزكاة',
+      'childcare': 'رعاية الأطفال',
+      'subscriptions': 'الاشتراكات',
+      'loan payment': 'سداد القروض',
+      'other': 'أخرى',
     },
   };
 
@@ -694,6 +832,30 @@ class AppLocalizations {
         ? locale.languageCode
         : 'en';
     return _values[lang]?[key] ?? _values['en']?[key] ?? key;
+  }
+
+  String translateCategory(String categoryName) {
+    final String clean = categoryName.trim();
+    final String lower = clean.toLowerCase();
+    String key = lower;
+    if (lower == 'savings') {
+      key = 'savings_category';
+    } else if (lower == 'zakat') {
+      key = 'zakat_category';
+    }
+
+    final String lang = _values.containsKey(locale.languageCode)
+        ? locale.languageCode
+        : 'en';
+
+    // Check if the lowercase string exists in our localization map for English.
+    // If it does, we treat it as a default category and translate it.
+    // If it does not, we return the original name (as it is user-added/custom).
+    final bool isDefaultCategory = _values['en']?.containsKey(key) ?? false;
+    if (isDefaultCategory) {
+      return _values[lang]?[key] ?? _values['en']?[key] ?? categoryName;
+    }
+    return categoryName;
   }
 
   static AppLocalizations of(BuildContext context) {

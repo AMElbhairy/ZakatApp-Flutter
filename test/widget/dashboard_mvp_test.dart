@@ -34,10 +34,18 @@ class _FakeAuthService implements AuthService {
   Future<UserProfile?> restoreSession() async => null;
 
   @override
-  Future<UserProfile?> signIn({AuthProvider provider = AuthProvider.google}) async => null;
+  Future<UserProfile?> signIn({
+    AuthProvider provider = AuthProvider.google,
+  }) async => null;
 
   @override
   Future<void> signOut() async {}
+
+  @override
+  Future<void> deleteAccount() async {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 Map<String, dynamic> _seedStateWithMarketData() {
@@ -688,204 +696,331 @@ void main() {
     );
   });
 
-  testWidgets('Top Expense Categories widget displays empty state when no expenses', (WidgetTester tester) async {
-    final Map<String, dynamic> seeded = _seedStateWithMarketData();
-    // Seed one income transaction to make hasAnyData = true so the dashboard loads instead of the empty card
-    seeded['transactions'] = <Map<String, dynamic>>[
-      _transactionJson(
-        id: 'income1',
-        type: 'income',
-        date: '2026-06-01',
-        amount: 10000,
-      ),
-    ];
-    
-    SharedPreferences.setMockInitialValues(<String, Object>{
-      'zakatAppData': jsonEncode(seeded),
-    });
-    await tester.pumpWidget(_buildApp());
-    await tester.pumpAndSettle();
-    
-    await _scrollToText(tester, 'Top Expense Categories');
-    expect(find.text('Top Expense Categories'), findsOneWidget);
-    expect(find.text('Add expenses to see spending insights.'), findsOneWidget);
-  });
+  testWidgets(
+    'Top Expense Categories widget displays empty state when no expenses',
+    (WidgetTester tester) async {
+      final Map<String, dynamic> seeded = _seedStateWithMarketData();
+      // Seed one income transaction to make hasAnyData = true so the dashboard loads instead of the empty card
+      seeded['transactions'] = <Map<String, dynamic>>[
+        _transactionJson(
+          id: 'income1',
+          type: 'income',
+          date: '2026-06-01',
+          amount: 10000,
+        ),
+      ];
 
-  testWidgets('Top Expense Categories widget displays categories, percentages, amounts, and progress bars correctly', (WidgetTester tester) async {
-    final Map<String, dynamic> seeded = _seedStateWithMarketData();
-    final int year = DateTime.now().year;
-    final int month = DateTime.now().month;
-    final String currentMonthStr = month < 10 ? '0$month' : '$month';
-    final String prevMonthStr = month == 1 ? '12' : (month - 1 < 10 ? '0${month - 1}' : '${month - 1}');
-    final int prevYear = month == 1 ? year - 1 : year;
-    
-    seeded['transactions'] = <Map<String, dynamic>>[
-      <String, dynamic>{
-        ..._transactionJson(id: 'rent', type: 'expense', date: '$year-$currentMonthStr-05', amount: 4000),
-        'category': 'Rent',
-      },
-      <String, dynamic>{
-        ..._transactionJson(id: 'food', type: 'expense', date: '$year-$currentMonthStr-06', amount: 3000),
-        'category': 'Food',
-      },
-      <String, dynamic>{
-        ..._transactionJson(id: 'shopping', type: 'expense', date: '$year-$currentMonthStr-07', amount: 2000),
-        'category': 'Shopping',
-      },
-      <String, dynamic>{
-        ..._transactionJson(id: 'transport', type: 'expense', date: '$year-$currentMonthStr-08', amount: 1000),
-        'category': 'Transport',
-      },
-      <String, dynamic>{
-        ..._transactionJson(id: 'other', type: 'expense', date: '$year-$currentMonthStr-09', amount: 500),
-        'category': 'Other',
-      },
-      <String, dynamic>{
-        ..._transactionJson(id: 'prev_month', type: 'expense', date: '$prevYear-$prevMonthStr-15', amount: 5000),
-        'category': 'Rent',
-      },
-    ];
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'zakatAppData': jsonEncode(seeded),
+      });
+      await tester.pumpWidget(_buildApp());
+      await tester.pumpAndSettle();
 
-    SharedPreferences.setMockInitialValues(<String, Object>{
-      'zakatAppData': jsonEncode(seeded),
-    });
-    
-    await tester.pumpWidget(_buildApp());
-    await tester.pumpAndSettle();
-    await _scrollToText(tester, 'Top Expense Categories');
+      await _scrollToText(tester, 'Top Expense Categories');
+      expect(find.text('Top Expense Categories'), findsOneWidget);
+      expect(
+        find.text('Add expenses to see spending insights.'),
+        findsOneWidget,
+      );
+    },
+  );
 
-    // Verify header title and subtitle
-    expect(find.text('Top Expense Categories'), findsOneWidget);
-    expect(
-      find.descendant(
-        of: find.byWidgetPredicate((w) => w.runtimeType.toString() == '_TopExpenseCategoriesCard'),
-        matching: find.text('This Month'),
-      ),
-      findsOneWidget,
-    );
+  testWidgets(
+    'Top Expense Categories widget displays categories, percentages, amounts, and progress bars correctly',
+    (WidgetTester tester) async {
+      final Map<String, dynamic> seeded = _seedStateWithMarketData();
+      final int year = DateTime.now().year;
+      final int month = DateTime.now().month;
+      final String currentMonthStr = month < 10 ? '0$month' : '$month';
+      final String prevMonthStr = month == 1
+          ? '12'
+          : (month - 1 < 10 ? '0${month - 1}' : '${month - 1}');
+      final int prevYear = month == 1 ? year - 1 : year;
 
-    final Finder cardFinder = find.byWidgetPredicate((w) => w.runtimeType.toString() == '_TopExpenseCategoriesCard');
+      seeded['transactions'] = <Map<String, dynamic>>[
+        <String, dynamic>{
+          ..._transactionJson(
+            id: 'rent',
+            type: 'expense',
+            date: '$year-$currentMonthStr-05',
+            amount: 4000,
+          ),
+          'category': 'Rent',
+        },
+        <String, dynamic>{
+          ..._transactionJson(
+            id: 'food',
+            type: 'expense',
+            date: '$year-$currentMonthStr-06',
+            amount: 3000,
+          ),
+          'category': 'Food',
+        },
+        <String, dynamic>{
+          ..._transactionJson(
+            id: 'shopping',
+            type: 'expense',
+            date: '$year-$currentMonthStr-07',
+            amount: 2000,
+          ),
+          'category': 'Shopping',
+        },
+        <String, dynamic>{
+          ..._transactionJson(
+            id: 'transport',
+            type: 'expense',
+            date: '$year-$currentMonthStr-08',
+            amount: 1000,
+          ),
+          'category': 'Transport',
+        },
+        <String, dynamic>{
+          ..._transactionJson(
+            id: 'other',
+            type: 'expense',
+            date: '$year-$currentMonthStr-09',
+            amount: 500,
+          ),
+          'category': 'Other',
+        },
+        <String, dynamic>{
+          ..._transactionJson(
+            id: 'prev_month',
+            type: 'expense',
+            date: '$prevYear-$prevMonthStr-15',
+            amount: 5000,
+          ),
+          'category': 'Rent',
+        },
+      ];
 
-    // Verify top 4 categories are displayed
-    expect(find.descendant(of: cardFinder, matching: find.text('Rent')), findsOneWidget);
-    expect(find.descendant(of: cardFinder, matching: find.text('Food')), findsOneWidget);
-    expect(find.descendant(of: cardFinder, matching: find.text('Shopping')), findsOneWidget);
-    expect(find.descendant(of: cardFinder, matching: find.text('Transport')), findsOneWidget);
-    
-    // Verify 5th category (Other) is NOT displayed
-    expect(find.descendant(of: cardFinder, matching: find.text('Other')), findsNothing);
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'zakatAppData': jsonEncode(seeded),
+      });
 
-    // Verify percentages
-    // Rent: 4000 / 10500 = 38%
-    // Food: 3000 / 10500 = 29%
-    // Shopping: 2000 / 10500 = 19%
-    // Transport: 1000 / 10500 = 10%
-    expect(find.descendant(of: cardFinder, matching: find.text('38%')), findsOneWidget);
-    expect(find.descendant(of: cardFinder, matching: find.text('29%')), findsOneWidget);
-    expect(find.descendant(of: cardFinder, matching: find.text('19%')), findsOneWidget);
-    expect(find.descendant(of: cardFinder, matching: find.text('10%')), findsOneWidget);
+      await tester.pumpWidget(_buildApp());
+      await tester.pumpAndSettle();
+      await _scrollToText(tester, 'Top Expense Categories');
 
-    // Verify amounts formatted without decimals
-    expect(find.descendant(of: cardFinder, matching: find.textContaining('4,000')), findsOneWidget);
-    expect(find.descendant(of: cardFinder, matching: find.textContaining('3,000')), findsOneWidget);
-    expect(find.descendant(of: cardFinder, matching: find.textContaining('2,000')), findsOneWidget);
-    expect(find.descendant(of: cardFinder, matching: find.textContaining('1,000')), findsOneWidget);
+      // Verify header title and subtitle
+      expect(find.text('Top Expense Categories'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byWidgetPredicate(
+            (w) => w.runtimeType.toString() == '_TopExpenseCategoriesCard',
+          ),
+          matching: find.text('This Month'),
+        ),
+        findsOneWidget,
+      );
 
-    // Click on the widget and verify snackbar
-    await tester.tap(find.text('Top Expense Categories'));
-    await tester.pump();
-    
-    expect(find.text('Expense Analysis screen coming soon'), findsOneWidget);
-    
-    // Allow the toast dismissal timer to complete and fade out by advancing the clock
-    await tester.pump(const Duration(seconds: 5));
-  });
+      final Finder cardFinder = find.byWidgetPredicate(
+        (w) => w.runtimeType.toString() == '_TopExpenseCategoriesCard',
+      );
 
-  testWidgets('Top Expense Categories excludes transfers and Recent Activity displays transfers in gold styling', (WidgetTester tester) async {
-    final Map<String, dynamic> seeded = _seedStateWithMarketData();
-    final int year = DateTime.now().year;
-    final int month = DateTime.now().month;
-    final String currentMonthStr = month < 10 ? '0$month' : '$month';
-    
-    seeded['transactions'] = <Map<String, dynamic>>[
-      // Expense that should show in Top Expense Categories
-      <String, dynamic>{
-        ..._transactionJson(id: 'food', type: 'expense', date: '$year-$currentMonthStr-06', amount: 3000),
-        'category': 'Food',
-      },
-      // Currency Exchange Transfer that should NOT show in Top Expense Categories but SHOULD show in Recent Activity
-      <String, dynamic>{
-        ..._transactionJson(id: 'ex_out', type: 'expense', date: '$year-$currentMonthStr-07', amount: 5000),
-        'category': 'Currency Exchange',
-        'exchangePairId': 'ex_pair_1',
-        'currency': 'SAR',
-      },
-      <String, dynamic>{
-        ..._transactionJson(id: 'ex_in', type: 'income', date: '$year-$currentMonthStr-07', amount: 1333),
-        'category': 'Currency Exchange',
-        'exchangePairId': 'ex_pair_1',
-        'currency': 'USD',
-      },
-      // Gold Purchase Transfer that should NOT show in Top Expense Categories
-      <String, dynamic>{
-        ..._transactionJson(id: 'gold_out', type: 'expense', date: '$year-$currentMonthStr-08', amount: 2000),
-        'category': 'Gold Purchase',
-        'exchangePairId': 'gold_saving_1',
-        'currency': 'SAR',
-      },
-    ];
+      // Verify top 4 categories are displayed
+      expect(
+        find.descendant(of: cardFinder, matching: find.text('Rent')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: cardFinder, matching: find.text('Food')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: cardFinder, matching: find.text('Shopping')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: cardFinder, matching: find.text('Transport')),
+        findsOneWidget,
+      );
 
-    // Seed one gold purchase in savings to form the gold transfer description
-    seeded['savings'] = <Map<String, dynamic>>[
-      <String, dynamic>{
-        'id': 'gold_saving_1',
-        'assetType': 'gold',
-        'dateAcquired': '$year-$currentMonthStr-08',
-        'amount': 3.2,
-        'remainingAmount': 3.2,
-        'unit': 'g',
-        'description': 'Gold acquired',
-        'purchaseCurrency': 'SAR',
-        'purchaseAmount': 2000.0,
-        'fundingAllocations': <Map<String, dynamic>>[
-          <String, dynamic>{
-            'sourceSavingId': 'some_source_id',
-            'amount': 2000.0,
-          }
-        ],
-        'createdAt': '$year-$currentMonthStr-08T00:00:00.000Z',
-      }
-    ];
+      // Verify 5th category (Other) is NOT displayed
+      expect(
+        find.descendant(of: cardFinder, matching: find.text('Other')),
+        findsNothing,
+      );
 
-    SharedPreferences.setMockInitialValues(<String, Object>{
-      'zakatAppData': jsonEncode(seeded),
-    });
-    
-    await tester.pumpWidget(_buildApp());
-    await tester.pumpAndSettle();
-    
-    // 1. Verify Top Expense Categories excludes transfers
-    await _scrollToText(tester, 'Top Expense Categories');
-    final Finder cardFinder = find.byWidgetPredicate((w) => w.runtimeType.toString() == '_TopExpenseCategoriesCard');
-    
-    // Food category should be displayed (100% of total expenses, since transfers are excluded)
-    expect(find.descendant(of: cardFinder, matching: find.text('Food')), findsOneWidget);
-    expect(find.descendant(of: cardFinder, matching: find.text('100%')), findsOneWidget);
-    
-    // Transfers must NOT be listed in Top Expense Categories
-    expect(find.descendant(of: cardFinder, matching: find.text('Currency Exchange')), findsNothing);
-    expect(find.descendant(of: cardFinder, matching: find.text('Gold Purchase')), findsNothing);
+      // Verify percentages
+      // Rent: 4000 / 10500 = 38%
+      // Food: 3000 / 10500 = 29%
+      // Shopping: 2000 / 10500 = 19%
+      // Transport: 1000 / 10500 = 10%
+      expect(
+        find.descendant(of: cardFinder, matching: find.text('38%')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: cardFinder, matching: find.text('29%')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: cardFinder, matching: find.text('19%')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: cardFinder, matching: find.text('10%')),
+        findsOneWidget,
+      );
 
-    // 2. Verify Recent Activity displays the grouped transfers
-    await _scrollToText(tester, 'Recent Activity');
-    
-    // Currency Exchange grouped row is present
-    expect(find.text('Currency Exchange'), findsOneWidget);
-    expect(find.text('SAR 5,000 → USD 1,333'), findsOneWidget);
-    expect(find.byKey(const Key('dashboardRecentTransferIcon')), findsWidgets);
-    
-    // Gold Purchase grouped row is present
-    expect(find.text('Gold Purchase'), findsOneWidget);
-    expect(find.text('3.2g Gold • SAR 2,000'), findsOneWidget);
-  });
+      // Verify amounts formatted without decimals
+      expect(
+        find.descendant(of: cardFinder, matching: find.textContaining('4,000')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: cardFinder, matching: find.textContaining('3,000')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: cardFinder, matching: find.textContaining('2,000')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: cardFinder, matching: find.textContaining('1,000')),
+        findsOneWidget,
+      );
+
+      // Click on the widget and verify snackbar
+      await tester.tap(find.text('Top Expense Categories'));
+      await tester.pump();
+
+      expect(find.text('Expense Analysis screen coming soon'), findsOneWidget);
+
+      // Allow the toast dismissal timer to complete and fade out by advancing the clock
+      await tester.pump(const Duration(seconds: 5));
+    },
+  );
+
+  testWidgets(
+    'Top Expense Categories excludes transfers and Recent Activity displays transfers in gold styling',
+    (WidgetTester tester) async {
+      final Map<String, dynamic> seeded = _seedStateWithMarketData();
+      final int year = DateTime.now().year;
+      final int month = DateTime.now().month;
+      final String currentMonthStr = month < 10 ? '0$month' : '$month';
+
+      seeded['transactions'] = <Map<String, dynamic>>[
+        // Expense that should show in Top Expense Categories
+        <String, dynamic>{
+          ..._transactionJson(
+            id: 'food',
+            type: 'expense',
+            date: '$year-$currentMonthStr-06',
+            amount: 3000,
+          ),
+          'category': 'Food',
+        },
+        // Currency Exchange Transfer that should NOT show in Top Expense Categories but SHOULD show in Recent Activity
+        <String, dynamic>{
+          ..._transactionJson(
+            id: 'ex_out',
+            type: 'expense',
+            date: '$year-$currentMonthStr-07',
+            amount: 5000,
+          ),
+          'category': 'Currency Exchange',
+          'exchangePairId': 'ex_pair_1',
+          'currency': 'SAR',
+        },
+        <String, dynamic>{
+          ..._transactionJson(
+            id: 'ex_in',
+            type: 'income',
+            date: '$year-$currentMonthStr-07',
+            amount: 1333,
+          ),
+          'category': 'Currency Exchange',
+          'exchangePairId': 'ex_pair_1',
+          'currency': 'USD',
+        },
+        // Gold Purchase Transfer that should NOT show in Top Expense Categories
+        <String, dynamic>{
+          ..._transactionJson(
+            id: 'gold_out',
+            type: 'expense',
+            date: '$year-$currentMonthStr-08',
+            amount: 2000,
+          ),
+          'category': 'Gold Purchase',
+          'exchangePairId': 'gold_saving_1',
+          'currency': 'SAR',
+        },
+      ];
+
+      // Seed one gold purchase in savings to form the gold transfer description
+      seeded['savings'] = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'id': 'gold_saving_1',
+          'assetType': 'gold',
+          'dateAcquired': '$year-$currentMonthStr-08',
+          'amount': 3.2,
+          'remainingAmount': 3.2,
+          'unit': 'g',
+          'description': 'Gold acquired',
+          'purchaseCurrency': 'SAR',
+          'purchaseAmount': 2000.0,
+          'fundingAllocations': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'sourceSavingId': 'some_source_id',
+              'amount': 2000.0,
+            },
+          ],
+          'createdAt': '$year-$currentMonthStr-08T00:00:00.000Z',
+        },
+      ];
+
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'zakatAppData': jsonEncode(seeded),
+      });
+
+      await tester.pumpWidget(_buildApp());
+      await tester.pumpAndSettle();
+
+      // 1. Verify Top Expense Categories excludes transfers
+      await _scrollToText(tester, 'Top Expense Categories');
+      final Finder cardFinder = find.byWidgetPredicate(
+        (w) => w.runtimeType.toString() == '_TopExpenseCategoriesCard',
+      );
+
+      // Food category should be displayed (100% of total expenses, since transfers are excluded)
+      expect(
+        find.descendant(of: cardFinder, matching: find.text('Food')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: cardFinder, matching: find.text('100%')),
+        findsOneWidget,
+      );
+
+      // Transfers must NOT be listed in Top Expense Categories
+      expect(
+        find.descendant(
+          of: cardFinder,
+          matching: find.text('Currency Exchange'),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: cardFinder, matching: find.text('Gold Purchase')),
+        findsNothing,
+      );
+
+      // 2. Verify Recent Activity displays the grouped transfers
+      await _scrollToText(tester, 'Recent Activity');
+
+      // Currency Exchange grouped row is present
+      expect(find.text('Currency Exchange'), findsOneWidget);
+      expect(find.text('SAR 5,000 → USD 1,333'), findsOneWidget);
+      expect(
+        find.byKey(const Key('dashboardRecentTransferIcon')),
+        findsWidgets,
+      );
+
+      // Gold Purchase grouped row is present
+      expect(find.text('Gold Purchase'), findsOneWidget);
+      expect(find.text('3.2g Gold • SAR 2,000'), findsOneWidget);
+    },
+  );
 }

@@ -9,6 +9,7 @@ import '../../models/merchant_rule.dart';
 import '../../models/pending_transaction.dart';
 import '../../services/app_state_controller.dart';
 import '../../services/smart_capture_parser.dart';
+import '../../core/i18n/app_localizations.dart';
 
 class ReviewPendingTransactionScreen extends StatefulWidget {
   const ReviewPendingTransactionScreen({
@@ -159,7 +160,6 @@ class _ReviewPendingTransactionScreenState
     if (!_formKey.currentState!.validate()) return;
 
     final controller = context.read<AppStateController>();
-    final tokens = context.premiumTokens;
     final amount = double.tryParse(_amountController.text) ?? 0.0;
     final dateStr = DateFormat('yyyy-MM-dd').format(_selectedDate);
     final p = widget.pendingTransaction;
@@ -213,7 +213,6 @@ class _ReviewPendingTransactionScreenState
 
   void _reject() async {
     final controller = context.read<AppStateController>();
-    final tokens = context.premiumTokens;
     try {
       await controller.rejectPendingTransaction(widget.pendingTransaction.id);
       if (mounted) {
@@ -372,7 +371,7 @@ class _ReviewPendingTransactionScreenState
                           .map(
                             (String category) => DropdownMenuItem<String>(
                               value: category,
-                              child: Text(category),
+                              child: Text(context.l10n.translateCategory(category)),
                             ),
                           )
                           .toList(),
@@ -473,6 +472,9 @@ class _ReviewPendingTransactionScreenState
     final tokens = context.premiumTokens;
     final state = context.watch<AppStateController>().state;
     final availableCategories = _getAvailableCategories(state.categories);
+    final bool isApprovedCapture =
+        widget.pendingTransaction.status == CaptureStatus.autoApproved ||
+        widget.pendingTransaction.status == CaptureStatus.manuallyApproved;
 
     // If type requires category, and category is not in list, pick the first
     if ((_selectedType == 'expense' || _selectedType == 'income') &&
@@ -631,7 +633,7 @@ class _ReviewPendingTransactionScreenState
                         .map(
                           (c) => DropdownMenuItem<String>(
                             value: c,
-                            child: Text(c),
+                            child: Text(context.l10n.translateCategory(c)),
                           ),
                         )
                         .toList(),
@@ -685,75 +687,122 @@ class _ReviewPendingTransactionScreenState
                 const SizedBox(height: 30),
 
                 // Action Buttons
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                          side: BorderSide(color: tokens.colors.danger),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
+                if (isApprovedCapture)
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(color: tokens.colors.textSecondary),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
                           ),
-                        ),
-                        onPressed: _reject,
-                        child: Text(
-                          'Reject',
-                          style: TextStyle(
-                            color: tokens.colors.danger,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                          side: BorderSide(color: tokens.colors.gold),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        onPressed:
-                            widget.pendingTransaction.merchantName == null
-                            ? null
-                            : _createRuleFromReview,
-                        child: Text(
-                          'Create Rule',
-                          style: TextStyle(
-                            color: tokens.colors.gold,
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
+                          onPressed: () => Navigator.pop(context),
+                          child: Text(
+                            'Cancel',
+                            style: TextStyle(
+                              color: tokens.colors.textSecondary,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: tokens.colors.gold,
-                          foregroundColor: tokens.colors.hero,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: tokens.colors.gold,
+                            foregroundColor: tokens.colors.hero,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
                           ),
-                        ),
-                        onPressed: _approve,
-                        child: const Text(
-                          'Approve',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
+                          onPressed: _approve,
+                          child: const Text(
+                            'Save',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  )
+                else
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(color: tokens.colors.danger),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          onPressed: _reject,
+                          child: Text(
+                            'Reject',
+                            style: TextStyle(
+                              color: tokens.colors.danger,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(color: tokens.colors.gold),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          onPressed:
+                              widget.pendingTransaction.merchantName == null
+                              ? null
+                              : _createRuleFromReview,
+                          child: Text(
+                            'Create Rule',
+                            style: TextStyle(
+                              color: tokens.colors.gold,
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: tokens.colors.gold,
+                            foregroundColor: tokens.colors.hero,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          onPressed: _approve,
+                          child: const Text(
+                            'Approve',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
               ],
             ),
           ),

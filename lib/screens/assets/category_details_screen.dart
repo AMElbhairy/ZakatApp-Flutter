@@ -1824,7 +1824,10 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
           items: categories
               .map(
                 (String c) =>
-                    DropdownMenuItem<String>(value: c, child: Text(c)),
+                    DropdownMenuItem<String>(
+                  value: c,
+                  child: Text(ctx.l10n.translateCategory(c)),
+                ),
               )
               .toList(growable: false),
           onChanged: (String? v) => selected = v ?? selected,

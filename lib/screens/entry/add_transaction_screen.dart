@@ -252,7 +252,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                       .map(
                         (String category) => DropdownMenuItem<String>(
                           value: category,
-                          child: Text(category),
+                          child: Text(context.l10n.translateCategory(category)),
                         ),
                       )
                       .toList(growable: false),
@@ -939,7 +939,10 @@ class _ScannedTransactionsConfirmationDialogState
                       ),
                       items: widget.categories
                           .map(
-                            (c) => DropdownMenuItem(value: c, child: Text(c)),
+                            (c) => DropdownMenuItem(
+                              value: c,
+                              child: Text(context.l10n.translateCategory(c)),
+                            ),
                           )
                           .toList(),
                       onChanged: (val) {

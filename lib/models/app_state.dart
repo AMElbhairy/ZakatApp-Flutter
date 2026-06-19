@@ -321,12 +321,48 @@ class SyncHealth {
     required this.lastFailureAt,
     required this.lastError,
     required this.pendingWrites,
+    this.transactionsCursor = '',
+    this.deletedTransactionsCursor = '',
+    this.savingsCursor = '',
+    this.deletedSavingsCursor = '',
+    this.investmentsCursor = '',
+    this.deletedInvestmentsCursor = '',
+    this.captureInboxCursor = '',
+    this.deletedCaptureInboxCursor = '',
+    this.recurringTransactionsCursor = '',
+    this.deletedRecurringTransactionsCursor = '',
+    this.financialPlansCursor = '',
+    this.deletedFinancialPlansCursor = '',
+    this.correctionFeedbackCursor = '',
+    this.deletedCorrectionFeedbackCursor = '',
+    this.merchantConfirmationsCursor = '',
+    this.deletedMerchantConfirmationsCursor = '',
+    this.merchantRulesCursor = '',
+    this.deletedMerchantRulesCursor = '',
   });
 
   final String lastSuccessAt;
   final String lastFailureAt;
   final String lastError;
   final int pendingWrites;
+  final String transactionsCursor;
+  final String deletedTransactionsCursor;
+  final String savingsCursor;
+  final String deletedSavingsCursor;
+  final String investmentsCursor;
+  final String deletedInvestmentsCursor;
+  final String captureInboxCursor;
+  final String deletedCaptureInboxCursor;
+  final String recurringTransactionsCursor;
+  final String deletedRecurringTransactionsCursor;
+  final String financialPlansCursor;
+  final String deletedFinancialPlansCursor;
+  final String correctionFeedbackCursor;
+  final String deletedCorrectionFeedbackCursor;
+  final String merchantConfirmationsCursor;
+  final String deletedMerchantConfirmationsCursor;
+  final String merchantRulesCursor;
+  final String deletedMerchantRulesCursor;
 
   factory SyncHealth.fromJson(Map<String, dynamic> json) {
     return SyncHealth(
@@ -334,6 +370,35 @@ class SyncHealth {
       lastFailureAt: (json['lastFailureAt'] ?? '').toString(),
       lastError: (json['lastError'] ?? '').toString(),
       pendingWrites: _asInt(json['pendingWrites']),
+      transactionsCursor: (json['transactionsCursor'] ?? '').toString(),
+      deletedTransactionsCursor: (json['deletedTransactionsCursor'] ?? '')
+          .toString(),
+      savingsCursor: (json['savingsCursor'] ?? '').toString(),
+      deletedSavingsCursor: (json['deletedSavingsCursor'] ?? '').toString(),
+      investmentsCursor: (json['investmentsCursor'] ?? '').toString(),
+      deletedInvestmentsCursor: (json['deletedInvestmentsCursor'] ?? '')
+          .toString(),
+      captureInboxCursor: (json['captureInboxCursor'] ?? '').toString(),
+      deletedCaptureInboxCursor: (json['deletedCaptureInboxCursor'] ?? '')
+          .toString(),
+      recurringTransactionsCursor: (json['recurringTransactionsCursor'] ?? '')
+          .toString(),
+      deletedRecurringTransactionsCursor:
+          (json['deletedRecurringTransactionsCursor'] ?? '').toString(),
+      financialPlansCursor: (json['financialPlansCursor'] ?? '').toString(),
+      deletedFinancialPlansCursor: (json['deletedFinancialPlansCursor'] ?? '')
+          .toString(),
+      correctionFeedbackCursor: (json['correctionFeedbackCursor'] ?? '')
+          .toString(),
+      deletedCorrectionFeedbackCursor:
+          (json['deletedCorrectionFeedbackCursor'] ?? '').toString(),
+      merchantConfirmationsCursor: (json['merchantConfirmationsCursor'] ?? '')
+          .toString(),
+      deletedMerchantConfirmationsCursor:
+          (json['deletedMerchantConfirmationsCursor'] ?? '').toString(),
+      merchantRulesCursor: (json['merchantRulesCursor'] ?? '').toString(),
+      deletedMerchantRulesCursor: (json['deletedMerchantRulesCursor'] ?? '')
+          .toString(),
     );
   }
 
@@ -343,7 +408,89 @@ class SyncHealth {
       'lastFailureAt': lastFailureAt,
       'lastError': lastError,
       'pendingWrites': pendingWrites,
+      'transactionsCursor': transactionsCursor,
+      'deletedTransactionsCursor': deletedTransactionsCursor,
+      'savingsCursor': savingsCursor,
+      'deletedSavingsCursor': deletedSavingsCursor,
+      'investmentsCursor': investmentsCursor,
+      'deletedInvestmentsCursor': deletedInvestmentsCursor,
+      'captureInboxCursor': captureInboxCursor,
+      'deletedCaptureInboxCursor': deletedCaptureInboxCursor,
+      'recurringTransactionsCursor': recurringTransactionsCursor,
+      'deletedRecurringTransactionsCursor': deletedRecurringTransactionsCursor,
+      'financialPlansCursor': financialPlansCursor,
+      'deletedFinancialPlansCursor': deletedFinancialPlansCursor,
+      'correctionFeedbackCursor': correctionFeedbackCursor,
+      'deletedCorrectionFeedbackCursor': deletedCorrectionFeedbackCursor,
+      'merchantConfirmationsCursor': merchantConfirmationsCursor,
+      'deletedMerchantConfirmationsCursor': deletedMerchantConfirmationsCursor,
+      'merchantRulesCursor': merchantRulesCursor,
+      'deletedMerchantRulesCursor': deletedMerchantRulesCursor,
     };
+  }
+
+  SyncHealth copyWith({
+    String? lastSuccessAt,
+    String? lastFailureAt,
+    String? lastError,
+    int? pendingWrites,
+    String? transactionsCursor,
+    String? deletedTransactionsCursor,
+    String? savingsCursor,
+    String? deletedSavingsCursor,
+    String? investmentsCursor,
+    String? deletedInvestmentsCursor,
+    String? captureInboxCursor,
+    String? deletedCaptureInboxCursor,
+    String? recurringTransactionsCursor,
+    String? deletedRecurringTransactionsCursor,
+    String? financialPlansCursor,
+    String? deletedFinancialPlansCursor,
+    String? correctionFeedbackCursor,
+    String? deletedCorrectionFeedbackCursor,
+    String? merchantConfirmationsCursor,
+    String? deletedMerchantConfirmationsCursor,
+    String? merchantRulesCursor,
+    String? deletedMerchantRulesCursor,
+  }) {
+    return SyncHealth(
+      lastSuccessAt: lastSuccessAt ?? this.lastSuccessAt,
+      lastFailureAt: lastFailureAt ?? this.lastFailureAt,
+      lastError: lastError ?? this.lastError,
+      pendingWrites: pendingWrites ?? this.pendingWrites,
+      transactionsCursor: transactionsCursor ?? this.transactionsCursor,
+      deletedTransactionsCursor:
+          deletedTransactionsCursor ?? this.deletedTransactionsCursor,
+      savingsCursor: savingsCursor ?? this.savingsCursor,
+      deletedSavingsCursor: deletedSavingsCursor ?? this.deletedSavingsCursor,
+      investmentsCursor: investmentsCursor ?? this.investmentsCursor,
+      deletedInvestmentsCursor:
+          deletedInvestmentsCursor ?? this.deletedInvestmentsCursor,
+      captureInboxCursor: captureInboxCursor ?? this.captureInboxCursor,
+      deletedCaptureInboxCursor:
+          deletedCaptureInboxCursor ?? this.deletedCaptureInboxCursor,
+      recurringTransactionsCursor:
+          recurringTransactionsCursor ?? this.recurringTransactionsCursor,
+      deletedRecurringTransactionsCursor:
+          deletedRecurringTransactionsCursor ??
+          this.deletedRecurringTransactionsCursor,
+      financialPlansCursor: financialPlansCursor ?? this.financialPlansCursor,
+      deletedFinancialPlansCursor:
+          deletedFinancialPlansCursor ?? this.deletedFinancialPlansCursor,
+      correctionFeedbackCursor:
+          correctionFeedbackCursor ?? this.correctionFeedbackCursor,
+      deletedCorrectionFeedbackCursor:
+          deletedCorrectionFeedbackCursor ??
+          this.deletedCorrectionFeedbackCursor,
+      merchantConfirmationsCursor:
+          merchantConfirmationsCursor ?? this.merchantConfirmationsCursor,
+      deletedMerchantConfirmationsCursor:
+          deletedMerchantConfirmationsCursor ??
+          this.deletedMerchantConfirmationsCursor,
+      merchantRulesCursor: merchantRulesCursor ?? this.merchantRulesCursor,
+      deletedMerchantRulesCursor:
+          deletedMerchantRulesCursor ?? this.deletedMerchantRulesCursor,
+    );
   }
 
   static int _asInt(dynamic value) {

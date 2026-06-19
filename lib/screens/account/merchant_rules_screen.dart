@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_radii.dart';
@@ -6,6 +7,7 @@ import '../../core/theme/app_theme_extensions.dart';
 import '../../models/merchant_rule.dart';
 import '../../services/app_state_controller.dart';
 import '../../services/smart_capture_parser.dart';
+import '../../core/i18n/app_localizations.dart';
 
 class MerchantRulesScreen extends StatefulWidget {
   const MerchantRulesScreen({super.key});
@@ -118,7 +120,7 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
                               .map(
                                 (cat) => DropdownMenuItem(
                                   value: cat,
-                                  child: Text(cat),
+                                  child: Text(context.l10n.translateCategory(cat)),
                                 ),
                               )
                               .toList(),
@@ -298,7 +300,7 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
                         .map(
                           (String category) => DropdownMenuItem<String>(
                             value: category,
-                            child: Text(category),
+                            child: Text(context.l10n.translateCategory(category)),
                           ),
                         )
                         .toList(),
@@ -832,99 +834,123 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
       'learned' => tokens.colors.warning,
       _ => tokens.colors.emerald,
     };
+    final Widget rowContent = Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.md,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: <Widget>[
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  rule.merchantName,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: titleColor,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 18,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Category: ${rule.categoryId} • Type: ${rule.defaultType.toUpperCase()}',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: subdued,
+                    height: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: <Widget>[
+                    _smallBadge(
+                      context,
+                      label: sourceLabel,
+                      color: sourceColor,
+                    ),
+                    _smallBadge(
+                      context,
+                      label: '${(rule.confidence * 100).toStringAsFixed(0)}%',
+                      color: tokens.colors.gold,
+                    ),
+                    _smallBadge(
+                      context,
+                      label: rule.enabled ? 'Enabled' : 'Disabled',
+                      color: rule.enabled
+                          ? tokens.colors.success
+                          : tokens.colors.textSecondary,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Icon(
+            rule.enabled && rule.autoApprove
+                ? Icons.check_circle_rounded
+                : Icons.radio_button_unchecked,
+            color: rule.enabled && rule.autoApprove
+                ? tokens.colors.gold
+                : tokens.colors.textSecondary,
+          ),
+        ],
+      ),
+    );
 
-    return InkWell(
-      onTap: () => _showEditRuleDialog(context, controller, rule),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.md,
-          vertical: AppSpacing.md,
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
+    final bool isCustom = rule.source == 'custom' && !rule.isBuiltinOverride;
+
+    if (isCustom) {
+      return Slidable(
+        key: Key('rule_${rule.merchantName}'),
+        endActionPane: ActionPane(
+          motion: const ScrollMotion(),
+          extentRatio: 0.25,
           children: <Widget>[
-            Expanded(
+            CustomSlidableAction(
+              onPressed: (BuildContext context) {
+                controller.deleteMerchantRule(rule.merchantName);
+              },
+              backgroundColor: tokens.colors.danger.withValues(alpha: 0.14),
+              foregroundColor: tokens.colors.danger,
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: <Widget>[
-                  Text(
-                    rule.merchantName,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: titleColor,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 18,
-                    ),
-                  ),
+                  Icon(Icons.delete_outline_rounded, color: tokens.colors.danger),
                   const SizedBox(height: 4),
                   Text(
-                    'Category: ${rule.categoryId} • Type: ${rule.defaultType.toUpperCase()}',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: subdued,
-                      height: 1.2,
+                    'Delete',
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.visible,
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: tokens.colors.danger,
+                      fontWeight: FontWeight.w700,
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 4,
-                    children: <Widget>[
-                      _smallBadge(
-                        context,
-                        label: sourceLabel,
-                        color: sourceColor,
-                      ),
-                      _smallBadge(
-                        context,
-                        label: '${(rule.confidence * 100).toStringAsFixed(0)}%',
-                        color: tokens.colors.gold,
-                      ),
-                      _smallBadge(
-                        context,
-                        label: rule.enabled ? 'Enabled' : 'Disabled',
-                        color: rule.enabled
-                            ? tokens.colors.success
-                            : tokens.colors.textSecondary,
-                      ),
-                    ],
                   ),
                 ],
               ),
             ),
-            const SizedBox(width: AppSpacing.sm),
-            Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: <Widget>[
-                Icon(
-                  rule.enabled && rule.autoApprove
-                      ? Icons.check_circle_rounded
-                      : Icons.radio_button_unchecked,
-                  color: rule.enabled && rule.autoApprove
-                      ? tokens.colors.gold
-                      : tokens.colors.textSecondary,
-                ),
-                if (rule.source == 'custom' &&
-                    !rule.isBuiltinOverride) ...<Widget>[
-                  const SizedBox(height: 8),
-                  GestureDetector(
-                    onTap: () =>
-                        controller.deleteMerchantRule(rule.merchantName),
-                    child: Icon(
-                      Icons.delete_outline_rounded,
-                      color: tokens.colors.danger,
-                      size: 20,
-                    ),
-                  ),
-                ],
-              ],
-            ),
           ],
         ),
-      ),
+        child: InkWell(
+          onTap: () => _showEditRuleDialog(context, controller, rule),
+          child: rowContent,
+        ),
+      );
+    }
+
+    return InkWell(
+      onTap: () => _showEditRuleDialog(context, controller, rule),
+      child: rowContent,
     );
   }
 

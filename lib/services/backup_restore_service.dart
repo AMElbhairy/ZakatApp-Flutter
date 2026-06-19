@@ -99,9 +99,16 @@ class BackupRestoreService {
             .toString();
     merged['themeMode'] =
         (incoming['themeMode'] ?? current['themeMode'] ?? 'system').toString();
-    merged['marketData'] = incoming['marketData'] is Map
-        ? Map<String, dynamic>.from(incoming['marketData'] as Map)
-        : current['marketData'];
+    final Map<String, dynamic>? incomingMarketData = incoming['marketData'] is Map
+      ? Map<String, dynamic>.from(incoming['marketData'] as Map)
+      : null;
+    final bool hasIncomingMarketData = incomingMarketData != null &&
+      incomingMarketData.values.any(
+        (dynamic value) => value != null && value.toString().trim().isNotEmpty,
+      );
+    merged['marketData'] = hasIncomingMarketData
+      ? incomingMarketData
+      : current['marketData'];
     merged['aiSettings'] = incoming['aiSettings'] is Map
         ? Map<String, dynamic>.from(incoming['aiSettings'] as Map)
         : current['aiSettings'];
