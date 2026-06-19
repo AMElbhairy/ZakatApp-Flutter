@@ -50,18 +50,7 @@ class AppStateController extends ChangeNotifier {
   Timer? _marketRefreshTimer;
   bool _marketAutoRefreshStarted = false;
   Future<MarketRefreshResult>? _marketRefreshInFlight;
-  StreamSubscription<List<Transaction>>? _transactionsSubscription;
-  StreamSubscription<List<Saving>>? _savingsSubscription;
-  StreamSubscription<List<RecurringTransaction>>?
-  _recurringTransactionsSubscription;
-  StreamSubscription<List<InvestmentAsset>>? _investmentsSubscription;
-  StreamSubscription<List<FinancialPlan>>? _financialPlansSubscription;
-  StreamSubscription<List<CorrectionFeedback>>? _correctionFeedbackSubscription;
-  StreamSubscription<List<MerchantConfirmation>>?
-  _merchantConfirmationsSubscription;
   StreamSubscription<Map<String, dynamic>>? _userSettingsSubscription;
-  StreamSubscription<List<PendingTransaction>>? _captureInboxSubscription;
-  StreamSubscription<List<MerchantRule>>? _merchantRulesSubscription;
   String? _liveSyncUserId;
   bool _isApplyingRemoteSync = false;
   static const Duration marketRefreshInterval = Duration(minutes: 5);
@@ -200,106 +189,23 @@ class AppStateController extends ChangeNotifier {
   Future<void> startLiveFirestoreSync({required String userId}) async {
     final FirestoreSyncManager? syncManager = firestoreSyncManager;
     if (syncManager == null) return;
-    if (_liveSyncUserId == userId &&
-        _transactionsSubscription != null &&
-        _savingsSubscription != null &&
-        _recurringTransactionsSubscription != null &&
-        _investmentsSubscription != null &&
-        _financialPlansSubscription != null &&
-        _correctionFeedbackSubscription != null &&
-        _merchantConfirmationsSubscription != null &&
-        _userSettingsSubscription != null &&
-        _captureInboxSubscription != null &&
-        _merchantRulesSubscription != null) {
+    if (_liveSyncUserId == userId && _userSettingsSubscription != null) {
       return;
     }
 
     await stopLiveFirestoreSync();
     _liveSyncUserId = userId;
 
-    _transactionsSubscription = syncManager
-        .watchTransactions(uid: userId)
-        .listen(
-          (List<Transaction> items) {
-            unawaited(_applyTransactionsSnapshot(userId, items));
-          },
-          onError: (Object error, StackTrace stackTrace) {
-            debugPrint('Live transactions sync error: $error');
-            debugPrintStack(stackTrace: stackTrace);
-          },
-        );
-
-    _savingsSubscription = syncManager
-        .watchSavings(uid: userId)
-        .listen(
-          (List<Saving> items) {
-            unawaited(_applySavingsSnapshot(userId, items));
-          },
-          onError: (Object error, StackTrace stackTrace) {
-            debugPrint('Live savings sync error: $error');
-            debugPrintStack(stackTrace: stackTrace);
-          },
-        );
-
-    _recurringTransactionsSubscription = syncManager
-        .watchRecurringTransactions(uid: userId)
-        .listen(
-          (List<RecurringTransaction> items) {
-            unawaited(_applyRecurringTransactionsSnapshot(userId, items));
-          },
-          onError: (Object error, StackTrace stackTrace) {
-            debugPrint('Live recurring transactions sync error: $error');
-            debugPrintStack(stackTrace: stackTrace);
-          },
-        );
-
-    _investmentsSubscription = syncManager
-        .watchInvestments(uid: userId)
-        .listen(
-          (List<InvestmentAsset> items) {
-            unawaited(_applyInvestmentsSnapshot(userId, items));
-          },
-          onError: (Object error, StackTrace stackTrace) {
-            debugPrint('Live investments sync error: $error');
-            debugPrintStack(stackTrace: stackTrace);
-          },
-        );
-
-    _financialPlansSubscription = syncManager
-        .watchFinancialPlans(uid: userId)
-        .listen(
-          (List<FinancialPlan> items) {
-            unawaited(_applyFinancialPlansSnapshot(userId, items));
-          },
-          onError: (Object error, StackTrace stackTrace) {
-            debugPrint('Live financial plans sync error: $error');
-            debugPrintStack(stackTrace: stackTrace);
-          },
-        );
-
-    _correctionFeedbackSubscription = syncManager
-        .watchCorrectionFeedback(uid: userId)
-        .listen(
-          (List<CorrectionFeedback> items) {
-            unawaited(_applyCorrectionFeedbackSnapshot(userId, items));
-          },
-          onError: (Object error, StackTrace stackTrace) {
-            debugPrint('Live correction feedback sync error: $error');
-            debugPrintStack(stackTrace: stackTrace);
-          },
-        );
-
-    _merchantConfirmationsSubscription = syncManager
-        .watchMerchantConfirmations(uid: userId)
-        .listen(
-          (List<MerchantConfirmation> items) {
-            unawaited(_applyMerchantConfirmationsSnapshot(userId, items));
-          },
-          onError: (Object error, StackTrace stackTrace) {
-            debugPrint('Live merchant confirmations sync error: $error');
-            debugPrintStack(stackTrace: stackTrace);
-          },
-        );
+    await _hydrateTransactionsIncrementally(userId, syncManager);
+    await _hydrateSavingsIncrementally(userId, syncManager);
+    await _hydrateInvestmentsIncrementally(userId, syncManager);
+    await _hydrateCaptureInboxIncrementally(userId, syncManager);
+    await _hydrateRecurringTransactionsIncrementally(userId, syncManager);
+    await _hydrateFinancialPlansIncrementally(userId, syncManager);
+    await _hydrateCorrectionFeedbackIncrementally(userId, syncManager);
+    await _hydrateMerchantConfirmationsIncrementally(userId, syncManager);
+    await _hydrateMerchantRulesIncrementally(userId, syncManager);
+    await _hydrateUserSettings(userId, syncManager);
 
     _userSettingsSubscription = syncManager
         .watchUserSettings(uid: userId)
@@ -312,219 +218,558 @@ class AppStateController extends ChangeNotifier {
             debugPrintStack(stackTrace: stackTrace);
           },
         );
-
-    _captureInboxSubscription = syncManager
-        .watchCaptureInbox(uid: userId)
-        .listen(
-          (List<PendingTransaction> items) {
-            unawaited(_applyCaptureInboxSnapshot(userId, items));
-          },
-          onError: (Object error, StackTrace stackTrace) {
-            debugPrint('Live capture inbox sync error: $error');
-            debugPrintStack(stackTrace: stackTrace);
-          },
-        );
-
-    _merchantRulesSubscription = syncManager
-        .watchMerchantRules(uid: userId)
-        .listen(
-          (List<MerchantRule> rules) {
-            unawaited(_applyMerchantRulesSnapshot(userId, rules));
-          },
-          onError: (Object error, StackTrace stackTrace) {
-            debugPrint('Live merchant rules sync error: $error');
-            debugPrintStack(stackTrace: stackTrace);
-          },
-        );
   }
 
   Future<void> stopLiveFirestoreSync() async {
-    await _transactionsSubscription?.cancel();
-    await _savingsSubscription?.cancel();
-    await _recurringTransactionsSubscription?.cancel();
-    await _investmentsSubscription?.cancel();
-    await _financialPlansSubscription?.cancel();
-    await _correctionFeedbackSubscription?.cancel();
-    await _merchantConfirmationsSubscription?.cancel();
     await _userSettingsSubscription?.cancel();
-    await _captureInboxSubscription?.cancel();
-    await _merchantRulesSubscription?.cancel();
-    _transactionsSubscription = null;
-    _savingsSubscription = null;
-    _recurringTransactionsSubscription = null;
-    _investmentsSubscription = null;
-    _financialPlansSubscription = null;
-    _correctionFeedbackSubscription = null;
-    _merchantConfirmationsSubscription = null;
     _userSettingsSubscription = null;
-    _captureInboxSubscription = null;
-    _merchantRulesSubscription = null;
     _liveSyncUserId = null;
   }
 
-  Future<void> _applyTransactionsSnapshot(
+  Future<void> _hydrateUserSettings(
     String userId,
-    List<Transaction> items,
+    FirestoreSyncManager syncManager,
   ) async {
-    if (_liveSyncUserId != userId || _state.userId != userId) return;
-    if (_listJsonEqual(_state.transactions, items, (Transaction item) {
-      return item.toJson();
-    })) {
-      return;
-    }
-    _isApplyingRemoteSync = true;
     try {
-      _state = _state.copyWith(
-        transactions: List<Transaction>.from(items),
-        lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+      final Map<String, dynamic> settings = await syncManager.loadUserSettings(
+        uid: userId,
       );
-      await save();
-      notifyListeners();
-    } finally {
-      _isApplyingRemoteSync = false;
+      if (_liveSyncUserId != userId || _state.userId != userId) return;
+      await _applyUserSettingsSnapshot(userId, settings);
+    } catch (error, stackTrace) {
+      debugPrint('Firestore user settings hydration error: $error');
+      debugPrintStack(stackTrace: stackTrace);
     }
   }
 
-  Future<void> _applySavingsSnapshot(String userId, List<Saving> items) async {
-    if (_liveSyncUserId != userId || _state.userId != userId) return;
-    if (_listJsonEqual(_state.savings, items, (Saving item) => item.toJson())) {
-      return;
-    }
-    _isApplyingRemoteSync = true;
+  Future<void> _hydrateTransactionsIncrementally(
+    String userId,
+    FirestoreSyncManager syncManager,
+  ) async {
     try {
-      _state = _state.copyWith(
-        savings: List<Saving>.from(items),
-        lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+      final FirestoreCollectionDelta<Transaction> changed = await syncManager
+          .loadTransactionsSince(
+            uid: userId,
+            sinceCursor: _state.syncHealth.transactionsCursor,
+          );
+      final FirestoreDeletedIdsDelta deleted = await syncManager
+          .loadDeletedTransactionIdsSince(
+            uid: userId,
+            sinceCursor: _state.syncHealth.deletedTransactionsCursor,
+          );
+      if (_liveSyncUserId != userId || _state.userId != userId) return;
+      final List<Transaction> mergedTransactions = _mergeTransactionsDelta(
+        _state.transactions,
+        changed.items,
+        deleted.ids,
       );
-      await save();
-      notifyListeners();
-    } finally {
-      _isApplyingRemoteSync = false;
+      final SyncHealth nextSyncHealth = _state.syncHealth.copyWith(
+        transactionsCursor: changed.cursor,
+        deletedTransactionsCursor: deleted.cursor,
+        lastSuccessAt: DateTime.now().toUtc().toIso8601String(),
+        lastError: '',
+      );
+      final bool transactionsChanged = !_listJsonEqual(
+        _state.transactions,
+        mergedTransactions,
+        (Transaction item) => item.toJson(),
+      );
+      final bool syncCursorChanged =
+          _state.syncHealth.transactionsCursor != changed.cursor ||
+          _state.syncHealth.deletedTransactionsCursor != deleted.cursor;
+      if (!transactionsChanged && !syncCursorChanged) return;
+
+      _isApplyingRemoteSync = true;
+      try {
+        _state = _state.copyWith(
+          transactions: mergedTransactions,
+          syncHealth: nextSyncHealth,
+          lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+        );
+        await save();
+        notifyListeners();
+      } finally {
+        _isApplyingRemoteSync = false;
+      }
+    } catch (error, stackTrace) {
+      debugPrint('Firestore incremental transaction hydration error: $error');
+      debugPrintStack(stackTrace: stackTrace);
     }
   }
 
-  Future<void> _applyRecurringTransactionsSnapshot(
+  Future<void> _hydrateSavingsIncrementally(
     String userId,
-    List<RecurringTransaction> items,
+    FirestoreSyncManager syncManager,
   ) async {
-    if (_liveSyncUserId != userId || _state.userId != userId) return;
-    if (_listJsonEqual(
-      _state.recurringTransactions,
-      items,
-      (RecurringTransaction item) => item.toJson(),
-    )) {
-      return;
-    }
-    _isApplyingRemoteSync = true;
     try {
-      _state = _state.copyWith(
-        recurringTransactions: List<RecurringTransaction>.from(items),
-        lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+      final FirestoreCollectionDelta<Saving> changed = await syncManager
+          .loadSavingsSince(
+            uid: userId,
+            sinceCursor: _state.syncHealth.savingsCursor,
+          );
+      final FirestoreDeletedIdsDelta deleted = await syncManager
+          .loadDeletedSavingsSince(
+            uid: userId,
+            sinceCursor: _state.syncHealth.deletedSavingsCursor,
+          );
+      if (_liveSyncUserId != userId || _state.userId != userId) return;
+      final List<Saving> mergedSavings = _mergeById<Saving>(
+        _state.savings,
+        changed.items,
+        deleted.ids,
+        (Saving item) => item.id,
+        (Saving item) => DateTime.tryParse(item.createdAt),
       );
-      await save();
-      notifyListeners();
-    } finally {
-      _isApplyingRemoteSync = false;
+      final SyncHealth nextSyncHealth = _state.syncHealth.copyWith(
+        savingsCursor: changed.cursor,
+        deletedSavingsCursor: deleted.cursor,
+        lastSuccessAt: DateTime.now().toUtc().toIso8601String(),
+        lastError: '',
+      );
+      final bool changedState = !_listJsonEqual(
+        _state.savings,
+        mergedSavings,
+        (Saving item) => item.toJson(),
+      );
+      final bool cursorChanged =
+          _state.syncHealth.savingsCursor != changed.cursor ||
+          _state.syncHealth.deletedSavingsCursor != deleted.cursor;
+      if (!changedState && !cursorChanged) return;
+      _isApplyingRemoteSync = true;
+      try {
+        _state = _state.copyWith(
+          savings: mergedSavings,
+          syncHealth: nextSyncHealth,
+          lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+        );
+        await save();
+        notifyListeners();
+      } finally {
+        _isApplyingRemoteSync = false;
+      }
+    } catch (error, stackTrace) {
+      debugPrint('Firestore incremental savings hydration error: $error');
+      debugPrintStack(stackTrace: stackTrace);
     }
   }
 
-  Future<void> _applyInvestmentsSnapshot(
+  Future<void> _hydrateInvestmentsIncrementally(
     String userId,
-    List<InvestmentAsset> items,
+    FirestoreSyncManager syncManager,
   ) async {
-    if (_liveSyncUserId != userId || _state.userId != userId) return;
-    if (_listJsonEqual(
-      _state.investments,
-      items,
-      (InvestmentAsset item) => item.toJson(),
-    )) {
-      return;
-    }
-    _isApplyingRemoteSync = true;
     try {
-      _state = _state.copyWith(
-        investments: List<InvestmentAsset>.from(items),
-        lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+      final FirestoreCollectionDelta<InvestmentAsset> changed =
+          await syncManager.loadInvestmentsSince(
+            uid: userId,
+            sinceCursor: _state.syncHealth.investmentsCursor,
+          );
+      final FirestoreDeletedIdsDelta deleted = await syncManager
+          .loadDeletedInvestmentsSince(
+            uid: userId,
+            sinceCursor: _state.syncHealth.deletedInvestmentsCursor,
+          );
+      if (_liveSyncUserId != userId || _state.userId != userId) return;
+      final List<InvestmentAsset> mergedInvestments =
+          _mergeById<InvestmentAsset>(
+            _state.investments,
+            changed.items,
+            deleted.ids,
+            (InvestmentAsset item) => item.id,
+            (InvestmentAsset item) => DateTime.tryParse(item.createdAt),
+          );
+      final SyncHealth nextSyncHealth = _state.syncHealth.copyWith(
+        investmentsCursor: changed.cursor,
+        deletedInvestmentsCursor: deleted.cursor,
+        lastSuccessAt: DateTime.now().toUtc().toIso8601String(),
+        lastError: '',
       );
-      await save();
-      notifyListeners();
-    } finally {
-      _isApplyingRemoteSync = false;
+      final bool changedState = !_listJsonEqual(
+        _state.investments,
+        mergedInvestments,
+        (InvestmentAsset item) => item.toJson(),
+      );
+      final bool cursorChanged =
+          _state.syncHealth.investmentsCursor != changed.cursor ||
+          _state.syncHealth.deletedInvestmentsCursor != deleted.cursor;
+      if (!changedState && !cursorChanged) return;
+      _isApplyingRemoteSync = true;
+      try {
+        _state = _state.copyWith(
+          investments: mergedInvestments,
+          syncHealth: nextSyncHealth,
+          lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+        );
+        await save();
+        notifyListeners();
+      } finally {
+        _isApplyingRemoteSync = false;
+      }
+    } catch (error, stackTrace) {
+      debugPrint('Firestore incremental investments hydration error: $error');
+      debugPrintStack(stackTrace: stackTrace);
     }
   }
 
-  Future<void> _applyFinancialPlansSnapshot(
+  Future<void> _hydrateCaptureInboxIncrementally(
     String userId,
-    List<FinancialPlan> items,
+    FirestoreSyncManager syncManager,
   ) async {
-    if (_liveSyncUserId != userId || _state.userId != userId) return;
-    if (_listJsonEqual(
-      _state.financialPlans,
-      items,
-      (FinancialPlan item) => item.toJson(),
-    )) {
-      return;
-    }
-    _isApplyingRemoteSync = true;
     try {
-      _state = _state.copyWith(
-        financialPlans: List<FinancialPlan>.from(items),
-        lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+      final FirestoreCollectionDelta<PendingTransaction> changed =
+          await syncManager.loadCaptureInboxSince(
+            uid: userId,
+            sinceCursor: _state.syncHealth.captureInboxCursor,
+          );
+      final FirestoreDeletedIdsDelta deleted = await syncManager
+          .loadDeletedCaptureInboxSince(
+            uid: userId,
+            sinceCursor: _state.syncHealth.deletedCaptureInboxCursor,
+          );
+      if (_liveSyncUserId != userId || _state.userId != userId) return;
+      final List<PendingTransaction> mergedPending =
+          _mergeById<PendingTransaction>(
+            _state.pendingTransactions,
+            changed.items,
+            deleted.ids,
+            (PendingTransaction item) => item.id,
+            (PendingTransaction item) => DateTime.tryParse(item.createdAt),
+          );
+      final SyncHealth nextSyncHealth = _state.syncHealth.copyWith(
+        captureInboxCursor: changed.cursor,
+        deletedCaptureInboxCursor: deleted.cursor,
+        lastSuccessAt: DateTime.now().toUtc().toIso8601String(),
+        lastError: '',
       );
-      await save();
-      notifyListeners();
-    } finally {
-      _isApplyingRemoteSync = false;
+      final bool changedState = !_pendingTransactionsEqual(
+        _state.pendingTransactions,
+        mergedPending,
+      );
+      final bool cursorChanged =
+          _state.syncHealth.captureInboxCursor != changed.cursor ||
+          _state.syncHealth.deletedCaptureInboxCursor != deleted.cursor;
+      if (!changedState && !cursorChanged) return;
+      _isApplyingRemoteSync = true;
+      try {
+        _state = _state.copyWith(
+          pendingTransactions: mergedPending,
+          syncHealth: nextSyncHealth,
+          lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+        );
+        await save();
+        notifyListeners();
+      } finally {
+        _isApplyingRemoteSync = false;
+      }
+    } catch (error, stackTrace) {
+      debugPrint('Firestore incremental capture inbox hydration error: $error');
+      debugPrintStack(stackTrace: stackTrace);
     }
   }
 
-  Future<void> _applyCorrectionFeedbackSnapshot(
+  Future<void> _hydrateRecurringTransactionsIncrementally(
     String userId,
-    List<CorrectionFeedback> items,
+    FirestoreSyncManager syncManager,
   ) async {
-    if (_liveSyncUserId != userId || _state.userId != userId) return;
-    if (_listJsonEqual(
-      _state.correctionFeedback,
-      items,
-      (CorrectionFeedback item) => item.toJson(),
-    )) {
-      return;
-    }
-    _isApplyingRemoteSync = true;
     try {
-      _state = _state.copyWith(
-        correctionFeedback: List<CorrectionFeedback>.from(items),
-        lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+      final FirestoreCollectionDelta<RecurringTransaction> changed =
+          await syncManager.loadRecurringTransactionsSince(
+            uid: userId,
+            sinceCursor: _state.syncHealth.recurringTransactionsCursor,
+          );
+      final FirestoreDeletedIdsDelta deleted = await syncManager
+          .loadDeletedRecurringTransactionsSince(
+            uid: userId,
+            sinceCursor: _state.syncHealth.deletedRecurringTransactionsCursor,
+          );
+      if (_liveSyncUserId != userId || _state.userId != userId) return;
+      final List<RecurringTransaction> merged =
+          _mergeById<RecurringTransaction>(
+            _state.recurringTransactions,
+            changed.items,
+            deleted.ids,
+            (RecurringTransaction item) => item.id,
+            (RecurringTransaction item) => DateTime.tryParse(item.createdAt),
+          );
+      final SyncHealth nextSyncHealth = _state.syncHealth.copyWith(
+        recurringTransactionsCursor: changed.cursor,
+        deletedRecurringTransactionsCursor: deleted.cursor,
+        lastSuccessAt: DateTime.now().toUtc().toIso8601String(),
+        lastError: '',
       );
-      await save();
-      notifyListeners();
-    } finally {
-      _isApplyingRemoteSync = false;
+      final bool changedState = !_listJsonEqual(
+        _state.recurringTransactions,
+        merged,
+        (RecurringTransaction item) => item.toJson(),
+      );
+      final bool cursorChanged =
+          _state.syncHealth.recurringTransactionsCursor != changed.cursor ||
+          _state.syncHealth.deletedRecurringTransactionsCursor !=
+              deleted.cursor;
+      if (!changedState && !cursorChanged) return;
+      _isApplyingRemoteSync = true;
+      try {
+        _state = _state.copyWith(
+          recurringTransactions: merged,
+          syncHealth: nextSyncHealth,
+          lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+        );
+        await save();
+        notifyListeners();
+      } finally {
+        _isApplyingRemoteSync = false;
+      }
+    } catch (error, stackTrace) {
+      debugPrint(
+        'Firestore incremental recurring transactions hydration error: $error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
     }
   }
 
-  Future<void> _applyMerchantConfirmationsSnapshot(
+  Future<void> _hydrateFinancialPlansIncrementally(
     String userId,
-    List<MerchantConfirmation> items,
+    FirestoreSyncManager syncManager,
   ) async {
-    if (_liveSyncUserId != userId || _state.userId != userId) return;
-    if (_listJsonEqual(
-      _state.merchantConfirmations,
-      items,
-      (MerchantConfirmation item) => item.toJson(),
-    )) {
-      return;
-    }
-    _isApplyingRemoteSync = true;
     try {
-      _state = _state.copyWith(
-        merchantConfirmations: List<MerchantConfirmation>.from(items),
-        lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+      final FirestoreCollectionDelta<FinancialPlan> changed = await syncManager
+          .loadFinancialPlansSince(
+            uid: userId,
+            sinceCursor: _state.syncHealth.financialPlansCursor,
+          );
+      final FirestoreDeletedIdsDelta deleted = await syncManager
+          .loadDeletedFinancialPlansSince(
+            uid: userId,
+            sinceCursor: _state.syncHealth.deletedFinancialPlansCursor,
+          );
+      if (_liveSyncUserId != userId || _state.userId != userId) return;
+      final List<FinancialPlan> merged = _mergeById<FinancialPlan>(
+        _state.financialPlans,
+        changed.items,
+        deleted.ids,
+        (FinancialPlan item) => item.id,
+        (FinancialPlan item) => DateTime.tryParse(item.createdAt),
       );
-      await save();
-      notifyListeners();
-    } finally {
-      _isApplyingRemoteSync = false;
+      final SyncHealth nextSyncHealth = _state.syncHealth.copyWith(
+        financialPlansCursor: changed.cursor,
+        deletedFinancialPlansCursor: deleted.cursor,
+        lastSuccessAt: DateTime.now().toUtc().toIso8601String(),
+        lastError: '',
+      );
+      final bool changedState = !_listJsonEqual(
+        _state.financialPlans,
+        merged,
+        (FinancialPlan item) => item.toJson(),
+      );
+      final bool cursorChanged =
+          _state.syncHealth.financialPlansCursor != changed.cursor ||
+          _state.syncHealth.deletedFinancialPlansCursor != deleted.cursor;
+      if (!changedState && !cursorChanged) return;
+      _isApplyingRemoteSync = true;
+      try {
+        _state = _state.copyWith(
+          financialPlans: merged,
+          syncHealth: nextSyncHealth,
+          lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+        );
+        await save();
+        notifyListeners();
+      } finally {
+        _isApplyingRemoteSync = false;
+      }
+    } catch (error, stackTrace) {
+      debugPrint(
+        'Firestore incremental financial plans hydration error: $error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  Future<void> _hydrateCorrectionFeedbackIncrementally(
+    String userId,
+    FirestoreSyncManager syncManager,
+  ) async {
+    try {
+      final FirestoreCollectionDelta<CorrectionFeedback> changed =
+          await syncManager.loadCorrectionFeedbackSince(
+            uid: userId,
+            sinceCursor: _state.syncHealth.correctionFeedbackCursor,
+          );
+      final FirestoreDeletedIdsDelta deleted = await syncManager
+          .loadDeletedCorrectionFeedbackSince(
+            uid: userId,
+            sinceCursor: _state.syncHealth.deletedCorrectionFeedbackCursor,
+          );
+      if (_liveSyncUserId != userId || _state.userId != userId) return;
+      final List<CorrectionFeedback> merged = _mergeById<CorrectionFeedback>(
+        _state.correctionFeedback,
+        changed.items,
+        deleted.ids,
+        (CorrectionFeedback item) => item.id,
+        (CorrectionFeedback item) => DateTime.tryParse(item.createdAt),
+      );
+      final SyncHealth nextSyncHealth = _state.syncHealth.copyWith(
+        correctionFeedbackCursor: changed.cursor,
+        deletedCorrectionFeedbackCursor: deleted.cursor,
+        lastSuccessAt: DateTime.now().toUtc().toIso8601String(),
+        lastError: '',
+      );
+      final bool changedState = !_listJsonEqual(
+        _state.correctionFeedback,
+        merged,
+        (CorrectionFeedback item) => item.toJson(),
+      );
+      final bool cursorChanged =
+          _state.syncHealth.correctionFeedbackCursor != changed.cursor ||
+          _state.syncHealth.deletedCorrectionFeedbackCursor != deleted.cursor;
+      if (!changedState && !cursorChanged) return;
+      _isApplyingRemoteSync = true;
+      try {
+        _state = _state.copyWith(
+          correctionFeedback: merged,
+          syncHealth: nextSyncHealth,
+          lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+        );
+        await save();
+        notifyListeners();
+      } finally {
+        _isApplyingRemoteSync = false;
+      }
+    } catch (error, stackTrace) {
+      debugPrint(
+        'Firestore incremental correction feedback hydration error: $error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  Future<void> _hydrateMerchantConfirmationsIncrementally(
+    String userId,
+    FirestoreSyncManager syncManager,
+  ) async {
+    try {
+      final FirestoreCollectionDelta<MerchantConfirmation> changed =
+          await syncManager.loadMerchantConfirmationsSince(
+            uid: userId,
+            sinceCursor: _state.syncHealth.merchantConfirmationsCursor,
+          );
+      final FirestoreDeletedIdsDelta deleted = await syncManager
+          .loadDeletedMerchantConfirmationsSince(
+            uid: userId,
+            sinceCursor: _state.syncHealth.deletedMerchantConfirmationsCursor,
+          );
+      if (_liveSyncUserId != userId || _state.userId != userId) return;
+      final List<MerchantConfirmation>
+      merged = _mergeById<MerchantConfirmation>(
+        _state.merchantConfirmations,
+        changed.items,
+        deleted.ids,
+        (MerchantConfirmation item) =>
+            '${item.merchantName.toLowerCase().trim()}|${item.categoryId.toLowerCase().trim()}',
+        (_) => null,
+      );
+      final SyncHealth nextSyncHealth = _state.syncHealth.copyWith(
+        merchantConfirmationsCursor: changed.cursor,
+        deletedMerchantConfirmationsCursor: deleted.cursor,
+        lastSuccessAt: DateTime.now().toUtc().toIso8601String(),
+        lastError: '',
+      );
+      final bool changedState = !_listJsonEqual(
+        _state.merchantConfirmations,
+        merged,
+        (MerchantConfirmation item) => item.toJson(),
+      );
+      final bool cursorChanged =
+          _state.syncHealth.merchantConfirmationsCursor != changed.cursor ||
+          _state.syncHealth.deletedMerchantConfirmationsCursor !=
+              deleted.cursor;
+      if (!changedState && !cursorChanged) return;
+      _isApplyingRemoteSync = true;
+      try {
+        _state = _state.copyWith(
+          merchantConfirmations: merged,
+          syncHealth: nextSyncHealth,
+          lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+        );
+        await save();
+        notifyListeners();
+      } finally {
+        _isApplyingRemoteSync = false;
+      }
+    } catch (error, stackTrace) {
+      debugPrint(
+        'Firestore incremental merchant confirmations hydration error: $error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  Future<void> _hydrateMerchantRulesIncrementally(
+    String userId,
+    FirestoreSyncManager syncManager,
+  ) async {
+    try {
+      final FirestoreCollectionDelta<MerchantRule> changed = await syncManager
+          .loadMerchantRulesSince(
+            uid: userId,
+            sinceCursor: _state.syncHealth.merchantRulesCursor,
+          );
+      final FirestoreDeletedIdsDelta deleted = await syncManager
+          .loadDeletedMerchantRulesSince(
+            uid: userId,
+            sinceCursor: _state.syncHealth.deletedMerchantRulesCursor,
+          );
+      if (_liveSyncUserId != userId || _state.userId != userId) return;
+      final List<MerchantRule> currentRules = _state.merchantRules.values
+          .toList(growable: false);
+      final List<MerchantRule> mergedRules = _mergeById<MerchantRule>(
+        currentRules,
+        changed.items,
+        deleted.ids,
+        (MerchantRule item) => item.merchantName.toLowerCase().trim(),
+        (_) => null,
+      );
+      final SyncHealth nextSyncHealth = _state.syncHealth.copyWith(
+        merchantRulesCursor: changed.cursor,
+        deletedMerchantRulesCursor: deleted.cursor,
+        lastSuccessAt: DateTime.now().toUtc().toIso8601String(),
+        lastError: '',
+      );
+      final Map<String, MerchantRule> nextRules = <String, MerchantRule>{
+        for (final MerchantRule rule in mergedRules)
+          rule.merchantName.toLowerCase().trim(): rule,
+      };
+      final Map<String, String> nextAliases = <String, String>{};
+      for (final MerchantRule rule in mergedRules) {
+        for (final String alias in rule.aliases) {
+          final String key = alias.toLowerCase().trim();
+          if (key.isNotEmpty) nextAliases[key] = rule.merchantName;
+        }
+      }
+      final bool changedState =
+          !_merchantRuleMapsEqual(_state.merchantRules, nextRules) ||
+          !_stringMapsEqual(_state.merchantAliases, nextAliases);
+      final bool cursorChanged =
+          _state.syncHealth.merchantRulesCursor != changed.cursor ||
+          _state.syncHealth.deletedMerchantRulesCursor != deleted.cursor;
+      if (!changedState && !cursorChanged) return;
+      _isApplyingRemoteSync = true;
+      try {
+        _state = _state.copyWith(
+          merchantRules: nextRules,
+          merchantAliases: nextAliases,
+          syncHealth: nextSyncHealth,
+          lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+        );
+        await save();
+        notifyListeners();
+      } finally {
+        _isApplyingRemoteSync = false;
+      }
+    } catch (error, stackTrace) {
+      debugPrint(
+        'Firestore incremental merchant rules hydration error: $error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
     }
   }
 
@@ -541,62 +786,6 @@ class AppStateController extends ChangeNotifier {
     _isApplyingRemoteSync = true;
     try {
       _state = mergedState.copyWith(
-        lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
-      );
-      await save();
-      notifyListeners();
-    } finally {
-      _isApplyingRemoteSync = false;
-    }
-  }
-
-  Future<void> _applyCaptureInboxSnapshot(
-    String userId,
-    List<PendingTransaction> items,
-  ) async {
-    if (_liveSyncUserId != userId || _state.userId != userId) return;
-    if (_pendingTransactionsEqual(_state.pendingTransactions, items)) return;
-    _isApplyingRemoteSync = true;
-    try {
-      _state = _state.copyWith(
-        pendingTransactions: items,
-        lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
-      );
-      await save();
-      notifyListeners();
-    } finally {
-      _isApplyingRemoteSync = false;
-    }
-  }
-
-  Future<void> _applyMerchantRulesSnapshot(
-    String userId,
-    List<MerchantRule> rules,
-  ) async {
-    if (_liveSyncUserId != userId || _state.userId != userId) return;
-
-    final Map<String, MerchantRule> nextRules = <String, MerchantRule>{
-      for (final MerchantRule rule in rules)
-        rule.merchantName.toLowerCase().trim(): rule,
-    };
-    final Map<String, String> nextAliases = <String, String>{};
-    for (final MerchantRule rule in rules) {
-      for (final String alias in rule.aliases) {
-        final String key = alias.toLowerCase().trim();
-        if (key.isNotEmpty) nextAliases[key] = rule.merchantName;
-      }
-    }
-
-    if (_merchantRuleMapsEqual(_state.merchantRules, nextRules) &&
-        _stringMapsEqual(_state.merchantAliases, nextAliases)) {
-      return;
-    }
-
-    _isApplyingRemoteSync = true;
-    try {
-      _state = _state.copyWith(
-        merchantRules: nextRules,
-        merchantAliases: nextAliases,
         lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
       );
       await save();
@@ -643,6 +832,71 @@ class AppStateController extends ChangeNotifier {
     if (left.length != right.length) return false;
     return _canonicalJson(left.map(encoder).toList(growable: false)) ==
         _canonicalJson(right.map(encoder).toList(growable: false));
+  }
+
+  List<String> _removedIds<T>(
+    Iterable<T> previous,
+    Iterable<T> next,
+    String Function(T item) idSelector,
+  ) {
+    final Set<String> previousIds = previous
+        .map((T item) => idSelector(item).trim())
+        .where((String id) => id.isNotEmpty)
+        .toSet();
+    final Set<String> nextIds = next
+        .map((T item) => idSelector(item).trim())
+        .where((String id) => id.isNotEmpty)
+        .toSet();
+    return previousIds.difference(nextIds).toList(growable: false);
+  }
+
+  List<Transaction> _mergeTransactionsDelta(
+    List<Transaction> current,
+    List<Transaction> changed,
+    List<String> deletedIds,
+  ) {
+    return _mergeById<Transaction>(
+      current,
+      changed,
+      deletedIds,
+      (Transaction item) => item.id,
+      (Transaction item) => DateTime.tryParse(item.createdAt),
+    );
+  }
+
+  List<T> _mergeById<T>(
+    List<T> current,
+    List<T> changed,
+    List<String> deletedIds,
+    String Function(T item) idSelector,
+    DateTime? Function(T item) timestampSelector,
+  ) {
+    final Map<String, T> merged = <String, T>{
+      for (final T item in current) idSelector(item): item,
+    };
+    for (final String id in deletedIds) {
+      merged.remove(id.trim());
+    }
+    for (final T item in changed) {
+      final String id = idSelector(item).trim();
+      if (id.isNotEmpty) {
+        merged[id] = item;
+      }
+    }
+    final List<T> values = merged.values.toList(growable: false);
+    values.sort((T a, T b) {
+      final DateTime? left = timestampSelector(a);
+      final DateTime? right = timestampSelector(b);
+      if (left == null && right == null) {
+        return idSelector(a).compareTo(idSelector(b));
+      }
+      if (left == null) return 1;
+      if (right == null) return -1;
+      final int cmp = right.compareTo(left);
+      if (cmp != 0) return cmp;
+      return idSelector(a).compareTo(idSelector(b));
+    });
+    return values;
   }
 
   String _canonicalJson(dynamic value) {
@@ -1007,6 +1261,11 @@ class AppStateController extends ChangeNotifier {
           await syncManager.syncCaptureInbox(
             uid: uid,
             items: nextState.pendingTransactions,
+            deletedIds: _removedIds<PendingTransaction>(
+              previousState.pendingTransactions,
+              nextState.pendingTransactions,
+              (PendingTransaction item) => item.id,
+            ),
           );
         } catch (error, stackTrace) {
           debugPrint('Background capture inbox sync skipped: $error');
@@ -1021,6 +1280,11 @@ class AppStateController extends ChangeNotifier {
           await syncManager.syncMerchantRules(
             uid: uid,
             rules: nextState.merchantRules.values,
+            deletedIds: _removedIds<MerchantRule>(
+              previousState.merchantRules.values,
+              nextState.merchantRules.values,
+              (MerchantRule rule) => rule.merchantName.toLowerCase().trim(),
+            ),
           );
         } catch (error, stackTrace) {
           debugPrint('Background merchant rules sync skipped: $error');
@@ -1035,6 +1299,11 @@ class AppStateController extends ChangeNotifier {
           await syncManager.syncTransactions(
             uid: uid,
             items: nextState.transactions,
+            deletedIds: _removedIds<Transaction>(
+              previousState.transactions,
+              nextState.transactions,
+              (Transaction item) => item.id,
+            ),
           );
         } catch (error, stackTrace) {
           debugPrint('Background transactions sync skipped: $error');
@@ -1046,7 +1315,15 @@ class AppStateController extends ChangeNotifier {
     if (savingsChanged) {
       unawaited(() async {
         try {
-          await syncManager.syncSavings(uid: uid, items: nextState.savings);
+          await syncManager.syncSavings(
+            uid: uid,
+            items: nextState.savings,
+            deletedIds: _removedIds<Saving>(
+              previousState.savings,
+              nextState.savings,
+              (Saving item) => item.id,
+            ),
+          );
         } catch (error, stackTrace) {
           debugPrint('Background savings sync skipped: $error');
           debugPrintStack(stackTrace: stackTrace);
@@ -1060,6 +1337,11 @@ class AppStateController extends ChangeNotifier {
           await syncManager.syncRecurringTransactions(
             uid: uid,
             items: nextState.recurringTransactions,
+            deletedIds: _removedIds<RecurringTransaction>(
+              previousState.recurringTransactions,
+              nextState.recurringTransactions,
+              (RecurringTransaction item) => item.id,
+            ),
           );
         } catch (error, stackTrace) {
           debugPrint('Background recurring transactions sync skipped: $error');
@@ -1074,6 +1356,11 @@ class AppStateController extends ChangeNotifier {
           await syncManager.syncInvestments(
             uid: uid,
             items: nextState.investments,
+            deletedIds: _removedIds<InvestmentAsset>(
+              previousState.investments,
+              nextState.investments,
+              (InvestmentAsset item) => item.id,
+            ),
           );
         } catch (error, stackTrace) {
           debugPrint('Background investments sync skipped: $error');
@@ -1088,6 +1375,11 @@ class AppStateController extends ChangeNotifier {
           await syncManager.syncFinancialPlans(
             uid: uid,
             items: nextState.financialPlans,
+            deletedIds: _removedIds<FinancialPlan>(
+              previousState.financialPlans,
+              nextState.financialPlans,
+              (FinancialPlan item) => item.id,
+            ),
           );
         } catch (error, stackTrace) {
           debugPrint('Background financial plans sync skipped: $error');
@@ -1102,6 +1394,11 @@ class AppStateController extends ChangeNotifier {
           await syncManager.syncCorrectionFeedback(
             uid: uid,
             items: nextState.correctionFeedback,
+            deletedIds: _removedIds<CorrectionFeedback>(
+              previousState.correctionFeedback,
+              nextState.correctionFeedback,
+              (CorrectionFeedback item) => item.id,
+            ),
           );
         } catch (error, stackTrace) {
           debugPrint('Background correction feedback sync skipped: $error');
@@ -1116,6 +1413,12 @@ class AppStateController extends ChangeNotifier {
           await syncManager.syncMerchantConfirmations(
             uid: uid,
             items: nextState.merchantConfirmations,
+            deletedIds: _removedIds<MerchantConfirmation>(
+              previousState.merchantConfirmations,
+              nextState.merchantConfirmations,
+              (MerchantConfirmation item) =>
+                  '${item.merchantName.toLowerCase().trim()}|${item.categoryId.toLowerCase().trim()}',
+            ),
           );
         } catch (error, stackTrace) {
           debugPrint('Background merchant confirmations sync skipped: $error');
