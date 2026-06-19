@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
@@ -21,6 +22,18 @@ class AuthController extends ChangeNotifier {
   bool get isLoading => _isLoading;
   bool get isSignedIn => _currentUser != null;
   String? get error => _error;
+
+  Stream<AuthGateState> get authGateStateChanges {
+    if (authService is AuthGateStateSource) {
+      return (authService as AuthGateStateSource).authGateStateChanges;
+    }
+    final UserProfile? user = _currentUser;
+    return Stream<AuthGateState>.value(
+      user == null
+          ? const AuthGateState(status: AuthGateStatus.signedOut)
+          : AuthGateState(status: AuthGateStatus.signedIn, user: user),
+    );
+  }
 
   Future<void> load() async {
     _isLoading = true;
@@ -87,6 +100,7 @@ class AuthController extends ChangeNotifier {
   Future<void> signOut() async {
     _isLoading = true;
     _error = null;
+    final String? userIdAtSignOut = _currentUser?.id;
     notifyListeners();
 
     try {
@@ -97,6 +111,11 @@ class AuthController extends ChangeNotifier {
       _error = error.toString();
     } finally {
       _currentUser = null;
+      final String? scopedKey = StorageKeys.appStateKeyForUser(userIdAtSignOut);
+      if (scopedKey != null) {
+        await localStorage.remove(scopedKey);
+      }
+      await localStorage.remove(StorageKeys.appStateAnonymousKey);
       await localStorage.remove(StorageKeys.userProfileKey);
       _isLoading = false;
       notifyListeners();

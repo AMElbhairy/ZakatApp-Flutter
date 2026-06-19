@@ -28,6 +28,7 @@ class AppLocalizations {
       'checking_cloud_backup': 'Checking cloud backup',
       'loading_entries': 'Loading entries',
       'loading_assets': 'Loading assets',
+      'loading_market_data': 'Loading market data',
       'loading_plans': 'Loading plans',
       'backup_date_unknown': 'Backup date unknown',
       'backup_date': 'Backup date',
@@ -146,6 +147,7 @@ class AppLocalizations {
       'theme_dark': 'Dark',
       'backup_sync_section': 'Backup & Sync',
       'categories_section': 'Categories',
+      'merchant_rules_section': 'Merchant Rules',
       'categories_manage': 'Manage categories',
       'income_categories': 'Income Categories',
       'expense_categories': 'Expense Categories',
@@ -164,7 +166,7 @@ class AppLocalizations {
       'ai_section': 'AI',
       'coming_soon': 'Coming soon',
       'ai_coming_soon': 'AI key settings are not enabled in this build.',
-      'drive_backup_coming_soon': 'Google Drive backup not available yet.',
+      'drive_backup_coming_soon': 'Cloud sync is handled automatically.',
       'about_section': 'About',
       'language_label': 'Language',
       'main_currency': 'Main Currency',
@@ -393,6 +395,7 @@ class AppLocalizations {
       'checking_cloud_backup': 'جارٍ فحص النسخة الاحتياطية السحابية',
       'loading_entries': 'جارٍ تحميل القيود',
       'loading_assets': 'جارٍ تحميل الأصول',
+      'loading_market_data': 'جارٍ تحميل بيانات السوق',
       'loading_plans': 'جارٍ تحميل الخطط',
       'backup_date_unknown': 'تاريخ النسخة الاحتياطية غير معروف',
       'backup_date': 'تاريخ النسخة الاحتياطية',
@@ -511,6 +514,7 @@ class AppLocalizations {
       'theme_dark': 'داكن',
       'backup_sync_section': 'النسخ الاحتياطي والمزامنة',
       'categories_section': 'الفئات',
+      'merchant_rules_section': 'قواعد التجار',
       'categories_manage': 'إدارة الفئات',
       'income_categories': 'فئات الدخل',
       'expense_categories': 'فئات المصروفات',
@@ -529,7 +533,7 @@ class AppLocalizations {
       'coming_soon': 'قريباً',
       'ai_coming_soon':
           'إعدادات مفتاح الذكاء الاصطناعي غير مفعّلة في هذه النسخة',
-      'drive_backup_coming_soon': 'النسخ الاحتياطي على جوجل درايف غير متاح بعد',
+      'drive_backup_coming_soon': 'تتم المزامنة السحابية تلقائياً.',
       'about_section': 'حول التطبيق',
       'language_label': 'اللغة',
       'main_currency': 'العملة الرئيسية',
@@ -773,7 +777,7 @@ class AppLocalizations {
     final String lang = _values.containsKey(locale.languageCode)
         ? locale.languageCode
         : 'en';
-    
+
     // Check if the lowercase string exists in our localization map for English.
     // If it does, we treat it as a default category and translate it.
     // If it does not, we return the original name (as it is user-added/custom).

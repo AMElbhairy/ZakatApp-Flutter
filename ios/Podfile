@@ -1,4 +1,4 @@
-platform :ios, '13.0'
+platform :ios, '15.0'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
@@ -43,9 +43,54 @@ post_install do |installer|
     # public headers. Disable verifier-only checks for all pods so the actual
     # app build still uses the normal framework headers/search paths.
     target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
       config.build_settings['ENABLE_MODULE_VERIFIER'] = 'NO'
       config.build_settings['OTHER_MODULE_VERIFIER_FLAGS'] = ''
       config.build_settings['CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER'] = 'NO'
+    end
+  end
+
+  # Flutter tooling can regenerate these files with 13.0, which causes
+  # repeated Swift Package minimum-platform popups for Firebase plugins.
+  flutter_podspec = File.join(__dir__, 'Flutter', 'Flutter.podspec')
+  if File.exist?(flutter_podspec)
+    podspec_content = File.read(flutter_podspec)
+    patched_podspec = podspec_content.gsub(
+      "s.ios.deployment_target = '13.0'",
+      "s.ios.deployment_target = '15.0'"
+    )
+    if patched_podspec != podspec_content
+      File.write(flutter_podspec, patched_podspec)
+    end
+  end
+
+  generated_package_swift = File.join(
+    __dir__,
+    'Flutter',
+    'ephemeral',
+    'Packages',
+    'FlutterGeneratedPluginSwiftPackage',
+    'Package.swift'
+  )
+  if File.exist?(generated_package_swift)
+    package_content = File.read(generated_package_swift)
+    patched_package = package_content.gsub('.iOS("13.0")', '.iOS("15.0")')
+    if patched_package != package_content
+      File.write(generated_package_swift, patched_package)
+    end
+  end
+
+  local_flutter_podspec_json = File.join(
+    __dir__,
+    'Pods',
+    'Local Podspecs',
+    'Flutter.podspec.json'
+  )
+  if File.exist?(local_flutter_podspec_json)
+    local_spec_content = File.read(local_flutter_podspec_json)
+    patched_local_spec = local_spec_content.gsub('"ios": "13.0"', '"ios": "15.0"')
+    if patched_local_spec != local_spec_content
+      File.write(local_flutter_podspec_json, patched_local_spec)
     end
   end
 end

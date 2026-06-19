@@ -6,10 +6,10 @@ import 'package:http/http.dart' as http;
 
 import '../../core/i18n/app_localizations.dart';
 import '../../core/widgets/app_ui.dart';
-import '../../models/backup_preview.dart';
 import '../../models/market_snapshot.dart';
 import '../../models/recurring_transaction.dart';
 import 'categories_screen.dart';
+import 'merchant_rules_screen.dart';
 import '../../core/services/zakat_engine.dart';
 import '../../core/utils/amount_parser.dart';
 import '../../models/user_profile.dart';
@@ -17,7 +17,6 @@ import '../../services/app_state_controller.dart';
 import '../../services/auth_controller.dart';
 import '../../features/auth/auth_service.dart';
 import '../../services/backup_restore_card.dart';
-import '../../services/cloud_backup_controller.dart';
 import '../../core/widgets/currency_dropdown_form_field.dart';
 import '../../services/biometric_service.dart';
 
@@ -83,7 +82,6 @@ class _AccountScreenState extends State<AccountScreen> {
   Widget build(BuildContext context) {
     final controller = context.watch<AppStateController>();
     final authController = context.watch<AuthController?>();
-    final cloudBackupController = context.watch<CloudBackupController?>();
     final state = controller.state;
 
     final String mainCurrency = state.mainCurrency.isEmpty
@@ -128,8 +126,6 @@ class _AccountScreenState extends State<AccountScreen> {
                 email: authController?.currentUser?.email,
                 photoUrl: authController?.currentUser?.photoUrl,
                 connected: authController?.isSignedIn == true,
-                lastBackupAt:
-                    cloudBackupController?.latestBackup?.effectiveUpdatedAt,
                 isLoading: authController?.isLoading == true,
                 onSignIn: authController == null
                     ? null
@@ -141,8 +137,6 @@ class _AccountScreenState extends State<AccountScreen> {
                     : () async {
                         final AppStateController appStateController = context
                             .read<AppStateController>();
-                        final CloudBackupController? cloud =
-                            cloudBackupController;
                         final UserProfile? user = authController.currentUser;
                         if (user == null) {
                           await authController.signOut();
@@ -158,46 +152,7 @@ class _AccountScreenState extends State<AccountScreen> {
                           if (!auth) return;
                         }
 
-                        final bool? backupChoice = await showDialog<bool>(
-                          context: context,
-                          builder: (BuildContext dialogContext) => AlertDialog(
-                            title: Text(
-                              context.l10n.tr('backup_before_sign_out'),
-                            ),
-                            content: Text(
-                              context.l10n.tr('backup_before_sign_out_message'),
-                            ),
-                            actions: <Widget>[
-                              TextButton(
-                                onPressed: () =>
-                                    Navigator.of(dialogContext).pop(null),
-                                child: Text(context.l10n.tr('cancel')),
-                              ),
-                              TextButton(
-                                onPressed: () =>
-                                    Navigator.of(dialogContext).pop(false),
-                                child: Text(context.l10n.tr('sign_out_anyway')),
-                              ),
-                              FilledButton(
-                                onPressed: () =>
-                                    Navigator.of(dialogContext).pop(true),
-                                child: Text(context.l10n.tr('backup_now')),
-                              ),
-                            ],
-                          ),
-                        );
-                        if (backupChoice == null) return;
-
-                        bool shouldContinue = backupChoice == false;
-                        if (backupChoice == true) {
-                          shouldContinue = await _backupBeforeSigningOut(
-                            context,
-                            cloud,
-                          );
-                        }
-                        if (!shouldContinue) return;
-
-                        await appStateController.clearLocalDataForUser(
+                        await appStateController.clearLocalDataForSignOut(
                           userId: user.id,
                         );
                         await authController.signOut();
@@ -312,6 +267,19 @@ class _AccountScreenState extends State<AccountScreen> {
                     ),
                     const Divider(height: 1, indent: 36),
                     _SettingsRowTile(
+                      key: const Key('settingsMerchantRulesTile'),
+                      icon: Icons.rule_folder_outlined,
+                      title: context.l10n.tr('merchant_rules_section'),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const MerchantRulesScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                    const Divider(height: 1, indent: 36),
+                    _SettingsRowTile(
                       key: const Key('settingsRecurringTile'),
                       icon: Icons.event_repeat_outlined,
                       title: context.l10n.tr('recurring_section'),
@@ -376,6 +344,7 @@ class _AccountScreenState extends State<AccountScreen> {
                         final canAuth =
                             await BiometricService.canAuthenticate();
                         if (!canAuth) {
+                          if (!context.mounted) return;
                           showTopSnackBar(
                             context,
                             'Biometrics are not available or configured on this device.',
@@ -388,7 +357,7 @@ class _AccountScreenState extends State<AccountScreen> {
                               ? 'Confirm identity to enable Biometric App Lock'
                               : 'Confirm identity to disable Biometric App Lock',
                         );
-                        if (authenticated) {
+                        if (authenticated && context.mounted) {
                           context
                               .read<AppStateController>()
                               .updateBiometricLockEnabled(val);
@@ -832,103 +801,20 @@ class _AccountScreenState extends State<AccountScreen> {
                     Row(
                       children: <Widget>[
                         Icon(
-                          authController?.isSignedIn == true
-                              ? Icons.cloud_done_outlined
-                              : Icons.cloud_off_outlined,
+                          Icons.cloud_done_outlined,
                           size: 18,
-                          color: authController?.isSignedIn == true
-                              ? Colors.green
-                              : Colors.grey,
+                          color: Colors.green,
                         ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            authController?.isSignedIn == true
-                                ? 'Google Drive Connected'
-                                : 'Google Drive Disconnected',
+                            'Cloud Sync: Active',
                             style: const TextStyle(fontWeight: FontWeight.w600),
                           ),
                         ),
                       ],
                     ),
-                    if (cloudBackupController != null &&
-                        cloudBackupController
-                                .latestBackup
-                                ?.effectiveUpdatedAt !=
-                            null) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        'Last backup: ${_formatLastUpdatedForDisplay(cloudBackupController.latestBackup!.effectiveUpdatedAt!.toIso8601String())}',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
-                    if (cloudBackupController != null &&
-                        cloudBackupController.statusMessage
-                            .trim()
-                            .isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        cloudBackupController.statusMessage,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
                     const SizedBox(height: 12),
-                    Row(
-                      children: <Widget>[
-                        Expanded(
-                          child: FilledButton.tonal(
-                            key: const Key('driveBackupNowButton'),
-                            onPressed:
-                                authController == null ||
-                                    !authController.isSignedIn ||
-                                    cloudBackupController == null ||
-                                    cloudBackupController.isBackingUp ||
-                                    cloudBackupController.isRestoring
-                                ? null
-                                : () => _handleCloudBackup(
-                                    context,
-                                    cloudBackupController,
-                                  ),
-                            child: cloudBackupController?.isBackingUp == true
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Text('Backup Now'),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: OutlinedButton(
-                            key: const Key('driveRestoreFromCloudButton'),
-                            onPressed:
-                                authController == null ||
-                                    !authController.isSignedIn ||
-                                    cloudBackupController == null ||
-                                    cloudBackupController.isBackingUp ||
-                                    cloudBackupController.isRestoring
-                                ? null
-                                : () => _handleCloudRestore(
-                                    context,
-                                    cloudBackupController,
-                                  ),
-                            child: cloudBackupController?.isRestoring == true
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Text('Restore'),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
                     ExpansionTile(
                       title: Text(
                         context.l10n.tr('local_backup_options'),
@@ -1299,6 +1185,7 @@ class _AccountScreenState extends State<AccountScreen> {
 
   Future<void> _confirmDeleteAllData(BuildContext context) async {
     final state = context.read<AppStateController>().state;
+    final l10n = context.l10n;
     if (state.biometricExportEnabled &&
         await BiometricService.canAuthenticate()) {
       final auth = await BiometricService.authenticate(
@@ -1307,20 +1194,21 @@ class _AccountScreenState extends State<AccountScreen> {
       );
       if (!auth) return;
     }
+    if (!context.mounted) return;
     final bool? ok = await showDialog<bool>(
       context: context,
       builder: (BuildContext ctx) => AlertDialog(
-        title: Text(context.l10n.tr('delete_all_data')),
-        content: Text(context.l10n.tr('delete_all_confirm')),
+        title: Text(l10n.tr('delete_all_data')),
+        content: Text(l10n.tr('delete_all_confirm')),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text(context.l10n.tr('cancel')),
+            child: Text(l10n.tr('cancel')),
           ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text(context.l10n.tr('delete')),
+            child: Text(l10n.tr('delete')),
           ),
         ],
       ),
@@ -1328,110 +1216,6 @@ class _AccountScreenState extends State<AccountScreen> {
     if (ok == true && context.mounted) {
       await context.read<AppStateController>().clearLocalData();
     }
-  }
-
-  Future<void> _handleCloudBackup(
-    BuildContext context,
-    CloudBackupController cloudBackupController,
-  ) async {
-    final state = context.read<AppStateController>().state;
-    if (state.biometricExportEnabled &&
-        await BiometricService.canAuthenticate()) {
-      final auth = await BiometricService.authenticate(
-        reason: 'Confirm identity to initiate cloud backup',
-        isSensitiveAction: true,
-      );
-      if (!auth) return;
-    }
-    bool force = false;
-    if (cloudBackupController.cloudBackupNewerThanLocal) {
-      final bool? overwrite = await showDialog<bool>(
-        context: context,
-        builder: (BuildContext dialogContext) => AlertDialog(
-          title: const Text('Overwrite newer cloud backup?'),
-          content: const Text(
-            'The cloud backup is newer than the local data on this device. '
-            'Backup Now will replace the newer cloud copy.',
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('Overwrite'),
-            ),
-          ],
-        ),
-      );
-      if (overwrite != true || !mounted) return;
-      force = true;
-    }
-
-    final bool ok = await cloudBackupController.backupNow(
-      forceIfCloudNewer: force,
-    );
-    if (!mounted) return;
-    showTopSnackBar(
-      this.context,
-      ok ? 'Cloud backup completed.' : cloudBackupController.statusMessage,
-    );
-  }
-
-  Future<void> _handleCloudRestore(
-    BuildContext context,
-    CloudBackupController cloudBackupController,
-  ) async {
-    final state = context.read<AppStateController>().state;
-    if (state.biometricRestoreEnabled &&
-        await BiometricService.canAuthenticate()) {
-      final auth = await BiometricService.authenticate(
-        reason: 'Confirm identity to restore data from cloud backup',
-        isSensitiveAction: true,
-      );
-      if (!auth) return;
-    }
-    final BackupPreview? preview = await cloudBackupController
-        .previewLatestBackup();
-    if (!mounted) return;
-    if (preview == null) {
-      showTopSnackBar(this.context, 'No cloud backup found.');
-      return;
-    }
-
-    final bool? restore = await showDialog<bool>(
-      context: this.context,
-      builder: (BuildContext dialogContext) => AlertDialog(
-        title: const Text('Restore from Cloud'),
-        content: Text(
-          'Restore the latest Google Drive backup?\n\n'
-          'Transactions: ${preview.transactionsCount}\n'
-          'Savings: ${preview.savingsCount}\n'
-          'Investments: ${preview.investmentsCount}\n'
-          'Plans: ${preview.financialPlansCount}\n'
-          'Exported: ${preview.exportedAt.isEmpty ? '-' : _formatLastUpdatedForDisplay(preview.exportedAt)}',
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Restore'),
-          ),
-        ],
-      ),
-    );
-    if (restore != true || !mounted) return;
-
-    final bool ok = await cloudBackupController.restoreLatestBackup();
-    if (!mounted) return;
-    showTopSnackBar(
-      this.context,
-      ok ? 'Cloud restore completed.' : cloudBackupController.statusMessage,
-    );
   }
 
   Future<void> _openCurrencyExchangeDialog(BuildContext context) async {
@@ -1832,7 +1616,7 @@ class _AccountScreenState extends State<AccountScreen> {
           Switch(
             value: value,
             onChanged: onChanged,
-            activeColor: colors.primary,
+            activeThumbColor: colors.primary,
           ),
         ],
       ),
@@ -2003,7 +1787,6 @@ class _SettingsProfileHeader extends StatelessWidget {
     required this.email,
     required this.photoUrl,
     required this.connected,
-    required this.lastBackupAt,
     required this.isLoading,
     required this.onSignIn,
     required this.onSignOut,
@@ -2013,7 +1796,6 @@ class _SettingsProfileHeader extends StatelessWidget {
   final String? email;
   final String? photoUrl;
   final bool connected;
-  final DateTime? lastBackupAt;
   final bool isLoading;
   final VoidCallback? onSignIn;
   final VoidCallback? onSignOut;
@@ -2090,28 +1872,6 @@ class _SettingsProfileHeader extends StatelessWidget {
                   ),
                 ],
                 const SizedBox(height: 9),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
-                  children: <Widget>[
-                    _StatusPill(
-                      icon: connected
-                          ? Icons.cloud_done_outlined
-                          : Icons.cloud_off_outlined,
-                      label: connected
-                          ? 'Google Drive Connected'
-                          : 'Google Drive Not Connected',
-                      positive: connected,
-                    ),
-                    if (lastBackupAt != null)
-                      _StatusPill(
-                        icon: Icons.history_rounded,
-                        label: 'Backup ${_relativeTime(lastBackupAt!)}',
-                        positive: true,
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 9),
                 SizedBox(
                   height: 32,
                   child: connected
@@ -2141,119 +1901,6 @@ class _SettingsProfileHeader extends StatelessWidget {
                         ),
                 ),
               ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  static String _relativeTime(DateTime value) {
-    final Duration difference = DateTime.now().difference(value.toLocal());
-    if (difference.inMinutes < 1) return 'now';
-    if (difference.inHours < 1) return '${difference.inMinutes}m ago';
-    if (difference.inDays < 1) return '${difference.inHours}h ago';
-    return '${difference.inDays}d ago';
-  }
-}
-
-Future<bool> _backupBeforeSigningOut(
-  BuildContext context,
-  CloudBackupController? cloud,
-) async {
-  if (cloud == null) return true;
-  final bool ok = await cloud.backupNow(forceIfCloudNewer: true);
-  if (ok) return true;
-  if (!context.mounted) return false;
-
-  final bool? action = await showDialog<bool>(
-    context: context,
-    builder: (BuildContext dialogContext) => AlertDialog(
-      title: Text(context.l10n.tr('backup_failed_title')),
-      content: Text(
-        cloud.statusMessage.isEmpty
-            ? context.l10n.tr('backup_failed_message')
-            : cloud.statusMessage,
-      ),
-      actions: <Widget>[
-        TextButton(
-          onPressed: () => Navigator.of(dialogContext).pop(false),
-          child: Text(context.l10n.tr('sign_out_anyway')),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(dialogContext).pop(true),
-          child: Text(context.l10n.tr('retry_backup')),
-        ),
-        TextButton(
-          onPressed: () => Navigator.of(dialogContext).pop(null),
-          child: Text(context.l10n.tr('cancel')),
-        ),
-      ],
-    ),
-  );
-
-  if (action != true) return action == false;
-  final bool retryOk = await cloud.backupNow(forceIfCloudNewer: true);
-  if (retryOk) return true;
-  if (!context.mounted) return false;
-
-  final bool? afterRetry = await showDialog<bool>(
-    context: context,
-    builder: (BuildContext dialogContext) => AlertDialog(
-      title: Text(context.l10n.tr('backup_failed_title')),
-      content: Text(
-        cloud.statusMessage.isEmpty
-            ? context.l10n.tr('backup_failed_message')
-            : cloud.statusMessage,
-      ),
-      actions: <Widget>[
-        TextButton(
-          onPressed: () => Navigator.of(dialogContext).pop(false),
-          child: Text(context.l10n.tr('sign_out_anyway')),
-        ),
-        TextButton(
-          onPressed: () => Navigator.of(dialogContext).pop(null),
-          child: Text(context.l10n.tr('cancel')),
-        ),
-      ],
-    ),
-  );
-  return afterRetry == false;
-}
-
-class _StatusPill extends StatelessWidget {
-  const _StatusPill({
-    required this.icon,
-    required this.label,
-    required this.positive,
-  });
-
-  final IconData icon;
-  final String label;
-  final bool positive;
-
-  @override
-  Widget build(BuildContext context) {
-    final Color color = positive
-        ? const Color(0xFF9BE5C5)
-        : Colors.white.withValues(alpha: 0.65);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(99),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Icon(icon, size: 13, color: color),
-          const SizedBox(width: 5),
-          Text(
-            label,
-            style: TextStyle(
-              color: color,
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
             ),
           ),
         ],
@@ -2406,7 +2053,7 @@ class _OverviewCard extends StatelessWidget {
                   ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
                 ),
               ),
-              if (trailing != null) trailing!,
+              trailing ?? const SizedBox.shrink(),
             ],
           ),
           const SizedBox(height: 6),

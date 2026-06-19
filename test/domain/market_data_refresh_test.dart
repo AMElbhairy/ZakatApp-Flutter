@@ -290,9 +290,11 @@ void main() {
 
     final snapshot = controller.currentMarketSnapshot;
     expect(snapshot.usdToEgp, 50);
+    expect(fake.fxCalls, 1);
 
-    // Idempotent repeated startup call.
+    // Repeated app-open call should force a live refresh but keep timer single-start.
     await controller.startMarketAutoRefresh();
+    expect(fake.fxCalls, 2);
     expect(AppStateController.marketRefreshInterval, const Duration(minutes: 5));
   });
 
@@ -320,7 +322,7 @@ void main() {
     expect(fake.silverCalls, 1);
   });
 
-  test('startup refresh honors cooldown and uses last saved market data', () async {
+  test('refresh respects cooldown when explicitly requested', () async {
     final fake = _FakeMarketDataApiService(
       fxRates: <String, double>{'USD': 99, 'SAR': 25},
       goldPrice: 9999,

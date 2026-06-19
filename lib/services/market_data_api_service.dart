@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show debugPrint;
@@ -79,8 +80,7 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
 
   @override
   Future<Map<String, double>?> fetchFxRatesToEgp() async {
-    final Map<String, double>? preferredUsd =
-        await _fetchFxFromHexaRate() ?? await _fetchFxFromHexaRateProxy();
+    final Map<String, double>? preferredUsd = await _fetchFxFromHexaRate();
     final Map<String, double>? broadRates = await _fetchFxFromOpenErApi();
 
     if (preferredUsd == null && broadRates == null) return null;
@@ -140,20 +140,6 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
     return <String, double>{'EGP': 1, 'USD': usdToEgp};
   }
 
-  Future<Map<String, double>?> _fetchFxFromHexaRateProxy() async {
-    final Uri uri = Uri.parse(
-      'https://api.allorigins.win/raw?url=https://hexarate.paikama.co/api/rates/latest/USD?target=EGP',
-    );
-    final Map<String, String>? headers = _hexaRateApiKey.trim().isEmpty
-        ? null
-        : <String, String>{'Authorization': 'Bearer $_hexaRateApiKey'};
-    final Map<String, dynamic>? json = await _getJson(uri, headers: headers);
-    if (json == null) return null;
-    final double usdToEgp = _asDouble(json['mid']);
-    if (usdToEgp <= 0) return null;
-    return <String, double>{'EGP': 1, 'USD': usdToEgp};
-  }
-
   Future<Map<String, double>?> _fetchFxFromOpenErApi() async {
     final Uri uri = Uri.parse('https://open.er-api.com/v6/latest/USD');
     final Map<String, dynamic>? json = await _getJson(uri);
@@ -179,196 +165,106 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
   }
 
   Future<double?> _fetchGoldApiUsd(String symbol) async {
-    // Note: metals.live fails on iOS with TLS SNI errors, so we skip it
-    // and go directly to gold-api.com with retry logic
-
-    // Per-metal in-flight dedupe and cooldown to avoid hammering free APIs.
-    await _initPrefs();
     final Map<String, Future<double?>?> inFlight = _inFlightMetalFetches;
-    if (inFlight.containsKey(symbol)) {
-      return inFlight[symbol];
-    }
+    final Future<double?>? active = inFlight[symbol];
+    if (active != null) return active;
 
-    final double? cached = await _getCachedPriceUsd(symbol);
-    // If we have a recent successful fetch, prefer the cached value and avoid network.
-    final String lastSuccessKey = 'last_success_metal_fetch_$symbol';
-    final String? lastSuccessRaw = _prefs?.getString(lastSuccessKey);
-    if (lastSuccessRaw != null && lastSuccessRaw.isNotEmpty) {
-      final DateTime? lastSuccess = DateTime.tryParse(lastSuccessRaw);
-      if (lastSuccess != null &&
-          DateTime.now().difference(lastSuccess) < _metalCooldown &&
-          cached != null) {
+    final Future<double?> future = (() async {
+      await _initPrefs();
+      final double? cached = await _getCachedPriceUsd(symbol);
+
+      // If we have a recent successful fetch, prefer the cached value and avoid network.
+      final String lastSuccessKey = 'last_success_metal_fetch_$symbol';
+      final String? lastSuccessRaw = _prefs?.getString(lastSuccessKey);
+      if (lastSuccessRaw != null && lastSuccessRaw.isNotEmpty) {
+        final DateTime? lastSuccess = DateTime.tryParse(lastSuccessRaw);
+        if (lastSuccess != null &&
+            DateTime.now().difference(lastSuccess) < _metalCooldown &&
+            cached != null) {
+          debugPrint(
+            'MarketDataApiService: using cached $symbol (recent success)',
+          );
+          return cached;
+        }
+      }
+
+      final Uri baseUri = Uri.parse('https://api.gold-api.com/price/$symbol');
+      Uri uri = baseUri;
+      if (_goldApiKey.trim().isNotEmpty) {
+        final Map<String, String> qp = Map<String, String>.from(
+          uri.queryParameters,
+        );
+        qp['apikey'] = _goldApiKey;
+        uri = uri.replace(queryParameters: qp);
+      }
+
+      final String rateLimitKey = 'last_rate_limit_goldapi_$symbol';
+      final String? rlRaw = _prefs?.getString(rateLimitKey);
+      if (rlRaw != null && rlRaw.isNotEmpty) {
+        final DateTime? lastRl = DateTime.tryParse(rlRaw);
+        if (lastRl != null &&
+            DateTime.now().difference(lastRl) < _metalCooldown) {
+          return cached;
+        }
+      }
+
+      try {
+        final Map<String, String> headers = <String, String>{
+          'accept': 'application/json',
+          'user-agent':
+              'Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15',
+        };
+        if (_goldApiKey.trim().isNotEmpty) {
+          headers['x-api-key'] = _goldApiKey;
+        }
+        final http.Response response = await _httpClient.get(
+          uri,
+          headers: headers,
+        );
+        final String body = response.body;
+
+        if (response.statusCode != 200) {
+          if (response.statusCode == 429) {
+            try {
+              await _prefs?.setString(
+                rateLimitKey,
+                DateTime.now().toUtc().toIso8601String(),
+              );
+            } catch (_) {}
+            debugPrint(
+              'MarketDataApiService: gold-api returned 429 for $symbol — using last saved value due to rate limit',
+            );
+          } else {
+            debugPrint(
+              'MarketDataApiService: gold-api returned ${response.statusCode} for $symbol',
+            );
+          }
+          return cached;
+        }
+
+        final Map<String, dynamic>? json =
+            jsonDecode(body) as Map<String, dynamic>?;
+        if (json == null) return cached;
+        final double value = extractUsdPerOunceFromGoldApiJson(
+          json,
+          symbol: symbol,
+        );
+        if (value <= 0) return cached;
+
+        await _cachePriceUsd(symbol, value);
+        try {
+          await _prefs?.setString(
+            'last_success_metal_fetch_$symbol',
+            DateTime.now().toUtc().toIso8601String(),
+          );
+        } catch (_) {}
+        return value;
+      } catch (error) {
         debugPrint(
-          'MarketDataApiService: using cached $symbol (recent success)',
+          'MarketDataApiService: gold-api request failed for $symbol: $error',
         );
         return cached;
       }
-    }
-
-    // Providers to try in priority order: metals.live (no key) then gold-api.com
-    final List<String> providers = <String>['metalslive', 'goldapi'];
-
-    Future<double?> fetchFromProvider(String provider) async {
-      if (provider == 'metalslive') {
-        final String mlEndpoint = (symbol.toUpperCase() == 'XAU')
-            ? 'https://api.metals.live/v1/spot/gold'
-            : 'https://api.metals.live/v1/spot/silver';
-        try {
-          // Check provider rate-limit key
-          final String rateLimitKey = 'last_rate_limit_${provider}_$symbol';
-          final String? rlRaw = _prefs?.getString(rateLimitKey);
-          if (rlRaw != null && rlRaw.isNotEmpty) {
-            final DateTime? lastRl = DateTime.tryParse(rlRaw);
-            if (lastRl != null &&
-                DateTime.now().difference(lastRl) < _metalCooldown) {
-              // skip this provider due to recent rate limit
-              return null;
-            }
-          }
-
-          final http.Response response = await _httpClient.get(
-            Uri.parse(mlEndpoint),
-            headers: <String, String>{'accept': 'application/json'},
-          );
-          final String body = response.body;
-          if (response.statusCode != 200) {
-            if (response.statusCode == 429) {
-              final String rateLimitKey = 'last_rate_limit_${provider}_$symbol';
-              try {
-                await _prefs?.setString(
-                  rateLimitKey,
-                  DateTime.now().toUtc().toIso8601String(),
-                );
-              } catch (_) {}
-              debugPrint(
-                'MarketDataApiService: metals.live returned 429 for $symbol — using cached/manual value',
-              );
-            }
-            return null;
-          }
-
-          final dynamic json = jsonDecode(body);
-          double? priceUsd;
-          if (json is List) {
-            final dynamic first = json.isNotEmpty ? json[0] : null;
-            if (first != null) {
-              priceUsd = _asDouble(first['gold'] ?? first['silver']);
-            }
-          } else if (json is Map) {
-            priceUsd = _asDouble(
-              json['gold'] ?? json['silver'] ?? json['price'],
-            );
-          }
-          if (priceUsd == null || priceUsd <= 0) return null;
-          // metals.live returns USD per troy ounce in common responses
-          await _cachePriceUsd(symbol, priceUsd);
-          try {
-            await _prefs?.setString(
-              'last_success_metal_fetch_$symbol',
-              DateTime.now().toUtc().toIso8601String(),
-            );
-          } catch (_) {}
-          return priceUsd;
-        } catch (error) {
-          debugPrint(
-            'MarketDataApiService: metals.live request failed for $symbol: $error',
-          );
-          return null;
-        }
-      }
-
-      // goldapi provider
-      if (provider == 'goldapi') {
-        final Uri baseUri = Uri.parse('https://api.gold-api.com/price/$symbol');
-        Uri uri = baseUri;
-        if (_goldApiKey.trim().isNotEmpty) {
-          final Map<String, String> qp = Map<String, String>.from(
-            uri.queryParameters,
-          );
-          qp['apikey'] = _goldApiKey;
-          uri = uri.replace(queryParameters: qp);
-        }
-
-        // Check provider rate-limit key
-        final String rateLimitKey = 'last_rate_limit_${provider}_$symbol';
-        final String? rlRaw = _prefs?.getString(rateLimitKey);
-        if (rlRaw != null && rlRaw.isNotEmpty) {
-          final DateTime? lastRl = DateTime.tryParse(rlRaw);
-          if (lastRl != null &&
-              DateTime.now().difference(lastRl) < _metalCooldown) {
-            // skip gold-api due to recent rate limit
-            return null;
-          }
-        }
-
-        try {
-          final Map<String, String> headers = <String, String>{
-            'accept': 'application/json',
-            'user-agent':
-                'Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15',
-          };
-          if (_goldApiKey.trim().isNotEmpty) {
-            headers['x-api-key'] = _goldApiKey;
-          }
-          final http.Response response = await _httpClient.get(
-            uri,
-            headers: headers,
-          );
-          final String body = response.body;
-
-          if (response.statusCode != 200) {
-            if (response.statusCode == 429) {
-              try {
-                await _prefs?.setString(
-                  rateLimitKey,
-                  DateTime.now().toUtc().toIso8601String(),
-                );
-              } catch (_) {}
-              debugPrint(
-                'MarketDataApiService: gold-api returned 429 for $symbol — using last saved value due to rate limit',
-              );
-            } else {
-              debugPrint(
-                'MarketDataApiService: gold-api returned ${response.statusCode} for $symbol',
-              );
-            }
-            return null;
-          }
-
-          final Map<String, dynamic>? json =
-              jsonDecode(body) as Map<String, dynamic>?;
-          if (json == null) return null;
-          final double value = extractUsdPerOunceFromGoldApiJson(
-            json,
-            symbol: symbol,
-          );
-          if (value <= 0) return null;
-          await _cachePriceUsd(symbol, value);
-          try {
-            await _prefs?.setString(
-              'last_success_metal_fetch_$symbol',
-              DateTime.now().toUtc().toIso8601String(),
-            );
-          } catch (_) {}
-          return value;
-        } catch (error) {
-          debugPrint(
-            'MarketDataApiService: gold-api request failed for $symbol: $error',
-          );
-          return null;
-        }
-      }
-      return null;
-    }
-
-    final Future<double?> future = (() async {
-      // Try providers in order and return first successful USD-per-ounce value
-      for (final String p in providers) {
-        final double? val = await fetchFromProvider(p);
-        if (val != null && val > 0) return val;
-      }
-      // Nothing worked — return cached if available
-      return cached;
     })();
 
     inFlight[symbol] = future;

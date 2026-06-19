@@ -12,6 +12,7 @@ class AuthLoadingScreen extends StatelessWidget {
     required this.isCheckingCloudBackup,
     required this.isLoadingEntries,
     required this.isLoadingAssets,
+    required this.isLoadingMarketData,
     required this.isLoadingPlans,
     this.statusMessage,
   });
@@ -20,6 +21,7 @@ class AuthLoadingScreen extends StatelessWidget {
   final bool isCheckingCloudBackup;
   final bool isLoadingEntries;
   final bool isLoadingAssets;
+  final bool isLoadingMarketData;
   final bool isLoadingPlans;
   final String? statusMessage;
 
@@ -81,6 +83,13 @@ class AuthLoadingScreen extends StatelessWidget {
                   label: l10n.tr('loading_assets'),
                   isDone: !isLoadingAssets,
                   isActive: isLoadingAssets,
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                AuthChecklistItem(
+                  key: const Key('loadingMarketDataStep'),
+                  label: l10n.tr('loading_market_data'),
+                  isDone: !isLoadingMarketData,
+                  isActive: isLoadingMarketData,
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 AuthChecklistItem(

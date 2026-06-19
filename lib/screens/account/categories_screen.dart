@@ -13,9 +13,7 @@ class CategoriesScreen extends StatefulWidget {
   const CategoriesScreen({super.key});
 
   static Route<void> route() {
-    return CupertinoPageRoute<void>(
-      builder: (_) => const CategoriesScreen(),
-    );
+    return CupertinoPageRoute<void>(builder: (_) => const CategoriesScreen());
   }
 
   @override
@@ -39,9 +37,9 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
           ),
           title: Text(
             'Add Category',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              color: tokens.colors.textPrimary,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(color: tokens.colors.textPrimary),
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -56,7 +54,10 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
                 controller: nameController,
                 autofocus: true,
                 style: TextStyle(color: tokens.colors.textPrimary),
-                decoration: _fieldDecoration(context, hintText: 'e.g. Shopping'),
+                decoration: _fieldDecoration(
+                  context,
+                  hintText: 'e.g. Shopping',
+                ),
               ),
             ],
           ),
@@ -73,9 +74,9 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
                 final String name = nameController.text.trim();
                 if (name.isNotEmpty) {
                   await context.read<AppStateController>().addCategory(
-                        type: type.toLowerCase(),
-                        name: name,
-                      );
+                    type: type.toLowerCase(),
+                    name: name,
+                  );
                   if (context.mounted) Navigator.pop(context);
                 }
               },
@@ -87,8 +88,14 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
     );
   }
 
-  void _showEditCategoryDialog(BuildContext context, String type, String oldName) {
-    final TextEditingController nameController = TextEditingController(text: oldName);
+  void _showEditCategoryDialog(
+    BuildContext context,
+    String type,
+    String oldName,
+  ) {
+    final TextEditingController nameController = TextEditingController(
+      text: oldName,
+    );
     showDialog(
       context: context,
       builder: (context) {
@@ -101,9 +108,9 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
           ),
           title: Text(
             'Edit Category',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              color: tokens.colors.textPrimary,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(color: tokens.colors.textPrimary),
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -135,10 +142,10 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
                 final String newName = nameController.text.trim();
                 if (newName.isNotEmpty && newName != oldName) {
                   await context.read<AppStateController>().renameCategory(
-                        type: type.toLowerCase(),
-                        from: oldName,
-                        to: newName,
-                      );
+                    type: type.toLowerCase(),
+                    from: oldName,
+                    to: newName,
+                  );
                 }
                 if (context.mounted) Navigator.pop(context);
               },
@@ -156,7 +163,9 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
     final controller = context.read<AppStateController>();
     final tokens = context.premiumTokens;
     final bool dark = Theme.of(context).brightness == Brightness.dark;
-    final Color bgColor = dark ? tokens.colors.background : const Color(0xFFF0EBE0);
+    final Color bgColor = dark
+        ? tokens.colors.background
+        : const Color(0xFFF0EBE0);
 
     final List<String> categories = _selectedSection == 'Expense'
         ? state.categories.expense
@@ -171,12 +180,15 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
         title: Text(
           context.l10n.tr('categories_manage'),
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: tokens.colors.textPrimary,
-                fontWeight: FontWeight.w800,
-              ),
+            color: tokens.colors.textPrimary,
+            fontWeight: FontWeight.w800,
+          ),
         ),
         leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios_new_rounded, color: tokens.colors.hero),
+          icon: Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: dark ? tokens.colors.textPrimary : tokens.colors.hero,
+          ),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -234,6 +246,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
     Color inactiveColor,
   ) {
     final tokens = context.premiumTokens;
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
     final bool selected = _selectedSection == label;
     final String text = '$label ($count)';
     return Expanded(
@@ -251,7 +264,9 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: selected ? tokens.colors.hero : inactiveColor,
+                  color: selected
+                      ? (dark ? tokens.colors.textPrimary : tokens.colors.hero)
+                      : inactiveColor,
                   fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
                 ),
               ),
@@ -425,7 +440,8 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
         ],
       ),
       child: InkWell(
-        onTap: () => _showEditCategoryDialog(context, _selectedSection, categoryName),
+        onTap: () =>
+            _showEditCategoryDialog(context, _selectedSection, categoryName),
         child: rowContent,
       ),
     );

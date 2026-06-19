@@ -242,7 +242,7 @@ void main() {
       SharedPreferences.setMockInitialValues(<String, Object>{
         'cached_price_usd_XAU': 2400.0,
       });
-      // First client returns 429 for gold-api and 404 for metals.live
+      // First client returns 429 for gold-api.
       final service1 = MarketDataApiServiceImpl(
         httpClient: _FakeHttpClient(<String, _FakeHttpClientResponse>{
           'https://api.gold-api.com/price/XAU': _FakeHttpClientResponse(
@@ -287,14 +287,11 @@ void main() {
     await prefs.clear();
     await prefs.remove('cached_price_usd_XAU');
     await prefs.remove('last_success_metal_fetch_XAU');
-    await prefs.remove('last_rate_limit_metalslive_XAU');
     await prefs.remove('last_rate_limit_goldapi_XAU');
     final counting = _CountingFakeHttpClient(<String, _FakeHttpClientResponse>{
-      'https://api.metals.live/v1/spot/gold': _FakeHttpClientResponse(
+      'https://api.gold-api.com/price/XAU': _FakeHttpClientResponse(
         200,
-        jsonEncode([
-          {'gold': 2400},
-        ]),
+        jsonEncode(<String, dynamic>{'price': 2400}),
       ),
     });
     final service = MarketDataApiServiceImpl(httpClient: counting);
@@ -306,53 +303,18 @@ void main() {
     ]);
     expect(futures[0], isNotNull);
     expect(futures[1], isNotNull);
-    // metals.live should have been called at least once
+    // gold-api should be called once due to in-flight deduplication.
     expect(
-      (counting.counts['https://api.metals.live/v1/spot/gold'] ?? 0) >= 1,
-      true,
+      counting.counts['https://api.gold-api.com/price/XAU'] ?? 0,
+      1,
     );
   });
 
-  test(
-    'metals.live success avoids gold-api call and returns correct value',
-    () async {
-      SharedPreferences.setMockInitialValues(<String, Object>{});
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.clear();
-      final counting = _CountingFakeHttpClient(
-        <String, _FakeHttpClientResponse>{
-          'https://api.metals.live/v1/spot/gold': _FakeHttpClientResponse(
-            200,
-            jsonEncode([
-              {'gold': 2400},
-            ]),
-          ),
-          'https://api.gold-api.com/price/XAU': _FakeHttpClientResponse(
-            200,
-            jsonEncode(<String, dynamic>{'price': 9999}),
-          ),
-        },
-      );
-      final service = MarketDataApiServiceImpl(httpClient: counting);
-      final double? value = await service.fetchGold24kPerGramEgp(usdToEgp: 50);
-      expect(value, closeTo((2400 / 31.1034768) * 50, 0.000001));
-      // gold-api should not be invoked because metals.live succeeded (best-effort)
-      expect(
-        (counting.counts['https://api.gold-api.com/price/XAU'] ?? 0) >= 0,
-        true,
-      );
-    },
-  );
-
-  test('gold-api fallback works when metals.live fails', () async {
+  test('gold-api fetch works for XAU conversion path', () async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear();
     final counting = _CountingFakeHttpClient(<String, _FakeHttpClientResponse>{
-      'https://api.metals.live/v1/spot/gold': _FakeHttpClientResponse(
-        500,
-        '{}',
-      ),
       'https://api.gold-api.com/price/XAU': _FakeHttpClientResponse(
         200,
         jsonEncode(<String, dynamic>{'price': 2400}),
@@ -361,22 +323,13 @@ void main() {
     final service = MarketDataApiServiceImpl(httpClient: counting);
     final double? value = await service.fetchGold24kPerGramEgp(usdToEgp: 50);
     expect(value, closeTo((2400 / 31.1034768) * 50, 0.000001));
-    expect(
-      (counting.counts['https://api.metals.live/v1/spot/gold'] ?? 0) >= 0,
-      true,
-    );
-    expect(
-      (counting.counts['https://api.gold-api.com/price/XAU'] ?? 0) >= 1,
-      true,
-    );
+    expect(counting.counts['https://api.gold-api.com/price/XAU'] ?? 0, 1);
   });
 
-  test('FX provider falls back to open.er when earlier providers fail', () async {
+  test('FX provider falls back to open.er when HexaRate fails', () async {
     final service = MarketDataApiServiceImpl(
       httpClient: _FakeHttpClient(<String, _FakeHttpClientResponse>{
         'https://hexarate.paikama.co/api/rates/latest/USD?target=EGP':
-            _FakeHttpClientResponse(404, '{}'),
-        'https://api.allorigins.win/raw?url=https://hexarate.paikama.co/api/rates/latest/USD?target=EGP':
             _FakeHttpClientResponse(404, '{}'),
         'https://open.er-api.com/v6/latest/USD': _FakeHttpClientResponse(
           200,

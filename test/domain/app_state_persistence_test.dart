@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:zakatapp_flutter/core/constants/storage_keys.dart';
 import 'package:zakatapp_flutter/models/investment_asset.dart';
 import 'package:zakatapp_flutter/models/market_snapshot.dart';
 import 'package:zakatapp_flutter/models/saving.dart';
@@ -258,5 +259,66 @@ void main() {
     expect(mixedController.state.defaultEntryCurrency, 'SAR');
     expect(mixedController.state.zakatMethod, 'annual');
     expect(mixedController.currentMarketSnapshot.gold24kPricePerGramEgp, 0);
+  });
+
+  test(
+    'authenticated load does not fall back to anonymous local data',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        StorageKeys.appStateAnonymousKey: '''
+{
+  "transactions": [
+    {
+      "id": "anon_tx",
+      "type": "income",
+      "date": "2026-06-18",
+      "amount": 100,
+      "currency": "EGP",
+      "category": "Salary",
+      "description": "Anonymous",
+      "createdAt": "2026-06-18T00:00:00.000Z",
+      "rolledOver": false
+    }
+  ]
+}
+''',
+      });
+
+      const LocalStorageService localStorage = LocalStorageService();
+      final AppStateRepository scopedRepository = AppStateRepository(
+        localStorage: localStorage,
+      );
+
+      final authenticated = await scopedRepository.loadAppState(
+        userId: 'different_user',
+      );
+      final anonymous = await scopedRepository.loadAppState();
+
+      expect(authenticated.transactions, isEmpty);
+      expect(anonymous.transactions.length, 1);
+      expect(anonymous.transactions.first.id, 'anon_tx');
+    },
+  );
+
+  test('clearLocalDataForSignOut removes scoped and anonymous state', () async {
+    final String scopedKey = StorageKeys.appStateKeyForUser('u_1')!;
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      scopedKey: '{"transactions":[]}',
+      StorageKeys.appStateAnonymousKey: '{"transactions":[]}',
+    });
+
+    const LocalStorageService localStorage = LocalStorageService();
+    final AppStateRepository scopedRepository = AppStateRepository(
+      localStorage: localStorage,
+    );
+
+    await scopedRepository.clearLocalDataForSignOut(userId: 'u_1');
+
+    final String? scopedAfter = await localStorage.loadString(scopedKey);
+    final String? anonymousAfter = await localStorage.loadString(
+      StorageKeys.appStateAnonymousKey,
+    );
+    expect(scopedAfter, isNull);
+    expect(anonymousAfter, isNull);
   });
 }

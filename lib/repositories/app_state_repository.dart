@@ -44,6 +44,14 @@ class AppStateRepository {
     await localStorage.remove(key ?? StorageKeys.appStateAnonymousKey);
   }
 
+  Future<void> clearLocalDataForSignOut({required String userId}) async {
+    final String? scopedKey = StorageKeys.appStateKeyForUser(userId);
+    if (scopedKey != null) {
+      await localStorage.remove(scopedKey);
+    }
+    await localStorage.remove(StorageKeys.appStateAnonymousKey);
+  }
+
   Future<String?> _loadRawAppState({String? userId}) async {
     final String? scopedKey = StorageKeys.appStateKeyForUser(userId);
     if (scopedKey != null) {
@@ -51,6 +59,8 @@ class AppStateRepository {
       if (scopedRaw != null && scopedRaw.trim().isNotEmpty) {
         return scopedRaw;
       }
+      // Authenticated accounts should only load their own scoped state.
+      return null;
     }
 
     final String? legacyRaw = await localStorage.loadString(

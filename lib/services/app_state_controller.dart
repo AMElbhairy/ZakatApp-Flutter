@@ -1,5 +1,6 @@
 // ignore_for_file: avoid_print
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
@@ -22,6 +23,7 @@ import 'market_data_api_service.dart';
 import 'reconciliation_service.dart';
 import '../core/services/zakat_engine.dart';
 import 'biometric_service.dart';
+import 'firestore_sync_manager.dart';
 import 'smart_capture_parser.dart';
 
 class AppStateController extends ChangeNotifier {
@@ -29,6 +31,7 @@ class AppStateController extends ChangeNotifier {
     required this.repository,
     MarketDataApiService? marketDataApiService,
     ReconciliationService? reconciliationService,
+    this.firestoreSyncManager,
   }) : _state = AppStateDefaults.create(),
        marketDataApiService =
            marketDataApiService ?? MarketDataApiServiceImpl(),
@@ -37,10 +40,25 @@ class AppStateController extends ChangeNotifier {
   final AppStateRepository repository;
   final MarketDataApiService marketDataApiService;
   final ReconciliationService reconciliationService;
+  final FirestoreSyncManager? firestoreSyncManager;
   AppStateModel _state;
   Timer? _marketRefreshTimer;
   bool _marketAutoRefreshStarted = false;
   Future<MarketRefreshResult>? _marketRefreshInFlight;
+  StreamSubscription<List<Transaction>>? _transactionsSubscription;
+  StreamSubscription<List<Saving>>? _savingsSubscription;
+  StreamSubscription<List<RecurringTransaction>>?
+  _recurringTransactionsSubscription;
+  StreamSubscription<List<InvestmentAsset>>? _investmentsSubscription;
+  StreamSubscription<List<FinancialPlan>>? _financialPlansSubscription;
+  StreamSubscription<List<CorrectionFeedback>>? _correctionFeedbackSubscription;
+  StreamSubscription<List<MerchantConfirmation>>?
+  _merchantConfirmationsSubscription;
+  StreamSubscription<Map<String, dynamic>>? _userSettingsSubscription;
+  StreamSubscription<List<PendingTransaction>>? _captureInboxSubscription;
+  StreamSubscription<List<MerchantRule>>? _merchantRulesSubscription;
+  String? _liveSyncUserId;
+  bool _isApplyingRemoteSync = false;
   static const Duration marketRefreshInterval = Duration(minutes: 5);
 
   AppStateModel get state => _state;
@@ -117,6 +135,7 @@ class AppStateController extends ChangeNotifier {
   }
 
   Future<void> resetForSignedOutUser() async {
+    await stopLiveFirestoreSync();
     _state = AppStateDefaults.create();
     notifyListeners();
   }
@@ -147,21 +166,665 @@ class AppStateController extends ChangeNotifier {
     }
   }
 
-  Future<void> startMarketAutoRefresh() async {
+  Future<void> startMarketAutoRefresh({bool refreshImmediately = true}) async {
+    // Always refresh immediately when the app re-enters the active session.
+    // The periodic timer should still be started only once.
+    if (refreshImmediately) {
+      await refreshMarketData(force: true);
+    }
     if (_marketAutoRefreshStarted) return;
     _marketAutoRefreshStarted = true;
-    await refreshMarketData(respectCooldown: true);
     _marketRefreshTimer?.cancel();
     _marketRefreshTimer = Timer.periodic(
       marketRefreshInterval,
-      (_) => refreshMarketData(respectCooldown: true),
+      (_) => refreshMarketData(force: true),
     );
   }
 
   @override
   void dispose() {
+    unawaited(stopLiveFirestoreSync());
     _marketRefreshTimer?.cancel();
     super.dispose();
+  }
+
+  Future<void> startLiveFirestoreSync({required String userId}) async {
+    final FirestoreSyncManager? syncManager = firestoreSyncManager;
+    if (syncManager == null) return;
+    if (_liveSyncUserId == userId &&
+        _transactionsSubscription != null &&
+        _savingsSubscription != null &&
+        _recurringTransactionsSubscription != null &&
+        _investmentsSubscription != null &&
+        _financialPlansSubscription != null &&
+        _correctionFeedbackSubscription != null &&
+        _merchantConfirmationsSubscription != null &&
+        _userSettingsSubscription != null &&
+        _captureInboxSubscription != null &&
+        _merchantRulesSubscription != null) {
+      return;
+    }
+
+    await stopLiveFirestoreSync();
+    _liveSyncUserId = userId;
+
+    _transactionsSubscription = syncManager
+        .watchTransactions(uid: userId)
+        .listen(
+          (List<Transaction> items) {
+            unawaited(_applyTransactionsSnapshot(userId, items));
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            debugPrint('Live transactions sync error: $error');
+            debugPrintStack(stackTrace: stackTrace);
+          },
+        );
+
+    _savingsSubscription = syncManager
+        .watchSavings(uid: userId)
+        .listen(
+          (List<Saving> items) {
+            unawaited(_applySavingsSnapshot(userId, items));
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            debugPrint('Live savings sync error: $error');
+            debugPrintStack(stackTrace: stackTrace);
+          },
+        );
+
+    _recurringTransactionsSubscription = syncManager
+        .watchRecurringTransactions(uid: userId)
+        .listen(
+          (List<RecurringTransaction> items) {
+            unawaited(_applyRecurringTransactionsSnapshot(userId, items));
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            debugPrint('Live recurring transactions sync error: $error');
+            debugPrintStack(stackTrace: stackTrace);
+          },
+        );
+
+    _investmentsSubscription = syncManager
+        .watchInvestments(uid: userId)
+        .listen(
+          (List<InvestmentAsset> items) {
+            unawaited(_applyInvestmentsSnapshot(userId, items));
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            debugPrint('Live investments sync error: $error');
+            debugPrintStack(stackTrace: stackTrace);
+          },
+        );
+
+    _financialPlansSubscription = syncManager
+        .watchFinancialPlans(uid: userId)
+        .listen(
+          (List<FinancialPlan> items) {
+            unawaited(_applyFinancialPlansSnapshot(userId, items));
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            debugPrint('Live financial plans sync error: $error');
+            debugPrintStack(stackTrace: stackTrace);
+          },
+        );
+
+    _correctionFeedbackSubscription = syncManager
+        .watchCorrectionFeedback(uid: userId)
+        .listen(
+          (List<CorrectionFeedback> items) {
+            unawaited(_applyCorrectionFeedbackSnapshot(userId, items));
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            debugPrint('Live correction feedback sync error: $error');
+            debugPrintStack(stackTrace: stackTrace);
+          },
+        );
+
+    _merchantConfirmationsSubscription = syncManager
+        .watchMerchantConfirmations(uid: userId)
+        .listen(
+          (List<MerchantConfirmation> items) {
+            unawaited(_applyMerchantConfirmationsSnapshot(userId, items));
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            debugPrint('Live merchant confirmations sync error: $error');
+            debugPrintStack(stackTrace: stackTrace);
+          },
+        );
+
+    _userSettingsSubscription = syncManager
+        .watchUserSettings(uid: userId)
+        .listen(
+          (Map<String, dynamic> settings) {
+            unawaited(_applyUserSettingsSnapshot(userId, settings));
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            debugPrint('Live user settings sync error: $error');
+            debugPrintStack(stackTrace: stackTrace);
+          },
+        );
+
+    _captureInboxSubscription = syncManager
+        .watchCaptureInbox(uid: userId)
+        .listen(
+          (List<PendingTransaction> items) {
+            unawaited(_applyCaptureInboxSnapshot(userId, items));
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            debugPrint('Live capture inbox sync error: $error');
+            debugPrintStack(stackTrace: stackTrace);
+          },
+        );
+
+    _merchantRulesSubscription = syncManager
+        .watchMerchantRules(uid: userId)
+        .listen(
+          (List<MerchantRule> rules) {
+            unawaited(_applyMerchantRulesSnapshot(userId, rules));
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            debugPrint('Live merchant rules sync error: $error');
+            debugPrintStack(stackTrace: stackTrace);
+          },
+        );
+  }
+
+  Future<void> stopLiveFirestoreSync() async {
+    await _transactionsSubscription?.cancel();
+    await _savingsSubscription?.cancel();
+    await _recurringTransactionsSubscription?.cancel();
+    await _investmentsSubscription?.cancel();
+    await _financialPlansSubscription?.cancel();
+    await _correctionFeedbackSubscription?.cancel();
+    await _merchantConfirmationsSubscription?.cancel();
+    await _userSettingsSubscription?.cancel();
+    await _captureInboxSubscription?.cancel();
+    await _merchantRulesSubscription?.cancel();
+    _transactionsSubscription = null;
+    _savingsSubscription = null;
+    _recurringTransactionsSubscription = null;
+    _investmentsSubscription = null;
+    _financialPlansSubscription = null;
+    _correctionFeedbackSubscription = null;
+    _merchantConfirmationsSubscription = null;
+    _userSettingsSubscription = null;
+    _captureInboxSubscription = null;
+    _merchantRulesSubscription = null;
+    _liveSyncUserId = null;
+  }
+
+  Future<void> _applyTransactionsSnapshot(
+    String userId,
+    List<Transaction> items,
+  ) async {
+    if (_liveSyncUserId != userId || _state.userId != userId) return;
+    if (_listJsonEqual(_state.transactions, items, (Transaction item) {
+      return item.toJson();
+    })) {
+      return;
+    }
+    _isApplyingRemoteSync = true;
+    try {
+      _state = _state.copyWith(
+        transactions: List<Transaction>.from(items),
+        lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+      );
+      await save();
+      notifyListeners();
+    } finally {
+      _isApplyingRemoteSync = false;
+    }
+  }
+
+  Future<void> _applySavingsSnapshot(String userId, List<Saving> items) async {
+    if (_liveSyncUserId != userId || _state.userId != userId) return;
+    if (_listJsonEqual(_state.savings, items, (Saving item) => item.toJson())) {
+      return;
+    }
+    _isApplyingRemoteSync = true;
+    try {
+      _state = _state.copyWith(
+        savings: List<Saving>.from(items),
+        lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+      );
+      await save();
+      notifyListeners();
+    } finally {
+      _isApplyingRemoteSync = false;
+    }
+  }
+
+  Future<void> _applyRecurringTransactionsSnapshot(
+    String userId,
+    List<RecurringTransaction> items,
+  ) async {
+    if (_liveSyncUserId != userId || _state.userId != userId) return;
+    if (_listJsonEqual(
+      _state.recurringTransactions,
+      items,
+      (RecurringTransaction item) => item.toJson(),
+    )) {
+      return;
+    }
+    _isApplyingRemoteSync = true;
+    try {
+      _state = _state.copyWith(
+        recurringTransactions: List<RecurringTransaction>.from(items),
+        lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+      );
+      await save();
+      notifyListeners();
+    } finally {
+      _isApplyingRemoteSync = false;
+    }
+  }
+
+  Future<void> _applyInvestmentsSnapshot(
+    String userId,
+    List<InvestmentAsset> items,
+  ) async {
+    if (_liveSyncUserId != userId || _state.userId != userId) return;
+    if (_listJsonEqual(
+      _state.investments,
+      items,
+      (InvestmentAsset item) => item.toJson(),
+    )) {
+      return;
+    }
+    _isApplyingRemoteSync = true;
+    try {
+      _state = _state.copyWith(
+        investments: List<InvestmentAsset>.from(items),
+        lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+      );
+      await save();
+      notifyListeners();
+    } finally {
+      _isApplyingRemoteSync = false;
+    }
+  }
+
+  Future<void> _applyFinancialPlansSnapshot(
+    String userId,
+    List<FinancialPlan> items,
+  ) async {
+    if (_liveSyncUserId != userId || _state.userId != userId) return;
+    if (_listJsonEqual(
+      _state.financialPlans,
+      items,
+      (FinancialPlan item) => item.toJson(),
+    )) {
+      return;
+    }
+    _isApplyingRemoteSync = true;
+    try {
+      _state = _state.copyWith(
+        financialPlans: List<FinancialPlan>.from(items),
+        lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+      );
+      await save();
+      notifyListeners();
+    } finally {
+      _isApplyingRemoteSync = false;
+    }
+  }
+
+  Future<void> _applyCorrectionFeedbackSnapshot(
+    String userId,
+    List<CorrectionFeedback> items,
+  ) async {
+    if (_liveSyncUserId != userId || _state.userId != userId) return;
+    if (_listJsonEqual(
+      _state.correctionFeedback,
+      items,
+      (CorrectionFeedback item) => item.toJson(),
+    )) {
+      return;
+    }
+    _isApplyingRemoteSync = true;
+    try {
+      _state = _state.copyWith(
+        correctionFeedback: List<CorrectionFeedback>.from(items),
+        lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+      );
+      await save();
+      notifyListeners();
+    } finally {
+      _isApplyingRemoteSync = false;
+    }
+  }
+
+  Future<void> _applyMerchantConfirmationsSnapshot(
+    String userId,
+    List<MerchantConfirmation> items,
+  ) async {
+    if (_liveSyncUserId != userId || _state.userId != userId) return;
+    if (_listJsonEqual(
+      _state.merchantConfirmations,
+      items,
+      (MerchantConfirmation item) => item.toJson(),
+    )) {
+      return;
+    }
+    _isApplyingRemoteSync = true;
+    try {
+      _state = _state.copyWith(
+        merchantConfirmations: List<MerchantConfirmation>.from(items),
+        lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+      );
+      await save();
+      notifyListeners();
+    } finally {
+      _isApplyingRemoteSync = false;
+    }
+  }
+
+  Future<void> _applyUserSettingsSnapshot(
+    String userId,
+    Map<String, dynamic> settings,
+  ) async {
+    if (_liveSyncUserId != userId || _state.userId != userId) return;
+    final AppStateModel mergedState = _mergeUserSettingsSnapshot(
+      _state,
+      settings,
+    );
+    if (_userSettingsEqual(_state, mergedState)) return;
+    _isApplyingRemoteSync = true;
+    try {
+      _state = mergedState.copyWith(
+        lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+      );
+      await save();
+      notifyListeners();
+    } finally {
+      _isApplyingRemoteSync = false;
+    }
+  }
+
+  Future<void> _applyCaptureInboxSnapshot(
+    String userId,
+    List<PendingTransaction> items,
+  ) async {
+    if (_liveSyncUserId != userId || _state.userId != userId) return;
+    if (_pendingTransactionsEqual(_state.pendingTransactions, items)) return;
+    _isApplyingRemoteSync = true;
+    try {
+      _state = _state.copyWith(
+        pendingTransactions: items,
+        lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+      );
+      await save();
+      notifyListeners();
+    } finally {
+      _isApplyingRemoteSync = false;
+    }
+  }
+
+  Future<void> _applyMerchantRulesSnapshot(
+    String userId,
+    List<MerchantRule> rules,
+  ) async {
+    if (_liveSyncUserId != userId || _state.userId != userId) return;
+
+    final Map<String, MerchantRule> nextRules = <String, MerchantRule>{
+      for (final MerchantRule rule in rules)
+        rule.merchantName.toLowerCase().trim(): rule,
+    };
+    final Map<String, String> nextAliases = <String, String>{};
+    for (final MerchantRule rule in rules) {
+      for (final String alias in rule.aliases) {
+        final String key = alias.toLowerCase().trim();
+        if (key.isNotEmpty) nextAliases[key] = rule.merchantName;
+      }
+    }
+
+    if (_merchantRuleMapsEqual(_state.merchantRules, nextRules) &&
+        _stringMapsEqual(_state.merchantAliases, nextAliases)) {
+      return;
+    }
+
+    _isApplyingRemoteSync = true;
+    try {
+      _state = _state.copyWith(
+        merchantRules: nextRules,
+        merchantAliases: nextAliases,
+        lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+      );
+      await save();
+      notifyListeners();
+    } finally {
+      _isApplyingRemoteSync = false;
+    }
+  }
+
+  bool _pendingTransactionsEqual(
+    List<PendingTransaction> left,
+    List<PendingTransaction> right,
+  ) {
+    return _listJsonEqual(
+      left,
+      right,
+      (PendingTransaction item) => item.toJson(),
+    );
+  }
+
+  bool _merchantRuleMapsEqual(
+    Map<String, MerchantRule> left,
+    Map<String, MerchantRule> right,
+  ) {
+    return _canonicalJson(<String, dynamic>{
+          for (final String key in left.keys.toList(growable: false)..sort())
+            key: left[key]?.toJson(),
+        }) ==
+        _canonicalJson(<String, dynamic>{
+          for (final String key in right.keys.toList(growable: false)..sort())
+            key: right[key]?.toJson(),
+        });
+  }
+
+  bool _stringMapsEqual(Map<String, String> left, Map<String, String> right) {
+    return _canonicalJson(left) == _canonicalJson(right);
+  }
+
+  bool _listJsonEqual<T>(
+    List<T> left,
+    List<T> right,
+    Map<String, dynamic> Function(T item) encoder,
+  ) {
+    if (left.length != right.length) return false;
+    return _canonicalJson(left.map(encoder).toList(growable: false)) ==
+        _canonicalJson(right.map(encoder).toList(growable: false));
+  }
+
+  String _canonicalJson(dynamic value) {
+    return jsonEncode(_normalizeJsonValue(value));
+  }
+
+  dynamic _normalizeJsonValue(dynamic value) {
+    if (value is Map) {
+      final List<String> keys =
+          value.keys
+              .map((dynamic key) => key.toString())
+              .toList(growable: false)
+            ..sort();
+      return <String, dynamic>{
+        for (final String key in keys) key: _normalizeJsonValue(value[key]),
+      };
+    }
+    if (value is Iterable) {
+      return value.map(_normalizeJsonValue).toList(growable: false);
+    }
+    return value;
+  }
+
+  Map<String, dynamic> _asMap(dynamic value) {
+    if (value is Map) {
+      return Map<String, dynamic>.from(value);
+    }
+    return <String, dynamic>{};
+  }
+
+  bool _asBool(dynamic value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    final String raw = (value ?? '').toString().toLowerCase();
+    return raw == 'true' || raw == '1';
+  }
+
+  List<String> _asStringList(dynamic value) {
+    if (value is List) {
+      return value
+          .map((dynamic entry) => entry.toString())
+          .toList(growable: false);
+    }
+    return <String>[];
+  }
+
+  AppStateModel _mergeUserSettingsSnapshot(
+    AppStateModel current,
+    Map<String, dynamic> settings,
+  ) {
+    final Map<String, dynamic> categoriesJson = _asMap(settings['categories']);
+    final Map<String, dynamic> appPreferences = _asMap(
+      settings['appPreferences'],
+    );
+    final Map<String, dynamic> zakatConfiguration = _asMap(
+      settings['zakatConfiguration'],
+    );
+    final Map<String, dynamic> securityPrivacy = _asMap(
+      settings['securityPrivacy'],
+    );
+    final Map<String, dynamic> smartCapture = _asMap(settings['smartCapture']);
+    final AppCategories nextCategories = settings['categories'] is Map
+        ? AppCategories.fromJson(<String, dynamic>{
+            ...current.categories.toJson(),
+            ...categoriesJson,
+          })
+        : current.categories;
+    return current.copyWith(
+      categories: nextCategories,
+      mainCurrency: appPreferences.containsKey('mainCurrency')
+          ? appPreferences['mainCurrency'].toString()
+          : current.mainCurrency,
+      defaultEntryCurrency: appPreferences.containsKey('defaultEntryCurrency')
+          ? appPreferences['defaultEntryCurrency'].toString()
+          : current.defaultEntryCurrency,
+      languagePreference: appPreferences.containsKey('languagePreference')
+          ? appPreferences['languagePreference'].toString()
+          : current.languagePreference,
+      themeMode: appPreferences.containsKey('themeMode')
+          ? appPreferences['themeMode'].toString()
+          : current.themeMode,
+      zakatScheduleFilter: appPreferences.containsKey('zakatScheduleFilter')
+          ? appPreferences['zakatScheduleFilter'].toString()
+          : current.zakatScheduleFilter,
+      aiSettings: appPreferences['aiSettings'] is Map
+          ? Map<String, dynamic>.from(appPreferences['aiSettings'] as Map)
+          : current.aiSettings,
+      lastRollover: zakatConfiguration.containsKey('lastRollover')
+          ? zakatConfiguration['lastRollover'].toString()
+          : current.lastRollover,
+      zakatMethod: zakatConfiguration.containsKey('zakatMethod')
+          ? zakatConfiguration['zakatMethod'].toString()
+          : current.zakatMethod,
+      zakatAnnualDate: zakatConfiguration.containsKey('zakatAnnualDate')
+          ? zakatConfiguration['zakatAnnualDate'].toString()
+          : current.zakatAnnualDate,
+      zakatNisabBasis: zakatConfiguration.containsKey('zakatNisabBasis')
+          ? (zakatConfiguration['zakatNisabBasis'].toString() == 'silver595'
+                ? 'silver595'
+                : 'gold85')
+          : current.zakatNisabBasis,
+      zakatPaidMonths: zakatConfiguration['zakatPaidMonths'] is List
+          ? _asStringList(zakatConfiguration['zakatPaidMonths'])
+          : current.zakatPaidMonths,
+      processedExpenseIds: zakatConfiguration['processedExpenseIds'] is List
+          ? _asStringList(zakatConfiguration['processedExpenseIds'])
+          : current.processedExpenseIds,
+      zakatExpenseIds: zakatConfiguration['zakatExpenseIds'] is Map
+          ? Map<String, dynamic>.from(
+              zakatConfiguration['zakatExpenseIds'] as Map,
+            )
+          : current.zakatExpenseIds,
+      biometricLockEnabled: securityPrivacy.containsKey('biometricLockEnabled')
+          ? _asBool(securityPrivacy['biometricLockEnabled'])
+          : current.biometricLockEnabled,
+      biometricHideWealthEnabled:
+          securityPrivacy.containsKey('biometricHideWealthEnabled')
+          ? _asBool(securityPrivacy['biometricHideWealthEnabled'])
+          : current.biometricHideWealthEnabled,
+      biometricExportEnabled:
+          securityPrivacy.containsKey('biometricExportEnabled')
+          ? _asBool(securityPrivacy['biometricExportEnabled'])
+          : current.biometricExportEnabled,
+      biometricRestoreEnabled:
+          securityPrivacy.containsKey('biometricRestoreEnabled')
+          ? _asBool(securityPrivacy['biometricRestoreEnabled'])
+          : current.biometricRestoreEnabled,
+      biometricAutoLockDelay:
+          securityPrivacy.containsKey('biometricAutoLockDelay')
+          ? securityPrivacy['biometricAutoLockDelay'].toString()
+          : current.biometricAutoLockDelay,
+      smartCaptureEnabled: smartCapture.containsKey('enabled')
+          ? _asBool(smartCapture['enabled'])
+          : current.smartCaptureEnabled,
+      smartCaptureAutoApproveEnabled:
+          smartCapture.containsKey('autoApproveEnabled')
+          ? _asBool(smartCapture['autoApproveEnabled'])
+          : current.smartCaptureAutoApproveEnabled,
+      merchantAliases: settings['merchantAliases'] is Map
+          ? (settings['merchantAliases'] as Map).map(
+              (dynamic key, dynamic value) =>
+                  MapEntry<String, String>(key.toString(), value.toString()),
+            )
+          : current.merchantAliases,
+      captureAnalytics: settings['captureAnalytics'] is Map
+          ? CaptureAnalytics.fromJson(
+              Map<String, dynamic>.from(settings['captureAnalytics'] as Map),
+            )
+          : current.captureAnalytics,
+    );
+  }
+
+  Map<String, dynamic> _buildUserSettingsPayload(AppStateModel state) {
+    return <String, dynamic>{
+      'categories': state.categories.toJson(),
+      'appPreferences': <String, dynamic>{
+        'mainCurrency': state.mainCurrency,
+        'defaultEntryCurrency': state.defaultEntryCurrency,
+        'languagePreference': state.languagePreference,
+        'themeMode': state.themeMode,
+        'zakatScheduleFilter': state.zakatScheduleFilter,
+        if (state.aiSettings != null) 'aiSettings': state.aiSettings,
+      },
+      'zakatConfiguration': <String, dynamic>{
+        'lastRollover': state.lastRollover,
+        'zakatMethod': state.zakatMethod,
+        'zakatAnnualDate': state.zakatAnnualDate,
+        'zakatNisabBasis': state.zakatNisabBasis,
+        'zakatPaidMonths': state.zakatPaidMonths,
+        'processedExpenseIds': state.processedExpenseIds,
+        'zakatExpenseIds': state.zakatExpenseIds,
+      },
+      'securityPrivacy': <String, dynamic>{
+        'biometricLockEnabled': state.biometricLockEnabled,
+        'biometricHideWealthEnabled': state.biometricHideWealthEnabled,
+        'biometricExportEnabled': state.biometricExportEnabled,
+        'biometricRestoreEnabled': state.biometricRestoreEnabled,
+        'biometricAutoLockDelay': state.biometricAutoLockDelay,
+      },
+      'smartCapture': <String, dynamic>{
+        'enabled': state.smartCaptureEnabled,
+        'autoApproveEnabled': state.smartCaptureAutoApproveEnabled,
+      },
+      'merchantAliases': state.merchantAliases,
+      'captureAnalytics': state.captureAnalytics.toJson(),
+    };
+  }
+
+  bool _userSettingsEqual(AppStateModel left, AppStateModel right) {
+    return _canonicalJson(_buildUserSettingsPayload(left)) ==
+        _canonicalJson(_buildUserSettingsPayload(right));
   }
 
   Future<void> save() async {
@@ -169,6 +832,7 @@ class AppStateController extends ChangeNotifier {
   }
 
   Future<void> clearLocalData() async {
+    await stopLiveFirestoreSync();
     await repository.clearLocalData(userId: _state.userId);
     _state = AppStateDefaults.create();
     notifyListeners();
@@ -179,12 +843,25 @@ class AppStateController extends ChangeNotifier {
       userId.trim().isNotEmpty,
       'AppStateController.clearLocalDataForUser requires userId.',
     );
+    await stopLiveFirestoreSync();
     await repository.clearLocalData(userId: userId);
     _state = AppStateDefaults.create();
     notifyListeners();
   }
 
+  Future<void> clearLocalDataForSignOut({required String userId}) async {
+    assert(
+      userId.trim().isNotEmpty,
+      'AppStateController.clearLocalDataForSignOut requires userId.',
+    );
+    await stopLiveFirestoreSync();
+    await repository.clearLocalDataForSignOut(userId: userId);
+    _state = AppStateDefaults.create();
+    notifyListeners();
+  }
+
   Future<void> updateState(AppStateModel newState) async {
+    final AppStateModel previousState = _state;
     final ReconciliationResult reconciled = reconciliationService
         .reconcileExpensesWithSavings(newState);
     _state = reconciled.state.copyWith(
@@ -192,6 +869,217 @@ class AppStateController extends ChangeNotifier {
     );
     await save();
     notifyListeners();
+    if (!_isApplyingRemoteSync) {
+      _syncSensitiveCollectionsInBackground(previousState, _state);
+    }
+  }
+
+  void _syncSensitiveCollectionsInBackground(
+    AppStateModel previousState,
+    AppStateModel nextState,
+  ) {
+    final FirestoreSyncManager? syncManager = firestoreSyncManager;
+    final String? uid = nextState.userId;
+    if (syncManager == null || uid == null || uid.trim().isEmpty) return;
+    if (_liveSyncUserId != uid) return;
+
+    final bool captureChanged = !_pendingTransactionsEqual(
+      previousState.pendingTransactions,
+      nextState.pendingTransactions,
+    );
+    final bool rulesChanged = !_merchantRuleMapsEqual(
+      previousState.merchantRules,
+      nextState.merchantRules,
+    );
+    final bool transactionsChanged = !_listJsonEqual(
+      previousState.transactions,
+      nextState.transactions,
+      (Transaction item) => item.toJson(),
+    );
+    final bool savingsChanged = !_listJsonEqual(
+      previousState.savings,
+      nextState.savings,
+      (Saving item) => item.toJson(),
+    );
+    final bool recurringTransactionsChanged = !_listJsonEqual(
+      previousState.recurringTransactions,
+      nextState.recurringTransactions,
+      (RecurringTransaction item) => item.toJson(),
+    );
+    final bool investmentsChanged = !_listJsonEqual(
+      previousState.investments,
+      nextState.investments,
+      (InvestmentAsset item) => item.toJson(),
+    );
+    final bool financialPlansChanged = !_listJsonEqual(
+      previousState.financialPlans,
+      nextState.financialPlans,
+      (FinancialPlan item) => item.toJson(),
+    );
+    final bool correctionFeedbackChanged = !_listJsonEqual(
+      previousState.correctionFeedback,
+      nextState.correctionFeedback,
+      (CorrectionFeedback item) => item.toJson(),
+    );
+    final bool merchantConfirmationsChanged = !_listJsonEqual(
+      previousState.merchantConfirmations,
+      nextState.merchantConfirmations,
+      (MerchantConfirmation item) => item.toJson(),
+    );
+    final bool userSettingsChanged = !_userSettingsEqual(
+      previousState,
+      nextState,
+    );
+
+    if (!captureChanged &&
+        !rulesChanged &&
+        !transactionsChanged &&
+        !savingsChanged &&
+        !recurringTransactionsChanged &&
+        !investmentsChanged &&
+        !financialPlansChanged &&
+        !correctionFeedbackChanged &&
+        !merchantConfirmationsChanged &&
+        !userSettingsChanged) {
+      return;
+    }
+
+    if (captureChanged) {
+      unawaited(() async {
+        try {
+          await syncManager.syncCaptureInbox(
+            uid: uid,
+            items: nextState.pendingTransactions,
+          );
+        } catch (error, stackTrace) {
+          debugPrint('Background capture inbox sync skipped: $error');
+          debugPrintStack(stackTrace: stackTrace);
+        }
+      }());
+    }
+
+    if (rulesChanged) {
+      unawaited(() async {
+        try {
+          await syncManager.syncMerchantRules(
+            uid: uid,
+            rules: nextState.merchantRules.values,
+          );
+        } catch (error, stackTrace) {
+          debugPrint('Background merchant rules sync skipped: $error');
+          debugPrintStack(stackTrace: stackTrace);
+        }
+      }());
+    }
+
+    if (transactionsChanged) {
+      unawaited(() async {
+        try {
+          await syncManager.syncTransactions(
+            uid: uid,
+            items: nextState.transactions,
+          );
+        } catch (error, stackTrace) {
+          debugPrint('Background transactions sync skipped: $error');
+          debugPrintStack(stackTrace: stackTrace);
+        }
+      }());
+    }
+
+    if (savingsChanged) {
+      unawaited(() async {
+        try {
+          await syncManager.syncSavings(uid: uid, items: nextState.savings);
+        } catch (error, stackTrace) {
+          debugPrint('Background savings sync skipped: $error');
+          debugPrintStack(stackTrace: stackTrace);
+        }
+      }());
+    }
+
+    if (recurringTransactionsChanged) {
+      unawaited(() async {
+        try {
+          await syncManager.syncRecurringTransactions(
+            uid: uid,
+            items: nextState.recurringTransactions,
+          );
+        } catch (error, stackTrace) {
+          debugPrint('Background recurring transactions sync skipped: $error');
+          debugPrintStack(stackTrace: stackTrace);
+        }
+      }());
+    }
+
+    if (investmentsChanged) {
+      unawaited(() async {
+        try {
+          await syncManager.syncInvestments(
+            uid: uid,
+            items: nextState.investments,
+          );
+        } catch (error, stackTrace) {
+          debugPrint('Background investments sync skipped: $error');
+          debugPrintStack(stackTrace: stackTrace);
+        }
+      }());
+    }
+
+    if (financialPlansChanged) {
+      unawaited(() async {
+        try {
+          await syncManager.syncFinancialPlans(
+            uid: uid,
+            items: nextState.financialPlans,
+          );
+        } catch (error, stackTrace) {
+          debugPrint('Background financial plans sync skipped: $error');
+          debugPrintStack(stackTrace: stackTrace);
+        }
+      }());
+    }
+
+    if (correctionFeedbackChanged) {
+      unawaited(() async {
+        try {
+          await syncManager.syncCorrectionFeedback(
+            uid: uid,
+            items: nextState.correctionFeedback,
+          );
+        } catch (error, stackTrace) {
+          debugPrint('Background correction feedback sync skipped: $error');
+          debugPrintStack(stackTrace: stackTrace);
+        }
+      }());
+    }
+
+    if (merchantConfirmationsChanged) {
+      unawaited(() async {
+        try {
+          await syncManager.syncMerchantConfirmations(
+            uid: uid,
+            items: nextState.merchantConfirmations,
+          );
+        } catch (error, stackTrace) {
+          debugPrint('Background merchant confirmations sync skipped: $error');
+          debugPrintStack(stackTrace: stackTrace);
+        }
+      }());
+    }
+
+    if (userSettingsChanged) {
+      unawaited(() async {
+        try {
+          await syncManager.syncUserSettings(
+            uid: uid,
+            settings: _buildUserSettingsPayload(nextState),
+          );
+        } catch (error, stackTrace) {
+          debugPrint('Background user settings sync skipped: $error');
+          debugPrintStack(stackTrace: stackTrace);
+        }
+      }());
+    }
   }
 
   Future<void> addTransaction(Transaction transaction) async {
@@ -1161,7 +2049,6 @@ class AppStateController extends ChangeNotifier {
               suggestedCurrency: currency.trim().toUpperCase(),
               suggestedDescription: description,
               suggestedCategory: category,
-              reviewedAt: timestampStr,
             );
           }
           return t;

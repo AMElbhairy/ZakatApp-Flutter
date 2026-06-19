@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
@@ -11,6 +12,7 @@ import 'features/auth/auth_brand_ui.dart';
 import 'features/auth/auth_loading_screen.dart';
 import 'features/auth/login_page.dart';
 import 'features/auth/restore_gate_screen.dart';
+import 'firebase_options.dart';
 import 'models/user_profile.dart';
 import 'repositories/app_state_repository.dart';
 import 'screens/account/security_lock_screen.dart';
@@ -20,13 +22,17 @@ import 'services/apple_shortcuts_service.dart';
 import 'services/auth_controller.dart';
 import 'services/auth_service.dart';
 import 'services/cloud_backup_controller.dart';
-import 'services/google_drive_service.dart';
+import 'services/firestore_sync_manager.dart';
 import 'services/google_sheets_service.dart';
 import 'services/local_storage_service.dart';
 import 'services/sync_controller.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
   const LocalStorageService localStorage = LocalStorageService();
+  final FirestoreSyncManager firestoreSyncManager = FirestoreSyncManager();
   final AppStateRepository repository = AppStateRepository(
     localStorage: localStorage,
   );
@@ -37,19 +43,22 @@ void main() {
           create: (_) => AppPrivacyOverlayController(),
         ),
         ChangeNotifierProvider<AppStateController>(
-          create: (_) => AppStateController(repository: repository),
+          create: (_) => AppStateController(
+            repository: repository,
+            firestoreSyncManager: firestoreSyncManager,
+          ),
         ),
         ChangeNotifierProvider<AuthController>(
           create: (_) => AuthController(
-            authService: CombinedAuthService(),
+            authService: FirebaseAuthService(),
             localStorage: localStorage,
           ),
         ),
+        Provider<FirestoreSyncManager>.value(value: firestoreSyncManager),
         ChangeNotifierProvider<CloudBackupController>(
           create: (BuildContext ctx) => CloudBackupController(
             appStateController: ctx.read<AppStateController>(),
             authController: ctx.read<AuthController>(),
-            googleDriveService: GoogleDriveService(),
           ),
         ),
         ChangeNotifierProvider<SyncController>(
@@ -147,15 +156,22 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
   bool _checkingCloudBackup = false;
   bool _loadingEntries = false;
   bool _loadingAssets = false;
+  bool _loadingMarketData = false;
   bool _loadingPlans = false;
   String? _loadingMessage;
   AuthController? _authController;
+  StreamSubscription<AuthGateState>? _authGateSubscription;
+  bool _gateBootstrapInProgress = false;
+  bool _sessionExpiryHandlingInProgress = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _bootstrap();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(_bootstrap());
+    });
   }
 
   @override
@@ -163,16 +179,20 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
     super.didChangeDependencies();
     final AuthController nextAuth = context.read<AuthController>();
     if (!identical(nextAuth, _authController)) {
-      _authController?.removeListener(_handleAuthChanged);
+      _authGateSubscription?.cancel();
       _authController = nextAuth;
-      nextAuth.addListener(_handleAuthChanged);
+      _authGateSubscription = nextAuth.authGateStateChanges.listen((
+        AuthGateState state,
+      ) {
+        unawaited(_handleAuthGateState(state));
+      });
     }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _authController?.removeListener(_handleAuthChanged);
+    _authGateSubscription?.cancel();
     super.dispose();
   }
 
@@ -191,39 +211,20 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
 
       final UserProfile? user = authController.currentUser;
       if (user == null) {
-        context.read<AppPrivacyOverlayController>().hide();
-        setState(() {
-          _phase = _BootstrapPhase.signedOut;
-          _accountVerified = false;
-          _checkingCloudBackup = false;
-          _loadingEntries = false;
-          _loadingAssets = false;
-          _loadingPlans = false;
-        });
+        await _routeToSignedOut();
         return;
       }
       await _bootstrapAuthenticatedUser(user);
     } catch (error, stackTrace) {
       debugPrint('App bootstrap failed: $error');
       debugPrintStack(stackTrace: stackTrace);
-      if (!mounted) return;
-      context.read<AppPrivacyOverlayController>().hide();
-      setState(() {
-        _phase = _BootstrapPhase.signedOut;
-        _accountVerified = false;
-        _checkingCloudBackup = false;
-        _loadingEntries = false;
-        _loadingAssets = false;
-        _loadingPlans = false;
-      });
+      await _routeToSignedOut();
     }
   }
 
   Future<void> _bootstrapAuthenticatedUser(UserProfile user) async {
     final AppStateController appStateController = context
         .read<AppStateController>();
-    final CloudBackupController cloudBackupController = context
-        .read<CloudBackupController>();
 
     setState(() {
       _phase = _BootstrapPhase.loading;
@@ -231,6 +232,7 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
       _checkingCloudBackup = false;
       _loadingEntries = true;
       _loadingAssets = false;
+      _loadingMarketData = false;
       _loadingPlans = false;
       _loadingMessage = null;
     });
@@ -251,14 +253,29 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
       _loadingEntries = false;
       _loadingAssets = true;
       _checkingCloudBackup = true;
+      _loadingMarketData = false;
     });
 
+    await appStateController.startLiveFirestoreSync(userId: user.id);
+    if (!mounted) return;
+
+    final CloudBackupController cloudBackupController = context
+        .read<CloudBackupController>();
     await cloudBackupController.refreshCloudState();
     if (!mounted) return;
 
     setState(() {
       _checkingCloudBackup = false;
       _loadingAssets = false;
+      _loadingMarketData = true;
+      _loadingPlans = false;
+    });
+
+    await appStateController.startMarketAutoRefresh();
+    if (!mounted) return;
+
+    setState(() {
+      _loadingMarketData = false;
       _loadingPlans = true;
     });
 
@@ -291,30 +308,157 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
     }
   }
 
-  Future<void> _handleAuthChanged() async {
-    final UserProfile? user = _authController?.currentUser;
+  Future<void> _handleAuthGateState(AuthGateState state) async {
     if (!mounted) return;
-    if (user == null) {
-      setState(() {
-        _phase = _BootstrapPhase.signedOut;
-        _pausedAt = null;
-        _accountVerified = false;
-        _checkingCloudBackup = false;
-        _loadingEntries = false;
-        _loadingAssets = false;
-        _loadingPlans = false;
-      });
-      context.read<AppPrivacyOverlayController>().hide();
-      return;
+    switch (state.status) {
+      case AuthGateStatus.checking:
+        if (_phase == _BootstrapPhase.signedOut) {
+          setState(() {
+            _phase = _BootstrapPhase.authLoading;
+            _loadingMessage = null;
+          });
+        }
+        return;
+      case AuthGateStatus.signedOut:
+      case AuthGateStatus.error:
+        await context.read<AppStateController>().stopLiveFirestoreSync();
+        if (!mounted) return;
+        if (_phase == _BootstrapPhase.signedOut) return;
+        setState(() {
+          _phase = _BootstrapPhase.signedOut;
+          _pausedAt = null;
+          _accountVerified = false;
+          _checkingCloudBackup = false;
+          _loadingEntries = false;
+          _loadingAssets = false;
+          _loadingMarketData = false;
+          _loadingPlans = false;
+          _loadingMessage = state.message;
+        });
+        context.read<AppPrivacyOverlayController>().hide();
+        return;
+      case AuthGateStatus.tokenExpired:
+        if (_sessionExpiryHandlingInProgress) return;
+        _sessionExpiryHandlingInProgress = true;
+        try {
+          await _showSessionExpiredIntervention();
+          if (!mounted) return;
+          await _authController?.signOut();
+          if (!mounted) return;
+          await _routeToSignedOut();
+        } finally {
+          _sessionExpiryHandlingInProgress = false;
+        }
+        return;
+      case AuthGateStatus.signedIn:
+        final UserProfile? user = state.user ?? _authController?.currentUser;
+        if (user == null) return;
+        if (_gateBootstrapInProgress) return;
+        if (!(_phase == _BootstrapPhase.signedOut ||
+            _phase == _BootstrapPhase.authLoading)) {
+          return;
+        }
+        _gateBootstrapInProgress = true;
+        try {
+          await _bootstrapAuthenticatedUser(user);
+        } finally {
+          _gateBootstrapInProgress = false;
+        }
+        return;
     }
+  }
 
-    if (_phase == _BootstrapPhase.authLoading) {
-      return;
-    }
+  Future<void> _routeToSignedOut() async {
+    if (!mounted) return;
+    await context.read<AppStateController>().stopLiveFirestoreSync();
+    if (!mounted) return;
+    setState(() {
+      _phase = _BootstrapPhase.signedOut;
+      _pausedAt = null;
+      _accountVerified = false;
+      _checkingCloudBackup = false;
+      _loadingEntries = false;
+      _loadingAssets = false;
+      _loadingPlans = false;
+    });
+    context.read<AppPrivacyOverlayController>().hide();
+  }
 
-    if (_phase == _BootstrapPhase.signedOut) {
-      await _bootstrapAuthenticatedUser(user);
-    }
+  Future<void> _showSessionExpiredIntervention() async {
+    if (!mounted) return;
+    const Color deepEmerald = Color(0xFF042F2B);
+    const Color surface = Color(0xFFF7F5EF);
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isDismissible: false,
+      enableDrag: false,
+      backgroundColor: Colors.transparent,
+      builder: (BuildContext bottomSheetContext) {
+        final ThemeData theme = Theme.of(bottomSheetContext);
+        return SafeArea(
+          top: false,
+          child: Container(
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+            decoration: BoxDecoration(
+              color: surface,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: const <BoxShadow>[
+                BoxShadow(
+                  color: Color(0x22000000),
+                  blurRadius: 20,
+                  offset: Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Container(
+                  height: 4,
+                  width: 42,
+                  decoration: BoxDecoration(
+                    color: const Color(0x33042F2B),
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  'Session verification required',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: deepEmerald,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Your secure session has expired. Please verify your identity to continue.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: deepEmerald.withValues(alpha: 0.86),
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: deepEmerald,
+                      foregroundColor: surface,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    onPressed: () => Navigator.of(bottomSheetContext).pop(),
+                    child: const Text('Continue'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -346,6 +490,12 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
       _pausedAt = null;
       if (!mounted) return;
       context.read<AppPrivacyOverlayController>().hide();
+
+      if (authController?.currentUser != null &&
+          (_phase == _BootstrapPhase.ready ||
+              _phase == _BootstrapPhase.locked)) {
+        unawaited(appStateController.startMarketAutoRefresh());
+      }
 
       if (pausedAt != null &&
           authController?.currentUser != null &&
@@ -395,9 +545,14 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
       });
     } else {
       setState(() {
+        _loadingMarketData = true;
+      });
+      await appStateController.startMarketAutoRefresh();
+      if (!mounted) return;
+      setState(() {
+        _loadingMarketData = false;
         _phase = _BootstrapPhase.ready;
       });
-      unawaited(appStateController.startMarketAutoRefresh());
     }
   }
 
@@ -429,12 +584,17 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
       userId: user.id,
     );
     if (!mounted) return;
+    if (!shouldLock) {
+      setState(() {
+        _loadingMarketData = true;
+      });
+      await appStateController.startMarketAutoRefresh();
+      if (!mounted) return;
+    }
     setState(() {
+      _loadingMarketData = false;
       _phase = shouldLock ? _BootstrapPhase.locked : _BootstrapPhase.ready;
     });
-    if (!shouldLock) {
-      unawaited(appStateController.startMarketAutoRefresh());
-    }
   }
 
   @override
@@ -445,6 +605,7 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
         isCheckingCloudBackup: _checkingCloudBackup,
         isLoadingEntries: _loadingEntries,
         isLoadingAssets: _loadingAssets,
+        isLoadingMarketData: _loadingMarketData,
         isLoadingPlans: _loadingPlans,
         statusMessage: _loadingMessage,
       ),
@@ -454,6 +615,7 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
         isCheckingCloudBackup: _checkingCloudBackup,
         isLoadingEntries: _loadingEntries,
         isLoadingAssets: _loadingAssets,
+        isLoadingMarketData: _loadingMarketData,
         isLoadingPlans: _loadingPlans,
         statusMessage: _loadingMessage,
       ),

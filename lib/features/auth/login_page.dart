@@ -1,6 +1,5 @@
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -24,9 +23,6 @@ class LoginPage extends StatelessWidget {
     final auth = context.watch<AuthController>();
     final AppLocalizations l10n = context.l10n;
     final bool isLoading = auth.isLoading;
-    final bool showAppleSignIn =
-        defaultTargetPlatform == TargetPlatform.iOS ||
-        defaultTargetPlatform == TargetPlatform.macOS;
 
     return AuthBrandShell(
       tone: AuthBackdropTone.hero,
@@ -83,17 +79,6 @@ class LoginPage extends StatelessWidget {
                               .signIn(provider: AuthProvider.google),
                         ),
                         const SizedBox(height: AppSpacing.sm),
-                        AuthBrandSecondaryButton(
-                          key: const Key('appleSignInButton'),
-                          label: l10n.tr('continue_with_apple'),
-                          leading: const Icon(Icons.apple, size: 20),
-                          foregroundColor: tokens.colors.textPrimary,
-                          onPressed: showAppleSignIn
-                              ? () => context.read<AuthController>().signIn(
-                                  provider: AuthProvider.apple,
-                                )
-                              : null,
-                        ),
                         const SizedBox(height: AppSpacing.md),
                         Text(
                           l10n.tr('login_note'),
@@ -104,15 +89,6 @@ class LoginPage extends StatelessWidget {
                                 height: 1.4,
                               ),
                         ),
-                        if (!showAppleSignIn) ...<Widget>[
-                          const SizedBox(height: AppSpacing.xs),
-                          Text(
-                            l10n.tr('apple_signin_unavailable'),
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(color: secondaryTextColor),
-                          ),
-                        ],
                         if (auth.error != null) ...<Widget>[
                           const SizedBox(height: AppSpacing.md),
                           Text(

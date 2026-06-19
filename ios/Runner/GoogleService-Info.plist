@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>413665925118-hg1l61pvc9k67g9p27epvtcsf5mpotdp.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.413665925118-hg1l61pvc9k67g9p27epvtcsf5mpotdp</string>
+	<key>API_KEY</key>
+	<string>AIzaSyBm0VIWkXvKUEzwTPiyygSiRyq6r-6uhIo</string>
+	<key>GCM_SENDER_ID</key>
+	<string>413665925118</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.zakahwealth.app</string>
+	<key>PROJECT_ID</key>
+	<string>zakah-wealth</string>
+	<key>STORAGE_BUCKET</key>
+	<string>zakah-wealth.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:413665925118:ios:6bb46cd09b0832fda792af</string>
+</dict>
+</plist>

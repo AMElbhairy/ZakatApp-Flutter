@@ -1232,6 +1232,9 @@ void main() {
         date: '2026-06-14',
       );
 
+      final String approvedAt =
+          controller.state.pendingTransactions.single.reviewedAt!;
+
       await controller.editApprovedPendingTransaction(
         id,
         type: 'expense',
@@ -1245,6 +1248,10 @@ void main() {
       expect(
         controller.state.merchantRules['corner shop']!.categoryId,
         'Food & Dining',
+      );
+      expect(
+        controller.state.pendingTransactions.single.reviewedAt,
+        approvedAt,
       );
       expect(
         controller.state.merchantConfirmations.any(

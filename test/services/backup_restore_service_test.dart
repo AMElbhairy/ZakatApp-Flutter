@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:zakatapp_flutter/models/market_snapshot.dart';
 import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
 import 'package:zakatapp_flutter/services/app_state_controller.dart';
 import 'package:zakatapp_flutter/services/backup_restore_service.dart';
@@ -109,5 +110,47 @@ void main() {
       ),
       throwsA(isA<StateError>()),
     );
+  });
+
+  test('merge restore keeps existing market data when incoming market data is empty', () async {
+    await controller.updateMarketSnapshot(
+      const MarketSnapshot(
+        gold24kPricePerGramEgp: 5400,
+        silverPricePerGramEgp: 64,
+        usdToEgp: 50,
+        sarToEgp: 13.3,
+        aedToEgp: 13.6,
+        kwdToEgp: 160,
+        qarToEgp: 13.7,
+        eurToEgp: 54,
+        gbpToEgp: 63,
+        bhdToEgp: 133,
+        omrToEgp: 130,
+        jodToEgp: 71,
+        tryToEgp: 1.5,
+        myrToEgp: 10.8,
+        pkrToEgp: 0.18,
+        idrToEgp: 0.0031,
+        lastUpdated: '2026-01-01T00:00:00Z',
+      ),
+    );
+
+    await service.restoreMerge(
+      jsonEncode(<String, dynamic>{
+        'appName': 'ZakatApp',
+        'appState': <String, dynamic>{
+          'transactions': <dynamic>[],
+          'savings': <dynamic>[],
+          'investments': <dynamic>[],
+          'recurringTransactions': <dynamic>[],
+          'financialPlans': <dynamic>[],
+          'marketData': <String, dynamic>{},
+        },
+      }),
+      allowWhenLocalDataExists: true,
+    );
+
+    expect(controller.currentMarketSnapshot.usdToEgp, 50);
+    expect(controller.currentMarketSnapshot.lastUpdated, '2026-01-01T00:00:00Z');
   });
 }

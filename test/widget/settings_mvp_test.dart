@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zakatapp_flutter/core/i18n/app_localizations.dart';
+import 'package:zakatapp_flutter/core/theme/app_theme.dart';
 import 'package:zakatapp_flutter/models/user_profile.dart';
 import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
 import 'package:zakatapp_flutter/screens/account/account_screen.dart';
@@ -22,7 +23,9 @@ class _FakeAuthService implements AuthService {
   Future<UserProfile?> restoreSession() async => null;
 
   @override
-  Future<UserProfile?> signIn({AuthProvider provider = AuthProvider.google}) async => null;
+  Future<UserProfile?> signIn({
+    AuthProvider provider = AuthProvider.google,
+  }) async => null;
 
   @override
   Future<void> signOut() async {}
@@ -82,6 +85,9 @@ class _SettingsTestApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
+      themeMode: ThemeMode.light,
       supportedLocales: AppLocalizations.supportedLocales,
       localizationsDelegates: const <LocalizationsDelegate<dynamic>>[
         AppLocalizationsDelegate(),
@@ -427,7 +433,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.ensureVisible(find.byKey(const Key('refreshMarketDataButton')));
+    await tester.ensureVisible(
+      find.byKey(const Key('refreshMarketDataButton')),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('refreshMarketDataButton')));
     await tester.pumpAndSettle();
@@ -435,9 +443,7 @@ void main() {
     expect(find.text('Market data refreshed.'), findsOneWidget);
   });
 
-  testWidgets('category add persists to app state', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('categories section opens manager', (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
@@ -449,15 +455,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('settingsCategoriesTile')));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byKey(const Key('addCategory_income')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('addCategory_income')));
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField).last, 'Consulting');
-    await tester.tap(find.text('Save'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Consulting'), findsOneWidget);
+    expect(find.text('Manage categories'), findsOneWidget);
   });
 
   testWidgets('delete all data cancel does nothing', (
@@ -483,7 +481,7 @@ void main() {
     expect(find.text('Settings'), findsOneWidget);
   });
 
-  testWidgets('backup section shows Drive backup actions', (
+  testWidgets('backup section shows passive cloud sync status', (
     WidgetTester tester,
   ) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
@@ -494,10 +492,7 @@ void main() {
       const Offset(0, -1300),
     );
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('driveBackupNowButton')), findsOneWidget);
-    expect(
-      find.byKey(const Key('driveRestoreFromCloudButton')),
-      findsOneWidget,
-    );
+    expect(find.text('Cloud Sync: Active'), findsOneWidget);
+    expect(find.byIcon(Icons.cloud_done_outlined), findsOneWidget);
   });
 }
