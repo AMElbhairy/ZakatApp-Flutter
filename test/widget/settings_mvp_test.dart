@@ -16,6 +16,10 @@ import 'package:zakatapp_flutter/services/market_data_api_service.dart';
 import 'dart:convert';
 
 class _FakeAuthService implements AuthService {
+  _FakeAuthService({this.user});
+
+  final UserProfile? user;
+
   @override
   Future<bool> ensureSession() async => true;
 
@@ -25,13 +29,19 @@ class _FakeAuthService implements AuthService {
   @override
   Future<UserProfile?> signIn({
     AuthProvider provider = AuthProvider.google,
-  }) async => null;
+  }) async => user;
 
   @override
   Future<void> signOut() async {}
+
+  @override
+  Future<void> deleteAccount() async {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-Widget _buildApp() {
+Widget _buildApp({AuthService? authService}) {
   const LocalStorageService localStorage = LocalStorageService();
   final AppStateRepository repository = AppStateRepository(
     localStorage: localStorage,
@@ -46,7 +56,7 @@ Widget _buildApp() {
       ),
       ChangeNotifierProvider<AuthController>(
         create: (_) => AuthController(
-          authService: _FakeAuthService(),
+          authService: authService ?? _FakeAuthService(),
           localStorage: localStorage,
         ),
       ),
@@ -462,7 +472,20 @@ void main() {
     WidgetTester tester,
   ) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
-    await tester.pumpWidget(_buildApp());
+    await tester.pumpWidget(
+      _buildApp(
+        authService: _FakeAuthService(
+          user: const UserProfile(
+            id: 'u_1',
+            email: 'user@example.com',
+            displayName: 'User One',
+            provider: 'google',
+            photoUrl: null,
+            accessToken: 'token',
+          ),
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
 
     await tester.drag(
@@ -472,9 +495,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('settingsSecurityTile')));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byKey(const Key('deleteAllDataButton')));
+    await tester.ensureVisible(find.byKey(const Key('deleteAccountButton')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('deleteAllDataButton')));
+    await tester.tap(find.byKey(const Key('deleteAccountButton')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();

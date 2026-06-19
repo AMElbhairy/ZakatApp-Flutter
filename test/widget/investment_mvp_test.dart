@@ -21,11 +21,19 @@ class _FakeAuthService implements AuthService {
   final UserProfile? user;
   _FakeAuthService(this.user);
   @override
-  Future<UserProfile?> signIn({AuthProvider provider = AuthProvider.google}) async => user;
+  Future<UserProfile?> signIn({
+    AuthProvider provider = AuthProvider.google,
+  }) async => user;
   @override
   Future<UserProfile?> restoreSession() async => user;
   @override
   Future<void> signOut() async {}
+
+  @override
+  Future<void> deleteAccount() async {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _FakeMarketDataApiService implements MarketDataApiService {
@@ -50,7 +58,9 @@ class _FakeSheets extends GoogleSheetsService {
 }
 
 void main() {
-  testWidgets('dashboard wealth includes investment', (WidgetTester tester) async {
+  testWidgets('dashboard wealth includes investment', (
+    WidgetTester tester,
+  ) async {
     // 1. Setup mock services and initial state
     SharedPreferences.setMockInitialValues({});
     final localStorage = LocalStorageService();
@@ -60,11 +70,14 @@ void main() {
       marketDataApiService: _FakeMarketDataApiService(),
     );
     final authController = AuthController(
-        authService: _FakeAuthService(null), localStorage: localStorage);
+      authService: _FakeAuthService(null),
+      localStorage: localStorage,
+    );
     final syncController = SyncController(
-        appStateController: appStateController,
-        authController: authController,
-        googleSheetsService: _FakeSheets());
+      appStateController: appStateController,
+      authController: authController,
+      googleSheetsService: _FakeSheets(),
+    );
 
     await appStateController.load();
 

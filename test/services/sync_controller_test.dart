@@ -27,6 +27,12 @@ class _FakeAuthService implements AuthService {
   Future<UserProfile?> restoreSession() async => user;
   @override
   Future<void> signOut() async {}
+
+  @override
+  Future<void> deleteAccount() async {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _FakeMarketDataApiService implements MarketDataApiService {

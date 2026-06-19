@@ -21,9 +21,17 @@ class _FakeAuthService implements AuthService {
   @override
   Future<UserProfile?> restoreSession() async => null;
   @override
-  Future<UserProfile?> signIn({AuthProvider provider = AuthProvider.google}) async => null;
+  Future<UserProfile?> signIn({
+    AuthProvider provider = AuthProvider.google,
+  }) async => null;
   @override
   Future<void> signOut() async {}
+
+  @override
+  Future<void> deleteAccount() async {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 Widget _buildApp() {
@@ -271,7 +279,10 @@ void main() {
     await tester.tap(find.text('Transfer').first);
     await tester.pumpAndSettle();
     expect(find.text('Currency Exchange'), findsOneWidget);
-    expect(find.textContaining('\u200E\$ 40.00 → \u200EE£ 2,000.00'), findsOneWidget);
+    expect(
+      find.textContaining('\u200E\$ 40.00 → \u200EE£ 2,000.00'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('funded gold purchase appears under Transfer', (
@@ -407,7 +418,10 @@ void main() {
       await tester.tap(find.text('Transfer').first);
       await tester.pumpAndSettle();
       expect(find.text('Gold Sale'), findsOneWidget);
-      expect(find.textContaining('5g Gold • \u200EE£ 40,000.00'), findsOneWidget);
+      expect(
+        find.textContaining('5g Gold • \u200EE£ 40,000.00'),
+        findsOneWidget,
+      );
     },
   );
 }

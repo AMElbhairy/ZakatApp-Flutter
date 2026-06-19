@@ -35,16 +35,25 @@ class _FakeAuthService implements AuthService {
   Future<UserProfile?> restoreSession() async => null;
 
   @override
-  Future<UserProfile?> signIn({AuthProvider provider = AuthProvider.google}) async => null;
+  Future<UserProfile?> signIn({
+    AuthProvider provider = AuthProvider.google,
+  }) async => null;
 
   @override
   Future<void> signOut() async {}
+
+  @override
+  Future<void> deleteAccount() async {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 Widget _buildApp() {
   const LocalStorageService localStorage = LocalStorageService();
-  final AppStateRepository repository =
-      AppStateRepository(localStorage: localStorage);
+  final AppStateRepository repository = AppStateRepository(
+    localStorage: localStorage,
+  );
   return MultiProvider(
     providers: <ChangeNotifierProvider<dynamic>>[
       ChangeNotifierProvider<AppStateController>(
@@ -78,7 +87,7 @@ Map<String, dynamic> _arabicSeededState({bool withTransaction = false}) {
               'description': '',
               'createdAt': '2026-06-01T00:00:00Z',
               'rolledOver': false,
-            }
+            },
           ]
         : <dynamic>[],
     'savings': <dynamic>[],
@@ -117,8 +126,7 @@ void main() {
     final Finder accountLabel = find.descendant(
       of: navBar,
       matching: find.byWidgetPredicate(
-        (Widget w) =>
-            w is Text && (w.data == 'Account' || w.data == 'الحساب'),
+        (Widget w) => w is Text && (w.data == 'Account' || w.data == 'الحساب'),
       ),
     );
     await tester.tap(accountLabel.last);
@@ -133,8 +141,9 @@ void main() {
     expect(find.byKey(const Key('dashboardEmptyCard')), findsOneWidget);
   });
 
-  testWidgets('Arabic mode renders Arabic labels and RTL',
-      (WidgetTester tester) async {
+  testWidgets('Arabic mode renders Arabic labels and RTL', (
+    WidgetTester tester,
+  ) async {
     final Map<String, dynamic> seeded = _arabicSeededState();
     SharedPreferences.setMockInitialValues(<String, Object>{
       'zakatAppData': jsonEncode(seeded),
@@ -143,8 +152,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('dashboardEmptyCard')), findsOneWidget);
-    final Directionality dir =
-        tester.widget<Directionality>(find.byType(Directionality).first);
+    final Directionality dir = tester.widget<Directionality>(
+      find.byType(Directionality).first,
+    );
     expect(dir.textDirection, TextDirection.rtl);
   });
 
@@ -154,8 +164,10 @@ void main() {
     await tester.pumpAndSettle();
 
     final BuildContext ctx = tester.element(find.byType(MaterialApp));
-    await Provider.of<AppStateController>(ctx, listen: false)
-        .updateLanguagePreference('ar');
+    await Provider.of<AppStateController>(
+      ctx,
+      listen: false,
+    ).updateLanguagePreference('ar');
     await tester.pumpAndSettle();
 
     await tester.pumpWidget(_buildApp());
@@ -164,8 +176,9 @@ void main() {
     expect(find.byKey(const Key('dashboardEmptyCard')), findsOneWidget);
   });
 
-  testWidgets('Arabic settings screen has Arabic headers',
-      (WidgetTester tester) async {
+  testWidgets('Arabic settings screen has Arabic headers', (
+    WidgetTester tester,
+  ) async {
     SharedPreferences.setMockInitialValues(<String, Object>{
       'zakatAppData': jsonEncode(_arabicSeededState()),
     });
@@ -174,7 +187,10 @@ void main() {
 
     await openAccountTab(tester);
     await tester.pumpAndSettle();
-    await tester.drag(find.byType(SingleChildScrollView).first, const Offset(0, -900));
+    await tester.drag(
+      find.byType(SingleChildScrollView).first,
+      const Offset(0, -900),
+    );
     await tester.pumpAndSettle();
 
     expect(find.byType(SingleChildScrollView), findsWidgets);
@@ -183,8 +199,9 @@ void main() {
     expect(find.text('Backup & Sync'), findsNothing);
   });
 
-  testWidgets('Arabic action sheet labels are Arabic',
-      (WidgetTester tester) async {
+  testWidgets('Arabic action sheet labels are Arabic', (
+    WidgetTester tester,
+  ) async {
     SharedPreferences.setMockInitialValues(<String, Object>{
       'zakatAppData': jsonEncode(_arabicSeededState()),
     });
@@ -200,8 +217,9 @@ void main() {
     expect(find.text('إضافة مدخرات'), findsOneWidget);
   });
 
-  testWidgets('Arabic validation messages are Arabic',
-      (WidgetTester tester) async {
+  testWidgets('Arabic validation messages are Arabic', (
+    WidgetTester tester,
+  ) async {
     SharedPreferences.setMockInitialValues(<String, Object>{
       'zakatAppData': jsonEncode(_arabicSeededState()),
     });
@@ -215,7 +233,6 @@ void main() {
     await tester.tap(find.byKey(const Key('saveTransactionButton')));
     await tester.pumpAndSettle();
     expect(find.text('يجب أن يكون المبلغ أكبر من 0'), findsOneWidget);
-
   });
 
   testWidgets('Arabic delete dialogs are Arabic', (WidgetTester tester) async {

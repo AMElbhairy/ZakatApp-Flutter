@@ -52,7 +52,18 @@ class _FakeAuthService implements AuthService, AuthGateStateSource {
   }
 
   @override
+  Future<void> deleteAccount() async {
+    _user = null;
+    _authStateController.add(
+      const AuthGateState(status: AuthGateStatus.signedOut),
+    );
+  }
+
+  @override
   Future<UserProfile?> restoreSession() async => _user;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _FakeMarketDataApiService implements MarketDataApiService {
@@ -166,6 +177,8 @@ void main() {
     await tester.pumpWidget(_buildApp(authService: _FakeAuthService()));
     await tester.pumpAndSettle();
 
+    await tester.ensureVisible(find.byKey(const Key('googleSignInButton')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('googleSignInButton')));
     await tester.pumpAndSettle();
 
@@ -177,6 +190,8 @@ void main() {
     await tester.pumpWidget(_buildApp(authService: _FakeAuthService()));
     await tester.pumpAndSettle();
 
+    await tester.ensureVisible(find.byKey(const Key('googleSignInButton')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('googleSignInButton')));
     await tester.pumpAndSettle();
 
@@ -204,6 +219,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    await tester.ensureVisible(find.byKey(const Key('googleSignInButton')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('googleSignInButton')));
     await tester.pump();
 

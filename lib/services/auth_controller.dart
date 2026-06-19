@@ -23,6 +23,32 @@ class AuthController extends ChangeNotifier {
   bool get isSignedIn => _currentUser != null;
   String? get error => _error;
 
+  String _presentableError(Object error) {
+    if (error is StateError) {
+      final String message = error.message.toString().trim();
+      if (message.isNotEmpty) return message;
+    }
+    final String raw = error.toString().trim();
+    const String statePrefix = 'Bad state: ';
+    if (raw.startsWith(statePrefix)) {
+      return raw.substring(statePrefix.length).trim();
+    }
+    return raw;
+  }
+
+  Future<bool> shouldPromptToSaveCredentials(String email) async {
+    final String? key = StorageKeys.savedCredentialEmailKey(email);
+    if (key == null) return false;
+    final String? stored = await localStorage.loadString(key);
+    return stored == null || stored.trim().isEmpty;
+  }
+
+  Future<void> markCredentialsSavePrompted(String email) async {
+    final String? key = StorageKeys.savedCredentialEmailKey(email);
+    if (key == null) return;
+    await localStorage.saveString(key, '1');
+  }
+
   Stream<AuthGateState> get authGateStateChanges {
     if (authService is AuthGateStateSource) {
       return (authService as AuthGateStateSource).authGateStateChanges;
@@ -69,7 +95,7 @@ class AuthController extends ChangeNotifier {
     } catch (error, stackTrace) {
       debugPrint('AuthController.load failed: $error');
       debugPrintStack(stackTrace: stackTrace);
-      _error = error.toString();
+      _error = _presentableError(error);
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -90,7 +116,129 @@ class AuthController extends ChangeNotifier {
     } catch (error, stackTrace) {
       debugPrint('AuthController.signIn failed: $error');
       debugPrintStack(stackTrace: stackTrace);
-      _error = error.toString();
+      _error = _presentableError(error);
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> signInWithEmail({
+    required String email,
+    required String password,
+  }) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final UserProfile? user = await authService.signInWithEmail(
+        email: email,
+        password: password,
+      );
+      if (user != null) {
+        _currentUser = user;
+        await _persistCurrentUser();
+      }
+    } catch (error, stackTrace) {
+      debugPrint('AuthController.signInWithEmail failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      _error = _presentableError(error);
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> createAccountWithEmail({
+    required String email,
+    required String password,
+    required String displayName,
+  }) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final UserProfile? user = await authService.createAccountWithEmail(
+        email: email,
+        password: password,
+        displayName: displayName,
+      );
+      if (user != null) {
+        _currentUser = user;
+        await _persistCurrentUser();
+      }
+    } catch (error, stackTrace) {
+      debugPrint('AuthController.createAccountWithEmail failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      _error = _presentableError(error);
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> sendPasswordResetEmail({required String email}) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      await authService.sendPasswordResetEmail(email: email);
+    } catch (error, stackTrace) {
+      debugPrint('AuthController.sendPasswordResetEmail failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      _error = _presentableError(error);
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> sendEmailVerification() async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      await authService.sendEmailVerification();
+      final UserProfile? refreshed = await authService.reloadCurrentUser();
+      if (refreshed != null) {
+        _currentUser = refreshed;
+        await _persistCurrentUser();
+      }
+    } catch (error, stackTrace) {
+      debugPrint('AuthController.sendEmailVerification failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      _error = _presentableError(error);
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> refreshEmailVerificationStatus() async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final UserProfile? refreshed = await authService.reloadCurrentUser();
+      if (refreshed != null) {
+        _currentUser = refreshed;
+        await _persistCurrentUser();
+      }
+      return refreshed?.emailVerified == true;
+    } catch (error, stackTrace) {
+      debugPrint(
+        'AuthController.refreshEmailVerificationStatus failed: $error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+      _error = _presentableError(error);
+      return false;
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -108,10 +256,36 @@ class AuthController extends ChangeNotifier {
     } catch (error, stackTrace) {
       debugPrint('AuthController.signOut failed: $error');
       debugPrintStack(stackTrace: stackTrace);
-      _error = error.toString();
+      _error = _presentableError(error);
     } finally {
       _currentUser = null;
       final String? scopedKey = StorageKeys.appStateKeyForUser(userIdAtSignOut);
+      if (scopedKey != null) {
+        await localStorage.remove(scopedKey);
+      }
+      await localStorage.remove(StorageKeys.appStateAnonymousKey);
+      await localStorage.remove(StorageKeys.userProfileKey);
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> deleteAccount() async {
+    _isLoading = true;
+    _error = null;
+    final String? userIdAtDelete = _currentUser?.id;
+    notifyListeners();
+
+    try {
+      await authService.deleteAccount();
+    } catch (error, stackTrace) {
+      debugPrint('AuthController.deleteAccount failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      _error = _presentableError(error);
+      rethrow;
+    } finally {
+      _currentUser = null;
+      final String? scopedKey = StorageKeys.appStateKeyForUser(userIdAtDelete);
       if (scopedKey != null) {
         await localStorage.remove(scopedKey);
       }

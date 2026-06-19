@@ -311,6 +311,25 @@ class FirestoreSyncManager {
     }
   }
 
+  Future<void> deleteAllUserData({required String uid}) async {
+    final Exception? accessError = _validateUidAccess(uid);
+    if (accessError != null) throw accessError;
+    try {
+      await _deleteCollection(uid, captureInboxCollection);
+      await _deleteCollection(uid, merchantRulesCollection);
+      await _deleteCollection(uid, transactionsCollection);
+      await _deleteCollection(uid, savingsCollection);
+      await _deleteCollection(uid, recurringTransactionsCollection);
+      await _deleteCollection(uid, investmentsCollection);
+      await _deleteCollection(uid, financialPlansCollection);
+      await _deleteCollection(uid, correctionFeedbackCollection);
+      await _deleteCollection(uid, merchantConfirmationsCollection);
+      await _userSettingsDocument(uid).delete();
+    } on FirebaseException catch (error) {
+      throw _mapFirebaseException(error);
+    }
+  }
+
   Stream<List<T>> watchCollection<T>({
     required String uid,
     required String collection,
@@ -460,6 +479,25 @@ class FirestoreSyncManager {
           : deletions.length;
       for (int i = index; i < end; i++) {
         batch.delete(deletions[i]);
+      }
+      await batch.commit();
+    }
+  }
+
+  Future<void> _deleteCollection(String uid, String collection) async {
+    final QuerySnapshot<Map<String, dynamic>> snapshot = await _userCollection(
+      uid,
+      collection,
+    ).get();
+    if (snapshot.docs.isEmpty) return;
+    const int maxBatchSize = 450;
+    for (int index = 0; index < snapshot.docs.length; index += maxBatchSize) {
+      final WriteBatch batch = _firestore.batch();
+      final int end = (index + maxBatchSize < snapshot.docs.length)
+          ? index + maxBatchSize
+          : snapshot.docs.length;
+      for (int i = index; i < end; i++) {
+        batch.delete(snapshot.docs[i].reference);
       }
       await batch.commit();
     }

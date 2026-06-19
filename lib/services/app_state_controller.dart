@@ -24,6 +24,7 @@ import 'reconciliation_service.dart';
 import '../core/services/zakat_engine.dart';
 import 'biometric_service.dart';
 import 'firestore_sync_manager.dart';
+import 'secure_storage_service.dart';
 import 'smart_capture_parser.dart';
 
 class AppStateController extends ChangeNotifier {
@@ -32,7 +33,10 @@ class AppStateController extends ChangeNotifier {
     MarketDataApiService? marketDataApiService,
     ReconciliationService? reconciliationService,
     this.firestoreSyncManager,
+    SecureStorageService? secureStorageService,
   }) : _state = AppStateDefaults.create(),
+       secureStorageService =
+           secureStorageService ?? const SecureStorageService(),
        marketDataApiService =
            marketDataApiService ?? MarketDataApiServiceImpl(),
        reconciliationService = reconciliationService ?? ReconciliationService();
@@ -41,6 +45,7 @@ class AppStateController extends ChangeNotifier {
   final MarketDataApiService marketDataApiService;
   final ReconciliationService reconciliationService;
   final FirestoreSyncManager? firestoreSyncManager;
+  final SecureStorageService secureStorageService;
   AppStateModel _state;
   Timer? _marketRefreshTimer;
   bool _marketAutoRefreshStarted = false;
@@ -76,6 +81,10 @@ class AppStateController extends ChangeNotifier {
   Future<void> load({String? userId}) async {
     try {
       _state = await repository.loadAppState(userId: userId);
+      _state = await _hydrateAiSettingsFromSecureStorage(
+        _state,
+        userId: userId ?? _state.userId,
+      );
       if (_state.biometricHideWealthEnabled) {
         final Map<String, dynamic> aiSettings = Map<String, dynamic>.from(
           _state.aiSettings ?? <String, dynamic>{},
@@ -695,6 +704,10 @@ class AppStateController extends ChangeNotifier {
       settings['securityPrivacy'],
     );
     final Map<String, dynamic> smartCapture = _asMap(settings['smartCapture']);
+    final Map<String, dynamic>? mergedAiSettings = _mergeSyncedAiSettings(
+      current.aiSettings,
+      appPreferences['aiSettings'],
+    );
     final AppCategories nextCategories = settings['categories'] is Map
         ? AppCategories.fromJson(<String, dynamic>{
             ...current.categories.toJson(),
@@ -718,9 +731,7 @@ class AppStateController extends ChangeNotifier {
       zakatScheduleFilter: appPreferences.containsKey('zakatScheduleFilter')
           ? appPreferences['zakatScheduleFilter'].toString()
           : current.zakatScheduleFilter,
-      aiSettings: appPreferences['aiSettings'] is Map
-          ? Map<String, dynamic>.from(appPreferences['aiSettings'] as Map)
-          : current.aiSettings,
+      aiSettings: mergedAiSettings,
       lastRollover: zakatConfiguration.containsKey('lastRollover')
           ? zakatConfiguration['lastRollover'].toString()
           : current.lastRollover,
@@ -795,7 +806,8 @@ class AppStateController extends ChangeNotifier {
         'languagePreference': state.languagePreference,
         'themeMode': state.themeMode,
         'zakatScheduleFilter': state.zakatScheduleFilter,
-        if (state.aiSettings != null) 'aiSettings': state.aiSettings,
+        if (state.aiSettings != null)
+          'aiSettings': _sanitizeAiSettingsForSync(state.aiSettings!),
       },
       'zakatConfiguration': <String, dynamic>{
         'lastRollover': state.lastRollover,
@@ -827,13 +839,41 @@ class AppStateController extends ChangeNotifier {
         _canonicalJson(_buildUserSettingsPayload(right));
   }
 
+  Map<String, dynamic> _sanitizeAiSettingsForSync(
+    Map<String, dynamic> aiSettings,
+  ) {
+    final Map<String, dynamic> copy = Map<String, dynamic>.from(aiSettings);
+    copy.remove('keys');
+    return copy;
+  }
+
+  Map<String, dynamic>? _mergeSyncedAiSettings(
+    Map<String, dynamic>? currentAiSettings,
+    dynamic incomingAiSettings,
+  ) {
+    if (incomingAiSettings is! Map) return currentAiSettings;
+    final Map<String, dynamic> merged = Map<String, dynamic>.from(
+      incomingAiSettings,
+    );
+    final List<dynamic>? localKeys =
+        currentAiSettings?['keys'] as List<dynamic>?;
+    if (localKeys != null) {
+      merged['keys'] = List<dynamic>.from(localKeys);
+    }
+    return merged;
+  }
+
   Future<void> save() async {
-    await repository.saveAppState(_state, userId: _state.userId);
+    await repository.saveAppState(
+      _stateForPersistence(_state),
+      userId: _state.userId,
+    );
   }
 
   Future<void> clearLocalData() async {
     await stopLiveFirestoreSync();
     await repository.clearLocalData(userId: _state.userId);
+    await secureStorageService.deleteAiKeys(userId: _state.userId);
     _state = AppStateDefaults.create();
     notifyListeners();
   }
@@ -845,6 +885,7 @@ class AppStateController extends ChangeNotifier {
     );
     await stopLiveFirestoreSync();
     await repository.clearLocalData(userId: userId);
+    await secureStorageService.deleteAiKeys(userId: userId);
     _state = AppStateDefaults.create();
     notifyListeners();
   }
@@ -856,6 +897,22 @@ class AppStateController extends ChangeNotifier {
     );
     await stopLiveFirestoreSync();
     await repository.clearLocalDataForSignOut(userId: userId);
+    _state = AppStateDefaults.create();
+    notifyListeners();
+  }
+
+  Future<void> deleteAccountData({required String userId}) async {
+    assert(
+      userId.trim().isNotEmpty,
+      'AppStateController.deleteAccountData requires userId.',
+    );
+    await stopLiveFirestoreSync();
+    final FirestoreSyncManager? syncManager = firestoreSyncManager;
+    if (syncManager != null) {
+      await syncManager.deleteAllUserData(uid: userId);
+    }
+    await repository.clearLocalDataForSignOut(userId: userId);
+    await secureStorageService.deleteAiKeys(userId: userId);
     _state = AppStateDefaults.create();
     notifyListeners();
   }
@@ -1725,7 +1782,74 @@ class AppStateController extends ChangeNotifier {
   }
 
   Future<void> updateAiSettings(Map<String, dynamic> aiSettings) async {
+    await _saveAiKeysToSecureStorage(aiSettings, userId: _state.userId);
     await updateState(_state.copyWith(aiSettings: aiSettings));
+  }
+
+  AppStateModel _stateForPersistence(AppStateModel state) {
+    final Map<String, dynamic>? aiSettings = state.aiSettings;
+    if (aiSettings == null) return state;
+    final Map<String, dynamic> sanitized = Map<String, dynamic>.from(
+      aiSettings,
+    );
+    sanitized.remove('keys');
+    return state.copyWith(aiSettings: sanitized);
+  }
+
+  Future<AppStateModel> _hydrateAiSettingsFromSecureStorage(
+    AppStateModel state, {
+    String? userId,
+  }) async {
+    final List<String>? secureKeys = await secureStorageService.loadAiKeys(
+      userId: userId,
+    );
+    final Map<String, dynamic> aiSettings = Map<String, dynamic>.from(
+      state.aiSettings ?? <String, dynamic>{},
+    );
+    final bool hasLegacyKeys = aiSettings['keys'] is List;
+    final List<String> legacyKeys = _extractAiKeys(aiSettings['keys']);
+
+    if (secureKeys != null) {
+      aiSettings['keys'] = secureKeys;
+      return state.copyWith(aiSettings: aiSettings);
+    }
+
+    if (hasLegacyKeys) {
+      aiSettings['keys'] = legacyKeys;
+      await secureStorageService.saveAiKeys(legacyKeys, userId: userId);
+      await repository.saveAppState(
+        state.copyWith(aiSettings: _sanitizeAiSettingsForSync(aiSettings)),
+        userId: userId ?? state.userId,
+      );
+      return state.copyWith(aiSettings: aiSettings);
+    }
+
+    aiSettings['keys'] = const <String>['', ''];
+    return state.copyWith(aiSettings: aiSettings);
+  }
+
+  Future<void> _saveAiKeysToSecureStorage(
+    Map<String, dynamic> aiSettings, {
+    String? userId,
+  }) async {
+    await secureStorageService.saveAiKeys(
+      _extractAiKeys(aiSettings['keys']),
+      userId: userId,
+    );
+  }
+
+  List<String> _extractAiKeys(dynamic rawKeys) {
+    if (rawKeys is! List) return const <String>['', ''];
+    final List<String> keys = rawKeys
+        .map((dynamic item) => item.toString())
+        .toList(growable: false);
+    if (keys.length >= 2) {
+      return <String>[keys[0], keys[1]];
+    }
+    if (keys.length == 1) {
+      return <String>[keys[0], ''];
+    }
+    return const <String>['', ''];
   }
 
   Future<void> updateBiometricLockEnabled(bool value) async {

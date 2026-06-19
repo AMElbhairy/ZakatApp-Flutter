@@ -4,6 +4,7 @@ class UserProfile {
     required this.email,
     required this.displayName,
     required this.provider,
+    this.emailVerified = false,
     this.photoUrl,
     this.accessToken,
   });
@@ -12,6 +13,7 @@ class UserProfile {
   final String email;
   final String displayName;
   final String provider;
+  final bool emailVerified;
   final String? photoUrl;
   final String? accessToken;
 
@@ -23,6 +25,7 @@ class UserProfile {
       email: (json['email'] ?? '').toString(),
       displayName: (json['displayName'] ?? json['name'] ?? '').toString(),
       provider: (json['provider'] ?? 'google').toString(),
+      emailVerified: json['emailVerified'] == true,
       photoUrl: (json['photoUrl'] ?? json['picture'])?.toString(),
       accessToken: json['accessToken']?.toString(),
     );
@@ -36,6 +39,7 @@ class UserProfile {
       'displayName': displayName,
       'name': displayName,
       'provider': provider,
+      'emailVerified': emailVerified,
       'photoUrl': photoUrl,
       'picture': photoUrl,
       'accessToken': accessToken,
@@ -47,6 +51,7 @@ class UserProfile {
     String? email,
     String? displayName,
     String? provider,
+    bool? emailVerified,
     String? photoUrl,
     String? accessToken,
   }) {
@@ -55,6 +60,7 @@ class UserProfile {
       email: email ?? this.email,
       displayName: displayName ?? this.displayName,
       provider: provider ?? this.provider,
+      emailVerified: emailVerified ?? this.emailVerified,
       photoUrl: photoUrl ?? this.photoUrl,
       accessToken: accessToken ?? this.accessToken,
     );

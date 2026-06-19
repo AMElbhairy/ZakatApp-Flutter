@@ -847,12 +847,12 @@ class _AccountScreenState extends State<AccountScreen> {
                     Align(
                       alignment: Alignment.centerLeft,
                       child: FilledButton(
-                        key: const Key('deleteAllDataButton'),
+                        key: const Key('deleteAccountButton'),
                         style: FilledButton.styleFrom(
                           backgroundColor: Colors.red,
                         ),
-                        onPressed: () => _confirmDeleteAllData(context),
-                        child: Text(context.l10n.tr('delete_all_data')),
+                        onPressed: () => _confirmDeleteAccount(context),
+                        child: Text(context.l10n.tr('delete_account')),
                       ),
                     ),
                   ],
@@ -1183,13 +1183,16 @@ class _AccountScreenState extends State<AccountScreen> {
     );
   }
 
-  Future<void> _confirmDeleteAllData(BuildContext context) async {
+  Future<void> _confirmDeleteAccount(BuildContext context) async {
     final state = context.read<AppStateController>().state;
+    final authController = context.read<AuthController?>();
     final l10n = context.l10n;
+    final UserProfile? user = authController?.currentUser;
+    if (user == null) return;
     if (state.biometricExportEnabled &&
         await BiometricService.canAuthenticate()) {
       final auth = await BiometricService.authenticate(
-        reason: 'Confirm identity to delete all local database data',
+        reason: 'Confirm identity to delete this account',
         isSensitiveAction: true,
       );
       if (!auth) return;
@@ -1198,8 +1201,8 @@ class _AccountScreenState extends State<AccountScreen> {
     final bool? ok = await showDialog<bool>(
       context: context,
       builder: (BuildContext ctx) => AlertDialog(
-        title: Text(l10n.tr('delete_all_data')),
-        content: Text(l10n.tr('delete_all_confirm')),
+        title: Text(l10n.tr('delete_account')),
+        content: Text(l10n.tr('delete_account_confirm')),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -1214,7 +1217,14 @@ class _AccountScreenState extends State<AccountScreen> {
       ),
     );
     if (ok == true && context.mounted) {
-      await context.read<AppStateController>().clearLocalData();
+      final AppStateController appStateController = context
+          .read<AppStateController>();
+      await appStateController.deleteAccountData(userId: user.id);
+      try {
+        await authController!.deleteAccount();
+      } finally {
+        await authController?.signOut();
+      }
     }
   }
 

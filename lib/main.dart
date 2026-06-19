@@ -9,6 +9,7 @@ import 'package:provider/single_child_widget.dart';
 import 'core/i18n/app_localizations.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/auth_brand_ui.dart';
+import 'features/auth/email_verification_screen.dart';
 import 'features/auth/auth_loading_screen.dart';
 import 'features/auth/login_page.dart';
 import 'features/auth/restore_gate_screen.dart';
@@ -135,6 +136,7 @@ class ZakatApp extends StatelessWidget {
 enum _BootstrapPhase {
   authLoading,
   signedOut,
+  emailVerification,
   loading,
   restoreGate,
   locked,
@@ -212,6 +214,10 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
       final UserProfile? user = authController.currentUser;
       if (user == null) {
         await _routeToSignedOut();
+        return;
+      }
+      if (_requiresEmailVerification(user)) {
+        await _routeToEmailVerification(user);
         return;
       }
       await _bootstrapAuthenticatedUser(user);
@@ -353,6 +359,10 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
       case AuthGateStatus.signedIn:
         final UserProfile? user = state.user ?? _authController?.currentUser;
         if (user == null) return;
+        if (_requiresEmailVerification(user)) {
+          await _routeToEmailVerification(user);
+          return;
+        }
         if (_gateBootstrapInProgress) return;
         if (!(_phase == _BootstrapPhase.signedOut ||
             _phase == _BootstrapPhase.authLoading)) {
@@ -380,6 +390,28 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
       _loadingEntries = false;
       _loadingAssets = false;
       _loadingPlans = false;
+    });
+    context.read<AppPrivacyOverlayController>().hide();
+  }
+
+  bool _requiresEmailVerification(UserProfile user) {
+    return user.provider == 'email' && !user.emailVerified;
+  }
+
+  Future<void> _routeToEmailVerification(UserProfile user) async {
+    if (!mounted) return;
+    await context.read<AppStateController>().stopLiveFirestoreSync();
+    if (!mounted) return;
+    setState(() {
+      _phase = _BootstrapPhase.emailVerification;
+      _pausedAt = null;
+      _accountVerified = false;
+      _checkingCloudBackup = false;
+      _loadingEntries = false;
+      _loadingAssets = false;
+      _loadingMarketData = false;
+      _loadingPlans = false;
+      _loadingMessage = null;
     });
     context.read<AppPrivacyOverlayController>().hide();
   }
@@ -610,6 +642,16 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
         statusMessage: _loadingMessage,
       ),
       _BootstrapPhase.signedOut => const LoginPage(),
+      _BootstrapPhase.emailVerification => EmailVerificationScreen(
+        email: context.watch<AuthController>().currentUser?.email ?? '',
+        onVerified: () async {
+          final UserProfile? user = context.read<AuthController>().currentUser;
+          if (user == null || _requiresEmailVerification(user)) {
+            return;
+          }
+          await _bootstrapAuthenticatedUser(user);
+        },
+      ),
       _BootstrapPhase.loading => AuthLoadingScreen(
         isAccountVerified: _accountVerified,
         isCheckingCloudBackup: _checkingCloudBackup,

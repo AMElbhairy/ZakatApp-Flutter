@@ -23,10 +23,18 @@ class _FakeAuthService implements AuthService {
   Future<UserProfile?> restoreSession() async => null;
 
   @override
-  Future<UserProfile?> signIn({AuthProvider provider = AuthProvider.google}) async => null;
+  Future<UserProfile?> signIn({
+    AuthProvider provider = AuthProvider.google,
+  }) async => null;
 
   @override
   Future<void> signOut() async {}
+
+  @override
+  Future<void> deleteAccount() async {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 void main() {
