@@ -30,7 +30,6 @@ class _AddSmartCaptureMessageScreenState
     if (!_formKey.currentState!.validate()) return;
 
     final controller = context.read<AppStateController>();
-    final tokens = context.premiumTokens;
     final String rawMessage = _messageController.text;
 
     try {

@@ -196,30 +196,64 @@ class AppTextField extends StatelessWidget {
   }
 }
 
-OverlayEntry? _activeTopToastEntry;
+class _NotificationItem {
+  final String message;
+  final AppToastKind kind;
+  final Duration duration;
 
-enum AppToastKind { info, success, warning, error }
+  _NotificationItem({
+    required this.message,
+    required this.kind,
+    required this.duration,
+  });
+}
+
+final List<_NotificationItem> _notificationQueue = [];
+bool _isShowingNotification = false;
+OverlayEntry? _activeTopToastEntry;
+VoidCallback? _activeDismissCallback;
 
 void showTopSnackBar(
   BuildContext context,
   String message, {
   AppToastKind kind = AppToastKind.info,
+  Duration duration = const Duration(seconds: 3),
 }) {
-  if (_activeTopToastEntry != null) {
-    try {
-      _activeTopToastEntry!.remove();
-    } catch (_) {}
-    _activeTopToastEntry = null;
+  if (_notificationQueue.length >= 5) {
+    _notificationQueue.removeAt(0);
   }
+  _notificationQueue.add(
+    _NotificationItem(message: message, kind: kind, duration: duration),
+  );
 
+  if (_isShowingNotification) {
+    if (_activeDismissCallback != null) {
+      _activeDismissCallback!();
+    }
+  } else {
+    _showNextNotification(context);
+  }
+}
+
+void _showNextNotification(BuildContext context) {
+  if (_isShowingNotification || _notificationQueue.isEmpty) return;
+  if (!context.mounted) {
+    _notificationQueue.clear();
+    _isShowingNotification = false;
+    return;
+  }
+  _isShowingNotification = true;
+
+  final item = _notificationQueue.removeAt(0);
   final OverlayState overlayState = Overlay.of(context, rootOverlay: true);
 
   late OverlayEntry entry;
   entry = OverlayEntry(
     builder: (BuildContext context) {
       return _TopToastWidget(
-        message: message,
-        kind: kind,
+        message: item.message,
+        kind: item.kind,
+        duration: item.duration,
         onDismiss: () {
           if (_activeTopToastEntry == entry) {
             _activeTopToastEntry = null;
@@ -227,6 +261,10 @@ void showTopSnackBar(
           try {
             entry.remove();
           } catch (_) {}
+          _isShowingNotification = false;
+          Future.delayed(const Duration(milliseconds: 150), () {
+            _showNextNotification(context);
+          });
         },
       );
     },
@@ -236,15 +274,19 @@ void showTopSnackBar(
   overlayState.insert(entry);
 }
 
+enum AppToastKind { info, success, warning, error }
+
 class _TopToastWidget extends StatefulWidget {
   const _TopToastWidget({
     required this.message,
     required this.kind,
+    required this.duration,
     required this.onDismiss,
   });
 
   final String message;
   final AppToastKind kind;
+  final Duration duration;
   final VoidCallback onDismiss;
 
   @override
@@ -261,6 +303,7 @@ class _TopToastWidgetState extends State<_TopToastWidget>
   @override
   void initState() {
     super.initState();
+    _activeDismissCallback = _dismiss;
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 350),
@@ -278,7 +321,7 @@ class _TopToastWidgetState extends State<_TopToastWidget>
 
     _controller.forward();
 
-    Future.delayed(const Duration(seconds: 3), () {
+    Future.delayed(widget.duration, () {
       if (mounted && !_isDismissing) {
         _dismiss();
       }
@@ -297,6 +340,9 @@ class _TopToastWidgetState extends State<_TopToastWidget>
 
   @override
   void dispose() {
+    if (_activeDismissCallback == _dismiss) {
+      _activeDismissCallback = null;
+    }
     _controller.dispose();
     super.dispose();
   }
@@ -304,6 +350,7 @@ class _TopToastWidgetState extends State<_TopToastWidget>
   @override
   Widget build(BuildContext context) {
     final double topPadding = MediaQuery.of(context).padding.top;
+    final double adjustedTop = topPadding > 0 ? topPadding + 12.0 : 36.0;
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     final tokens = context.premiumTokens;
 
@@ -320,7 +367,7 @@ class _TopToastWidgetState extends State<_TopToastWidget>
             accent,
             0.12,
           )!.withValues(alpha: 0.98)
-        : Colors.white.withValues(alpha: 0.98);
+         : Colors.white.withValues(alpha: 0.98);
     final Color textColor = tokens.colors.textPrimary;
     final Color borderColor = accent.withValues(alpha: dark ? 0.35 : 0.24);
     final IconData icon = switch (widget.kind) {
@@ -331,7 +378,7 @@ class _TopToastWidgetState extends State<_TopToastWidget>
     };
 
     return Positioned(
-      top: topPadding + 12,
+      top: adjustedTop,
       left: 16,
       right: 16,
       child: SlideTransition(

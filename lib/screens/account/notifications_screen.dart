@@ -7,7 +7,9 @@ import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/theme/app_theme_extensions.dart';
 import '../../core/widgets/app_ui.dart';
+import '../../models/app_state.dart';
 import '../../models/pending_transaction.dart';
+import '../../models/transaction.dart';
 import '../../services/app_state_controller.dart';
 import 'review_pending_transaction_screen.dart';
 import 'add_smart_capture_message_screen.dart';
@@ -703,6 +705,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       CaptureStatus.manuallyApproved => tokens.colors.emerald,
       CaptureStatus.ignored => tokens.colors.danger,
     };
+    final String displayCategory = _resolvedCaptureCategory(
+          controller.state,
+          item,
+        ) ??
+        item.suggestedCategory ??
+        'Other';
 
     final SlidableActionData actions = switch (item.status) {
       CaptureStatus.pendingReview => SlidableActionData(
@@ -865,7 +873,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          '${item.suggestedType.toUpperCase()} • ${item.suggestedCategory ?? 'Other'}',
+                          '${item.suggestedType.toUpperCase()} • $displayCategory',
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(color: subtitleColor, height: 1.2),
                         ),
@@ -911,6 +919,22 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         ),
       ),
     );
+  }
+
+  String? _resolvedCaptureCategory(
+    AppStateModel state,
+    PendingTransaction item,
+  ) {
+    final String? linkedId = item.linkedTransactionId;
+    if (linkedId == null || linkedId.isEmpty) return item.suggestedCategory;
+
+    final List<Transaction> matches = state.transactions
+        .where((Transaction tx) => tx.id == linkedId)
+        .toList(growable: false);
+    if (matches.isNotEmpty && matches.first.category.trim().isNotEmpty) {
+      return matches.first.category;
+    }
+    return item.suggestedCategory;
   }
 
   Widget _slideAction(

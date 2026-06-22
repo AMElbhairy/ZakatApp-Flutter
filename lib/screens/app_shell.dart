@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../core/i18n/app_localizations.dart';
 import '../core/theme/app_icons.dart';
 import '../core/theme/app_radii.dart';
@@ -14,7 +17,9 @@ import 'entry/add_investment_screen.dart';
 import 'entry/add_financial_plan_screen.dart';
 import 'entry/add_saving_screen.dart';
 import 'entry/add_transaction_screen.dart';
+import 'entry/currency_exchange_screen.dart';
 import 'plans/plans_screen.dart';
+import '../services/smart_capture_alert_service.dart';
 
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
@@ -36,6 +41,21 @@ class _AppShellState extends State<AppShell> {
         ),
       );
   double? _edgeDragDistance;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      try {
+        final SmartCaptureAlertService alerts = context
+            .read<SmartCaptureAlertService>();
+        unawaited(alerts.flushPendingNotificationLaunch());
+      } catch (_) {
+        // The shell can run without notification plumbing in tests or embeds.
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -377,41 +397,42 @@ class _AppShellState extends State<AppShell> {
                 ),
               ),
             ),
-            PositionedDirectional(
-              start: 22,
-              bottom: 75 + bottomInset,
-              child: SizedBox(
-                width: 64,
-                height: 64,
-                child: FloatingActionButton(
-                  key: const Key('addEntryFab'),
-                  onPressed: () => _showAddActions(context),
-                  backgroundColor: const Color(0xFF012E26),
-                  foregroundColor: const Color(0xFFD4AF37),
-                  elevation: 0,
-                  shape: CircleBorder(
-                    side: BorderSide(
-                      color: const Color(0xFFC5A059).withValues(alpha: 0.45),
-                      width: 1.2,
+            if (_index == 1)
+              PositionedDirectional(
+                start: 22,
+                bottom: 75 + bottomInset,
+                child: SizedBox(
+                  width: 64,
+                  height: 64,
+                  child: FloatingActionButton(
+                    key: const Key('addEntryFab'),
+                    onPressed: () => _showAddActions(context),
+                    backgroundColor: const Color(0xFF012E26),
+                    foregroundColor: const Color(0xFFD4AF37),
+                    elevation: 0,
+                    shape: CircleBorder(
+                      side: BorderSide(
+                        color: const Color(0xFFC5A059).withValues(alpha: 0.45),
+                        width: 1.2,
+                      ),
                     ),
-                  ),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      boxShadow: <BoxShadow>[
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.22),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
+                    child: Container(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        boxShadow: <BoxShadow>[
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.22),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      alignment: Alignment.center,
+                      child: const Icon(AppIcons.add, size: 28),
                     ),
-                    alignment: Alignment.center,
-                    child: const Icon(AppIcons.add, size: 28),
                   ),
                 ),
               ),
-            ),
           ],
         ),
       ),
@@ -549,6 +570,23 @@ class _AppShellState extends State<AppShell> {
                       MaterialPageRoute<void>(
                         builder: (_) =>
                             const AddTransactionScreen(initialType: 'expense'),
+                      ),
+                    );
+                  },
+                ),
+                // Currency Exchange
+                ListTile(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  key: const Key('actionAddExchange'),
+                  leading: const Icon(Icons.currency_exchange_outlined),
+                  title: Text(context.l10n.tr('currency_exchange')),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    Navigator.of(this.context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const CurrencyExchangeScreen(),
                       ),
                     );
                   },

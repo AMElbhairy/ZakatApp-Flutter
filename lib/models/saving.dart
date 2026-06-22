@@ -90,11 +90,12 @@ class Saving {
       if (internalTransfer != null) 'internalTransfer': internalTransfer,
       if (internalTransferType != null)
         'internalTransferType': internalTransferType,
-      if (fundingAllocations.isNotEmpty)
-        'fundingAllocations': fundingAllocations,
+      'fundingAllocations': fundingAllocations,
       if (transferActivityId != null) 'transferActivityId': transferActivityId,
     };
   }
+
+  Map<String, dynamic> toFirestoreJson() => toJson();
 
   static double _asDouble(dynamic value) {
     if (value is num) return value.toDouble();

@@ -14,7 +14,13 @@ class BackupService {
     required String provider,
     required String email,
   }) {
-    final Map<String, dynamic> counts = _getCounts(appStateJson);
+    final Map<String, dynamic> cleanedState = Map<String, dynamic>.from(appStateJson);
+    if (cleanedState['aiSettings'] is Map) {
+      final Map<String, dynamic> ai = Map<String, dynamic>.from(cleanedState['aiSettings'] as Map);
+      ai.remove('keys');
+      cleanedState['aiSettings'] = ai;
+    }
+    final Map<String, dynamic> counts = _getCounts(cleanedState);
     final DateTime now = DateTime.now().toUtc();
     final Map<String, dynamic> metadata = <String, dynamic>{
       'backupVersion': _schemaVersion,
@@ -30,7 +36,7 @@ class BackupService {
       'exportedAt': now.toIso8601String(),
       'counts': counts,
       ...metadata,
-      'appState': appStateJson,
+      'appState': cleanedState,
     };
     if (cloudBackupMetadata != null && cloudBackupMetadata.isNotEmpty) {
       root['cloudBackupMetadata'] = cloudBackupMetadata;

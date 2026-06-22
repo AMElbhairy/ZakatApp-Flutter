@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zakatapp_flutter/core/constants/storage_keys.dart';
 import 'package:zakatapp_flutter/models/investment_asset.dart';
@@ -10,14 +13,38 @@ import 'package:zakatapp_flutter/services/app_state_controller.dart';
 import 'package:zakatapp_flutter/services/local_storage_service.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  final Directory documentsDirectory = Directory.systemTemp.createTempSync(
+    'zakatapp-domain-tests-',
+  );
+  const MethodChannel pathProviderChannel = MethodChannel(
+    'plugins.flutter.io/path_provider',
+  );
+
   late AppStateRepository repository;
   late AppStateController controller;
 
   setUp(() {
     SharedPreferences.setMockInitialValues(<String, Object>{});
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(pathProviderChannel, (
+          MethodCall methodCall,
+        ) async {
+          if (methodCall.method == 'getApplicationDocumentsDirectory') {
+            return documentsDirectory.path;
+          }
+          return null;
+        });
     const LocalStorageService localStorage = LocalStorageService();
     repository = AppStateRepository(localStorage: localStorage);
     controller = AppStateController(repository: repository);
+  });
+
+  tearDownAll(() async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(pathProviderChannel, null);
+    await documentsDirectory.delete(recursive: true);
   });
 
   test('loading empty state returns default AppState', () async {
@@ -320,5 +347,45 @@ void main() {
     );
     expect(scopedAfter, isNull);
     expect(anonymousAfter, isNull);
+  });
+
+  test('deleteLocalDataForUser preserves other accounts local state', () async {
+    final String user1Key = StorageKeys.appStateKeyForUser('u_1')!;
+    final String user2Key = StorageKeys.appStateKeyForUser('u_2')!;
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      user1Key: '{"transactions":[{"id":"a1"}]}',
+      user2Key: '{"transactions":[{"id":"b1"}]}',
+      StorageKeys.appStateAnonymousKey: '{"transactions":[{"id":"anon"}]}',
+      StorageKeys.userProfileKey: '{"id":"u_1"}',
+      StorageKeys.aiKeysAnonymousKey: '["legacy-anon-key"]',
+    });
+
+    const LocalStorageService localStorage = LocalStorageService();
+    final AppStateRepository scopedRepository = AppStateRepository(
+      localStorage: localStorage,
+    );
+    final AppStateController scopedController = AppStateController(
+      repository: scopedRepository,
+    );
+
+    await scopedController.deleteLocalDataForUser(userId: 'u_1');
+
+    final String? user1After = await localStorage.loadString(user1Key);
+    final String? user2After = await localStorage.loadString(user2Key);
+    final String? anonymousAfter = await localStorage.loadString(
+      StorageKeys.appStateAnonymousKey,
+    );
+    final String? profileAfter = await localStorage.loadString(
+      StorageKeys.userProfileKey,
+    );
+    final String? legacyAiAfter = await localStorage.loadString(
+      StorageKeys.aiKeysAnonymousKey,
+    );
+
+    expect(user1After, isNull);
+    expect(user2After, isNotNull);
+    expect(anonymousAfter, isNull);
+    expect(profileAfter, isNull);
+    expect(legacyAiAfter, isNull);
   });
 }

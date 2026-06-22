@@ -1,7 +1,12 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:provider/single_child_widget.dart';
@@ -15,6 +20,13 @@ import 'features/auth/login_page.dart';
 import 'features/auth/restore_gate_screen.dart';
 import 'firebase_options.dart';
 import 'models/user_profile.dart';
+import 'data/local/app_database.dart';
+import 'data/local/daos/migration_state_dao.dart';
+import 'data/local/local_store_providers.dart';
+import 'data/repositories/local_financial_operations_repository.dart';
+import 'data/repositories/local_savings_repository.dart';
+import 'data/repositories/local_sync_repository.dart';
+import 'data/repositories/local_transactions_repository.dart';
 import 'repositories/app_state_repository.dart';
 import 'screens/account/security_lock_screen.dart';
 import 'screens/app_shell.dart';
@@ -26,20 +38,55 @@ import 'services/cloud_backup_controller.dart';
 import 'services/firestore_sync_manager.dart';
 import 'services/google_sheets_service.dart';
 import 'services/local_storage_service.dart';
+import 'services/smart_capture_alert_service.dart';
+import 'data/sync/local_sync_pipeline.dart';
 import 'services/sync_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
+  if (!ZakatApp.isTesting) {
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final bool hasRunBefore = prefs.getBool('has_run_before') ?? false;
+      if (!hasRunBefore) {
+        try {
+          await FirebaseAuth.instance.signOut();
+        } catch (e) {
+          debugPrint('Error signing out of FirebaseAuth on first run: $e');
+        }
+        try {
+          const FlutterSecureStorage secureStorage = FlutterSecureStorage();
+          await secureStorage.deleteAll();
+        } catch (e) {
+          debugPrint('Error clearing secure storage on first run: $e');
+        }
+        await prefs.setBool('has_run_before', true);
+      }
+    } catch (e) {
+      debugPrint('Error in first run detection/cleanup: $e');
+    }
+  }
+
   const LocalStorageService localStorage = LocalStorageService();
   final FirestoreSyncManager firestoreSyncManager = FirestoreSyncManager();
+  final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+  final SmartCaptureAlertService smartCaptureAlertService = kIsWeb
+      ? const NoopSmartCaptureAlertService()
+      : PlatformSmartCaptureAlertService();
+  smartCaptureAlertService.attachNavigatorKey(navigatorKey);
+  await smartCaptureAlertService.initialize();
+  final localDatabase = localDatabaseProvider();
   final AppStateRepository repository = AppStateRepository(
     localStorage: localStorage,
   );
   runApp(
     MultiProvider(
       providers: <SingleChildWidget>[
+        Provider<SmartCaptureAlertService>.value(
+          value: smartCaptureAlertService,
+        ),
         ChangeNotifierProvider<AppPrivacyOverlayController>(
           create: (_) => AppPrivacyOverlayController(),
         ),
@@ -47,7 +94,39 @@ Future<void> main() async {
           create: (_) => AppStateController(
             repository: repository,
             firestoreSyncManager: firestoreSyncManager,
+            database: localDatabase,
+            ownsDatabase: true,
+            smartCaptureAlertService: smartCaptureAlertService,
           ),
+        ),
+        ProxyProvider<AppStateController, AppDatabase>(
+          update: (_, controller, _) => controller.database!,
+        ),
+        ProxyProvider<AppDatabase, MigrationStateDao>(
+          update: (_, db, _) => migrationStateProvider(db),
+        ),
+        ProxyProvider<AppStateController, LocalTransactionsRepository>(
+          update: (_, controller, _) =>
+              controller.localTransactionsRepository
+                  as LocalTransactionsRepository,
+        ),
+        ProxyProvider<AppStateController, LocalSavingsRepository>(
+          update: (_, controller, _) =>
+              controller.localSavingsRepository as LocalSavingsRepository,
+        ),
+        ProxyProvider<AppStateController, LocalFinancialOperationsRepository>(
+          update: (_, controller, _) =>
+              controller.localFinancialOperationsRepository
+                  as LocalFinancialOperationsRepository,
+        ),
+        ProxyProvider<AppDatabase, LocalSyncRepository>(
+          update: (_, AppDatabase db, _) => localSyncRepositoryProvider(db),
+        ),
+        ProxyProvider<AppStateController, UseSqliteLocalStoreProvider>(
+          update: (_, controller, _) => controller.useSqliteLocalStoreProvider!,
+        ),
+        ProxyProvider<AppStateController, LocalSyncPipeline>(
+          update: (_, controller, _) => controller.localSyncPipeline!,
         ),
         ChangeNotifierProvider<AuthController>(
           create: (_) => AuthController(
@@ -70,13 +149,44 @@ Future<void> main() async {
           ),
         ),
       ],
-      child: const ZakatApp(),
+      child: ZakatApp(navigatorKey: navigatorKey),
     ),
   );
 }
 
 class ZakatApp extends StatelessWidget {
-  const ZakatApp({super.key});
+  const ZakatApp({super.key, this.navigatorKey});
+
+  final GlobalKey<NavigatorState>? navigatorKey;
+
+  static final bool isTesting = !kIsWeb && Platform.environment.containsKey('FLUTTER_TEST');
+
+  @override
+  Widget build(BuildContext context) {
+    final GlobalKey<NavigatorState> key = navigatorKey ?? GlobalKey<NavigatorState>();
+    if (_hasAppPrivacyOverlayController(context)) {
+      return _ZakatAppContent(navigatorKey: key);
+    }
+    return ChangeNotifierProvider<AppPrivacyOverlayController>(
+      create: (_) => AppPrivacyOverlayController(),
+      child: _ZakatAppContent(navigatorKey: key),
+    );
+  }
+}
+
+bool _hasAppPrivacyOverlayController(BuildContext context) {
+  try {
+    context.read<AppPrivacyOverlayController>();
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+class _ZakatAppContent extends StatelessWidget {
+  const _ZakatAppContent({required this.navigatorKey});
+
+  final GlobalKey<NavigatorState> navigatorKey;
 
   @override
   Widget build(BuildContext context) {
@@ -93,6 +203,7 @@ class ZakatApp extends StatelessWidget {
         ? const Locale('ar')
         : const Locale('en');
     return MaterialApp(
+      navigatorKey: navigatorKey,
       title: 'Zakah Wealth',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
@@ -165,6 +276,7 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
   StreamSubscription<AuthGateState>? _authGateSubscription;
   bool _gateBootstrapInProgress = false;
   bool _sessionExpiryHandlingInProgress = false;
+  bool _initialBootstrapComplete = false;
 
   @override
   void initState() {
@@ -229,6 +341,7 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
   }
 
   Future<void> _bootstrapAuthenticatedUser(UserProfile user) async {
+    _initialBootstrapComplete = false;
     final AppStateController appStateController = context
         .read<AppStateController>();
 
@@ -254,6 +367,20 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
       provider: user.provider,
     );
     if (!mounted) return;
+
+    if (!appStateController.enableBackgroundSync &&
+        !appStateController.enableMarketAutoRefresh) {
+      setState(() {
+        _loadingEntries = false;
+        _loadingAssets = false;
+        _checkingCloudBackup = false;
+        _loadingMarketData = false;
+        _loadingPlans = false;
+        _phase = _BootstrapPhase.ready;
+      });
+      _initialBootstrapComplete = true;
+      return;
+    }
 
     setState(() {
       _loadingEntries = false;
@@ -312,10 +439,15 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
       });
       unawaited(appStateController.startMarketAutoRefresh());
     }
+    _initialBootstrapComplete = true;
   }
 
   Future<void> _handleAuthGateState(AuthGateState state) async {
     if (!mounted) return;
+    if (!_initialBootstrapComplete) {
+      debugPrint('[BootstrapDebug] ignoring stream auth state ${state.status} because initial bootstrap is not complete');
+      return;
+    }
     switch (state.status) {
       case AuthGateStatus.checking:
         if (_phase == _BootstrapPhase.signedOut) {
@@ -391,6 +523,7 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
       _loadingAssets = false;
       _loadingPlans = false;
     });
+    _initialBootstrapComplete = true;
     context.read<AppPrivacyOverlayController>().hide();
   }
 
@@ -413,6 +546,7 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
       _loadingPlans = false;
       _loadingMessage = null;
     });
+    _initialBootstrapComplete = true;
     context.read<AppPrivacyOverlayController>().hide();
   }
 
@@ -527,6 +661,7 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
           (_phase == _BootstrapPhase.ready ||
               _phase == _BootstrapPhase.locked)) {
         unawaited(appStateController.startMarketAutoRefresh());
+        unawaited(appStateController.triggerSyncPipeline(reason: 'app_resume'));
       }
 
       if (pausedAt != null &&
@@ -631,6 +766,7 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
 
   @override
   Widget build(BuildContext context) {
+    debugPrint('[BootstrapDebug] building with phase=$_phase');
     final Widget body = switch (_phase) {
       _BootstrapPhase.authLoading => AuthLoadingScreen(
         isAccountVerified: _accountVerified,

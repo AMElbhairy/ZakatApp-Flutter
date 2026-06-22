@@ -19,6 +19,7 @@ class Transaction {
     this.saleValue,
     this.realizedGain,
     this.realizedGainLossCurrency,
+    this.metalQuantity,
   });
 
   final String id;
@@ -40,6 +41,7 @@ class Transaction {
   final double? saleValue;
   final double? realizedGain;
   final String? realizedGainLossCurrency;
+  final double? metalQuantity;
 
   bool get isTransferActivity {
     final String normalizedCategory = category.trim().toLowerCase();
@@ -91,6 +93,9 @@ class Transaction {
           ? null
           : _asDouble(json['realizedGain']),
       realizedGainLossCurrency: json['realizedGainLossCurrency']?.toString(),
+      metalQuantity: json['metalQuantity'] == null
+          ? null
+          : _asDouble(json['metalQuantity']),
     );
   }
 
@@ -117,6 +122,7 @@ class Transaction {
       if (realizedGain != null) 'realizedGain': realizedGain,
       if (realizedGainLossCurrency != null)
         'realizedGainLossCurrency': realizedGainLossCurrency,
+      if (metalQuantity != null) 'metalQuantity': metalQuantity,
     };
   }
 

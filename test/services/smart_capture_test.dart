@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zakatapp_flutter/core/services/zakat_engine.dart';
@@ -9,13 +12,75 @@ import 'package:zakatapp_flutter/core/theme/app_theme.dart';
 import 'package:zakatapp_flutter/models/app_state.dart';
 import 'package:zakatapp_flutter/models/merchant_rule.dart';
 import 'package:zakatapp_flutter/models/pending_transaction.dart';
+import 'package:zakatapp_flutter/models/transaction.dart';
 import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
 import 'package:zakatapp_flutter/screens/account/notifications_screen.dart';
+import 'package:zakatapp_flutter/screens/account/review_pending_transaction_screen.dart';
 import 'package:zakatapp_flutter/services/apple_shortcuts_service.dart';
 import 'package:zakatapp_flutter/services/app_state_controller.dart';
 import 'package:zakatapp_flutter/services/local_storage_service.dart';
 import 'package:zakatapp_flutter/services/backup_service.dart';
+import 'package:zakatapp_flutter/services/smart_capture_alert_service.dart';
 import 'package:zakatapp_flutter/services/smart_capture_parser.dart';
+
+class FakeSmartCaptureAlertService extends SmartCaptureAlertService {
+  int initializeCalls = 0;
+  int? lastBadgeCount;
+  final List<PendingTransaction> notifications = <PendingTransaction>[];
+
+  @override
+  void attachNavigatorKey(GlobalKey<NavigatorState> navigatorKey) {}
+
+  @override
+  Future<void> initialize() async {
+    initializeCalls += 1;
+  }
+
+  @override
+  Future<void> flushPendingNotificationLaunch() async {}
+
+  @override
+  Future<void> handleNotificationResponse(
+    NotificationResponse response,
+  ) async {}
+
+  @override
+  Future<void> notifyPendingReview({
+    required PendingTransaction pendingTransaction,
+    required int pendingReviewCount,
+  }) async {
+    notifications.add(pendingTransaction);
+    lastBadgeCount = pendingReviewCount;
+  }
+
+  @override
+  Future<void> syncPendingReviewBadge(int pendingReviewCount) async {
+    lastBadgeCount = pendingReviewCount;
+  }
+}
+
+class _FakeNavigatorState extends NavigatorState {
+  Route<dynamic>? pushedRoute;
+
+  @override
+  Future<T?> push<T extends Object?>(Route<T> route) async {
+    pushedRoute = route;
+    return null;
+  }
+}
+
+class _TestNavigatorKey extends GlobalKey<NavigatorState> {
+  _TestNavigatorKey() : super.constructor();
+
+  BuildContext? currentContextValue;
+  NavigatorState? currentStateValue;
+
+  @override
+  BuildContext? get currentContext => currentContextValue;
+
+  @override
+  NavigatorState? get currentState => currentStateValue;
+}
 
 void main() {
   group('PendingTransaction Model', () {
@@ -77,11 +142,17 @@ void main() {
       AppleShortcutsService.resetForTests();
     });
 
-    Future<AppStateController> makeController() async {
+    Future<AppStateController> makeController({
+      SmartCaptureAlertService? smartCaptureAlertService,
+    }) async {
       SharedPreferences.setMockInitialValues(<String, Object>{});
       const localStorage = LocalStorageService();
       final repository = AppStateRepository(localStorage: localStorage);
-      final controller = AppStateController(repository: repository);
+      final controller = AppStateController(
+        repository: repository,
+        smartCaptureAlertService:
+            smartCaptureAlertService ?? const NoopSmartCaptureAlertService(),
+      );
       await controller.load();
       return controller;
     }
@@ -388,6 +459,7 @@ void main() {
         expect(updatedPt.status, CaptureStatus.manuallyApproved);
         expect(updatedPt.linkedTransactionId, tx.id);
         expect(updatedPt.reviewedAt, isNotNull);
+        expect(updatedPt.suggestedCategory, 'Groceries');
 
         // Attempt duplicate approval
         expect(
@@ -404,6 +476,115 @@ void main() {
         );
       },
     );
+
+    test(
+      'pending inbox notification fires once on creation and clears after approval',
+      () async {
+        final alertService = FakeSmartCaptureAlertService();
+        final controller = await makeController(
+          smartCaptureAlertService: alertService,
+        );
+
+        final bool created = await controller
+            .createPendingTransactionFromMessageWithResult(
+              'Paid EGP 150 at Supermarket',
+              PendingTransactionSource.sms,
+            );
+
+        expect(created, isTrue);
+        expect(alertService.notifications, hasLength(1));
+        expect(
+          alertService.notifications.single.status,
+          CaptureStatus.pendingReview,
+        );
+        expect(alertService.lastBadgeCount, 1);
+
+        final PendingTransaction pending =
+            controller.state.pendingTransactions.single;
+        await controller.approvePendingTransaction(
+          pending.id,
+          type: 'expense',
+          amount: 150.0,
+          currency: 'EGP',
+          category: 'Groceries',
+          description: 'Approved Supermarket Expense',
+          date: '2026-06-14',
+        );
+
+        expect(alertService.notifications, hasLength(1));
+        expect(alertService.lastBadgeCount, 0);
+        expect(
+          controller.state.pendingTransactions.single.status,
+          CaptureStatus.manuallyApproved,
+        );
+      },
+    );
+
+    testWidgets('notification payload routes to pending review screen', (
+      WidgetTester tester,
+    ) async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      const localStorage = LocalStorageService();
+      final repository = AppStateRepository(localStorage: localStorage);
+      final controller = AppStateController(
+        repository: repository,
+        smartCaptureAlertService: const NoopSmartCaptureAlertService(),
+      );
+      await controller.createPendingTransactionFromMessage(
+        'Paid EGP 150 at Supermarket',
+        'sms',
+      );
+      final PendingTransaction pending =
+          controller.state.pendingTransactions.single;
+
+      BuildContext? capturedContext;
+      final _FakeNavigatorState fakeNavigator = _FakeNavigatorState();
+      final _TestNavigatorKey navigatorKey = _TestNavigatorKey()
+        ..currentStateValue = fakeNavigator;
+
+      final PlatformSmartCaptureAlertService alertService =
+          PlatformSmartCaptureAlertService();
+      alertService.attachNavigatorKey(navigatorKey);
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<AppStateController>.value(
+          value: controller,
+          child: MaterialApp(
+            theme: AppTheme.light,
+            home: Builder(
+              builder: (BuildContext context) {
+                capturedContext = context;
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        ),
+      );
+
+      navigatorKey.currentContextValue = capturedContext;
+
+      await alertService.handleNotificationResponse(
+        NotificationResponse(
+          notificationResponseType:
+              NotificationResponseType.selectedNotification,
+          payload: jsonEncode(<String, dynamic>{
+            'pendingTransactionId': pending.id,
+            'pendingReviewCount': 1,
+          }),
+        ),
+      );
+
+      expect(fakeNavigator.pushedRoute, isA<MaterialPageRoute<void>>());
+      final MaterialPageRoute<void> pushedRoute =
+          fakeNavigator.pushedRoute! as MaterialPageRoute<void>;
+      final Widget routePage = pushedRoute.builder(capturedContext!);
+
+      expect(routePage, isA<ReviewPendingTransactionScreen>());
+      expect(
+        (routePage as ReviewPendingTransactionScreen).pendingTransaction.id,
+        pending.id,
+      );
+    });
 
     test(
       'approvePendingTransaction creates savings for metal purchase',
@@ -708,6 +889,33 @@ void main() {
           'confidence': 0.95,
           'merchant': 'Talabat',
           'desc': 'Talabat Purchase',
+        },
+        {
+          'text': 'تم استرجاع مبلغ 150.00 EGP',
+          'type': 'income',
+          'amount': 150.0,
+          'currency': 'EGP',
+          'confidence': 0.60,
+          'merchant': null,
+          'desc': 'Account Deposit',
+        },
+        {
+          'text': 'تم ايداع مبلغ 300 ريال في الحساب',
+          'type': 'income',
+          'amount': 300.0,
+          'currency': 'SAR',
+          'confidence': 0.60,
+          'merchant': null,
+          'desc': 'Account Deposit',
+        },
+        {
+          'text': 'Reverse transaction for USD 50.00 success',
+          'type': 'income',
+          'amount': 50.0,
+          'currency': 'USD',
+          'confidence': 0.60,
+          'merchant': null,
+          'desc': 'Account Deposit',
         },
       ];
 
@@ -1039,6 +1247,53 @@ void main() {
         expect(controller.state.captureAnalytics.duplicateMessages, equals(1));
       },
     );
+
+    test(
+      'pending review capture updates the badge and raises a notification',
+      () async {
+        final fakeAlerts = FakeSmartCaptureAlertService();
+        final controller = await makeController(
+          smartCaptureAlertService: fakeAlerts,
+        );
+
+        await controller.createPendingTransactionFromMessage(
+          'Purchase at Amazon EGP 150',
+          'sms',
+        );
+
+        expect(fakeAlerts.lastBadgeCount, 1);
+        expect(fakeAlerts.notifications, hasLength(1));
+        expect(
+          fakeAlerts.notifications.single.status,
+          CaptureStatus.pendingReview,
+        );
+      },
+    );
+
+    test('approving a pending capture clears the badge count', () async {
+      final fakeAlerts = FakeSmartCaptureAlertService();
+      final controller = await makeController(
+        smartCaptureAlertService: fakeAlerts,
+      );
+
+      await controller.createPendingTransactionFromMessage(
+        'Purchase at Amazon EGP 150',
+        'sms',
+      );
+      final pendingId = controller.state.pendingTransactions.single.id;
+
+      await controller.approvePendingTransaction(
+        pendingId,
+        type: 'expense',
+        amount: 150,
+        currency: 'EGP',
+        category: 'Shopping',
+        description: 'Amazon Purchase',
+        date: '2026-06-14',
+      );
+
+      expect(fakeAlerts.lastBadgeCount, 0);
+    });
 
     test('Confirmation learning promo milestone on 3 confirmations', () async {
       final controller = await makeController();

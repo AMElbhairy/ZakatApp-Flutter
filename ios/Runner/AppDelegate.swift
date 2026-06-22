@@ -1,6 +1,7 @@
 import Flutter
 import AuthenticationServices
 import UIKit
+import UserNotifications
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -65,6 +66,11 @@ import UIKit
 
     NSLog("[Shortcut] Payload queued")
     NSLog("[Shortcut] Queue size: \(pendingShortcutMessages.count)")
+
+    if !flutterShortcutServiceReady {
+      sendNativeNotification(for: trimmed)
+    }
+
     DispatchQueue.main.async {
       AppDelegate.sharedDeliverQueuedShortcutMessagesIfPossible()
     }
@@ -264,6 +270,36 @@ import UIKit
     pendingShortcutMessages.removeAll()
     saveShortcutQueueLocked()
     NSLog("[Shortcut] Queue cleared")
+  }
+
+  private static func sendNativeNotification(for message: String) {
+    let center = UNUserNotificationCenter.current()
+    center.getNotificationSettings { settings in
+      guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else {
+        NSLog("[Shortcut] Notification permission not granted, skipping native notification")
+        return
+      }
+
+      let content = UNMutableNotificationContent()
+      content.title = "Smart Capture"
+      content.body = "New transaction captured. Tap to review and approve."
+      content.sound = .default
+
+      let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 0.5, repeats: false)
+      let request = UNNotificationRequest(
+        identifier: "native_shortcut_capture_\(UUID().uuidString)",
+        content: content,
+        trigger: trigger
+      )
+
+      center.add(request) { error in
+        if let error = error {
+          NSLog("[Shortcut] Failed to add notification: \(error)")
+        } else {
+          NSLog("[Shortcut] Native notification posted successfully")
+        }
+      }
+    }
   }
 }
 

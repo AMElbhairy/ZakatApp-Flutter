@@ -44,7 +44,9 @@ class PremiumThemeTokens extends ThemeExtension<PremiumThemeTokens> {
 }
 
 extension PremiumThemeX on BuildContext {
-  PremiumThemeTokens get premiumTokens => Theme.of(this).extension<PremiumThemeTokens>()!;
+  PremiumThemeTokens get premiumTokens =>
+      Theme.of(this).extension<PremiumThemeTokens>() ??
+      PremiumThemePresets.light;
 }
 
 class PremiumThemePresets {

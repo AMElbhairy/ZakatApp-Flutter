@@ -287,12 +287,20 @@ class AppLocalizations {
       'name_required': 'Name is required',
       'asset_type': 'Asset Type',
       'current_value': 'Current Value',
+      'current_value_optional': 'Current Value (Optional)',
       'current_value_gt_zero': 'Current value must be greater than 0',
+      'current_value_negative': 'Current value cannot be negative',
       'ownership_pct': 'Ownership %',
       'ownership_pct_range': 'Ownership % must be between 0 and 100',
+      'purchase_price': 'Purchase Price',
+      'purchase_price_gt_zero': 'Purchase price must be greater than 0',
       'purchase_price_optional': 'Purchase Price (Optional)',
       'remaining_liability_optional': 'Remaining Liability (Optional)',
       'valuation_date': 'Valuation Date',
+      'yearly_growth_rate': 'Yearly Growth Rate (%)',
+      'repeat': 'Repeat',
+      'total_installments_amount': 'Total Installments Amount',
+      'total_installments_amount_required': 'Total installments amount is required',
       'plan_name': 'Plan Name',
       'starting_balance': 'Starting Balance',
       'starting_balance_non_negative': 'Starting balance must be >= 0',
@@ -304,6 +312,7 @@ class AppLocalizations {
       'start_date': 'Start Date',
       'include_installments': 'Include Installments',
       'include_zakat': 'Include Zakat',
+      'repeat_next_month': 'Repeat next month',
       'weight_grams': 'Weight (grams)',
       'gold_purity': 'Gold Purity (Karat)',
       'gold_purity_required': 'Gold purity is required',
@@ -686,12 +695,20 @@ class AppLocalizations {
       'name_required': 'الاسم مطلوب',
       'asset_type': 'نوع الأصل',
       'current_value': 'القيمة الحالية',
+      'current_value_optional': 'القيمة الحالية (اختياري)',
       'current_value_gt_zero': 'يجب أن تكون القيمة الحالية أكبر من 0',
+      'current_value_negative': 'لا يمكن أن تكون القيمة الحالية سالبة',
       'ownership_pct': 'نسبة الملكية %',
       'ownership_pct_range': 'يجب أن تكون نسبة الملكية بين 0 و100',
+      'purchase_price': 'سعر الشراء',
+      'purchase_price_gt_zero': 'يجب أن يكون سعر الشراء أكبر من 0',
       'purchase_price_optional': 'سعر الشراء (اختياري)',
       'remaining_liability_optional': 'الالتزامات المتبقية (اختياري)',
       'valuation_date': 'تاريخ التقييم',
+      'yearly_growth_rate': 'معدل النمو السنوي (%)',
+      'repeat': 'تكرار',
+      'total_installments_amount': 'إجمالي مبلغ الأقساط',
+      'total_installments_amount_required': 'إجمالي مبلغ الأقساط مطلوب',
       'plan_name': 'اسم الخطة',
       'starting_balance': 'رصيد البداية',
       'starting_balance_non_negative':
@@ -704,6 +721,7 @@ class AppLocalizations {
       'start_date': 'تاريخ البدء',
       'include_installments': 'تضمين الأقساط',
       'include_zakat': 'تضمين الزكاة',
+      'repeat_next_month': 'تكرار الشهر القادم',
       'weight_grams': 'الوزن (بالجرام)',
       'gold_purity': 'نقاء الذهب (العيار)',
       'gold_purity_required': 'عيار الذهب مطلوب',
@@ -859,7 +877,8 @@ class AppLocalizations {
   }
 
   static AppLocalizations of(BuildContext context) {
-    return Localizations.of<AppLocalizations>(context, AppLocalizations)!;
+    return Localizations.of<AppLocalizations>(context, AppLocalizations) ??
+        const AppLocalizations(Locale('en'));
   }
 }
 

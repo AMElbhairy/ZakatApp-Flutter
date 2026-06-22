@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../main.dart';
+
 import '../core/constants/storage_keys.dart';
 
 class SecureStorageService {
@@ -13,6 +15,7 @@ class SecureStorageService {
   final FlutterSecureStorage _storage;
 
   Future<List<String>?> loadAiKeys({String? userId}) async {
+    if (ZakatApp.isTesting) return null;
     final String key = StorageKeys.aiKeysKeyForUser(userId);
     try {
       final String? raw = await _storage.read(key: key);
@@ -30,6 +33,7 @@ class SecureStorageService {
   }
 
   Future<void> saveAiKeys(List<String> keys, {String? userId}) async {
+    if (ZakatApp.isTesting) return;
     final String key = StorageKeys.aiKeysKeyForUser(userId);
     try {
       await _storage.write(key: key, value: jsonEncode(keys));
@@ -43,6 +47,7 @@ class SecureStorageService {
   }
 
   Future<void> deleteAiKeys({String? userId}) async {
+    if (ZakatApp.isTesting) return;
     final String key = StorageKeys.aiKeysKeyForUser(userId);
     try {
       await _storage.delete(key: key);

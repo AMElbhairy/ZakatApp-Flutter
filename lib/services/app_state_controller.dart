@@ -1,8 +1,13 @@
-// ignore_for_file: avoid_print
+// ignore_for_file: avoid_print, prefer_initializing_formals
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Platform;
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
+import '../core/constants/storage_keys.dart';
 
 import '../models/app_state.dart';
 import '../models/financial_plan.dart';
@@ -18,7 +23,36 @@ import '../models/merchant_confirmation.dart';
 import '../models/capture_analytics.dart';
 import '../models/correction_feedback.dart';
 import '../models/user_profile.dart';
+import '../data/local/local_store_providers.dart'
+    hide useSqliteLocalStoreProvider;
+import '../data/local/local_store_providers.dart' as store_providers;
+import '../data/local/app_database.dart'
+    hide
+        Transaction,
+        Saving,
+        PendingTransaction,
+        Investment,
+        FinancialPlan,
+        RecurringTransaction,
+        MerchantRule,
+        MerchantConfirmation,
+        CorrectionFeedback;
+import '../data/repositories/local_app_settings_repository.dart';
+import '../data/repositories/local_correction_feedback_repository.dart';
+import '../data/repositories/local_investments_repository.dart';
+import '../data/repositories/local_financial_plans_repository.dart';
+import '../data/repositories/local_merchant_rules_repository.dart';
+import '../data/repositories/local_merchant_confirmations_repository.dart';
+import '../data/repositories/local_recurring_transactions_repository.dart';
+import '../data/local/daos/sync_metadata_dao.dart';
+import '../data/local/daos/sync_queue_dao.dart';
+import '../data/local/migration/json_to_sqlite_migrator.dart';
+import '../data/repositories/local_financial_operations_repository.dart';
+import '../data/repositories/local_savings_repository.dart';
+import '../data/repositories/local_pending_transactions_repository.dart';
 import '../repositories/app_state_repository.dart';
+import '../data/sync/sync_queue_processor.dart';
+import '../data/repositories/local_transactions_repository.dart';
 import 'market_data_api_service.dart';
 import 'reconciliation_service.dart';
 import '../core/services/zakat_engine.dart';
@@ -26,6 +60,11 @@ import 'biometric_service.dart';
 import 'firestore_sync_manager.dart';
 import 'secure_storage_service.dart';
 import 'smart_capture_parser.dart';
+import '../data/sync/local_sync_pipeline.dart';
+import '../data/sync/sync_reports.dart';
+import 'app_diagnostics.dart';
+import 'sync_diagnostics_service.dart';
+import 'smart_capture_alert_service.dart';
 
 class AppStateController extends ChangeNotifier {
   AppStateController({
@@ -33,19 +72,246 @@ class AppStateController extends ChangeNotifier {
     MarketDataApiService? marketDataApiService,
     ReconciliationService? reconciliationService,
     this.firestoreSyncManager,
+    this.enableBackgroundSync = true,
+    this.enableMarketAutoRefresh = true,
+    AppDatabase? database,
+    bool ownsDatabase = false,
+    TransactionsLocalStore? localTransactionsRepository,
+    SavingsLocalStore? localSavingsRepository,
+    FinancialOperationsLocalStore? localFinancialOperationsRepository,
+    UseSqliteLocalStoreProvider? useSqliteLocalStoreProvider,
+    LocalSyncPipeline? localSyncPipeline,
+    Duration pushDebounceDuration = const Duration(seconds: 15),
+    SmartCaptureAlertService? smartCaptureAlertService,
     SecureStorageService? secureStorageService,
   }) : _state = AppStateDefaults.create(),
        secureStorageService =
            secureStorageService ?? const SecureStorageService(),
        marketDataApiService =
            marketDataApiService ?? MarketDataApiServiceImpl(),
-       reconciliationService = reconciliationService ?? ReconciliationService();
+       reconciliationService = reconciliationService ?? ReconciliationService(),
+       _database = database,
+       _localTransactionsRepository = localTransactionsRepository,
+       _localSavingsRepository = localSavingsRepository,
+       _localFinancialOperationsRepository = localFinancialOperationsRepository,
+       _useSqliteLocalStoreProvider = useSqliteLocalStoreProvider,
+       _localSyncPipeline = localSyncPipeline,
+       _pushDebounceDuration = pushDebounceDuration,
+       _smartCaptureAlertService =
+           smartCaptureAlertService ?? const NoopSmartCaptureAlertService(),
+       _sqliteEnabled = database != null,
+       _ownsDatabase = ownsDatabase || database == null;
 
   final AppStateRepository repository;
   final MarketDataApiService marketDataApiService;
   final ReconciliationService reconciliationService;
   final FirestoreSyncManager? firestoreSyncManager;
+  final bool enableBackgroundSync;
+  final bool enableMarketAutoRefresh;
   final SecureStorageService secureStorageService;
+  final bool _sqliteEnabled;
+  final bool _ownsDatabase;
+
+  AppDatabase? _database;
+  AppDatabase? get database => _database;
+
+  TransactionsLocalStore? _localTransactionsRepository;
+  SavingsLocalStore? _localSavingsRepository;
+  FinancialOperationsLocalStore? _localFinancialOperationsRepository;
+  LocalPendingTransactionsRepository? _localPendingTransactionsRepository;
+  LocalAppSettingsRepository? _localAppSettingsRepository;
+  LocalFinancialPlansRepository? _localFinancialPlansRepository;
+  LocalInvestmentsRepository? _localInvestmentsRepository;
+  LocalMerchantRulesRepository? _localMerchantRulesRepository;
+  LocalMerchantConfirmationsRepository? _localMerchantConfirmationsRepository;
+  LocalCorrectionFeedbackRepository? _localCorrectionFeedbackRepository;
+  LocalRecurringTransactionsRepository? _localRecurringTransactionsRepository;
+  UseSqliteLocalStoreProvider? _useSqliteLocalStoreProvider;
+  LocalSyncPipeline? _localSyncPipeline;
+  final SmartCaptureAlertService _smartCaptureAlertService;
+
+  TransactionsLocalStore? get localTransactionsRepository =>
+      _localTransactionsRepository;
+  SavingsLocalStore? get localSavingsRepository => _localSavingsRepository;
+  FinancialOperationsLocalStore? get localFinancialOperationsRepository =>
+      _localFinancialOperationsRepository;
+  LocalPendingTransactionsRepository? get localPendingTransactionsRepository =>
+      _localPendingTransactionsRepository;
+  LocalAppSettingsRepository? get localAppSettingsRepository =>
+      _localAppSettingsRepository;
+  LocalFinancialPlansRepository? get localFinancialPlansRepository =>
+      _localFinancialPlansRepository;
+  LocalInvestmentsRepository? get localInvestmentsRepository =>
+      _localInvestmentsRepository;
+  LocalMerchantRulesRepository? get localMerchantRulesRepository =>
+      _localMerchantRulesRepository;
+  LocalMerchantConfirmationsRepository?
+  get localMerchantConfirmationsRepository =>
+      _localMerchantConfirmationsRepository;
+  LocalCorrectionFeedbackRepository? get localCorrectionFeedbackRepository =>
+      _localCorrectionFeedbackRepository;
+  LocalRecurringTransactionsRepository?
+  get localRecurringTransactionsRepository =>
+      _localRecurringTransactionsRepository;
+  UseSqliteLocalStoreProvider? get useSqliteLocalStoreProvider =>
+      _useSqliteLocalStoreProvider;
+  LocalSyncPipeline? get localSyncPipeline => _localSyncPipeline;
+  SmartCaptureAlertService get smartCaptureAlertService =>
+      _smartCaptureAlertService;
+  List<String> get debugWriteFailures =>
+      List<String>.unmodifiable(_debugWriteFailures);
+  Map<String, String> get collectionSources =>
+      Map<String, String>.unmodifiable(_collectionSources);
+
+  Future<void> _initDatabase(String? userId) async {
+    if (!_sqliteEnabled) {
+      return;
+    }
+
+    if (_database != null && _state.loadedUserId == userId) {
+      if (_localTransactionsRepository == null ||
+          _localSavingsRepository == null ||
+          _localFinancialOperationsRepository == null ||
+          _localPendingTransactionsRepository == null ||
+          _localAppSettingsRepository == null ||
+          _localFinancialPlansRepository == null ||
+          _localInvestmentsRepository == null ||
+          _localMerchantRulesRepository == null ||
+          _localMerchantConfirmationsRepository == null ||
+          _localCorrectionFeedbackRepository == null ||
+          _localRecurringTransactionsRepository == null ||
+          _useSqliteLocalStoreProvider == null) {
+        await _wireDatabaseDependencies(_database!);
+      }
+      return;
+    }
+
+    if (_database != null && !_ownsDatabase) {
+      if (_localTransactionsRepository == null ||
+          _localSavingsRepository == null ||
+          _localFinancialOperationsRepository == null ||
+          _localPendingTransactionsRepository == null ||
+          _localAppSettingsRepository == null ||
+          _localFinancialPlansRepository == null ||
+          _localInvestmentsRepository == null ||
+          _localMerchantRulesRepository == null ||
+          _localMerchantConfirmationsRepository == null ||
+          _localCorrectionFeedbackRepository == null ||
+          _localRecurringTransactionsRepository == null ||
+          _useSqliteLocalStoreProvider == null) {
+        await _wireDatabaseDependencies(_database!);
+      }
+      return;
+    }
+
+    if (_database != null) {
+      await _database!.close();
+      _database = null;
+    }
+
+    final db = AppDatabase(userId: userId);
+    _database = db;
+    await _wireDatabaseDependencies(db);
+  }
+
+  Future<void> _wireDatabaseDependencies(AppDatabase db) async {
+    final migrationStateDao = store_providers.migrationStateProvider(db);
+    final transactionsRepo = store_providers
+        .localTransactionsRepositoryProvider(db);
+    final savingsRepo = store_providers.localSavingsRepositoryProvider(db);
+    final financialOpsRepo = store_providers
+        .localFinancialOperationsRepositoryProvider(db);
+    final pendingTransactionsRepo = store_providers
+        .localPendingTransactionsRepositoryProvider(db);
+    final appSettingsRepo = store_providers.localAppSettingsRepositoryProvider(
+      db,
+    );
+    final financialPlansRepo = store_providers
+        .localFinancialPlansRepositoryProvider(db);
+    final investmentsRepo = store_providers.localInvestmentsRepositoryProvider(
+      db,
+    );
+    final merchantRulesRepo = store_providers
+        .localMerchantRulesRepositoryProvider(db);
+    final merchantConfirmationsRepo = store_providers
+        .localMerchantConfirmationsRepositoryProvider(db);
+    final correctionFeedbackRepo = store_providers
+        .localCorrectionFeedbackRepositoryProvider(db);
+    final recurringTransactionsRepo = store_providers
+        .localRecurringTransactionsRepositoryProvider(db);
+
+    LocalSyncPipeline? localPipeline;
+    if (firestoreSyncManager != null) {
+      localPipeline = LocalSyncPipeline(
+        firestoreSyncManager: firestoreSyncManager!,
+        syncQueueDao: SyncQueueDao(db),
+        syncMetadataDao: SyncMetadataDao(db),
+        transactionsRepository: transactionsRepo,
+        savingsRepository: savingsRepo,
+        financialPlansRepository: financialPlansRepo,
+        investmentsRepository: investmentsRepo,
+        merchantRulesRepository: merchantRulesRepo,
+        merchantConfirmationsRepository: merchantConfirmationsRepo,
+        correctionFeedbackRepository: correctionFeedbackRepo,
+        recurringTransactionsRepository: recurringTransactionsRepo,
+        pendingTransactionsRepository: pendingTransactionsRepo,
+      );
+    }
+
+    final sqliteGate =
+        _useSqliteLocalStoreProvider ??
+        store_providers.useSqliteLocalStoreProvider(
+          JsonToSqliteMigrator(
+            database: db,
+            migrationStateDao: migrationStateDao,
+            legacyRepository: repository,
+          ),
+        );
+
+    _localTransactionsRepository = transactionsRepo;
+    _localSavingsRepository = savingsRepo;
+    _localFinancialOperationsRepository = financialOpsRepo;
+    _localFinancialPlansRepository = financialPlansRepo;
+    _localPendingTransactionsRepository = pendingTransactionsRepo;
+    _localAppSettingsRepository = appSettingsRepo;
+    _localInvestmentsRepository = investmentsRepo;
+    _localMerchantRulesRepository = merchantRulesRepo;
+    _localMerchantConfirmationsRepository = merchantConfirmationsRepo;
+    _localCorrectionFeedbackRepository = correctionFeedbackRepo;
+    _localRecurringTransactionsRepository = recurringTransactionsRepo;
+    _localSyncPipeline = localPipeline;
+    _useSqliteLocalStoreProvider = sqliteGate;
+  }
+
+  void _markCollectionSource(String collection, String source) {
+    _collectionSources[collection] = source;
+  }
+
+  void _recordDebugWriteFailure(String message) {
+    if (!kDebugMode) return;
+    _debugWriteFailures.add(message);
+    debugPrint(message);
+  }
+
+  Future<void> _verifySqliteWrite({
+    required String label,
+    required String id,
+    required Future<bool> Function() existsCheck,
+  }) async {
+    if (!kDebugMode) return;
+    try {
+      final bool exists = await existsCheck();
+      if (!exists) {
+        _recordDebugWriteFailure('$label verification failed for id=$id');
+      }
+    } catch (error, stackTrace) {
+      _recordDebugWriteFailure(
+        '$label verification errored for id=$id: $error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
   AppStateModel _state;
   Timer? _marketRefreshTimer;
   bool _marketAutoRefreshStarted = false;
@@ -53,7 +319,18 @@ class AppStateController extends ChangeNotifier {
   StreamSubscription<Map<String, dynamic>>? _userSettingsSubscription;
   String? _liveSyncUserId;
   bool _isApplyingRemoteSync = false;
+  bool _useSqliteLocalStore = false;
+  bool _skipNextSqliteTransactionMirror = false;
+  bool _skipNextSqliteSavingsMirror = false;
+  Timer? _deferredPushTimer;
+  String _lastSyncTriggerReason = '';
+  int _lastSyncQueueCountBeforeTrigger = 0;
+  bool _lastSyncPullSkippedDueToThrottle = false;
+  final List<String> _debugWriteFailures = <String>[];
+  final Map<String, String> _collectionSources = <String, String>{};
   static const Duration marketRefreshInterval = Duration(minutes: 5);
+  static const Duration _autoPullInterval = Duration(hours: 6);
+  final Duration _pushDebounceDuration;
 
   AppStateModel get state => _state;
   MarketSnapshot get currentMarketSnapshot =>
@@ -68,8 +345,13 @@ class AppStateController extends ChangeNotifier {
   }
 
   Future<void> load({String? userId}) async {
+    await _initDatabase(userId);
+    _collectionSources.clear();
     try {
       _state = await repository.loadAppState(userId: userId);
+      if (userId != null && userId.trim().isNotEmpty) {
+        _state = _state.copyWith(userId: userId, loadedUserId: userId);
+      }
       _state = await _hydrateAiSettingsFromSecureStorage(
         _state,
         userId: userId ?? _state.userId,
@@ -89,6 +371,16 @@ class AppStateController extends ChangeNotifier {
       debugPrintStack(stackTrace: stackTrace);
       _state = AppStateDefaults.create();
     }
+    await _hydrateAppSettingsFromPreferredLocalStore(userId: userId);
+    await _hydrateTransactionsFromPreferredLocalStore(userId: userId);
+    await _hydrateSavingsFromPreferredLocalStore(userId: userId);
+    await _hydratePendingTransactionsFromPreferredLocalStore(userId: userId);
+    await _hydrateFinancialPlansFromPreferredLocalStore(userId: userId);
+    await _hydrateInvestmentsFromPreferredLocalStore(userId: userId);
+    await _hydrateMerchantRulesFromPreferredLocalStore(userId: userId);
+    await _hydrateMerchantConfirmationsFromPreferredLocalStore(userId: userId);
+    await _hydrateCorrectionFeedbackFromPreferredLocalStore(userId: userId);
+    await _hydrateRecurringTransactionsFromPreferredLocalStore(userId: userId);
     final ReconciliationResult reconciled = reconciliationService
         .reconcileExpensesWithSavings(_state);
     _state = reconciled.state;
@@ -96,6 +388,8 @@ class AppStateController extends ChangeNotifier {
       await save();
     }
     notifyListeners();
+    unawaited(_syncPendingReviewBadge());
+    unawaited(triggerSyncPipeline(reason: 'app_start'));
   }
 
   Future<void> attachCurrentUser({
@@ -116,6 +410,8 @@ class AppStateController extends ChangeNotifier {
     );
     await save();
     notifyListeners();
+    unawaited(_syncPendingReviewBadge());
+    unawaited(triggerSyncPipeline(reason: 'sign_in'));
   }
 
   Future<void> resetForCurrentUser(UserProfile user) async {
@@ -130,12 +426,19 @@ class AppStateController extends ChangeNotifier {
     );
     await save();
     notifyListeners();
+    unawaited(_syncPendingReviewBadge());
   }
 
   Future<void> resetForSignedOutUser() async {
     await stopLiveFirestoreSync();
+    if (_database != null) {
+      await _database!.close();
+      _database = null;
+    }
     _state = AppStateDefaults.create();
+    await _initDatabase(null);
     notifyListeners();
+    unawaited(_syncPendingReviewBadge());
   }
 
   Future<void> markRestorePromptDismissedForCurrentUser({
@@ -165,6 +468,9 @@ class AppStateController extends ChangeNotifier {
   }
 
   Future<void> startMarketAutoRefresh({bool refreshImmediately = true}) async {
+    if (!enableMarketAutoRefresh) {
+      return;
+    }
     // Always refresh immediately when the app re-enters the active session.
     // The periodic timer should still be started only once.
     if (refreshImmediately) {
@@ -181,12 +487,16 @@ class AppStateController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _deferredPushTimer?.cancel();
     unawaited(stopLiveFirestoreSync());
     _marketRefreshTimer?.cancel();
     super.dispose();
   }
 
   Future<void> startLiveFirestoreSync({required String userId}) async {
+    if (!enableBackgroundSync) {
+      return;
+    }
     final FirestoreSyncManager? syncManager = firestoreSyncManager;
     if (syncManager == null) return;
     if (_liveSyncUserId == userId && _userSettingsSubscription != null) {
@@ -196,28 +506,38 @@ class AppStateController extends ChangeNotifier {
     await stopLiveFirestoreSync();
     _liveSyncUserId = userId;
 
-    await _hydrateTransactionsIncrementally(userId, syncManager);
-    await _hydrateSavingsIncrementally(userId, syncManager);
-    await _hydrateInvestmentsIncrementally(userId, syncManager);
-    await _hydrateCaptureInboxIncrementally(userId, syncManager);
-    await _hydrateRecurringTransactionsIncrementally(userId, syncManager);
-    await _hydrateFinancialPlansIncrementally(userId, syncManager);
-    await _hydrateCorrectionFeedbackIncrementally(userId, syncManager);
-    await _hydrateMerchantConfirmationsIncrementally(userId, syncManager);
-    await _hydrateMerchantRulesIncrementally(userId, syncManager);
-    await _hydrateUserSettings(userId, syncManager);
-
-    _userSettingsSubscription = syncManager
-        .watchUserSettings(uid: userId)
-        .listen(
-          (Map<String, dynamic> settings) {
-            unawaited(_applyUserSettingsSnapshot(userId, settings));
-          },
-          onError: (Object error, StackTrace stackTrace) {
-            debugPrint('Live user settings sync error: $error');
-            debugPrintStack(stackTrace: stackTrace);
-          },
+    if (_useSqliteLocalStore) {
+      if (kDebugMode) {
+        debugPrint(
+          '[SYNC] user settings listener skipped in SQLite mode for uid=$userId',
         );
+      }
+    } else {
+      await _hydrateTransactionsIncrementally(userId, syncManager);
+      await _hydrateSavingsIncrementally(userId, syncManager);
+      await _hydrateInvestmentsIncrementally(userId, syncManager);
+      await _hydrateCaptureInboxIncrementally(userId, syncManager);
+      await _hydrateRecurringTransactionsIncrementally(userId, syncManager);
+      await _hydrateFinancialPlansIncrementally(userId, syncManager);
+      await _hydrateCorrectionFeedbackIncrementally(userId, syncManager);
+      await _hydrateMerchantConfirmationsIncrementally(userId, syncManager);
+      await _hydrateMerchantRulesIncrementally(userId, syncManager);
+      await _hydrateUserSettings(userId, syncManager);
+      _userSettingsSubscription = syncManager
+          .watchUserSettings(uid: userId)
+          .listen(
+            (Map<String, dynamic> settings) {
+              unawaited(_applyUserSettingsSnapshot(userId, settings));
+            },
+            onError: (Object error, StackTrace stackTrace) {
+              debugPrint('Live user settings sync error: $error');
+              debugPrintStack(stackTrace: stackTrace);
+            },
+          );
+      if (kDebugMode) {
+        debugPrint('[SYNC] user settings listener attached for uid=$userId');
+      }
+    }
   }
 
   Future<void> stopLiveFirestoreSync() async {
@@ -238,6 +558,29 @@ class AppStateController extends ChangeNotifier {
       await _applyUserSettingsSnapshot(userId, settings);
     } catch (error, stackTrace) {
       debugPrint('Firestore user settings hydration error: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  Future<void> _refreshUserSettingsFromFirestore({
+    required String userId,
+    required FirestoreSyncManager? syncManager,
+    required String reason,
+  }) async {
+    if (syncManager == null) return;
+    try {
+      final Map<String, dynamic> settings = await syncManager.loadUserSettings(
+        uid: userId,
+      );
+      if (_liveSyncUserId != userId || _state.userId != userId) return;
+      await _applyUserSettingsSnapshot(userId, settings);
+      if (kDebugMode) {
+        debugPrint(
+          '[SYNC] user settings refreshed via $reason for uid=$userId',
+        );
+      }
+    } catch (error, stackTrace) {
+      debugPrint('Firestore user settings refresh error: $error');
       debugPrintStack(stackTrace: stackTrace);
     }
   }
@@ -834,22 +1177,6 @@ class AppStateController extends ChangeNotifier {
         _canonicalJson(right.map(encoder).toList(growable: false));
   }
 
-  List<String> _removedIds<T>(
-    Iterable<T> previous,
-    Iterable<T> next,
-    String Function(T item) idSelector,
-  ) {
-    final Set<String> previousIds = previous
-        .map((T item) => idSelector(item).trim())
-        .where((String id) => id.isNotEmpty)
-        .toSet();
-    final Set<String> nextIds = next
-        .map((T item) => idSelector(item).trim())
-        .where((String id) => id.isNotEmpty)
-        .toSet();
-    return previousIds.difference(nextIds).toList(growable: false);
-  }
-
   List<Transaction> _mergeTransactionsDelta(
     List<Transaction> current,
     List<Transaction> changed,
@@ -1088,6 +1415,161 @@ class AppStateController extends ChangeNotifier {
     };
   }
 
+  Map<String, String> _merchantAliasesFromRules(
+    Map<String, MerchantRule> rules,
+  ) {
+    final Map<String, String> aliases = <String, String>{};
+    for (final MerchantRule rule in rules.values) {
+      for (final String alias in rule.aliases) {
+        final String aliasKey = alias.toLowerCase().trim();
+        if (aliasKey.isNotEmpty) {
+          aliases[aliasKey] = rule.merchantName;
+        }
+      }
+    }
+    return aliases;
+  }
+
+  AppStateModel _mergeAllAppSettingsFromLocalStore(
+    AppStateModel current,
+    Map<String, dynamic> settings,
+  ) {
+    return current.copyWith(
+      zakatPaidMonths: settings['zakat_paid_months'] is List
+          ? _asStringList(settings['zakat_paid_months'])
+          : current.zakatPaidMonths,
+      zakatExpenseIds: settings['zakat_expense_ids'] is Map
+          ? Map<String, dynamic>.from(settings['zakat_expense_ids'] as Map)
+          : current.zakatExpenseIds,
+      processedExpenseIds: settings['processed_expense_ids'] is List
+          ? _asStringList(settings['processed_expense_ids'])
+          : current.processedExpenseIds,
+      zakatMethod: settings.containsKey('zakat_method')
+          ? settings['zakat_method'].toString()
+          : current.zakatMethod,
+      zakatAnnualDate: settings.containsKey('zakat_annual_date')
+          ? settings['zakat_annual_date'].toString()
+          : current.zakatAnnualDate,
+      zakatNisabBasis: settings.containsKey('zakat_nisab_basis')
+          ? (settings['zakat_nisab_basis'].toString() == 'silver595'
+                ? 'silver595'
+                : 'gold85')
+          : current.zakatNisabBasis,
+      zakatScheduleFilter: settings.containsKey('zakat_schedule_filter')
+          ? settings['zakat_schedule_filter'].toString()
+          : current.zakatScheduleFilter,
+      mainCurrency: settings.containsKey('main_currency')
+          ? settings['main_currency'].toString()
+          : current.mainCurrency,
+      defaultEntryCurrency: settings.containsKey('default_entry_currency')
+          ? settings['default_entry_currency'].toString()
+          : current.defaultEntryCurrency,
+      languagePreference: settings.containsKey('language_preference')
+          ? settings['language_preference'].toString()
+          : current.languagePreference,
+      themeMode: settings.containsKey('theme_mode')
+          ? settings['theme_mode'].toString()
+          : current.themeMode,
+      biometricLockEnabled: settings.containsKey('biometric_lock_enabled')
+          ? _asBool(settings['biometric_lock_enabled'])
+          : current.biometricLockEnabled,
+      biometricHideWealthEnabled:
+          settings.containsKey('biometric_hide_wealth_enabled')
+          ? _asBool(settings['biometric_hide_wealth_enabled'])
+          : current.biometricHideWealthEnabled,
+      biometricExportEnabled: settings.containsKey('biometric_export_enabled')
+          ? _asBool(settings['biometric_export_enabled'])
+          : current.biometricExportEnabled,
+      biometricRestoreEnabled: settings.containsKey('biometric_restore_enabled')
+          ? _asBool(settings['biometric_restore_enabled'])
+          : current.biometricRestoreEnabled,
+      biometricAutoLockDelay: settings.containsKey('biometric_auto_lock_delay')
+          ? settings['biometric_auto_lock_delay'].toString()
+          : current.biometricAutoLockDelay,
+      smartCaptureEnabled: settings.containsKey('smart_capture_enabled')
+          ? _asBool(settings['smart_capture_enabled'])
+          : current.smartCaptureEnabled,
+      smartCaptureAutoApproveEnabled:
+          settings.containsKey('smart_capture_auto_approve_enabled')
+          ? _asBool(settings['smart_capture_auto_approve_enabled'])
+          : current.smartCaptureAutoApproveEnabled,
+      categories: settings['categories'] is Map
+          ? AppCategories.fromJson(
+              Map<String, dynamic>.from(settings['categories'] as Map),
+            )
+          : current.categories,
+      lastRollover: settings.containsKey('last_rollover')
+          ? settings['last_rollover'].toString()
+          : current.lastRollover,
+      merchantAliases: settings['merchant_aliases'] is Map
+          ? (settings['merchant_aliases'] as Map).map(
+              (dynamic key, dynamic value) =>
+                  MapEntry<String, String>(key.toString(), value.toString()),
+            )
+          : current.merchantAliases,
+      captureAnalytics: settings['capture_analytics'] is Map
+          ? CaptureAnalytics.fromJson(
+              Map<String, dynamic>.from(settings['capture_analytics'] as Map),
+            )
+          : current.captureAnalytics,
+      marketData: settings['market_data'] is Map
+          ? Map<String, dynamic>.from(settings['market_data'] as Map)
+          : current.marketData,
+      marketHistory: settings['market_history'] is List
+          ? (settings['market_history'] as List)
+                .map((dynamic e) => _asMap(e))
+                .toList(growable: false)
+          : current.marketHistory,
+      syncHealth: settings['sync_health'] is Map
+          ? SyncHealth.fromJson(
+              Map<String, dynamic>.from(settings['sync_health'] as Map),
+            )
+          : current.syncHealth,
+      aiSettings: settings['ai_settings'] is Map
+          ? _mergeSyncedAiSettings(current.aiSettings, settings['ai_settings'])
+          : current.aiSettings,
+      restorePromptDismissedUserId:
+          settings.containsKey('restore_prompt_dismissed_user_id')
+          ? settings['restore_prompt_dismissed_user_id']?.toString()
+          : current.restorePromptDismissedUserId,
+    );
+  }
+
+  Map<String, dynamic> _allAppSettingsPayload(AppStateModel state) {
+    return <String, dynamic>{
+      'zakat_paid_months': state.zakatPaidMonths,
+      'zakat_expense_ids': state.zakatExpenseIds,
+      'processed_expense_ids': state.processedExpenseIds,
+      'zakat_method': state.zakatMethod,
+      'zakat_annual_date': state.zakatAnnualDate,
+      'zakat_nisab_basis': state.zakatNisabBasis,
+      'zakat_schedule_filter': state.zakatScheduleFilter,
+      'main_currency': state.mainCurrency,
+      'default_entry_currency': state.defaultEntryCurrency,
+      'language_preference': state.languagePreference,
+      'theme_mode': state.themeMode,
+      'biometric_lock_enabled': state.biometricLockEnabled,
+      'biometric_hide_wealth_enabled': state.biometricHideWealthEnabled,
+      'biometric_export_enabled': state.biometricExportEnabled,
+      'biometric_restore_enabled': state.biometricRestoreEnabled,
+      'biometric_auto_lock_delay': state.biometricAutoLockDelay,
+      'smart_capture_enabled': state.smartCaptureEnabled,
+      'smart_capture_auto_approve_enabled':
+          state.smartCaptureAutoApproveEnabled,
+      'categories': state.categories.toJson(),
+      'last_rollover': state.lastRollover,
+      'merchant_aliases': state.merchantAliases,
+      'capture_analytics': state.captureAnalytics.toJson(),
+      'market_data': state.marketData,
+      'market_history': state.marketHistory,
+      'sync_health': state.syncHealth.toJson(),
+      if (state.aiSettings != null)
+        'ai_settings': _sanitizeAiSettingsForSync(state.aiSettings!),
+      if (state.restorePromptDismissedUserId != null)
+        'restore_prompt_dismissed_user_id': state.restorePromptDismissedUserId,
+    };
+  }
+
   bool _userSettingsEqual(AppStateModel left, AppStateModel right) {
     return _canonicalJson(_buildUserSettingsPayload(left)) ==
         _canonicalJson(_buildUserSettingsPayload(right));
@@ -1107,21 +1589,560 @@ class AppStateController extends ChangeNotifier {
   ) {
     if (incomingAiSettings is! Map) return currentAiSettings;
     final Map<String, dynamic> merged = Map<String, dynamic>.from(
-      incomingAiSettings,
+      currentAiSettings ?? <String, dynamic>{},
     );
-    final List<dynamic>? localKeys =
-        currentAiSettings?['keys'] as List<dynamic>?;
-    if (localKeys != null) {
-      merged['keys'] = List<dynamic>.from(localKeys);
+    for (final MapEntry<dynamic, dynamic> entry in incomingAiSettings.entries) {
+      if (entry.key.toString() != 'keys') {
+        merged[entry.key.toString()] = entry.value;
+      }
     }
     return merged;
   }
 
   Future<void> save() async {
+    await _saveStateForCompatibility();
+  }
+
+  Future<void> _saveStateForCompatibility() async {
     await repository.saveAppState(
       _stateForPersistence(_state),
       userId: _state.userId,
     );
+    if (_useSqliteLocalStore && localAppSettingsRepository != null) {
+      try {
+        await localAppSettingsRepository!.importSettings(
+          _allAppSettingsPayload(_state),
+        );
+      } catch (error, stackTrace) {
+        debugPrint(
+          'AppStateController.save: failed to mirror app settings to SQLite. '
+          'Falling back to JSON-only persistence for this save. Error: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+      }
+    }
+    if (_useSqliteLocalStore &&
+        localTransactionsRepository != null &&
+        !_skipNextSqliteTransactionMirror) {
+      try {
+        await localTransactionsRepository!.replaceAllForLocalMirror(
+          _state.transactions,
+        );
+      } catch (error, stackTrace) {
+        debugPrint(
+          'AppStateController.save: failed to mirror transactions to SQLite. '
+          'Falling back to JSON-only persistence for this save. Error: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+      }
+    }
+    if (_useSqliteLocalStore &&
+        localSavingsRepository != null &&
+        !_skipNextSqliteSavingsMirror) {
+      try {
+        await localSavingsRepository!.replaceAllForLocalMirror(_state.savings);
+      } catch (error, stackTrace) {
+        debugPrint(
+          'AppStateController.save: failed to mirror savings to SQLite. '
+          'Falling back to JSON-only persistence for this save. Error: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+      }
+    }
+    if (_useSqliteLocalStore && localPendingTransactionsRepository != null) {
+      try {
+        await localPendingTransactionsRepository!.replaceAllForLocalMirror(
+          _state.pendingTransactions,
+        );
+      } catch (error, stackTrace) {
+        debugPrint(
+          'AppStateController.save: failed to mirror pending transactions to SQLite. '
+          'Falling back to JSON-only persistence for this save. Error: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+      }
+    }
+    if (_useSqliteLocalStore && localFinancialPlansRepository != null) {
+      try {
+        await localFinancialPlansRepository!.replaceAllForLocalMirror(
+          _state.financialPlans,
+        );
+      } catch (error, stackTrace) {
+        debugPrint(
+          'AppStateController.save: failed to mirror financial plans to SQLite. '
+          'Falling back to JSON-only persistence for this save. Error: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+      }
+    }
+    if (_useSqliteLocalStore && localInvestmentsRepository != null) {
+      try {
+        await localInvestmentsRepository!.replaceAllForLocalMirror(
+          _state.investments,
+        );
+      } catch (error, stackTrace) {
+        debugPrint(
+          'AppStateController.save: failed to mirror investments to SQLite. '
+          'Falling back to JSON-only persistence for this save. Error: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+      }
+    }
+    if (_useSqliteLocalStore && localMerchantRulesRepository != null) {
+      try {
+        await localMerchantRulesRepository!.replaceAllForLocalMirror(
+          _state.merchantRules.values,
+        );
+      } catch (error, stackTrace) {
+        debugPrint(
+          'AppStateController.save: failed to mirror merchant rules to SQLite. '
+          'Falling back to JSON-only persistence for this save. Error: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+      }
+    }
+    if (_useSqliteLocalStore && localMerchantConfirmationsRepository != null) {
+      try {
+        await localMerchantConfirmationsRepository!.replaceAllForLocalMirror(
+          _state.merchantConfirmations,
+        );
+      } catch (error, stackTrace) {
+        debugPrint(
+          'AppStateController.save: failed to mirror merchant confirmations to SQLite. '
+          'Falling back to JSON-only persistence for this save. Error: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+      }
+    }
+    if (_useSqliteLocalStore && localCorrectionFeedbackRepository != null) {
+      try {
+        await localCorrectionFeedbackRepository!.replaceAllForLocalMirror(
+          _state.correctionFeedback,
+        );
+      } catch (error, stackTrace) {
+        debugPrint(
+          'AppStateController.save: failed to mirror correction feedback to SQLite. '
+          'Falling back to JSON-only persistence for this save. Error: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+      }
+    }
+    if (_useSqliteLocalStore && localRecurringTransactionsRepository != null) {
+      try {
+        await localRecurringTransactionsRepository!.replaceAllForLocalMirror(
+          _state.recurringTransactions,
+        );
+      } catch (error, stackTrace) {
+        debugPrint(
+          'AppStateController.save: failed to mirror recurring transactions to SQLite. '
+          'Falling back to JSON-only persistence for this save. Error: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+      }
+    }
+    _skipNextSqliteTransactionMirror = false;
+    _skipNextSqliteSavingsMirror = false;
+  }
+
+  Future<void> _hydratePendingTransactionsFromPreferredLocalStore({
+    String? userId,
+  }) async {
+    final LocalPendingTransactionsRepository? localStore =
+        localPendingTransactionsRepository;
+    if (localStore == null) {
+      return;
+    }
+
+    if (!await _prepareSqliteLocalStore(userId: userId)) {
+      return;
+    }
+
+    try {
+      final List<PendingTransaction> sqlitePending = await localStore
+          .getActivePendingTransactions();
+      if (sqlitePending.isNotEmpty) {
+        _markCollectionSource('pending_transactions', 'SQLite');
+        _state = _state.copyWith(pendingTransactions: sqlitePending);
+        return;
+      }
+
+      if (_state.pendingTransactions.isNotEmpty) {
+        _markCollectionSource('pending_transactions', 'JSON fallback');
+        await localStore.importPendingTransactions(_state.pendingTransactions);
+        return;
+      }
+      _markCollectionSource('pending_transactions', 'empty default');
+    } catch (error, stackTrace) {
+      debugPrint(
+        'AppStateController.load: failed to read SQLite pending transactions. '
+        'Falling back to JSON pending transactions. Error: $error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  Future<void> _hydrateTransactionsFromPreferredLocalStore({
+    String? userId,
+  }) async {
+    final TransactionsLocalStore? localStore = localTransactionsRepository;
+    if (!await _prepareSqliteLocalStore(userId: userId)) {
+      return;
+    }
+    if (localStore == null) {
+      return;
+    }
+
+    try {
+      final List<Transaction> sqliteTransactions = await localStore
+          .getActiveTransactions();
+      if (sqliteTransactions.isNotEmpty) {
+        _markCollectionSource('transactions', 'SQLite');
+        _state = _state.copyWith(transactions: sqliteTransactions);
+        return;
+      }
+
+      if (_state.transactions.isNotEmpty) {
+        _markCollectionSource('transactions', 'JSON fallback');
+        if (localStore is LocalTransactionsRepository) {
+          await localStore.importTransactions(_state.transactions);
+        }
+        return;
+      }
+
+      _markCollectionSource('transactions', 'empty default');
+    } catch (error, stackTrace) {
+      debugPrint(
+        'AppStateController.load: failed to read SQLite transactions. '
+        'Falling back to JSON transactions. Error: $error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  Future<void> _hydrateSavingsFromPreferredLocalStore({String? userId}) async {
+    final SavingsLocalStore? localStore = localSavingsRepository;
+    if (localStore == null) {
+      return;
+    }
+
+    if (!await _prepareSqliteLocalStore(userId: userId)) {
+      return;
+    }
+
+    try {
+      final List<Saving> sqliteSavings = await localStore.getActiveSavings();
+      if (sqliteSavings.isNotEmpty) {
+        _markCollectionSource('savings', 'SQLite');
+        _state = _state.copyWith(savings: sqliteSavings);
+        return;
+      }
+
+      if (_state.savings.isNotEmpty) {
+        _markCollectionSource('savings', 'JSON fallback');
+        if (localStore is LocalSavingsRepository) {
+          await localStore.importSavings(_state.savings);
+        }
+        return;
+      }
+
+      _markCollectionSource('savings', 'empty default');
+    } catch (error, stackTrace) {
+      debugPrint(
+        'AppStateController.load: failed to read SQLite savings. '
+        'Falling back to JSON savings. Error: $error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  Future<void> _hydrateFinancialPlansFromPreferredLocalStore({
+    String? userId,
+  }) async {
+    final LocalFinancialPlansRepository? localStore =
+        localFinancialPlansRepository;
+    if (localStore == null) {
+      return;
+    }
+
+    if (!await _prepareSqliteLocalStore(userId: userId)) {
+      return;
+    }
+
+    try {
+      final List<FinancialPlan> sqlitePlans = await localStore
+          .getActiveFinancialPlans();
+      if (sqlitePlans.isNotEmpty) {
+        _markCollectionSource('financial_plans', 'SQLite');
+        _state = _state.copyWith(financialPlans: sqlitePlans);
+        return;
+      }
+
+      if (_state.financialPlans.isNotEmpty) {
+        _markCollectionSource('financial_plans', 'JSON fallback');
+        await localStore.importFinancialPlans(_state.financialPlans);
+        return;
+      }
+      _markCollectionSource('financial_plans', 'empty default');
+    } catch (error, stackTrace) {
+      debugPrint(
+        'AppStateController.load: failed to read SQLite financial plans. '
+        'Falling back to JSON financial plans. Error: $error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  Future<void> _hydrateInvestmentsFromPreferredLocalStore({
+    String? userId,
+  }) async {
+    final LocalInvestmentsRepository? localStore = localInvestmentsRepository;
+    if (localStore == null) {
+      return;
+    }
+
+    if (!await _prepareSqliteLocalStore(userId: userId)) {
+      return;
+    }
+
+    try {
+      final List<InvestmentAsset> sqliteInvestments = await localStore
+          .getActiveInvestments();
+      if (sqliteInvestments.isNotEmpty) {
+        _markCollectionSource('investments', 'SQLite');
+        _state = _state.copyWith(investments: sqliteInvestments);
+        return;
+      }
+
+      if (_state.investments.isNotEmpty) {
+        _markCollectionSource('investments', 'JSON fallback');
+        await localStore.importInvestments(_state.investments);
+        return;
+      }
+      _markCollectionSource('investments', 'empty default');
+    } catch (error, stackTrace) {
+      debugPrint(
+        'AppStateController.load: failed to read SQLite investments. '
+        'Falling back to JSON investments. Error: $error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  Future<void> _hydrateMerchantRulesFromPreferredLocalStore({
+    String? userId,
+  }) async {
+    final LocalMerchantRulesRepository? localStore =
+        localMerchantRulesRepository;
+    if (localStore == null) {
+      return;
+    }
+
+    if (!await _prepareSqliteLocalStore(userId: userId)) {
+      return;
+    }
+
+    try {
+      final Map<String, MerchantRule> sqliteRules = await localStore
+          .getActiveMerchantRules();
+      if (sqliteRules.isNotEmpty) {
+        _markCollectionSource('merchant_rules', 'SQLite');
+        _state = _state.copyWith(
+          merchantRules: sqliteRules,
+          merchantAliases: _merchantAliasesFromRules(sqliteRules),
+        );
+        return;
+      }
+
+      if (_state.merchantRules.isNotEmpty) {
+        _markCollectionSource('merchant_rules', 'JSON fallback');
+        await localStore.importMerchantRules(_state.merchantRules.values);
+        return;
+      }
+      _markCollectionSource('merchant_rules', 'empty default');
+    } catch (error, stackTrace) {
+      debugPrint(
+        'AppStateController.load: failed to read SQLite merchant rules. '
+        'Falling back to JSON merchant rules. Error: $error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  Future<void> _hydrateMerchantConfirmationsFromPreferredLocalStore({
+    String? userId,
+  }) async {
+    final LocalMerchantConfirmationsRepository? localStore =
+        localMerchantConfirmationsRepository;
+    if (localStore == null) {
+      return;
+    }
+
+    if (!await _prepareSqliteLocalStore(userId: userId)) {
+      return;
+    }
+
+    try {
+      final List<MerchantConfirmation> sqliteItems = await localStore
+          .getActiveMerchantConfirmations();
+      if (sqliteItems.isNotEmpty) {
+        _markCollectionSource('merchant_confirmations', 'SQLite');
+        _state = _state.copyWith(merchantConfirmations: sqliteItems);
+        return;
+      }
+
+      if (_state.merchantConfirmations.isNotEmpty) {
+        _markCollectionSource('merchant_confirmations', 'JSON fallback');
+        await localStore.importMerchantConfirmations(
+          _state.merchantConfirmations,
+        );
+        return;
+      }
+      _markCollectionSource('merchant_confirmations', 'empty default');
+    } catch (error, stackTrace) {
+      debugPrint(
+        'AppStateController.load: failed to read SQLite merchant confirmations. '
+        'Falling back to JSON merchant confirmations. Error: $error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  Future<void> _hydrateCorrectionFeedbackFromPreferredLocalStore({
+    String? userId,
+  }) async {
+    final LocalCorrectionFeedbackRepository? localStore =
+        localCorrectionFeedbackRepository;
+    if (localStore == null) {
+      return;
+    }
+
+    if (!await _prepareSqliteLocalStore(userId: userId)) {
+      return;
+    }
+
+    try {
+      final List<CorrectionFeedback> sqliteItems = await localStore
+          .getActiveCorrectionFeedback();
+      if (sqliteItems.isNotEmpty) {
+        _markCollectionSource('correction_feedback', 'SQLite');
+        _state = _state.copyWith(correctionFeedback: sqliteItems);
+        return;
+      }
+
+      if (_state.correctionFeedback.isNotEmpty) {
+        _markCollectionSource('correction_feedback', 'JSON fallback');
+        await localStore.importCorrectionFeedback(_state.correctionFeedback);
+        return;
+      }
+      _markCollectionSource('correction_feedback', 'empty default');
+    } catch (error, stackTrace) {
+      debugPrint(
+        'AppStateController.load: failed to read SQLite correction feedback. '
+        'Falling back to JSON correction feedback. Error: $error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  Future<void> _hydrateRecurringTransactionsFromPreferredLocalStore({
+    String? userId,
+  }) async {
+    final LocalRecurringTransactionsRepository? localStore =
+        localRecurringTransactionsRepository;
+    if (localStore == null) {
+      return;
+    }
+
+    if (!await _prepareSqliteLocalStore(userId: userId)) {
+      return;
+    }
+
+    try {
+      final List<RecurringTransaction> sqliteRecurring = await localStore
+          .getActiveRecurringTransactions();
+      if (sqliteRecurring.isNotEmpty) {
+        _markCollectionSource('recurring_transactions', 'SQLite');
+        _state = _state.copyWith(recurringTransactions: sqliteRecurring);
+        return;
+      }
+
+      if (_state.recurringTransactions.isNotEmpty) {
+        _markCollectionSource('recurring_transactions', 'JSON fallback');
+        await localStore.importRecurringTransactions(
+          _state.recurringTransactions,
+        );
+        return;
+      }
+      _markCollectionSource('recurring_transactions', 'empty default');
+    } catch (error, stackTrace) {
+      debugPrint(
+        'AppStateController.load: failed to read SQLite recurring transactions. '
+        'Falling back to JSON recurring transactions. Error: $error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  Future<void> _hydrateAppSettingsFromPreferredLocalStore({
+    String? userId,
+  }) async {
+    final LocalAppSettingsRepository? localStore = localAppSettingsRepository;
+    if (localStore == null) {
+      return;
+    }
+
+    if (!await _prepareSqliteLocalStore(userId: userId)) {
+      return;
+    }
+
+    try {
+      final Map<String, dynamic> settings = await localStore.getAllSettings();
+      final AppStateModel mergedState = _mergeAllAppSettingsFromLocalStore(
+        _state,
+        settings,
+      );
+      final bool missingSettings = <String>[
+        'zakat_paid_months',
+        'zakat_expense_ids',
+        'processed_expense_ids',
+        'zakat_method',
+        'zakat_annual_date',
+        'zakat_nisab_basis',
+        'zakat_schedule_filter',
+        'main_currency',
+        'theme_mode',
+      ].any((String key) => !settings.containsKey(key));
+      _state = mergedState;
+      _markCollectionSource(
+        'app_settings',
+        settings.isNotEmpty ? 'SQLite' : 'empty default',
+      );
+      if (missingSettings) {
+        await localStore.importSettings(_allAppSettingsPayload(_state));
+      }
+    } catch (error, stackTrace) {
+      debugPrint(
+        'AppStateController.load: failed to read SQLite app settings. '
+        'Falling back to JSON settings. Error: $error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  Future<bool> _prepareSqliteLocalStore({String? userId}) async {
+    if (_useSqliteLocalStore) {
+      return true;
+    }
+
+    final UseSqliteLocalStoreProvider? gate = useSqliteLocalStoreProvider;
+    if (gate == null) {
+      _useSqliteLocalStore = false;
+      return false;
+    }
+
+    final bool useSqlite = await gate.prepareForRead(userId: userId);
+    _useSqliteLocalStore = useSqlite;
+    return useSqlite;
   }
 
   Future<void> clearLocalData() async {
@@ -1151,7 +2172,65 @@ class AppStateController extends ChangeNotifier {
     );
     await stopLiveFirestoreSync();
     await repository.clearLocalDataForSignOut(userId: userId);
+    if (_database != null) {
+      await _database!.close();
+      _database = null;
+    }
     _state = AppStateDefaults.create();
+    await _initDatabase(null);
+    notifyListeners();
+  }
+
+  Future<void> deleteCloudDataForUser({required String userId}) async {
+    assert(
+      userId.trim().isNotEmpty,
+      'AppStateController.deleteCloudDataForUser requires userId.',
+    );
+    await stopLiveFirestoreSync();
+    final FirestoreSyncManager? syncManager = firestoreSyncManager;
+    if (syncManager == null) {
+      throw StateError(
+        'Cloud sync is not configured; cannot delete remote account data.',
+      );
+    }
+    await syncManager.deleteAllUserData(uid: userId);
+  }
+
+  Future<void> deleteLocalDataForUser({required String userId}) async {
+    assert(
+      userId.trim().isNotEmpty,
+      'AppStateController.deleteLocalDataForUser requires userId.',
+    );
+    await stopLiveFirestoreSync();
+    await repository.clearLocalDataForSignOut(userId: userId);
+    await secureStorageService.deleteAiKeys(userId: userId);
+    await repository.localStorage.remove(StorageKeys.userProfileKey);
+    await repository.localStorage.remove(StorageKeys.appStateAnonymousKey);
+    await repository.localStorage.remove(StorageKeys.aiKeysAnonymousKey);
+    await SyncDiagnosticsService.clear();
+    if (_database != null) {
+      await _database!.close();
+      _database = null;
+    }
+    await AppDatabase.deleteDatabaseFiles(userId: userId);
+    _useSqliteLocalStore = false;
+    _localTransactionsRepository = null;
+    _localSavingsRepository = null;
+    _localFinancialOperationsRepository = null;
+    _localPendingTransactionsRepository = null;
+    _localAppSettingsRepository = null;
+    _localFinancialPlansRepository = null;
+    _localInvestmentsRepository = null;
+    _localMerchantRulesRepository = null;
+    _localMerchantConfirmationsRepository = null;
+    _localCorrectionFeedbackRepository = null;
+    _localRecurringTransactionsRepository = null;
+    _localSyncPipeline = null;
+    _useSqliteLocalStoreProvider = null;
+    _state = AppStateDefaults.create();
+    _collectionSources.clear();
+    _debugWriteFailures.clear();
+    await _initDatabase(null);
     notifyListeners();
   }
 
@@ -1161,14 +2240,8 @@ class AppStateController extends ChangeNotifier {
       'AppStateController.deleteAccountData requires userId.',
     );
     await stopLiveFirestoreSync();
-    final FirestoreSyncManager? syncManager = firestoreSyncManager;
-    if (syncManager != null) {
-      await syncManager.deleteAllUserData(uid: userId);
-    }
-    await repository.clearLocalDataForSignOut(userId: userId);
-    await secureStorageService.deleteAiKeys(userId: userId);
-    _state = AppStateDefaults.create();
-    notifyListeners();
+    await deleteCloudDataForUser(userId: userId);
+    await deleteLocalDataForUser(userId: userId);
   }
 
   Future<void> updateState(AppStateModel newState) async {
@@ -1180,9 +2253,805 @@ class AppStateController extends ChangeNotifier {
     );
     await save();
     notifyListeners();
+    final int previousPendingReviewCount = previousState.pendingTransactions
+        .where(
+          (PendingTransaction item) =>
+              item.status == CaptureStatus.pendingReview,
+        )
+        .length;
+    final int nextPendingReviewCount = _state.pendingTransactions
+        .where(
+          (PendingTransaction item) =>
+              item.status == CaptureStatus.pendingReview,
+        )
+        .length;
+    if (previousPendingReviewCount != nextPendingReviewCount) {
+      unawaited(_syncPendingReviewBadge(nextPendingReviewCount));
+    }
+    if (!_isApplyingRemoteSync &&
+        _useSqliteLocalStore &&
+        localPendingTransactionsRepository != null &&
+        !_pendingTransactionsEqual(
+          previousState.pendingTransactions,
+          _state.pendingTransactions,
+        )) {
+      try {
+        final Set<String> previousIds = previousState.pendingTransactions
+            .map((PendingTransaction item) => item.id)
+            .toSet();
+        final Set<String> nextIds = _state.pendingTransactions
+            .map((PendingTransaction item) => item.id)
+            .toSet();
+        for (final String id in previousIds.difference(nextIds)) {
+          await localPendingTransactionsRepository!.deletePendingTransaction(
+            id,
+          );
+          await _verifySqliteWrite(
+            label: 'Pending transaction delete',
+            id: id,
+            existsCheck: () async =>
+                (await localPendingTransactionsRepository!
+                        .getActivePendingTransactions())
+                    .every((PendingTransaction item) => item.id != id),
+          );
+        }
+        for (final PendingTransaction pending in _state.pendingTransactions) {
+          await localPendingTransactionsRepository!.savePendingTransaction(
+            pending,
+          );
+          await _verifySqliteWrite(
+            label: 'Pending transaction write',
+            id: pending.id,
+            existsCheck: () async =>
+                (await localPendingTransactionsRepository!
+                        .getActivePendingTransactions())
+                    .any((PendingTransaction item) => item.id == pending.id),
+          );
+        }
+      } catch (error, stackTrace) {
+        debugPrint(
+          'AppStateController.updateState: failed to mirror pending transactions to SQLite queue. '
+          'Continuing with JSON compatibility only. Error: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+      }
+    }
+    if (!_isApplyingRemoteSync &&
+        _useSqliteLocalStore &&
+        localFinancialPlansRepository != null &&
+        !_listJsonEqual(
+          previousState.financialPlans,
+          _state.financialPlans,
+          (FinancialPlan item) => item.toJson(),
+        )) {
+      try {
+        final Map<String, FinancialPlan> previousById = <String, FinancialPlan>{
+          for (final FinancialPlan plan in previousState.financialPlans)
+            plan.id: plan,
+        };
+        final Map<String, FinancialPlan> nextById = <String, FinancialPlan>{
+          for (final FinancialPlan plan in _state.financialPlans) plan.id: plan,
+        };
+        final Set<String> previousIds = previousById.keys.toSet();
+        final Set<String> nextIds = nextById.keys.toSet();
+        for (final String id in previousIds.difference(nextIds)) {
+          await localFinancialPlansRepository!.deleteFinancialPlan(id);
+          await _verifySqliteWrite(
+            label: 'Financial plan delete',
+            id: id,
+            existsCheck: () async =>
+                (await localFinancialPlansRepository!.getActiveFinancialPlans())
+                    .any((FinancialPlan item) => item.id == id),
+          );
+        }
+        for (final MapEntry<String, FinancialPlan> entry in nextById.entries) {
+          final FinancialPlan? previous = previousById[entry.key];
+          if (previous == null ||
+              jsonEncode(previous.toJson()) !=
+                  jsonEncode(entry.value.toJson())) {
+            await localFinancialPlansRepository!.saveFinancialPlan(entry.value);
+            await _verifySqliteWrite(
+              label: 'Financial plan write',
+              id: entry.key,
+              existsCheck: () async =>
+                  (await localFinancialPlansRepository!
+                          .getActiveFinancialPlans())
+                      .any((FinancialPlan item) => item.id == entry.key),
+            );
+          }
+        }
+      } catch (error, stackTrace) {
+        debugPrint(
+          'AppStateController.updateState: failed to mirror financial plans to SQLite queue. '
+          'Continuing with JSON compatibility only. Error: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+      }
+    }
+    if (!_isApplyingRemoteSync &&
+        _useSqliteLocalStore &&
+        localMerchantRulesRepository != null &&
+        !_merchantRuleMapsEqual(
+          previousState.merchantRules,
+          _state.merchantRules,
+        )) {
+      try {
+        final Map<String, MerchantRule> previousById =
+            previousState.merchantRules;
+        final Map<String, MerchantRule> nextById = _state.merchantRules;
+        final Set<String> previousIds = previousById.keys.toSet();
+        final Set<String> nextIds = nextById.keys.toSet();
+        for (final String id in previousIds.difference(nextIds)) {
+          await localMerchantRulesRepository!.deleteMerchantRule(id);
+          await _verifySqliteWrite(
+            label: 'Merchant rule delete',
+            id: id,
+            existsCheck: () async =>
+                !(await localMerchantRulesRepository!.getActiveMerchantRules())
+                    .containsKey(id),
+          );
+        }
+        for (final MapEntry<String, MerchantRule> entry in nextById.entries) {
+          final MerchantRule? previous = previousById[entry.key];
+          if (previous == null ||
+              jsonEncode(previous.toJson()) !=
+                  jsonEncode(entry.value.toJson())) {
+            await localMerchantRulesRepository!.saveMerchantRule(entry.value);
+            await _verifySqliteWrite(
+              label: 'Merchant rule write',
+              id: entry.key,
+              existsCheck: () async =>
+                  (await localMerchantRulesRepository!.getActiveMerchantRules())
+                      .containsKey(entry.key),
+            );
+          }
+        }
+      } catch (error, stackTrace) {
+        debugPrint(
+          'AppStateController.updateState: failed to mirror merchant rules to SQLite queue. '
+          'Continuing with JSON compatibility only. Error: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+      }
+    }
+    if (!_isApplyingRemoteSync &&
+        _useSqliteLocalStore &&
+        localMerchantConfirmationsRepository != null &&
+        !_listJsonEqual(
+          previousState.merchantConfirmations,
+          _state.merchantConfirmations,
+          (MerchantConfirmation item) => item.toJson(),
+        )) {
+      try {
+        final Map<String, MerchantConfirmation>
+        previousById = <String, MerchantConfirmation>{
+          for (final MerchantConfirmation item
+              in previousState.merchantConfirmations)
+            '${item.merchantName.toLowerCase().trim()}|${item.categoryId.toLowerCase().trim()}':
+                item,
+        };
+        final Map<String, MerchantConfirmation>
+        nextById = <String, MerchantConfirmation>{
+          for (final MerchantConfirmation item in _state.merchantConfirmations)
+            '${item.merchantName.toLowerCase().trim()}|${item.categoryId.toLowerCase().trim()}':
+                item,
+        };
+        final Set<String> previousIds = previousById.keys.toSet();
+        final Set<String> nextIds = nextById.keys.toSet();
+        for (final String id in previousIds.difference(nextIds)) {
+          await localMerchantConfirmationsRepository!
+              .deleteMerchantConfirmation(id);
+          await _verifySqliteWrite(
+            label: 'Merchant confirmation delete',
+            id: id,
+            existsCheck: () async =>
+                (await localMerchantConfirmationsRepository!
+                        .getActiveMerchantConfirmations())
+                    .every(
+                      (MerchantConfirmation item) =>
+                          '${item.merchantName.toLowerCase().trim()}|${item.categoryId.toLowerCase().trim()}' !=
+                          id,
+                    ),
+          );
+        }
+        for (final MapEntry<String, MerchantConfirmation> entry
+            in nextById.entries) {
+          final MerchantConfirmation? previous = previousById[entry.key];
+          if (previous == null ||
+              jsonEncode(previous.toJson()) !=
+                  jsonEncode(entry.value.toJson())) {
+            await localMerchantConfirmationsRepository!
+                .saveMerchantConfirmation(entry.value);
+            await _verifySqliteWrite(
+              label: 'Merchant confirmation write',
+              id: entry.key,
+              existsCheck: () async =>
+                  (await localMerchantConfirmationsRepository!
+                          .getActiveMerchantConfirmations())
+                      .any(
+                        (MerchantConfirmation item) =>
+                            '${item.merchantName.toLowerCase().trim()}|${item.categoryId.toLowerCase().trim()}' ==
+                            entry.key,
+                      ),
+            );
+          }
+        }
+      } catch (error, stackTrace) {
+        debugPrint(
+          'AppStateController.updateState: failed to mirror merchant confirmations to SQLite queue. '
+          'Continuing with JSON compatibility only. Error: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+      }
+    }
+    if (!_isApplyingRemoteSync &&
+        _useSqliteLocalStore &&
+        localCorrectionFeedbackRepository != null &&
+        !_listJsonEqual(
+          previousState.correctionFeedback,
+          _state.correctionFeedback,
+          (CorrectionFeedback item) => item.toJson(),
+        )) {
+      try {
+        final Map<String, CorrectionFeedback> previousById =
+            <String, CorrectionFeedback>{
+              for (final CorrectionFeedback item
+                  in previousState.correctionFeedback)
+                item.id: item,
+            };
+        final Map<String, CorrectionFeedback> nextById =
+            <String, CorrectionFeedback>{
+              for (final CorrectionFeedback item in _state.correctionFeedback)
+                item.id: item,
+            };
+        final Set<String> previousIds = previousById.keys.toSet();
+        final Set<String> nextIds = nextById.keys.toSet();
+        for (final String id in previousIds.difference(nextIds)) {
+          await localCorrectionFeedbackRepository!.deleteCorrectionFeedback(id);
+          await _verifySqliteWrite(
+            label: 'Correction feedback delete',
+            id: id,
+            existsCheck: () async =>
+                (await localCorrectionFeedbackRepository!
+                        .getActiveCorrectionFeedback())
+                    .every((CorrectionFeedback item) => item.id != id),
+          );
+        }
+        for (final MapEntry<String, CorrectionFeedback> entry
+            in nextById.entries) {
+          final CorrectionFeedback? previous = previousById[entry.key];
+          if (previous == null ||
+              jsonEncode(previous.toJson()) !=
+                  jsonEncode(entry.value.toJson())) {
+            await localCorrectionFeedbackRepository!.saveCorrectionFeedback(
+              entry.value,
+            );
+            await _verifySqliteWrite(
+              label: 'Correction feedback write',
+              id: entry.key,
+              existsCheck: () async =>
+                  (await localCorrectionFeedbackRepository!
+                          .getActiveCorrectionFeedback())
+                      .any((CorrectionFeedback item) => item.id == entry.key),
+            );
+          }
+        }
+      } catch (error, stackTrace) {
+        debugPrint(
+          'AppStateController.updateState: failed to mirror correction feedback to SQLite queue. '
+          'Continuing with JSON compatibility only. Error: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+      }
+    }
     if (!_isApplyingRemoteSync) {
       _syncSensitiveCollectionsInBackground(previousState, _state);
     }
+  }
+
+  Future<void> triggerSyncPipeline({String reason = 'manual'}) async {
+    _lastSyncTriggerReason = reason;
+    _lastSyncPullSkippedDueToThrottle = false;
+    if (kDebugMode) {
+      print(
+        '[SYNC-TRIGGER] triggerSyncPipeline called: reason=$reason, userId=${_state.userId != null}, SQLite mode active=$_useSqliteLocalStore',
+      );
+    }
+
+    final String? uid = _state.userId;
+    if (uid == null || uid.trim().isEmpty) {
+      if (kDebugMode) {
+        print('[SYNC-TRIGGER] Sync skipped: userId does not exist');
+      }
+      return;
+    }
+    if (!_useSqliteLocalStore || localSyncPipeline == null) {
+      if (kDebugMode) {
+        print(
+          '[SYNC-TRIGGER] Sync skipped: SQLite mode is inactive or sync pipeline is uninitialized',
+        );
+      }
+      return;
+    }
+    if (localSyncPipeline!.syncInProgress) {
+      if (kDebugMode) {
+        print('[SYNC-TRIGGER] Sync skipped: sync already in progress');
+      }
+      return;
+    }
+    final int queueCountBeforeTrigger = await _queueCount();
+    _lastSyncQueueCountBeforeTrigger = queueCountBeforeTrigger;
+    if (kDebugMode) {
+      print('[SYNC-TRIGGER] queueCountBeforeTrigger=$queueCountBeforeTrigger');
+    }
+
+    final bool isManual = reason == 'manual';
+    if (reason == 'local_write') {
+      if (queueCountBeforeTrigger == 0) {
+        return;
+      }
+      _scheduleDebouncedPush(
+        uid,
+        queueCountBeforeTrigger: queueCountBeforeTrigger,
+      );
+      return;
+    }
+
+    _cancelDebouncedPush();
+
+    final bool queueNonEmpty = queueCountBeforeTrigger > 0;
+    final bool isStartupReason =
+        reason == 'app_start' || reason == 'app_resume';
+    final String? lastPullSuccessAt = await localSyncPipeline!
+        .lastPullSuccessAt();
+    final bool hasPullCursor = await localSyncPipeline!.hasPullCursor();
+    final bool hasRecentPull = _isRecentPull(lastPullSuccessAt);
+    if (isStartupReason &&
+        queueCountBeforeTrigger == 0 &&
+        hasPullCursor &&
+        !hasRecentPull) {
+      if (kDebugMode) {
+        print(
+          '[SYNC-TRIGGER] pull skipped on $reason: empty queue with existing pull cursor',
+        );
+      }
+      _lastSyncPullSkippedDueToThrottle = true;
+      return;
+    }
+    final bool shouldPull = isManual
+        ? true
+        : reason == 'sign_in'
+        ? (await localSyncPipeline!.shouldPullNow()) ||
+              !(await localSyncPipeline!.hasPullCursor())
+        : await localSyncPipeline!.shouldPullNow();
+
+    _lastSyncPullSkippedDueToThrottle = !isManual && !shouldPull;
+
+    try {
+      if (isManual) {
+        if (kDebugMode) {
+          print('[SYNC-TRIGGER] manual sync requested');
+        }
+        await localSyncPipeline!.pushThenPull(uid);
+        await _refreshStateFromLocalRepositories(reason: 'manual');
+        if (_useSqliteLocalStore) {
+          await _refreshUserSettingsFromFirestore(
+            userId: uid,
+            syncManager: firestoreSyncManager,
+            reason: 'manual',
+          );
+        }
+        unawaited(
+          _logSavingsConsistencyWarningIfNeeded(source: 'sync:$reason'),
+        );
+        return;
+      }
+
+      if (queueNonEmpty) {
+        if (kDebugMode) {
+          print('[SYNC-TRIGGER] pushing queue before pull decision');
+        }
+        await localSyncPipeline!.pushOnly(uid);
+      }
+
+      if (!shouldPull) {
+        if (kDebugMode) {
+          print('[SYNC-TRIGGER] pull skipped due to throttle');
+        }
+        return;
+      }
+
+      if (kDebugMode) {
+        print('[SYNC-TRIGGER] running pull');
+      }
+      await localSyncPipeline!.pullOnly(uid);
+      await _refreshStateFromLocalRepositories(reason: reason);
+      unawaited(_logSavingsConsistencyWarningIfNeeded(source: 'sync:$reason'));
+    } catch (error) {
+      debugPrint('AppStateController: Sync pipeline failed: $error');
+    }
+  }
+
+  Future<ManualSyncResult> runManualSync() async {
+    final FirestoreSyncManager? syncManager = firestoreSyncManager;
+    final LocalSyncPipeline? pipeline = localSyncPipeline;
+    final AppDatabase? db = _database;
+    final String uid = _state.userId?.trim() ?? '';
+    final String databaseFileName = db?.fileName ?? 'unavailable';
+    final String? databasePath = db == null
+        ? null
+        : await db.resolveDatabasePath();
+    final String firestorePath = uid.isEmpty ? 'users/<none>' : 'users/$uid';
+
+    if (syncManager == null || pipeline == null || db == null) {
+      return ManualSyncResult(
+        success: false,
+        message: 'Sync is not available.',
+        reason: 'sync unavailable',
+        expectedUid: uid,
+        firebaseUid: null,
+        databaseFileName: databaseFileName,
+        databasePath: databasePath,
+        firestorePushPath: firestorePath,
+        firestorePullPath: firestorePath,
+        authValid: false,
+        pushAttempted: false,
+        pullAttempted: false,
+        queueCountBefore: 0,
+        queueCountAfter: 0,
+        rowsPushed: 0,
+        rowsFailed: 0,
+        pullCollectionsQueried: 0,
+        pullDocsApplied: 0,
+        pullDeletedDocsApplied: 0,
+        cursorUpdates: 0,
+        failureCode: 'sync-unavailable',
+        failureMessage: 'Sync is not available.',
+      );
+    }
+    if (pipeline.syncInProgress) {
+      return ManualSyncResult(
+        success: false,
+        message: 'Sync already in progress.',
+        reason: 'sync already in progress',
+        expectedUid: uid,
+        firebaseUid: null,
+        databaseFileName: databaseFileName,
+        databasePath: databasePath,
+        firestorePushPath: firestorePath,
+        firestorePullPath: firestorePath,
+        authValid: false,
+        pushAttempted: false,
+        pullAttempted: false,
+        queueCountBefore: 0,
+        queueCountAfter: 0,
+        rowsPushed: 0,
+        rowsFailed: 0,
+        pullCollectionsQueried: 0,
+        pullDocsApplied: 0,
+        pullDeletedDocsApplied: 0,
+        cursorUpdates: 0,
+        failureCode: 'sync-in-progress',
+        failureMessage: 'Sync already in progress.',
+      );
+    }
+
+    final FirestoreAuthValidationResult authCheck = await syncManager
+        .validateSession(expectedUid: uid);
+    final int queueBefore = await _queueCount();
+    final bool pushAttempted = queueBefore > 0;
+    final String pushPath = firestorePath;
+    final String pullPath = firestorePath;
+    await SyncDiagnosticsService.record(
+      level: 'info',
+      subsystem: 'sync',
+      message: 'Manual sync started',
+      metadata: <String, dynamic>{
+        'controllerUserId': uid,
+        'firebaseUid': authCheck.currentUid,
+        'authValid': authCheck.isValid,
+        'authErrorCode': authCheck.errorCode,
+        'authErrorMessage': authCheck.errorMessage,
+        'databaseFileName': databaseFileName,
+        'databasePath': databasePath,
+        'pushPath': pushPath,
+        'pullPath': pullPath,
+        'queueCountBefore': queueBefore,
+        'syncPipelineInitialized': true,
+      },
+    );
+
+    if (!authCheck.isValid) {
+      final String message = authCheck.isSignedIn
+          ? (authCheck.isUidMatch
+                ? (authCheck.errorMessage ?? 'Auth token refresh failed.')
+                : 'Auth user mismatch.')
+          : 'Not signed in.';
+      return ManualSyncResult(
+        success: false,
+        message: message,
+        reason: authCheck.errorCode ?? 'auth invalid',
+        expectedUid: uid,
+        firebaseUid: authCheck.currentUid,
+        databaseFileName: databaseFileName,
+        databasePath: databasePath,
+        firestorePushPath: pushPath,
+        firestorePullPath: pullPath,
+        authValid: false,
+        pushAttempted: false,
+        pullAttempted: false,
+        queueCountBefore: queueBefore,
+        queueCountAfter: queueBefore,
+        rowsPushed: 0,
+        rowsFailed: 0,
+        pullCollectionsQueried: 0,
+        pullDocsApplied: 0,
+        pullDeletedDocsApplied: 0,
+        cursorUpdates: 0,
+        failureCode: authCheck.errorCode,
+        failureMessage: message,
+      );
+    }
+
+    final SyncQueueProcessResult pushResult = pushAttempted
+        ? await pipeline.pushOnly(uid)
+        : const SyncQueueProcessResult(attempted: 0, succeeded: 0, failed: 0);
+    final PullSyncResult pullResult = await pipeline.pullOnlyDetailed(uid);
+    if (pullResult.success) {
+      await pipeline.markPullSuccess();
+    }
+    final int queueAfter = await _queueCount();
+    final bool success = pushResult.failed == 0 && pullResult.success;
+    final bool alreadySynced =
+        !pushAttempted &&
+        pullResult.success &&
+        pullResult.docsApplied == 0 &&
+        pullResult.deletedDocsApplied == 0;
+    final String message = !success
+        ? (authCheck.errorMessage ?? pullResult.errorMessage ?? 'Sync failed.')
+        : alreadySynced
+        ? 'Already synced'
+        : 'Manual sync completed';
+
+    await SyncDiagnosticsService.record(
+      level: success ? 'info' : 'error',
+      subsystem: 'sync',
+      message: success ? 'Manual sync completed' : 'Manual sync failed',
+      metadata: <String, dynamic>{
+        'controllerUserId': uid,
+        'firebaseUid': authCheck.currentUid,
+        'authValid': authCheck.isValid,
+        'queueCountBefore': queueBefore,
+        'queueCountAfter': queueAfter,
+        'pushAttempted': pushAttempted,
+        'pushSucceeded': pushResult.succeeded,
+        'pushFailed': pushResult.failed,
+        'pullAttempted': true,
+        'pullCollectionsQueried': pullResult.collectionsQueried,
+        'pullDocsApplied': pullResult.docsApplied,
+        'pullDeletedDocsApplied': pullResult.deletedDocsApplied,
+        'cursorUpdates': pullResult.cursorUpdates,
+        'pushPath': pushPath,
+        'pullPath': pullPath,
+        'databaseFileName': databaseFileName,
+        'databasePath': databasePath,
+        'alreadySynced': alreadySynced,
+        'failureCode': pullResult.errorCode ?? authCheck.errorCode,
+        'failureMessage': pullResult.errorMessage ?? authCheck.errorMessage,
+      },
+    );
+
+    return ManualSyncResult(
+      success: success,
+      message: message,
+      reason: success
+          ? 'manual sync completed'
+          : (authCheck.errorCode ?? pullResult.errorCode ?? 'sync failed'),
+      expectedUid: uid,
+      firebaseUid: authCheck.currentUid,
+      databaseFileName: databaseFileName,
+      databasePath: databasePath,
+      firestorePushPath: pushPath,
+      firestorePullPath: pullPath,
+      authValid: authCheck.isValid,
+      pushAttempted: pushAttempted,
+      pullAttempted: true,
+      queueCountBefore: queueBefore,
+      queueCountAfter: queueAfter,
+      rowsPushed: pushResult.succeeded,
+      rowsFailed: pushResult.failed,
+      pullCollectionsQueried: pullResult.collectionsQueried,
+      pullDocsApplied: pullResult.docsApplied,
+      pullDeletedDocsApplied: pullResult.deletedDocsApplied,
+      cursorUpdates: pullResult.cursorUpdates,
+      failureCode: success
+          ? null
+          : (pullResult.errorCode ?? authCheck.errorCode),
+      failureMessage: success
+          ? null
+          : (pullResult.errorMessage ?? authCheck.errorMessage),
+      alreadySynced: alreadySynced,
+    );
+  }
+
+  Future<int> _queueCount() async {
+    final LocalSyncPipeline? pipeline = localSyncPipeline;
+    if (pipeline == null) return 0;
+    try {
+      return await pipeline.queueCount();
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  void _scheduleDebouncedPush(
+    String uid, {
+    required int queueCountBeforeTrigger,
+  }) {
+    _cancelDebouncedPush();
+    if (queueCountBeforeTrigger <= 0) return;
+    if (kDebugMode) {
+      print(
+        '[SYNC-TRIGGER] scheduling debounced push in ${_pushDebounceDuration.inSeconds}s',
+      );
+    }
+    _deferredPushTimer = Timer(_pushDebounceDuration, () {
+      unawaited(_runDebouncedPush(uid));
+    });
+  }
+
+  Future<void> _runDebouncedPush(String uid) async {
+    if (_useSqliteLocalStore == false || localSyncPipeline == null) return;
+    if (localSyncPipeline!.syncInProgress) {
+      final int queueCount = await _queueCount();
+      if (queueCount > 0) {
+        _scheduleDebouncedPush(uid, queueCountBeforeTrigger: queueCount);
+      }
+      return;
+    }
+    try {
+      await localSyncPipeline!.pushOnly(uid);
+    } catch (error) {
+      debugPrint('AppStateController: debounced push failed: $error');
+    }
+  }
+
+  void _cancelDebouncedPush() {
+    _deferredPushTimer?.cancel();
+    _deferredPushTimer = null;
+  }
+
+  bool _isRecentPull(String? timestamp) {
+    final String raw = (timestamp ?? '').trim();
+    if (raw.isEmpty) return false;
+    final DateTime? parsed = DateTime.tryParse(raw);
+    if (parsed == null) return false;
+    return DateTime.now().toUtc().difference(parsed.toUtc()) <
+        _autoPullInterval;
+  }
+
+  Future<void> _refreshStateFromLocalRepositories({
+    required String reason,
+  }) async {
+    if (localTransactionsRepository != null && localSavingsRepository != null) {
+      final transactions = await localTransactionsRepository!
+          .getActiveTransactions();
+      final savings = await localSavingsRepository!.getActiveSavings();
+      final financialPlans = localFinancialPlansRepository != null
+          ? await localFinancialPlansRepository!.getActiveFinancialPlans()
+          : _state.financialPlans;
+      final recurringTransactions = localRecurringTransactionsRepository != null
+          ? await localRecurringTransactionsRepository!
+                .getActiveRecurringTransactions()
+          : _state.recurringTransactions;
+      final pending = localPendingTransactionsRepository != null
+          ? await localPendingTransactionsRepository!
+                .getActivePendingTransactions()
+          : _state.pendingTransactions;
+      final merchantRules = localMerchantRulesRepository != null
+          ? await localMerchantRulesRepository!.getActiveMerchantRules()
+          : _state.merchantRules;
+      final merchantConfirmations = localMerchantConfirmationsRepository != null
+          ? await localMerchantConfirmationsRepository!
+                .getActiveMerchantConfirmations()
+          : _state.merchantConfirmations;
+      final correctionFeedback = localCorrectionFeedbackRepository != null
+          ? await localCorrectionFeedbackRepository!
+                .getActiveCorrectionFeedback()
+          : _state.correctionFeedback;
+
+      _state = _state.copyWith(
+        transactions: transactions.isNotEmpty
+            ? transactions
+            : _state.transactions,
+        savings: savings.isNotEmpty ? savings : _state.savings,
+        financialPlans: financialPlans.isNotEmpty
+            ? financialPlans
+            : _state.financialPlans,
+        recurringTransactions: recurringTransactions.isNotEmpty
+            ? recurringTransactions
+            : _state.recurringTransactions,
+        pendingTransactions: pending.isNotEmpty
+            ? pending
+            : _state.pendingTransactions,
+        merchantRules: merchantRules.isNotEmpty
+            ? merchantRules
+            : _state.merchantRules,
+        merchantAliases: merchantRules.isNotEmpty
+            ? _merchantAliasesFromRules(merchantRules)
+            : _state.merchantAliases,
+        merchantConfirmations: merchantConfirmations.isNotEmpty
+            ? merchantConfirmations
+            : _state.merchantConfirmations,
+        correctionFeedback: correctionFeedback.isNotEmpty
+            ? correctionFeedback
+            : _state.correctionFeedback,
+      );
+      _state = _state.copyWith(
+        syncHealth: _state.syncHealth.copyWith(
+          lastSuccessAt: DateTime.now().toUtc().toIso8601String(),
+        ),
+      );
+      await save();
+      notifyListeners();
+      if (kDebugMode) {
+        print(
+          '[SYNC-TRIGGER] State refresh occurred successfully after $reason.',
+        );
+      }
+    }
+  }
+
+  Future<void> _finalizeLocalWrite({
+    required AppStateModel previousState,
+    bool transactionChanged = false,
+    bool savingChanged = false,
+  }) async {
+    if (transactionChanged) _skipNextSqliteTransactionMirror = true;
+    if (savingChanged) _skipNextSqliteSavingsMirror = true;
+    await _saveStateForCompatibility();
+    notifyListeners();
+    if (!_isApplyingRemoteSync) {
+      _syncSensitiveCollectionsInBackground(previousState, _state);
+      unawaited(triggerSyncPipeline(reason: 'local_write'));
+    }
+  }
+
+  Future<void> syncRestoredStateToFirestore({
+    required AppStateModel previousState,
+    required AppStateModel nextState,
+  }) async {
+    final FirestoreSyncManager? syncManager = firestoreSyncManager;
+    final String? uid = nextState.userId;
+    if (syncManager == null || uid == null || uid.trim().isEmpty) return;
+
+    await _syncStateToFirestore(
+      syncManager: syncManager,
+      uid: uid,
+      previousState: previousState,
+      nextState: nextState,
+      includeTransactions: true,
+      includeSavings: true,
+      requireLiveSyncSession: false,
+      awaitWrites: true,
+    );
+  }
+
+  Future<void> syncSensitiveStateToFirestore() async {
+    final FirestoreSyncManager? syncManager = firestoreSyncManager;
+    final String? uid = _state.userId;
+    if (syncManager == null || uid == null || uid.trim().isEmpty) return;
+
+    await _syncStateToFirestore(
+      syncManager: syncManager,
+      uid: uid,
+      previousState: AppStateDefaults.create(),
+      nextState: _state,
+      includeTransactions: false,
+      includeSavings: false,
+      requireLiveSyncSession: false,
+      awaitWrites: true,
+    );
   }
 
   void _syncSensitiveCollectionsInBackground(
@@ -1194,255 +3063,323 @@ class AppStateController extends ChangeNotifier {
     if (syncManager == null || uid == null || uid.trim().isEmpty) return;
     if (_liveSyncUserId != uid) return;
 
-    final bool captureChanged = !_pendingTransactionsEqual(
-      previousState.pendingTransactions,
-      nextState.pendingTransactions,
+    unawaited(
+      _syncStateToFirestore(
+        syncManager: syncManager,
+        uid: uid,
+        previousState: previousState,
+        nextState: nextState,
+        includeTransactions: false,
+        includeSavings: false,
+        requireLiveSyncSession: true,
+        awaitWrites: false,
+      ),
     );
-    final bool rulesChanged = !_merchantRuleMapsEqual(
-      previousState.merchantRules,
-      nextState.merchantRules,
-    );
-    final bool transactionsChanged = !_listJsonEqual(
-      previousState.transactions,
-      nextState.transactions,
-      (Transaction item) => item.toJson(),
-    );
-    final bool savingsChanged = !_listJsonEqual(
-      previousState.savings,
-      nextState.savings,
-      (Saving item) => item.toJson(),
-    );
-    final bool recurringTransactionsChanged = !_listJsonEqual(
-      previousState.recurringTransactions,
-      nextState.recurringTransactions,
-      (RecurringTransaction item) => item.toJson(),
-    );
-    final bool investmentsChanged = !_listJsonEqual(
-      previousState.investments,
-      nextState.investments,
-      (InvestmentAsset item) => item.toJson(),
-    );
-    final bool financialPlansChanged = !_listJsonEqual(
-      previousState.financialPlans,
-      nextState.financialPlans,
-      (FinancialPlan item) => item.toJson(),
-    );
-    final bool correctionFeedbackChanged = !_listJsonEqual(
-      previousState.correctionFeedback,
-      nextState.correctionFeedback,
-      (CorrectionFeedback item) => item.toJson(),
-    );
-    final bool merchantConfirmationsChanged = !_listJsonEqual(
-      previousState.merchantConfirmations,
-      nextState.merchantConfirmations,
-      (MerchantConfirmation item) => item.toJson(),
-    );
+  }
+
+  Future<void> _syncStateToFirestore({
+    required FirestoreSyncManager syncManager,
+    required String uid,
+    required AppStateModel previousState,
+    required AppStateModel nextState,
+    required bool includeTransactions,
+    required bool includeSavings,
+    required bool requireLiveSyncSession,
+    required bool awaitWrites,
+  }) async {
+    if (requireLiveSyncSession && _liveSyncUserId != uid) return;
     final bool userSettingsChanged = !_userSettingsEqual(
       previousState,
       nextState,
     );
 
-    if (!captureChanged &&
-        !rulesChanged &&
-        !transactionsChanged &&
-        !savingsChanged &&
-        !recurringTransactionsChanged &&
-        !investmentsChanged &&
-        !financialPlansChanged &&
-        !correctionFeedbackChanged &&
-        !merchantConfirmationsChanged &&
-        !userSettingsChanged) {
+    if (!userSettingsChanged) {
       return;
     }
 
-    if (captureChanged) {
-      unawaited(() async {
-        try {
-          await syncManager.syncCaptureInbox(
-            uid: uid,
-            items: nextState.pendingTransactions,
-            deletedIds: _removedIds<PendingTransaction>(
-              previousState.pendingTransactions,
-              nextState.pendingTransactions,
-              (PendingTransaction item) => item.id,
-            ),
-          );
-        } catch (error, stackTrace) {
-          debugPrint('Background capture inbox sync skipped: $error');
-          debugPrintStack(stackTrace: stackTrace);
-        }
-      }());
+    try {
+      await syncManager.syncUserSettings(
+        uid: uid,
+        settings: _buildUserSettingsPayload(nextState),
+      );
+    } catch (error, stackTrace) {
+      debugPrint('Background user settings sync skipped: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  Future<void> enqueueAllLocalDataForCloudSync() async {
+    if (!_useSqliteLocalStore) return;
+
+    if (localTransactionsRepository != null) {
+      final List<Transaction> transactions = await localTransactionsRepository!
+          .getActiveTransactions();
+      if (localTransactionsRepository is LocalTransactionsRepository) {
+        await (localTransactionsRepository as LocalTransactionsRepository)
+            .importTransactions(transactions);
+      }
     }
 
-    if (rulesChanged) {
-      unawaited(() async {
-        try {
-          await syncManager.syncMerchantRules(
-            uid: uid,
-            rules: nextState.merchantRules.values,
-            deletedIds: _removedIds<MerchantRule>(
-              previousState.merchantRules.values,
-              nextState.merchantRules.values,
-              (MerchantRule rule) => rule.merchantName.toLowerCase().trim(),
-            ),
-          );
-        } catch (error, stackTrace) {
-          debugPrint('Background merchant rules sync skipped: $error');
-          debugPrintStack(stackTrace: stackTrace);
-        }
-      }());
+    if (localSavingsRepository != null) {
+      final List<Saving> savings = await localSavingsRepository!
+          .getActiveSavings();
+      if (localSavingsRepository is LocalSavingsRepository) {
+        await (localSavingsRepository as LocalSavingsRepository)
+            .enqueueSavingsForResync(savings);
+      }
     }
 
-    if (transactionsChanged) {
-      unawaited(() async {
-        try {
-          await syncManager.syncTransactions(
-            uid: uid,
-            items: nextState.transactions,
-            deletedIds: _removedIds<Transaction>(
-              previousState.transactions,
-              nextState.transactions,
-              (Transaction item) => item.id,
-            ),
-          );
-        } catch (error, stackTrace) {
-          debugPrint('Background transactions sync skipped: $error');
-          debugPrintStack(stackTrace: stackTrace);
-        }
-      }());
+    if (localPendingTransactionsRepository != null) {
+      final List<PendingTransaction> pending =
+          await localPendingTransactionsRepository!
+              .getActivePendingTransactions();
+      await localPendingTransactionsRepository!.importPendingTransactions(
+        pending,
+      );
     }
 
-    if (savingsChanged) {
-      unawaited(() async {
-        try {
-          await syncManager.syncSavings(
-            uid: uid,
-            items: nextState.savings,
-            deletedIds: _removedIds<Saving>(
-              previousState.savings,
-              nextState.savings,
-              (Saving item) => item.id,
-            ),
-          );
-        } catch (error, stackTrace) {
-          debugPrint('Background savings sync skipped: $error');
-          debugPrintStack(stackTrace: stackTrace);
-        }
-      }());
+    if (localFinancialPlansRepository != null) {
+      final List<FinancialPlan> plans = await localFinancialPlansRepository!
+          .getActiveFinancialPlans();
+      await localFinancialPlansRepository!.importFinancialPlans(plans);
     }
 
-    if (recurringTransactionsChanged) {
-      unawaited(() async {
-        try {
-          await syncManager.syncRecurringTransactions(
-            uid: uid,
-            items: nextState.recurringTransactions,
-            deletedIds: _removedIds<RecurringTransaction>(
-              previousState.recurringTransactions,
-              nextState.recurringTransactions,
-              (RecurringTransaction item) => item.id,
-            ),
-          );
-        } catch (error, stackTrace) {
-          debugPrint('Background recurring transactions sync skipped: $error');
-          debugPrintStack(stackTrace: stackTrace);
-        }
-      }());
+    if (localInvestmentsRepository != null) {
+      final List<InvestmentAsset> investments =
+          await localInvestmentsRepository!.getActiveInvestments();
+      await localInvestmentsRepository!.importInvestments(investments);
     }
 
-    if (investmentsChanged) {
-      unawaited(() async {
-        try {
-          await syncManager.syncInvestments(
-            uid: uid,
-            items: nextState.investments,
-            deletedIds: _removedIds<InvestmentAsset>(
-              previousState.investments,
-              nextState.investments,
-              (InvestmentAsset item) => item.id,
-            ),
-          );
-        } catch (error, stackTrace) {
-          debugPrint('Background investments sync skipped: $error');
-          debugPrintStack(stackTrace: stackTrace);
-        }
-      }());
+    if (localMerchantRulesRepository != null) {
+      final Map<String, MerchantRule> rules =
+          await localMerchantRulesRepository!.getActiveMerchantRules();
+      await localMerchantRulesRepository!.importMerchantRules(rules.values);
     }
 
-    if (financialPlansChanged) {
-      unawaited(() async {
-        try {
-          await syncManager.syncFinancialPlans(
-            uid: uid,
-            items: nextState.financialPlans,
-            deletedIds: _removedIds<FinancialPlan>(
-              previousState.financialPlans,
-              nextState.financialPlans,
-              (FinancialPlan item) => item.id,
-            ),
-          );
-        } catch (error, stackTrace) {
-          debugPrint('Background financial plans sync skipped: $error');
-          debugPrintStack(stackTrace: stackTrace);
-        }
-      }());
+    if (localMerchantConfirmationsRepository != null) {
+      final List<MerchantConfirmation> confirmations =
+          await localMerchantConfirmationsRepository!
+              .getActiveMerchantConfirmations();
+      await localMerchantConfirmationsRepository!.importMerchantConfirmations(
+        confirmations,
+      );
     }
 
-    if (correctionFeedbackChanged) {
-      unawaited(() async {
-        try {
-          await syncManager.syncCorrectionFeedback(
-            uid: uid,
-            items: nextState.correctionFeedback,
-            deletedIds: _removedIds<CorrectionFeedback>(
-              previousState.correctionFeedback,
-              nextState.correctionFeedback,
-              (CorrectionFeedback item) => item.id,
-            ),
-          );
-        } catch (error, stackTrace) {
-          debugPrint('Background correction feedback sync skipped: $error');
-          debugPrintStack(stackTrace: stackTrace);
-        }
-      }());
+    if (localCorrectionFeedbackRepository != null) {
+      final List<CorrectionFeedback> feedback =
+          await localCorrectionFeedbackRepository!
+              .getActiveCorrectionFeedback();
+      await localCorrectionFeedbackRepository!.importCorrectionFeedback(
+        feedback,
+      );
     }
 
-    if (merchantConfirmationsChanged) {
-      unawaited(() async {
-        try {
-          await syncManager.syncMerchantConfirmations(
-            uid: uid,
-            items: nextState.merchantConfirmations,
-            deletedIds: _removedIds<MerchantConfirmation>(
-              previousState.merchantConfirmations,
-              nextState.merchantConfirmations,
-              (MerchantConfirmation item) =>
-                  '${item.merchantName.toLowerCase().trim()}|${item.categoryId.toLowerCase().trim()}',
-            ),
-          );
-        } catch (error, stackTrace) {
-          debugPrint('Background merchant confirmations sync skipped: $error');
-          debugPrintStack(stackTrace: stackTrace);
-        }
-      }());
+    if (localRecurringTransactionsRepository != null) {
+      final List<RecurringTransaction> recurring =
+          await localRecurringTransactionsRepository!
+              .getActiveRecurringTransactions();
+      await localRecurringTransactionsRepository!.importRecurringTransactions(
+        recurring,
+      );
+    }
+  }
+
+  Future<void> _syncPendingReviewBadge([int? pendingReviewCount]) async {
+    final int count =
+        pendingReviewCount ??
+        _state.pendingTransactions
+            .where(
+              (PendingTransaction item) =>
+                  item.status == CaptureStatus.pendingReview,
+            )
+            .length;
+    await _smartCaptureAlertService.syncPendingReviewBadge(count);
+  }
+
+  Future<void> forceUploadAllLocalData() async {
+    await enqueueAllLocalDataForCloudSync();
+    await triggerSyncPipeline(reason: 'debug_force_upload_all_local_data');
+  }
+
+  Future<void> runFullReconciliation() async {
+    await collectDebugDiagnostics();
+  }
+
+  Future<void> repairSavingsSyncCursors() async {
+    final FirestoreSyncManager? syncManager = firestoreSyncManager;
+    final String? uid = _state.userId;
+    if (syncManager == null || uid == null || uid.trim().isEmpty) return;
+
+    final DebugDiagnosticsReport diagnostics = await collectDebugDiagnostics();
+    if (!diagnostics.localCountGreaterThanFirebaseCount) {
+      if (kDebugMode) {
+        print(
+          '[DIAGNOSTICS] repairSavingsSyncCursors skipped: local savings are not greater than Firebase savings.',
+        );
+      }
+      return;
     }
 
-    if (userSettingsChanged) {
-      unawaited(() async {
-        try {
-          await syncManager.syncUserSettings(
+    final String beforeSavingsCursor = _state.syncHealth.savingsCursor;
+    final String beforeDeletedSavingsCursor =
+        _state.syncHealth.deletedSavingsCursor;
+    final SyncHealth nextSyncHealth = _state.syncHealth.copyWith(
+      savingsCursor: '',
+      deletedSavingsCursor: '',
+    );
+
+    if (kDebugMode) {
+      print(
+        '[DIAGNOSTICS] Repairing savings cursors: '
+        'savingsCursor="$beforeSavingsCursor" -> "", '
+        'deletedSavingsCursor="$beforeDeletedSavingsCursor" -> ""',
+      );
+    }
+    await SyncDiagnosticsService.record(
+      level: 'warning',
+      subsystem: 'diagnostics',
+      message: 'Repair savings cursors',
+      metadata: <String, dynamic>{
+        'beforeSavingsCursor': beforeSavingsCursor,
+        'beforeDeletedSavingsCursor': beforeDeletedSavingsCursor,
+        'afterSavingsCursor': '',
+        'afterDeletedSavingsCursor': '',
+      },
+    );
+
+    await updateState(
+      _state.copyWith(
+        syncHealth: nextSyncHealth,
+        lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+      ),
+    );
+  }
+
+  Future<int> enqueueMissingFirebaseSavings() async {
+    final FirestoreSyncManager? syncManager = firestoreSyncManager;
+    final String uid = (_state.userId ?? '').trim();
+    if (syncManager == null || uid.isEmpty || localSavingsRepository == null) {
+      return 0;
+    }
+
+    final List<Saving> localSavings = await localSavingsRepository!
+        .getActiveSavings();
+    final List<Saving> firebaseSavings = await syncManager
+        .loadCollection<Saving>(
+          uid: uid,
+          collection: FirestoreSyncManager.savingsCollection,
+          decoder: (String id, Map<String, dynamic> json) {
+            return Saving.fromJson(<String, dynamic>{'id': id, ...json});
+          },
+        );
+    final Set<String> firebaseIds = firebaseSavings
+        .map((Saving saving) => saving.id)
+        .toSet();
+    final List<Saving> missing = localSavings
+        .where((Saving saving) => !firebaseIds.contains(saving.id))
+        .toList(growable: false);
+    if (missing.isEmpty) {
+      return 0;
+    }
+    if (localSavingsRepository is LocalSavingsRepository) {
+      await (localSavingsRepository as LocalSavingsRepository)
+          .enqueueSavingsForResync(missing);
+    }
+    if (kDebugMode) {
+      print(
+        '[DIAGNOSTICS] Enqueued ${missing.length} missing Firebase savings records.',
+      );
+    }
+    await SyncDiagnosticsService.record(
+      level: 'info',
+      subsystem: 'diagnostics',
+      message: 'Enqueued missing Firebase savings',
+      metadata: <String, dynamic>{
+        'missingIds': missing.map((Saving saving) => saving.id).toList(),
+        'count': missing.length,
+      },
+    );
+    return missing.length;
+  }
+
+  Future<void> _logSavingsConsistencyWarningIfNeeded({
+    required String source,
+  }) async {
+    final FirestoreSyncManager? syncManager = firestoreSyncManager;
+    final String uid = (_state.userId ?? '').trim();
+    if (syncManager == null || uid.isEmpty || localSavingsRepository == null) {
+      return;
+    }
+
+    try {
+      final List<Saving> localSavings = await localSavingsRepository!
+          .getActiveSavings();
+      final int pendingSyncQueueCount = _database == null
+          ? 0
+          : await (_database!.select(
+              _database!.syncQueue,
+            )).get().then((rows) => rows.length);
+      if (localSavings.isEmpty || pendingSyncQueueCount != 0) {
+        return;
+      }
+
+      final List<Saving> firebaseSavings = await syncManager
+          .loadCollection<Saving>(
             uid: uid,
-            settings: _buildUserSettingsPayload(nextState),
+            collection: FirestoreSyncManager.savingsCollection,
+            decoder: (String id, Map<String, dynamic> json) {
+              return Saving.fromJson(<String, dynamic>{'id': id, ...json});
+            },
           );
-        } catch (error, stackTrace) {
-          debugPrint('Background user settings sync skipped: $error');
-          debugPrintStack(stackTrace: stackTrace);
-        }
-      }());
+
+      if (localSavings.isNotEmpty && firebaseSavings.isEmpty) {
+        final String message =
+            'Local savings exist but Firebase savings is empty and no queue writes are pending. '
+            'source=$source localCount=${localSavings.length} firebaseCount=0 pendingQueueCount=0';
+        debugPrint('[SYNC][HIGH] $message');
+        await SyncDiagnosticsService.record(
+          level: 'error',
+          subsystem: 'sync',
+          message: 'Local savings missing from Firebase',
+          metadata: <String, dynamic>{
+            'source': source,
+            'localCount': localSavings.length,
+            'firebaseCount': 0,
+            'pendingQueueCount': 0,
+          },
+        );
+      }
+    } catch (error) {
+      debugPrint(
+        'AppStateController: savings consistency warning skipped: $error',
+      );
     }
   }
 
   Future<void> addTransaction(Transaction transaction) async {
+    if (transaction.type == 'expense') {
+      final double availableBalance = getAvailableBalance(
+        currency: transaction.currency,
+      );
+      if (availableBalance <= ReconciliationService.minAmount) {
+        if (kDebugMode) {
+          debugPrint(
+            'AppStateController: blocked expense ${transaction.id} '
+            'for ${transaction.currency} because available balance is $availableBalance',
+          );
+        }
+        return;
+      }
+    }
+    if (_useSqliteLocalStore && localTransactionsRepository != null) {
+      await _saveTransactionViaLocalRepository(
+        transaction,
+        fallbackState: _state.copyWith(
+          transactions: <Transaction>[..._state.transactions, transaction],
+        ),
+      );
+      return;
+    }
     await updateState(
       _state.copyWith(
         transactions: <Transaction>[..._state.transactions, transaction],
@@ -1463,6 +3400,13 @@ class AppStateController extends ChangeNotifier {
     final List<Transaction> next = _state.transactions
         .map((Transaction tx) => tx.id == transaction.id ? transaction : tx)
         .toList(growable: false);
+    if (_useSqliteLocalStore && localTransactionsRepository != null) {
+      await _saveTransactionViaLocalRepository(
+        transaction,
+        fallbackState: _state.copyWith(transactions: next),
+      );
+      return;
+    }
     await updateState(_state.copyWith(transactions: next));
   }
 
@@ -1479,6 +3423,20 @@ class AppStateController extends ChangeNotifier {
     }
     if (target == null) return;
     final Transaction txTarget = target;
+
+    if (_useSqliteLocalStore &&
+        localTransactionsRepository != null &&
+        _canUseRepositoryDeleteForTransaction(txTarget)) {
+      await _deleteTransactionViaLocalRepository(
+        txTarget,
+        fallbackState: _state.copyWith(
+          transactions: _state.transactions
+              .where((Transaction tx) => tx.id != transactionId)
+              .toList(growable: false),
+        ),
+      );
+      return;
+    }
 
     final String? exchangeActivityId =
         txTarget.exchangePairId != null &&
@@ -1501,13 +3459,19 @@ class AppStateController extends ChangeNotifier {
 
     if (txTarget.category == 'Gold Sale' ||
         txTarget.category == 'Silver Sale') {
+      if (_useSqliteLocalStore && localFinancialOperationsRepository != null) {
+        await _deleteMetalSaleTransaction(txTarget.id);
+        return;
+      }
       final String? metalSavingId = txTarget.exchangePairId;
       if (metalSavingId != null && metalSavingId.isNotEmpty) {
-        double soldWeight = 0.0;
-        final RegExp regex = RegExp(r'([0-9.]+)\s*g');
-        final Match? match = regex.firstMatch(txTarget.description);
-        if (match != null) {
-          soldWeight = double.tryParse(match.group(1) ?? '') ?? 0.0;
+        double soldWeight = txTarget.metalQuantity ?? 0.0;
+        if (soldWeight == 0.0) {
+          final RegExp regex = RegExp(r'([0-9.]+)\s*g');
+          final Match? match = regex.firstMatch(txTarget.description);
+          if (match != null) {
+            soldWeight = double.tryParse(match.group(1) ?? '') ?? 0.0;
+          }
         }
         if (soldWeight > 0.0) {
           nextSavings = nextSavings.map((Saving s) {
@@ -1547,12 +3511,35 @@ class AppStateController extends ChangeNotifier {
   }
 
   Future<void> addSaving(Saving saving) async {
+    if (_useSqliteLocalStore && localSavingsRepository != null) {
+      await _saveSavingViaLocalRepository(
+        saving,
+        fallbackState: _state.copyWith(
+          savings: <Saving>[..._state.savings, saving],
+        ),
+      );
+      return;
+    }
     await updateState(
       _state.copyWith(savings: <Saving>[..._state.savings, saving]),
     );
   }
 
   Future<void> addSavingWithFundingAllocations(Saving saving) async {
+    final String purchaseCurrency = saving.purchaseCurrency.trim().isEmpty
+        ? saving.unit.trim().toUpperCase()
+        : saving.purchaseCurrency.trim().toUpperCase();
+    final double requestedFunding = saving.fundingAllocations.fold<double>(
+      0,
+      (double sum, Map<String, dynamic> allocation) =>
+          sum + _asDouble(allocation['amount']),
+    );
+    final double availableFunding = reconciliationService
+        .getAvailableCashBalance(state: _state, currency: purchaseCurrency);
+    if (requestedFunding - availableFunding > ReconciliationService.minAmount) {
+      throw StateError('Insufficient available cash to fund this purchase.');
+    }
+
     final List<Transaction> fundingExpenses = saving.fundingAllocations
         .where(
           (Map<String, dynamic> allocation) =>
@@ -1593,7 +3580,143 @@ class AppStateController extends ChangeNotifier {
     final List<Saving> next = _state.savings
         .map((Saving entry) => entry.id == saving.id ? saving : entry)
         .toList(growable: false);
+    if (_useSqliteLocalStore && localSavingsRepository != null) {
+      await _saveSavingViaLocalRepository(
+        saving,
+        fallbackState: _state.copyWith(savings: next),
+      );
+      return;
+    }
     await updateState(_state.copyWith(savings: next));
+  }
+
+  bool _canUseRepositoryDeleteForTransaction(Transaction transaction) {
+    final bool hasExchangeActivity =
+        transaction.exchangePairId != null &&
+        transaction.exchangePairId!.trim().isNotEmpty;
+    if (hasExchangeActivity) return false;
+    if (transaction.category == 'Gold Sale' ||
+        transaction.category == 'Silver Sale') {
+      return false;
+    }
+    return true;
+  }
+
+  Future<void> _saveTransactionViaLocalRepository(
+    Transaction transaction, {
+    required AppStateModel fallbackState,
+  }) async {
+    final TransactionsLocalStore? localStore = localTransactionsRepository;
+    if (localStore == null) {
+      await updateState(fallbackState);
+      return;
+    }
+    final AppStateModel previousState = _state;
+    try {
+      await localStore.saveTransaction(transaction);
+      final List<Transaction> sqliteTransactions = await localStore
+          .getActiveTransactions();
+      await _verifySqliteWrite(
+        label: 'Transaction write',
+        id: transaction.id,
+        existsCheck: () async => sqliteTransactions.any(
+          (Transaction item) => item.id == transaction.id,
+        ),
+      );
+      final AppStateModel reconciledInput = _state.copyWith(
+        transactions: sqliteTransactions,
+        lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+      );
+      final ReconciliationResult reconciled = reconciliationService
+          .reconcileExpensesWithSavings(reconciledInput);
+      _state = reconciled.state.copyWith(
+        lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+      );
+      await _finalizeLocalWrite(
+        previousState: previousState,
+        transactionChanged: true,
+      );
+    } catch (error, stackTrace) {
+      debugPrint(
+        'AppStateController: SQLite transaction save failed. '
+        'Falling back to JSON transaction write. Error: $error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+      await updateState(fallbackState);
+    }
+  }
+
+  Future<void> _deleteMetalSaleTransaction(String transactionId) async {
+    if (_useSqliteLocalStore && localFinancialOperationsRepository != null) {
+      final AppStateModel previousState = _state;
+      try {
+        final FinancialOperationResult result =
+            await localFinancialOperationsRepository!.deleteMetalSale(
+              transactionId,
+            );
+        _state = _state.copyWith(
+          transactions: result.transactions,
+          savings: result.savings,
+          lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+        );
+        await _finalizeLocalWrite(
+          previousState: previousState,
+          transactionChanged: true,
+          savingChanged: true,
+        );
+      } catch (error, stackTrace) {
+        debugPrint(
+          'AppStateController: SQLite metal sale delete failed. '
+          'State left unchanged. Error: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+      }
+      return;
+    }
+  }
+
+  Future<void> _deleteTransactionViaLocalRepository(
+    Transaction transaction, {
+    required AppStateModel fallbackState,
+  }) async {
+    final TransactionsLocalStore? localStore = localTransactionsRepository;
+    if (localStore == null) {
+      await updateState(fallbackState);
+      return;
+    }
+    final AppStateModel previousState = _state;
+    try {
+      await localStore.deleteTransaction(transaction.id);
+      final List<Transaction> sqliteTransactions = await localStore
+          .getActiveTransactions();
+      await _verifySqliteWrite(
+        label: 'Transaction delete',
+        id: transaction.id,
+        existsCheck: () async => sqliteTransactions.any(
+          (Transaction item) => item.id == transaction.id,
+        ),
+      );
+      final AppStateModel reconciledInput = _state.copyWith(
+        transactions: sqliteTransactions,
+        lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+      );
+      final ReconciliationResult reconciled = reconciliationService
+          .reconcileExpensesWithSavings(reconciledInput);
+      _state = reconciled.state.copyWith(
+        lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+      );
+      await _finalizeLocalWrite(
+        previousState: previousState,
+        transactionChanged: true,
+      );
+    } catch (error, stackTrace) {
+      debugPrint(
+        'AppStateController: SQLite transaction delete failed. '
+        'Falling back to JSON transaction delete. Error: $error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+      await updateState(fallbackState);
+    }
   }
 
   static double _asDouble(dynamic value) {
@@ -1614,12 +3737,34 @@ class AppStateController extends ChangeNotifier {
     }
     if (target == null) return;
 
+    if (_useSqliteLocalStore &&
+        localSavingsRepository != null &&
+        _canUseRepositoryDeleteForSaving(target)) {
+      await _deleteSavingViaLocalRepository(
+        target,
+        fallbackState: _state.copyWith(
+          savings: _state.savings
+              .where((Saving entry) => entry.id != savingId)
+              .toList(growable: false),
+        ),
+      );
+      return;
+    }
+
     final String? exchangeActivityId =
         target.transferActivityId != null &&
             target.transferActivityId!.trim().isNotEmpty
         ? target.transferActivityId!.trim()
         : null;
     if (exchangeActivityId != null) {
+      final bool isCurrencyExchangeSaving =
+          target.internalTransferType == 'savings_currency_exchange';
+      if (!isCurrencyExchangeSaving &&
+          _useSqliteLocalStore &&
+          localFinancialOperationsRepository != null) {
+        await _deleteInternalTransferActivity(exchangeActivityId);
+        return;
+      }
       if (kDebugMode) {
         print(
           '[ExchangeDebug][deleteSaving] deleting exchange activityId=$exchangeActivityId',
@@ -1664,7 +3809,156 @@ class AppStateController extends ChangeNotifier {
     );
   }
 
+  bool _canUseRepositoryDeleteForSaving(Saving saving) {
+    if (saving.transferActivityId != null &&
+        saving.transferActivityId!.trim().isNotEmpty) {
+      return false;
+    }
+    if (saving.exchangeSourceSavingId != null &&
+        saving.exchangeSourceSavingId!.trim().isNotEmpty) {
+      return false;
+    }
+    if (saving.exchangeSourceIncomeId != null &&
+        saving.exchangeSourceIncomeId!.trim().isNotEmpty) {
+      return false;
+    }
+    return true;
+  }
+
+  Future<void> _saveSavingViaLocalRepository(
+    Saving saving, {
+    required AppStateModel fallbackState,
+  }) async {
+    final SavingsLocalStore? localStore = localSavingsRepository;
+    if (localStore == null) {
+      await updateState(fallbackState);
+      return;
+    }
+    final AppStateModel previousState = _state;
+    try {
+      await localStore.saveSaving(saving);
+      final List<Saving> sqliteSavings = await localStore.getActiveSavings();
+      await _verifySqliteWrite(
+        label: 'Saving write',
+        id: saving.id,
+        existsCheck: () async =>
+            sqliteSavings.any((Saving item) => item.id == saving.id),
+      );
+      _state = _state.copyWith(
+        savings: sqliteSavings,
+        lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+      );
+      await _finalizeLocalWrite(
+        previousState: previousState,
+        savingChanged: true,
+      );
+    } catch (error, stackTrace) {
+      debugPrint(
+        'AppStateController: SQLite saving write failed. '
+        'Falling back to JSON saving write. Error: $error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+      await updateState(fallbackState);
+    }
+  }
+
+  Future<void> _deleteSavingViaLocalRepository(
+    Saving saving, {
+    required AppStateModel fallbackState,
+  }) async {
+    final SavingsLocalStore? localStore = localSavingsRepository;
+    if (localStore == null) {
+      await updateState(fallbackState);
+      return;
+    }
+    final AppStateModel previousState = _state;
+    try {
+      await localStore.deleteSaving(saving.id);
+      final List<Saving> sqliteSavings = await localStore.getActiveSavings();
+      await _verifySqliteWrite(
+        label: 'Saving delete',
+        id: saving.id,
+        existsCheck: () async =>
+            sqliteSavings.any((Saving item) => item.id == saving.id),
+      );
+      _state = _state.copyWith(
+        savings: sqliteSavings,
+        lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+      );
+      await _finalizeLocalWrite(
+        previousState: previousState,
+        savingChanged: true,
+      );
+    } catch (error, stackTrace) {
+      debugPrint(
+        'AppStateController: SQLite saving delete failed. '
+        'Falling back to JSON saving delete. Error: $error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+      await updateState(fallbackState);
+    }
+  }
+
   Future<void> _deleteCurrencyExchangeActivity(String activityId) async {
+    if (_useSqliteLocalStore && localFinancialOperationsRepository != null) {
+      final AppStateModel previousState = _state;
+      try {
+        final FinancialOperationResult result =
+            await localFinancialOperationsRepository!.deleteCurrencyExchange(
+              activityId,
+            );
+        _state = _state.copyWith(
+          transactions: result.transactions,
+          savings: result.savings,
+          lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+        );
+        await _finalizeLocalWrite(
+          previousState: previousState,
+          transactionChanged: true,
+          savingChanged: true,
+        );
+      } catch (error, stackTrace) {
+        debugPrint(
+          'AppStateController: SQLite currency exchange delete failed. '
+          'State left unchanged. Error: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+      }
+      return;
+    }
+    await _deleteCurrencyExchangeActivityLegacy(activityId);
+  }
+
+  Future<void> _deleteInternalTransferActivity(String activityId) async {
+    if (_useSqliteLocalStore && localFinancialOperationsRepository != null) {
+      final AppStateModel previousState = _state;
+      try {
+        final FinancialOperationResult result =
+            await localFinancialOperationsRepository!.deleteInternalTransfer(
+              activityId,
+            );
+        _state = _state.copyWith(
+          transactions: result.transactions,
+          savings: result.savings,
+          lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+        );
+        await _finalizeLocalWrite(
+          previousState: previousState,
+          transactionChanged: true,
+          savingChanged: true,
+        );
+      } catch (error, stackTrace) {
+        debugPrint(
+          'AppStateController: SQLite internal transfer delete failed. '
+          'State left unchanged. Error: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+      }
+      return;
+    }
+  }
+
+  Future<void> _deleteCurrencyExchangeActivityLegacy(String activityId) async {
     final List<Saving> exchangeSavings = _state.savings
         .where((Saving saving) => saving.transferActivityId == activityId)
         .toList(growable: false);
@@ -1728,6 +4022,185 @@ class AppStateController extends ChangeNotifier {
         'sourceDeductions=${request.oldSourceSavingDeductions}',
       );
     }
+
+    if (_useSqliteLocalStore && localFinancialOperationsRepository != null) {
+      final AppStateModel previousState = _state;
+      try {
+        List<Transaction> nextTransactions = _state.transactions;
+        List<Saving> nextSavings = _state.savings;
+        final Set<String> targetSavingIds = request.oldTargetSavingIds.toSet();
+        final List<Saving> removedTargetSavings = <Saving>[];
+
+        if (request.oldActivityId.isNotEmpty) {
+          nextTransactions = nextTransactions
+              .where(
+                (Transaction tx) => tx.exchangePairId != request.oldActivityId,
+              )
+              .toList(growable: false);
+          removedTargetSavings.addAll(
+            _state.savings.where(
+              (Saving saving) =>
+                  saving.transferActivityId == request.oldActivityId &&
+                  saving.internalTransferType == 'savings_currency_exchange',
+            ),
+          );
+          targetSavingIds.addAll(
+            removedTargetSavings.map((Saving saving) => saving.id),
+          );
+        }
+
+        if (targetSavingIds.isNotEmpty) {
+          removedTargetSavings.addAll(
+            _state.savings.where(
+              (Saving saving) =>
+                  targetSavingIds.contains(saving.id) &&
+                  !removedTargetSavings.any(
+                    (Saving existing) => existing.id == saving.id,
+                  ),
+            ),
+          );
+        }
+
+        if (targetSavingIds.isNotEmpty) {
+          nextSavings = nextSavings
+              .where((Saving saving) => !targetSavingIds.contains(saving.id))
+              .toList(growable: false);
+        }
+
+        if (request.oldSourceSavingDeductions.isNotEmpty) {
+          nextSavings = nextSavings
+              .map((Saving saving) {
+                final double restoredAmount =
+                    request.oldSourceSavingDeductions[saving.id] ?? 0;
+                if (restoredAmount <= 0) return saving;
+                return saving.copyWith(
+                  amount: saving.amount + restoredAmount,
+                  remainingAmount: saving.remainingAmount + restoredAmount,
+                );
+              })
+              .toList(growable: false);
+
+          for (final MapEntry<String, double> entry
+              in request.oldSourceSavingDeductions.entries) {
+            final bool exists = nextSavings.any(
+              (Saving saving) => saving.id == entry.key,
+            );
+            if (exists || entry.value <= 0) continue;
+
+            final Saving? sourceTemplate = removedTargetSavings
+                .where(
+                  (Saving saving) => saving.exchangeSourceSavingId == entry.key,
+                )
+                .firstOrNull;
+            nextSavings = <Saving>[
+              ...nextSavings,
+              Saving(
+                id: entry.key,
+                assetType: 'cash',
+                dateAcquired: sourceTemplate?.dateAcquired ?? request.date,
+                amount: entry.value,
+                remainingAmount: entry.value,
+                unit: request.sourceCurrency,
+                description: 'Restored exchange source',
+                purchaseCurrency: request.sourceCurrency,
+                purchaseAmount: entry.value,
+                createdAt:
+                    sourceTemplate?.createdAt ??
+                    DateTime.now().toUtc().toIso8601String(),
+                sourceIncomeId: sourceTemplate?.sourceIncomeId,
+              ),
+            ];
+          }
+        }
+
+        final AppStateModel revertedState = _state.copyWith(
+          transactions: nextTransactions,
+          savings: nextSavings,
+        );
+
+        final ReconciliationResult out = reconciliationService
+            .executeCurrencyExchange(
+              input: revertedState,
+              date: request.date,
+              sourceCurrency: request.sourceCurrency,
+              targetCurrency: request.targetCurrency,
+              sourceAmount: request.sourceAmount,
+              targetAmount: request.targetAmount,
+            );
+
+        if (out.modified) {
+          final Set<String> oldTxIds = revertedState.transactions
+              .map((tx) => tx.id)
+              .toSet();
+          final Set<String> oldSavingIds = revertedState.savings
+              .map((s) => s.id)
+              .toSet();
+
+          final List<Transaction> newTxRows = out.state.transactions
+              .where((tx) => !oldTxIds.contains(tx.id))
+              .toList();
+          final List<Saving> newSavingRows = out.state.savings
+              .where((s) => !oldSavingIds.contains(s.id))
+              .toList();
+
+          final String? sourceSavingId = newSavingRows
+              .map((s) => s.exchangeSourceSavingId)
+              .firstWhere((id) => id != null, orElse: () => null);
+
+          final String newActivityId = newTxRows.isNotEmpty
+              ? (newTxRows.first.exchangePairId ?? '')
+              : (newSavingRows.isNotEmpty
+                    ? (newSavingRows.first.transferActivityId ?? '')
+                    : '');
+
+          final double exchangeRate = request.sourceAmount > 0
+              ? request.targetAmount / request.sourceAmount
+              : 0.0;
+          final String description =
+              'Currency exchange: ${request.sourceAmount} ${request.sourceCurrency} → ${request.targetAmount} ${request.targetCurrency}';
+
+          final CurrencyExchangeOperation newOperation =
+              CurrencyExchangeOperation(
+                activityId: newActivityId,
+                sourceSavingId: sourceSavingId,
+                sourceCurrency: request.sourceCurrency,
+                targetCurrency: request.targetCurrency,
+                sourceAmountText: request.sourceAmount.toString(),
+                targetAmountText: request.targetAmount.toString(),
+                exchangeRateText: exchangeRate.toString(),
+                date: request.date,
+                description: description,
+                generatedTransactionRows: newTxRows,
+                generatedTargetSavingRows: newSavingRows,
+              );
+
+          final FinancialOperationResult result =
+              await localFinancialOperationsRepository!.updateCurrencyExchange(
+                request.oldActivityId,
+                newOperation,
+              );
+
+          _state = _state.copyWith(
+            transactions: result.transactions,
+            savings: result.savings,
+            lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+          );
+          await _finalizeLocalWrite(
+            previousState: previousState,
+            transactionChanged: true,
+            savingChanged: true,
+          );
+        }
+      } catch (error, stackTrace) {
+        debugPrint(
+          'AppStateController: SQLite currency exchange update failed. '
+          'State left unchanged. Error: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+      }
+      return;
+    }
+
     List<Transaction> nextTransactions = _state.transactions;
     List<Saving> nextSavings = _state.savings;
     final Set<String> targetSavingIds = request.oldTargetSavingIds.toSet();
@@ -1833,7 +4306,143 @@ class AppStateController extends ChangeNotifier {
     }
   }
 
+  Future<void> executeMetalSale({
+    required Transaction transaction,
+    Saving? generatedTargetSaving,
+  }) async {
+    if (_useSqliteLocalStore && localFinancialOperationsRepository != null) {
+      final AppStateModel previousState = _state;
+      try {
+        final MetalSaleOperation operation = MetalSaleOperation(
+          transactionRow: transaction,
+          generatedTargetSavingRow: generatedTargetSaving,
+        );
+        final FinancialOperationResult result =
+            await localFinancialOperationsRepository!.recordMetalSale(
+              operation,
+            );
+
+        _state = _state.copyWith(
+          transactions: result.transactions,
+          savings: result.savings,
+          lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+        );
+        await _finalizeLocalWrite(
+          previousState: previousState,
+          transactionChanged: true,
+          savingChanged: true,
+        );
+      } catch (error, stackTrace) {
+        debugPrint(
+          'AppStateController: SQLite metal sale execute failed. '
+          'State left unchanged. Error: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+      }
+      return;
+    }
+
+    final List<Transaction> nextTransactions = <Transaction>[
+      ..._state.transactions,
+      transaction,
+    ];
+    final List<Saving> nextSavings = List<Saving>.from(_state.savings);
+    if (generatedTargetSaving != null) {
+      nextSavings.add(generatedTargetSaving);
+    }
+    await updateState(
+      _state.copyWith(transactions: nextTransactions, savings: nextSavings),
+    );
+  }
+
+  Future<void> updateMetalSale({
+    required String oldTransactionId,
+    required Transaction transaction,
+    Saving? generatedTargetSaving,
+  }) async {
+    if (_useSqliteLocalStore && localFinancialOperationsRepository != null) {
+      final AppStateModel previousState = _state;
+      try {
+        final MetalSaleOperation operation = MetalSaleOperation(
+          transactionRow: transaction,
+          generatedTargetSavingRow: generatedTargetSaving,
+        );
+        final FinancialOperationResult result =
+            await localFinancialOperationsRepository!.updateMetalSale(
+              oldTransactionId,
+              operation,
+            );
+
+        _state = _state.copyWith(
+          transactions: result.transactions,
+          savings: result.savings,
+          lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+        );
+        await _finalizeLocalWrite(
+          previousState: previousState,
+          transactionChanged: true,
+          savingChanged: true,
+        );
+      } catch (error, stackTrace) {
+        debugPrint(
+          'AppStateController: SQLite metal sale update failed. '
+          'State left unchanged. Error: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+      }
+      return;
+    }
+
+    final List<Transaction> nextTransactions = _state.transactions
+        .map((tx) => tx.id == oldTransactionId ? transaction : tx)
+        .toList();
+    final List<Saving> nextSavings = _state.savings
+        .where(
+          (s) =>
+              !(s.transferActivityId == oldTransactionId &&
+                  s.assetType == 'cash'),
+        )
+        .toList();
+    if (generatedTargetSaving != null) {
+      nextSavings.add(generatedTargetSaving);
+    }
+    await updateState(
+      _state.copyWith(transactions: nextTransactions, savings: nextSavings),
+    );
+  }
+
   Future<void> addInvestment(InvestmentAsset investment) async {
+    if (_useSqliteLocalStore && localInvestmentsRepository != null) {
+      final AppStateModel previousState = _state;
+      try {
+        await localInvestmentsRepository!.saveInvestment(investment);
+        final List<InvestmentAsset> sqliteInvestments =
+            await localInvestmentsRepository!.getActiveInvestments();
+        if (kDebugMode) {
+          final bool exists = sqliteInvestments.any(
+            (InvestmentAsset item) => item.id == investment.id,
+          );
+          if (!exists) {
+            _recordDebugWriteFailure(
+              'Investment write verification failed for id=${investment.id}',
+            );
+          }
+        }
+        _state = _state.copyWith(
+          investments: sqliteInvestments.isNotEmpty
+              ? sqliteInvestments
+              : <InvestmentAsset>[..._state.investments, investment],
+        );
+        await _finalizeLocalWrite(previousState: previousState);
+        return;
+      } catch (error, stackTrace) {
+        debugPrint(
+          'AppStateController.addInvestment: failed to mirror investment to SQLite. '
+          'Continuing with JSON compatibility save. Error: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+      }
+    }
     await updateState(
       _state.copyWith(
         investments: <InvestmentAsset>[..._state.investments, investment],
@@ -1842,6 +4451,42 @@ class AppStateController extends ChangeNotifier {
   }
 
   Future<void> updateInvestment(InvestmentAsset investment) async {
+    if (_useSqliteLocalStore && localInvestmentsRepository != null) {
+      final AppStateModel previousState = _state;
+      try {
+        await localInvestmentsRepository!.saveInvestment(investment);
+        final List<InvestmentAsset> sqliteInvestments =
+            await localInvestmentsRepository!.getActiveInvestments();
+        if (kDebugMode) {
+          final bool exists = sqliteInvestments.any(
+            (InvestmentAsset item) => item.id == investment.id,
+          );
+          if (!exists) {
+            _recordDebugWriteFailure(
+              'Investment update verification failed for id=${investment.id}',
+            );
+          }
+        }
+        _state = _state.copyWith(
+          investments: sqliteInvestments.isNotEmpty
+              ? sqliteInvestments
+              : _state.investments
+                    .map(
+                      (InvestmentAsset entry) =>
+                          entry.id == investment.id ? investment : entry,
+                    )
+                    .toList(growable: false),
+        );
+        await _finalizeLocalWrite(previousState: previousState);
+        return;
+      } catch (error, stackTrace) {
+        debugPrint(
+          'AppStateController.updateInvestment: failed to mirror investment to SQLite. '
+          'Continuing with JSON compatibility save. Error: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+      }
+    }
     final List<InvestmentAsset> next = _state.investments
         .map(
           (InvestmentAsset entry) =>
@@ -1852,6 +4497,31 @@ class AppStateController extends ChangeNotifier {
   }
 
   Future<void> deleteInvestment(String investmentId) async {
+    if (_useSqliteLocalStore && localInvestmentsRepository != null) {
+      final AppStateModel previousState = _state;
+      try {
+        await localInvestmentsRepository!.deleteInvestment(investmentId);
+        final List<InvestmentAsset> sqliteInvestments =
+            await localInvestmentsRepository!.getActiveInvestments();
+        if (kDebugMode &&
+            sqliteInvestments.any(
+              (InvestmentAsset item) => item.id == investmentId,
+            )) {
+          _recordDebugWriteFailure(
+            'Investment delete verification failed for id=$investmentId',
+          );
+        }
+        _state = _state.copyWith(investments: sqliteInvestments);
+        await _finalizeLocalWrite(previousState: previousState);
+        return;
+      } catch (error, stackTrace) {
+        debugPrint(
+          'AppStateController.deleteInvestment: failed to mirror investment delete to SQLite. '
+          'Continuing with JSON compatibility save. Error: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+      }
+    }
     final List<InvestmentAsset> next = _state.investments
         .where((InvestmentAsset entry) => entry.id != investmentId)
         .toList(growable: false);
@@ -1859,6 +4529,45 @@ class AppStateController extends ChangeNotifier {
   }
 
   Future<void> addRecurringTransaction(RecurringTransaction recurring) async {
+    if (_useSqliteLocalStore && localRecurringTransactionsRepository != null) {
+      final AppStateModel previousState = _state;
+      try {
+        await localRecurringTransactionsRepository!.saveRecurringTransaction(
+          recurring,
+        );
+        final List<RecurringTransaction> sqliteRecurring =
+            await localRecurringTransactionsRepository!
+                .getActiveRecurringTransactions();
+        final List<RecurringTransaction> nextRecurring =
+            _upsertRecurringTransactionInList(sqliteRecurring, recurring);
+        if (kDebugMode) {
+          final bool exists = nextRecurring.any(
+            (RecurringTransaction item) => item.id == recurring.id,
+          );
+          if (!exists) {
+            _recordDebugWriteFailure(
+              'Recurring transaction write verification failed for id=${recurring.id}',
+            );
+          }
+        }
+        _state = _state.copyWith(
+          recurringTransactions: nextRecurring.isNotEmpty
+              ? nextRecurring
+              : <RecurringTransaction>[
+                  ..._state.recurringTransactions,
+                  recurring,
+                ],
+        );
+        await _finalizeLocalWrite(previousState: previousState);
+        return;
+      } catch (error, stackTrace) {
+        debugPrint(
+          'AppStateController.addRecurringTransaction: failed to mirror recurring transaction to SQLite. '
+          'Continuing with JSON compatibility save. Error: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+      }
+    }
     await updateState(
       _state.copyWith(
         recurringTransactions: <RecurringTransaction>[
@@ -1872,6 +4581,47 @@ class AppStateController extends ChangeNotifier {
   Future<void> updateRecurringTransaction(
     RecurringTransaction recurring,
   ) async {
+    if (_useSqliteLocalStore && localRecurringTransactionsRepository != null) {
+      final AppStateModel previousState = _state;
+      try {
+        await localRecurringTransactionsRepository!.saveRecurringTransaction(
+          recurring,
+        );
+        final List<RecurringTransaction> sqliteRecurring =
+            await localRecurringTransactionsRepository!
+                .getActiveRecurringTransactions();
+        final List<RecurringTransaction> nextRecurring =
+            _upsertRecurringTransactionInList(sqliteRecurring, recurring);
+        if (kDebugMode) {
+          final bool exists = nextRecurring.any(
+            (RecurringTransaction item) => item.id == recurring.id,
+          );
+          if (!exists) {
+            _recordDebugWriteFailure(
+              'Recurring transaction update verification failed for id=${recurring.id}',
+            );
+          }
+        }
+        _state = _state.copyWith(
+          recurringTransactions: nextRecurring.isNotEmpty
+              ? nextRecurring
+              : _state.recurringTransactions
+                    .map(
+                      (RecurringTransaction entry) =>
+                          entry.id == recurring.id ? recurring : entry,
+                    )
+                    .toList(growable: false),
+        );
+        await _finalizeLocalWrite(previousState: previousState);
+        return;
+      } catch (error, stackTrace) {
+        debugPrint(
+          'AppStateController.updateRecurringTransaction: failed to mirror recurring transaction to SQLite. '
+          'Continuing with JSON compatibility save. Error: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+      }
+    }
     final List<RecurringTransaction> next = _state.recurringTransactions
         .map(
           (RecurringTransaction entry) =>
@@ -1881,7 +4631,44 @@ class AppStateController extends ChangeNotifier {
     await updateState(_state.copyWith(recurringTransactions: next));
   }
 
+  List<RecurringTransaction> _upsertRecurringTransactionInList(
+    List<RecurringTransaction> items,
+    RecurringTransaction recurring,
+  ) {
+    final List<RecurringTransaction> next = items
+        .where((RecurringTransaction item) => item.id != recurring.id)
+        .toList(growable: true);
+    next.add(recurring);
+    return next;
+  }
+
   Future<void> deleteRecurringTransaction(String recurringId) async {
+    if (_useSqliteLocalStore && localRecurringTransactionsRepository != null) {
+      final AppStateModel previousState = _state;
+      try {
+        await localRecurringTransactionsRepository!.deleteRecurringTransaction(
+          recurringId,
+        );
+        final List<RecurringTransaction> sqliteRecurring =
+            await localRecurringTransactionsRepository!
+                .getActiveRecurringTransactions();
+        if (kDebugMode &&
+            sqliteRecurring.any((item) => item.id == recurringId)) {
+          _recordDebugWriteFailure(
+            'Recurring transaction delete verification failed for id=$recurringId',
+          );
+        }
+        _state = _state.copyWith(recurringTransactions: sqliteRecurring);
+        await _finalizeLocalWrite(previousState: previousState);
+        return;
+      } catch (error, stackTrace) {
+        debugPrint(
+          'AppStateController.deleteRecurringTransaction: failed to mirror recurring transaction delete to SQLite. '
+          'Continuing with JSON compatibility save. Error: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+      }
+    }
     final List<RecurringTransaction> next = _state.recurringTransactions
         .where((RecurringTransaction entry) => entry.id != recurringId)
         .toList(growable: false);
@@ -2090,13 +4877,18 @@ class AppStateController extends ChangeNotifier {
   }
 
   AppStateModel _stateForPersistence(AppStateModel state) {
+    AppStateModel result = state;
+
     final Map<String, dynamic>? aiSettings = state.aiSettings;
-    if (aiSettings == null) return state;
-    final Map<String, dynamic> sanitized = Map<String, dynamic>.from(
-      aiSettings,
-    );
-    sanitized.remove('keys');
-    return state.copyWith(aiSettings: sanitized);
+    if (aiSettings != null) {
+      final Map<String, dynamic> sanitized = Map<String, dynamic>.from(
+        aiSettings,
+      );
+      sanitized.remove('keys');
+      result = result.copyWith(aiSettings: sanitized);
+    }
+
+    return result;
   }
 
   Future<AppStateModel> _hydrateAiSettingsFromSecureStorage(
@@ -2381,6 +5173,7 @@ class AppStateController extends ChangeNotifier {
             description: description,
             noZakat: i.noZakat,
             createdAt: i.createdAt,
+            yearlyGrowthRate: i.yearlyGrowthRate,
           );
         }
         return i;
@@ -2711,6 +5504,11 @@ class AppStateController extends ChangeNotifier {
               approvalSource: ApprovalSource.manual,
               reviewedAt: timestampStr,
               linkedTransactionId: generatedRecordId,
+              suggestedType: type,
+              suggestedAmount: amount,
+              suggestedCurrency: currency.trim().toUpperCase(),
+              suggestedDescription: description,
+              suggestedCategory: category,
             );
           }
           return t;
@@ -3244,6 +6042,15 @@ class AppStateController extends ChangeNotifier {
           captureAnalytics: nextAnalytics,
         ),
       );
+      await _smartCaptureAlertService.notifyPendingReview(
+        pendingTransaction: transaction,
+        pendingReviewCount: _state.pendingTransactions
+            .where(
+              (PendingTransaction item) =>
+                  item.status == CaptureStatus.pendingReview,
+            )
+            .length,
+      );
       if (source == PendingTransactionSource.shortcut) {
         _logShortcutStateSnapshot('pending_review');
       }
@@ -3265,10 +6072,11 @@ class AppStateController extends ChangeNotifier {
     );
   }
 
-  double getAvailableBalance({required String currency}) {
+  double getAvailableBalance({required String currency, String? date}) {
     return reconciliationService.getAvailableCashBalance(
       state: _state,
       currency: currency,
+      asOfDate: date,
     );
   }
 
@@ -3347,12 +6155,71 @@ class AppStateController extends ChangeNotifier {
     await updateState(out.state);
   }
 
+  Future<void> markInstallmentPaid({
+    required String assetId,
+    required int installmentIndex,
+  }) async {
+    final MarketData market = MarketData.fromJson(_state.marketData);
+    final ReconciliationResult out = reconciliationService.markInstallmentPaid(
+      input: _state,
+      assetId: assetId,
+      installmentIndex: installmentIndex,
+      marketData: market,
+    );
+    if (!out.modified) return;
+    await updateState(out.state);
+  }
+
+  Future<void> payInstallment({
+    required String assetId,
+    required int installmentIndex,
+    required String paymentCategory,
+  }) async {
+    final MarketData market = MarketData.fromJson(_state.marketData);
+    final ReconciliationResult out = reconciliationService.payInstallment(
+      input: _state,
+      assetId: assetId,
+      installmentIndex: installmentIndex,
+      paymentCategory: paymentCategory,
+      marketData: market,
+    );
+    if (!out.modified) return;
+    await updateState(out.state);
+  }
+
   Future<void> toggleZakatPaid({
     required String monthKey,
     required double zakatAmountMainCurrency,
     required String paymentDate,
   }) async {
     final ReconciliationResult out = reconciliationService.toggleZakatPaid(
+      input: _state,
+      monthKey: monthKey,
+      zakatAmountMainCurrency: zakatAmountMainCurrency,
+      mainCurrency: _state.mainCurrency.trim().isEmpty
+          ? 'EGP'
+          : _state.mainCurrency,
+      paymentDate: paymentDate,
+    );
+    if (!out.modified) return;
+    await updateState(out.state);
+  }
+
+  Future<void> markZakatPaid({required String monthKey}) async {
+    final ReconciliationResult out = reconciliationService.markZakatPaid(
+      input: _state,
+      monthKey: monthKey,
+    );
+    if (!out.modified) return;
+    await updateState(out.state);
+  }
+
+  Future<void> payZakat({
+    required String monthKey,
+    required double zakatAmountMainCurrency,
+    required String paymentDate,
+  }) async {
+    final ReconciliationResult out = reconciliationService.payZakat(
       input: _state,
       monthKey: monthKey,
       zakatAmountMainCurrency: zakatAmountMainCurrency,
@@ -3380,6 +6247,92 @@ class AppStateController extends ChangeNotifier {
         '[ExchangeDebug][executeCurrencyExchange] date=$normalizedDate source=$sourceCurrency $sourceAmount target=$targetCurrency $targetAmount',
       );
     }
+
+    if (_useSqliteLocalStore && localFinancialOperationsRepository != null) {
+      final AppStateModel previousState = _state;
+      try {
+        final ReconciliationResult out = reconciliationService
+            .executeCurrencyExchange(
+              input: _state,
+              date: normalizedDate,
+              sourceCurrency: sourceCurrency,
+              targetCurrency: targetCurrency,
+              sourceAmount: sourceAmount,
+              targetAmount: targetAmount,
+            );
+
+        if (out.modified) {
+          final Set<String> oldTxIds = _state.transactions
+              .map((tx) => tx.id)
+              .toSet();
+          final Set<String> oldSavingIds = _state.savings
+              .map((s) => s.id)
+              .toSet();
+
+          final List<Transaction> newTxRows = out.state.transactions
+              .where((tx) => !oldTxIds.contains(tx.id))
+              .toList();
+          final List<Saving> newSavingRows = out.state.savings
+              .where((s) => !oldSavingIds.contains(s.id))
+              .toList();
+
+          final String? sourceSavingId = newSavingRows
+              .map((s) => s.exchangeSourceSavingId)
+              .firstWhere((id) => id != null, orElse: () => null);
+
+          final String newActivityId = newTxRows.isNotEmpty
+              ? (newTxRows.first.exchangePairId ?? '')
+              : (newSavingRows.isNotEmpty
+                    ? (newSavingRows.first.transferActivityId ?? '')
+                    : '');
+
+          final double exchangeRate = sourceAmount > 0
+              ? targetAmount / sourceAmount
+              : 0.0;
+          final String description =
+              'Currency exchange: $sourceAmount $sourceCurrency → $targetAmount $targetCurrency';
+
+          final CurrencyExchangeOperation newOperation =
+              CurrencyExchangeOperation(
+                activityId: newActivityId,
+                sourceSavingId: sourceSavingId,
+                sourceCurrency: sourceCurrency,
+                targetCurrency: targetCurrency,
+                sourceAmountText: sourceAmount.toString(),
+                targetAmountText: targetAmount.toString(),
+                exchangeRateText: exchangeRate.toString(),
+                date: normalizedDate,
+                description: description,
+                generatedTransactionRows: newTxRows,
+                generatedTargetSavingRows: newSavingRows,
+              );
+
+          final FinancialOperationResult result =
+              await localFinancialOperationsRepository!.recordCurrencyExchange(
+                newOperation,
+              );
+
+          _state = _state.copyWith(
+            transactions: result.transactions,
+            savings: result.savings,
+            lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
+          );
+          await _finalizeLocalWrite(
+            previousState: previousState,
+            transactionChanged: true,
+            savingChanged: true,
+          );
+        }
+      } catch (error, stackTrace) {
+        debugPrint(
+          'AppStateController: SQLite currency exchange execute failed. '
+          'State left unchanged. Error: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+      }
+      return;
+    }
+
     final ReconciliationResult out = reconciliationService
         .executeCurrencyExchange(
           input: _state,
@@ -3530,6 +6483,580 @@ class AppStateController extends ChangeNotifier {
       return diff.inSeconds >= 0 && diff < marketRefreshInterval;
     } catch (_) {
       return false;
+    }
+  }
+
+  Future<void> printLocalFirstDebugStatus() async {
+    final AppDiagnosticsSnapshot diagnostics = await collectDiagnostics();
+    print('=== LOCAL-FIRST DEBUG STATUS ===');
+    print('Firebase UID: ${diagnostics.firebaseUid}');
+    print(
+      'SQLite Database File: ${diagnostics.databaseFileName} (${diagnostics.databasePath ?? 'unavailable'})',
+    );
+    print('SQLite gate active: ${diagnostics.sqliteGateActive}');
+    print(
+      'Runtime JSON collections stripped: ${diagnostics.runtimeJsonCollectionsStripped}',
+    );
+    print(
+      'Runtime JSON fallback size: ${diagnostics.runtimeJsonFallbackSizeBytes} bytes',
+    );
+    print('Migration completed_at: ${diagnostics.migrationCompletedAt}');
+    print('sync_queue ready count: ${diagnostics.syncQueueReadyCount}');
+    print('sync_queue retry count: ${diagnostics.syncQueueRetryCount}');
+    print('last_sync_success_at: ${diagnostics.lastSyncSuccessAt}');
+    print('Collection sources: ${diagnostics.collectionSources}');
+    print('All Sync Cursors: ${diagnostics.syncCursors}');
+    print('Row counts: ${diagnostics.tableRowCounts}');
+    print('Write failures: ${diagnostics.writeFailures}');
+    print('================================');
+  }
+
+  Future<AppDiagnosticsSnapshot> collectDiagnostics() async {
+    final AppDatabase? db = _database;
+    final String jsonKey =
+        StorageKeys.appStateKeyForUser(_state.userId) ??
+        StorageKeys.appStateAnonymousKey;
+    String? raw;
+    try {
+      raw = await repository.localStorage.loadString(jsonKey);
+    } catch (_) {
+      raw = null;
+    }
+
+    final Map<String, int> tableCounts = <String, int>{
+      'transactions': 0,
+      'savings': 0,
+      'investments': 0,
+      'pending_transactions': 0,
+      'financial_plans': 0,
+      'recurring_transactions': 0,
+      'merchant_rules': 0,
+      'merchant_confirmations': 0,
+      'correction_feedback': 0,
+      'app_settings': 0,
+      'sync_queue': 0,
+    };
+    String migrationCompletedAt = '';
+    int syncQueueReady = 0;
+    int syncQueueRetry = 0;
+    String lastSyncSuccessAt = _state.syncHealth.lastSuccessAt;
+    Map<String, String> syncCursors = _fallbackSyncCursorSnapshot();
+
+    if (db != null) {
+      final SyncMetadataDao syncMetadataDao = SyncMetadataDao(db);
+      tableCounts['transactions'] = await db
+          .select(db.transactions)
+          .get()
+          .then((r) => r.length);
+      tableCounts['savings'] = await db
+          .select(db.savings)
+          .get()
+          .then((r) => r.length);
+      tableCounts['investments'] = await db
+          .select(db.investments)
+          .get()
+          .then((r) => r.length);
+      tableCounts['pending_transactions'] = await db
+          .select(db.pendingTransactions)
+          .get()
+          .then((r) => r.length);
+      tableCounts['financial_plans'] = await db
+          .select(db.financialPlans)
+          .get()
+          .then((r) => r.length);
+      tableCounts['recurring_transactions'] = await db
+          .select(db.recurringTransactions)
+          .get()
+          .then((r) => r.length);
+      tableCounts['merchant_rules'] = await db
+          .select(db.merchantRules)
+          .get()
+          .then((r) => r.length);
+      tableCounts['merchant_confirmations'] = await db
+          .select(db.merchantConfirmations)
+          .get()
+          .then((r) => r.length);
+      tableCounts['correction_feedback'] = await db
+          .select(db.correctionFeedbacks)
+          .get()
+          .then((r) => r.length);
+      tableCounts['app_settings'] = await db
+          .select(db.appSettings)
+          .get()
+          .then((r) => r.length);
+      tableCounts['sync_queue'] = await db
+          .select(db.syncQueue)
+          .get()
+          .then((r) => r.length);
+
+      final String nowStr = DateTime.now().toUtc().toIso8601String();
+      syncQueueReady =
+          await (db.select(db.syncQueue)
+                ..where((tbl) => tbl.availableAt.isSmallerOrEqualValue(nowStr)))
+              .get()
+              .then((r) => r.length);
+      syncQueueRetry =
+          await (db.select(db.syncQueue)
+                ..where((tbl) => tbl.attemptCount.isBiggerThanValue(0)))
+              .get()
+              .then((r) => r.length);
+      migrationCompletedAt =
+          await (db.select(db.migrationState)..where(
+                (tbl) => tbl.key.equals('json_to_sqlite_v1_completed_at'),
+              ))
+              .getSingleOrNull()
+              .then((row) => row?.value ?? '');
+      lastSyncSuccessAt =
+          await (db.select(db.syncMetadata)
+                ..where((tbl) => tbl.key.equals(lastSyncSuccessAtKey)))
+              .getSingleOrNull()
+              .then((row) => row?.value ?? lastSyncSuccessAt);
+      syncCursors = await _readPersistedSyncCursors(syncMetadataDao);
+    }
+    final String lastPushSuccessAt = await _lastPushSuccessAt();
+    final String lastPullSuccessAt = await _lastPullSuccessAt();
+    final bool nextAutoPullAllowed = await _nextAutoPullAllowed();
+
+    final String? databasePath = db == null
+        ? null
+        : await db.resolveDatabasePath();
+    return AppDiagnosticsSnapshot(
+      firebaseUid: _state.userId ?? '',
+      databaseFileName: db?.fileName ?? 'unavailable',
+      databasePath: databasePath,
+      sqliteGateActive: _useSqliteLocalStore,
+      migrationCompletedAt: migrationCompletedAt,
+      runtimeJsonFallbackSizeBytes: raw?.length ?? 0,
+      runtimeJsonCollectionsStripped: false,
+      tableRowCounts: tableCounts,
+      syncQueueReadyCount: syncQueueReady,
+      syncQueueRetryCount: syncQueueRetry,
+      lastSyncSuccessAt: lastSyncSuccessAt,
+      lastPushSuccessAt: lastPushSuccessAt,
+      lastPullSuccessAt: lastPullSuccessAt,
+      nextAutoPullAllowed: nextAutoPullAllowed,
+      lastTriggerReason: _lastSyncTriggerReason,
+      pullSkippedDueToThrottle: _lastSyncPullSkippedDueToThrottle,
+      queueCountBeforeTrigger: _lastSyncQueueCountBeforeTrigger,
+      lastSyncError: _state.syncHealth.lastError,
+      syncCursors: syncCursors,
+      collectionSources: Map<String, String>.from(_collectionSources),
+      writeFailures: List<String>.unmodifiable(_debugWriteFailures),
+    );
+  }
+
+  Future<DebugDiagnosticsReport> collectDebugDiagnostics({
+    bool includeFirebaseSavingsComparison = false,
+  }) async {
+    final AppDatabase? db = _database;
+    final List<String> errors = <String>[];
+    final Map<String, dynamic> syncState =
+        await SyncDiagnosticsService.readState();
+
+    final String currentUserId = _state.userId ?? '';
+    final bool sqliteActive = _sqliteEnabled && db != null;
+    final bool syncEnabled =
+        firestoreSyncManager != null && currentUserId.trim().isNotEmpty;
+    final Map<String, String> syncCursors = db == null
+        ? _fallbackSyncCursorSnapshot()
+        : await _readPersistedSyncCursors(SyncMetadataDao(db));
+
+    final String databasePath = db == null
+        ? ''
+        : (await db.resolveDatabasePath() ?? '');
+
+    final List<Saving> localSavings = _localSavingsRepository != null
+        ? await _localSavingsRepository!.getActiveSavings()
+        : List<Saving>.from(_state.savings);
+
+    List<Saving> firebaseSavings = <Saving>[];
+    if (includeFirebaseSavingsComparison &&
+        syncEnabled &&
+        firestoreSyncManager != null) {
+      try {
+        firebaseSavings = await firestoreSyncManager!.loadCollection<Saving>(
+          uid: currentUserId,
+          collection: FirestoreSyncManager.savingsCollection,
+          decoder: (String id, Map<String, dynamic> json) {
+            return Saving.fromJson(<String, dynamic>{'id': id, ...json});
+          },
+        );
+      } catch (error) {
+        errors.add('Firebase savings load failed: $error');
+      }
+    }
+
+    final DebugDiagnosticsSavingsSummary savingsSummary =
+        includeFirebaseSavingsComparison
+        ? _buildSavingsSummary(localSavings, firebaseSavings)
+        : _buildSavingsSummary(localSavings, <Saving>[]);
+    final DebugDiagnosticsSavingsSummary preciousMetalsSummary =
+        includeFirebaseSavingsComparison
+        ? _buildPreciousMetalsSummary(localSavings, firebaseSavings)
+        : _buildPreciousMetalsSummary(localSavings, <Saving>[]);
+    final DebugDiagnosticsSavingsComparison comparison =
+        includeFirebaseSavingsComparison
+        ? DebugDiagnosticsSavingsComparison.compare(
+            localSavings: localSavings,
+            firebaseSavings: firebaseSavings,
+          )
+        : const DebugDiagnosticsSavingsComparison(
+            missingFromFirebaseIds: <String>[],
+            missingLocallyIds: <String>[],
+            mismatches: <DebugDiagnosticsSavingsMismatch>[],
+          );
+
+    final String lastPushSuccessAt = await _lastPushSuccessAt();
+    final String lastPullSuccessAt = await _lastPullSuccessAt();
+    final bool nextAutoPullAllowed = await _nextAutoPullAllowed();
+
+    final int pendingSyncQueueCount = db == null
+        ? 0
+        : await (db.select(db.syncQueue)).get().then((rows) => rows.length);
+    final int syncQueueRetryCount = db == null
+        ? 0
+        : await (db.select(db.syncQueue)
+                ..where((tbl) => tbl.attemptCount.isBiggerThanValue(0)))
+              .get()
+              .then((rows) => rows.length);
+
+    final String lastSavingsPayload = (syncState['lastSavingsPayload'] ?? '')
+        .toString();
+    final String lastSavingsResponse = (syncState['lastSavingsResponse'] ?? '')
+        .toString();
+    final String lastSavingsError = (syncState['lastSavingsError'] ?? '')
+        .toString();
+    final String lastSavingsWritePath =
+        (syncState['lastSavingsWritePath'] ?? '').toString();
+    final String lastSavingsWriteDocumentId =
+        (syncState['lastSavingsWriteDocumentId'] ?? '').toString();
+    final String firebaseSavingsPath =
+        syncEnabled && firestoreSyncManager != null
+        ? firestoreSyncManager!.savingsCollectionPath(currentUserId)
+        : '';
+    final bool localCountGreaterThanFirebaseCount =
+        includeFirebaseSavingsComparison
+        ? localSavings.length > firebaseSavings.length
+        : false;
+    final bool autoRepairRecommended =
+        includeFirebaseSavingsComparison &&
+        localCountGreaterThanFirebaseCount &&
+        pendingSyncQueueCount == 0;
+
+    final MarketSnapshot marketSnapshot = currentMarketSnapshot;
+    final double latestGoldPrice = marketSnapshot.gold24kPricePerGramEgp;
+    final double latestSilverPrice = marketSnapshot.silverPricePerGramEgp;
+    final bool goldApiKeyConfigured = const String.fromEnvironment(
+      'GOLD_API_KEY',
+    ).trim().isNotEmpty;
+    final String marketStatus = marketSnapshot.hasRequiredData
+        ? 'cached'
+        : (latestGoldPrice > 0 || latestSilverPrice > 0)
+        ? 'partial'
+        : 'unavailable';
+
+    final List<SyncDiagnosticsLogEntry> recentLogs =
+        await SyncDiagnosticsService.readLogs(limit: 100);
+
+    final DebugDiagnosticsReport report = DebugDiagnosticsReport(
+      generatedAtUtc: DateTime.now().toUtc().toIso8601String(),
+      app: DebugDiagnosticsAppInfo(
+        version: const String.fromEnvironment(
+          'APP_VERSION',
+          defaultValue: '1.0.0',
+        ),
+        buildNumber: const String.fromEnvironment(
+          'APP_BUILD_NUMBER',
+          defaultValue: '1',
+        ),
+        platform: kIsWeb ? 'web' : defaultTargetPlatform.name,
+        device: kIsWeb ? 'web' : defaultTargetPlatform.name,
+        operatingSystemVersion: kIsWeb
+            ? 'web'
+            : Platform.operatingSystemVersion,
+        dartVersion: const String.fromEnvironment(
+          'DART_VERSION',
+          defaultValue: 'unknown',
+        ),
+      ),
+      auth: DebugDiagnosticsAuthInfo(
+        state: _buildAuthState(),
+        userId: currentUserId,
+        providerIds: _currentProviderIds(),
+        isSignedIn: currentUserId.isNotEmpty,
+      ),
+      firebase: _buildFirebaseInfo(),
+      storage: DebugDiagnosticsStorageInfo(
+        sqliteActive: sqliteActive,
+        databaseFileName: db?.fileName ?? 'unavailable',
+        databasePath: databasePath.isEmpty ? null : databasePath,
+        syncEnabled: syncEnabled,
+        pendingSyncQueueCount: pendingSyncQueueCount,
+        syncQueueRetryCount: syncQueueRetryCount,
+        lastSuccessfulSyncAt: _state.syncHealth.lastSuccessAt,
+        lastFailedSyncAt: _state.syncHealth.lastFailureAt,
+        lastSyncError: _state.syncHealth.lastError,
+      ),
+      syncPolicy: DebugDiagnosticsSyncPolicy(
+        lastPushSuccessAt: lastPushSuccessAt,
+        lastPullSuccessAt: lastPullSuccessAt,
+        nextAutoPullAllowed: nextAutoPullAllowed,
+        lastTriggerReason: _lastSyncTriggerReason,
+        pullSkippedDueToThrottle: _lastSyncPullSkippedDueToThrottle,
+        queueCountBeforeTrigger: _lastSyncQueueCountBeforeTrigger,
+      ),
+      syncHealth: DebugDiagnosticsSyncHealth(
+        pendingWrites: _state.syncHealth.pendingWrites,
+        cursors: syncCursors,
+      ),
+      savingsSummary: savingsSummary,
+      preciousMetalsSummary: preciousMetalsSummary,
+      comparison: comparison,
+      marketData: DebugDiagnosticsMarketData(
+        status: marketStatus,
+        goldApiKeyConfigured: goldApiKeyConfigured,
+        latestCachedGoldPrice: latestGoldPrice > 0 ? latestGoldPrice : null,
+        latestCachedSilverPrice: latestSilverPrice > 0
+            ? latestSilverPrice
+            : null,
+        rawSnapshot: Map<String, dynamic>.from(_state.marketData),
+      ),
+      firebaseSavingsReadPath: firebaseSavingsPath,
+      firebaseSavingsWritePath: firebaseSavingsPath,
+      pullSyncSavingsPath: firebaseSavingsPath,
+      lastSavingsWritePath: lastSavingsWritePath.isEmpty
+          ? firebaseSavingsPath
+          : lastSavingsWritePath,
+      lastSavingsWritePayload: lastSavingsPayload,
+      lastSavingsWriteSuccessDocumentId: lastSavingsWriteDocumentId,
+      lastSavingsWriteError: lastSavingsError,
+      recentSavingsPayloadJson: lastSavingsPayload,
+      recentSavingsResponse: lastSavingsResponse,
+      recentSavingsError: lastSavingsError,
+      recentSyncLogs: recentLogs,
+      collectionSources: Map<String, String>.from(_collectionSources),
+      writeFailures: List<String>.unmodifiable(_debugWriteFailures),
+      savingsCursorValue: _state.syncHealth.savingsCursor,
+      deletedSavingsCursorValue: _state.syncHealth.deletedSavingsCursor,
+      localCountGreaterThanFirebaseCount: localCountGreaterThanFirebaseCount,
+      autoRepairRecommended: autoRepairRecommended,
+      firebaseSavingsComparisonLoaded: includeFirebaseSavingsComparison,
+    );
+
+    if (errors.isNotEmpty) {
+      return DebugDiagnosticsReport(
+        generatedAtUtc: report.generatedAtUtc,
+        app: report.app,
+        auth: report.auth,
+        firebase: report.firebase,
+        storage: report.storage,
+        syncPolicy: report.syncPolicy,
+        syncHealth: report.syncHealth,
+        savingsSummary: report.savingsSummary,
+        preciousMetalsSummary: report.preciousMetalsSummary,
+        comparison: report.comparison,
+        marketData: report.marketData,
+        firebaseSavingsReadPath: report.firebaseSavingsReadPath,
+        firebaseSavingsWritePath: report.firebaseSavingsWritePath,
+        pullSyncSavingsPath: report.pullSyncSavingsPath,
+        lastSavingsWritePath: report.lastSavingsWritePath,
+        lastSavingsWritePayload: report.lastSavingsWritePayload,
+        lastSavingsWriteSuccessDocumentId:
+            report.lastSavingsWriteSuccessDocumentId,
+        lastSavingsWriteError: report.lastSavingsWriteError,
+        recentSavingsPayloadJson: report.recentSavingsPayloadJson,
+        recentSavingsResponse: report.recentSavingsResponse,
+        recentSavingsError: report.recentSavingsError.isEmpty
+            ? errors.join(' | ')
+            : report.recentSavingsError,
+        recentSyncLogs: report.recentSyncLogs,
+        collectionSources: report.collectionSources,
+        writeFailures: <String>[...report.writeFailures, ...errors],
+        savingsCursorValue: report.savingsCursorValue,
+        deletedSavingsCursorValue: report.deletedSavingsCursorValue,
+        localCountGreaterThanFirebaseCount:
+            report.localCountGreaterThanFirebaseCount,
+        autoRepairRecommended: report.autoRepairRecommended,
+        firebaseSavingsComparisonLoaded: report.firebaseSavingsComparisonLoaded,
+      );
+    }
+
+    return report;
+  }
+
+  Future<String> _lastPushSuccessAt() async {
+    final LocalSyncPipeline? pipeline = localSyncPipeline;
+    if (pipeline == null) return '';
+    final String? value = await pipeline.lastPushSuccessAt();
+    return value ?? '';
+  }
+
+  Future<String> _lastPullSuccessAt() async {
+    final LocalSyncPipeline? pipeline = localSyncPipeline;
+    if (pipeline == null) return '';
+    final String? value = await pipeline.lastPullSuccessAt();
+    return value ?? '';
+  }
+
+  Future<bool> _nextAutoPullAllowed() async {
+    final LocalSyncPipeline? pipeline = localSyncPipeline;
+    if (pipeline == null) return false;
+    return pipeline.shouldPullNow();
+  }
+
+  Map<String, String> _fallbackSyncCursorSnapshot() {
+    return <String, String>{
+      'transactions_cursor': _state.syncHealth.transactionsCursor,
+      'transactions_deleted_cursor':
+          _state.syncHealth.deletedTransactionsCursor,
+      'savings_cursor': _state.syncHealth.savingsCursor,
+      'savings_deleted_cursor': _state.syncHealth.deletedSavingsCursor,
+      'investments_cursor': _state.syncHealth.investmentsCursor,
+      'investments_deleted_cursor': _state.syncHealth.deletedInvestmentsCursor,
+      'pending_transactions_cursor': _state.syncHealth.captureInboxCursor,
+      'pending_transactions_deleted_cursor':
+          _state.syncHealth.deletedCaptureInboxCursor,
+      'recurring_transactions_cursor':
+          _state.syncHealth.recurringTransactionsCursor,
+      'recurring_transactions_deleted_cursor':
+          _state.syncHealth.deletedRecurringTransactionsCursor,
+      'financial_plans_cursor': _state.syncHealth.financialPlansCursor,
+      'financial_plans_deleted_cursor':
+          _state.syncHealth.deletedFinancialPlansCursor,
+      'correction_feedback_cursor': _state.syncHealth.correctionFeedbackCursor,
+      'correction_feedback_deleted_cursor':
+          _state.syncHealth.deletedCorrectionFeedbackCursor,
+      'merchant_confirmations_cursor':
+          _state.syncHealth.merchantConfirmationsCursor,
+      'merchant_confirmations_deleted_cursor':
+          _state.syncHealth.deletedMerchantConfirmationsCursor,
+      'merchant_rules_cursor': _state.syncHealth.merchantRulesCursor,
+      'merchant_rules_deleted_cursor':
+          _state.syncHealth.deletedMerchantRulesCursor,
+    };
+  }
+
+  Future<Map<String, String>> _readPersistedSyncCursors(
+    SyncMetadataDao syncMetadataDao,
+  ) async {
+    final Map<String, String> cursors = <String, String>{};
+    final List<String> collections = <String>[
+      'transactions',
+      'savings',
+      'investments',
+      'pending_transactions',
+      'recurring_transactions',
+      'financial_plans',
+      'merchant_rules',
+      'merchant_confirmations',
+      'correction_feedback',
+    ];
+    for (final String collection in collections) {
+      cursors[syncCursorKeyFor(collection)] =
+          await syncMetadataDao.getCursor(collection) ?? '';
+      cursors[syncDeletedCursorKeyFor(collection)] =
+          await syncMetadataDao.getDeletedCursor(collection) ?? '';
+    }
+    return cursors;
+  }
+
+  DebugDiagnosticsSavingsSummary _buildSavingsSummary(
+    List<Saving> localSavings,
+    List<Saving> firebaseSavings,
+  ) {
+    return DebugDiagnosticsSavingsSummary(
+      localCount: localSavings.length,
+      firebaseCount: firebaseSavings.length,
+      localIds: localSavings
+          .map((Saving saving) => saving.id)
+          .toList(growable: false),
+      firebaseIds: firebaseSavings
+          .map((Saving saving) => saving.id)
+          .toList(growable: false),
+      localGoldCount: _countByAssetType(localSavings, 'gold'),
+      firebaseGoldCount: _countByAssetType(firebaseSavings, 'gold'),
+      localSilverCount: _countByAssetType(localSavings, 'silver'),
+      firebaseSilverCount: _countByAssetType(firebaseSavings, 'silver'),
+    );
+  }
+
+  DebugDiagnosticsSavingsSummary _buildPreciousMetalsSummary(
+    List<Saving> localSavings,
+    List<Saving> firebaseSavings,
+  ) {
+    final List<Saving> localMetals = localSavings
+        .where((Saving saving) => _isPreciousMetal(saving.assetType))
+        .toList(growable: false);
+    final List<Saving> firebaseMetals = firebaseSavings
+        .where((Saving saving) => _isPreciousMetal(saving.assetType))
+        .toList(growable: false);
+    return DebugDiagnosticsSavingsSummary(
+      localCount: localMetals.length,
+      firebaseCount: firebaseMetals.length,
+      localIds: localMetals
+          .map((Saving saving) => saving.id)
+          .toList(growable: false),
+      firebaseIds: firebaseMetals
+          .map((Saving saving) => saving.id)
+          .toList(growable: false),
+      localGoldCount: _countByAssetType(localMetals, 'gold'),
+      firebaseGoldCount: _countByAssetType(firebaseMetals, 'gold'),
+      localSilverCount: _countByAssetType(localMetals, 'silver'),
+      firebaseSilverCount: _countByAssetType(firebaseMetals, 'silver'),
+    );
+  }
+
+  int _countByAssetType(List<Saving> savings, String assetType) {
+    return savings
+        .where(
+          (Saving saving) =>
+              saving.assetType.trim().toLowerCase() == assetType.toLowerCase(),
+        )
+        .length;
+  }
+
+  bool _isPreciousMetal(String assetType) {
+    final String normalized = assetType.trim().toLowerCase();
+    return normalized == 'gold' || normalized == 'silver';
+  }
+
+  String _buildAuthState() {
+    try {
+      final User? user = FirebaseAuth.instance.currentUser;
+      if (user == null) return 'signed-out';
+      return 'signed-in';
+    } catch (_) {
+      return 'unavailable';
+    }
+  }
+
+  List<String> _currentProviderIds() {
+    try {
+      final User? user = FirebaseAuth.instance.currentUser;
+      if (user == null) return <String>[];
+      return user.providerData
+          .map((UserInfo info) => info.providerId)
+          .where((String providerId) => providerId.trim().isNotEmpty)
+          .toList(growable: false);
+    } catch (_) {
+      return <String>[];
+    }
+  }
+
+  DebugDiagnosticsFirebaseInfo _buildFirebaseInfo() {
+    try {
+      final FirebaseApp app = Firebase.app();
+      return DebugDiagnosticsFirebaseInfo(
+        projectId: app.options.projectId,
+        appId: app.options.appId,
+        messagingSenderId: app.options.messagingSenderId,
+      );
+    } catch (_) {
+      return const DebugDiagnosticsFirebaseInfo(
+        projectId: '',
+        appId: '',
+        messagingSenderId: '',
+      );
     }
   }
 }

@@ -27,16 +27,24 @@ class _NoopMarketDataApiService implements MarketDataApiService {
 }
 
 class _FakeAuthService implements AuthService {
+  static const UserProfile _defaultUser = UserProfile(
+    id: 'test-user',
+    email: 'test@example.com',
+    displayName: 'Test User',
+    provider: 'google',
+    accessToken: 'token',
+  );
+
   @override
   Future<bool> ensureSession() async => true;
 
   @override
-  Future<UserProfile?> restoreSession() async => null;
+  Future<UserProfile?> restoreSession() async => _defaultUser;
 
   @override
   Future<UserProfile?> signIn({
     AuthProvider provider = AuthProvider.google,
-  }) async => null;
+  }) async => _defaultUser;
 
   @override
   Future<void> signOut() async {}
@@ -188,6 +196,8 @@ Widget _buildApp() {
         create: (_) => AppStateController(
           repository: repository,
           marketDataApiService: _NoopMarketDataApiService(),
+          enableBackgroundSync: false,
+          enableMarketAutoRefresh: false,
         ),
       ),
       ChangeNotifierProvider<AuthController>(
@@ -202,6 +212,8 @@ Widget _buildApp() {
 }
 
 Future<void> _openAction(WidgetTester tester, Key key) async {
+  await tester.tap(find.byKey(const Key('bottomNavTab_1')));
+  await tester.pumpAndSettle();
   await tester.tap(find.byKey(const Key('addEntryFab')));
   await tester.pumpAndSettle();
   await tester.tap(find.byKey(key));
@@ -217,6 +229,8 @@ Future<void> _addIncome(WidgetTester tester, String amount) async {
   await tester.pumpAndSettle();
   await tester.tap(find.byKey(const Key('saveTransactionButton')));
   await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const Key('bottomNavDashboardTab')));
+  await tester.pumpAndSettle();
 }
 
 Future<void> _addSaving(WidgetTester tester, String amount) async {
@@ -228,6 +242,8 @@ Future<void> _addSaving(WidgetTester tester, String amount) async {
   await tester.enterText(find.byKey(const Key('amountField')), amount);
   await tester.tap(find.byKey(const Key('saveTransactionButton')));
   await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const Key('bottomNavDashboardTab')));
+  await tester.pumpAndSettle();
 }
 
 Future<void> _addInvestment(WidgetTester tester, String value) async {
@@ -237,11 +253,13 @@ Future<void> _addInvestment(WidgetTester tester, String value) async {
     'Dashboard Property',
   );
   await tester.enterText(
-    find.byKey(const Key('investmentCurrentValueField')),
+    find.byKey(const Key('investmentPurchasePriceField')),
     value,
   );
   await tester.ensureVisible(find.byKey(const Key('saveInvestmentButton')));
   await tester.tap(find.byKey(const Key('saveInvestmentButton')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const Key('bottomNavDashboardTab')));
   await tester.pumpAndSettle();
 }
 
@@ -548,6 +566,9 @@ void main() {
     await tester.tap(find.text('Salary').last);
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('saveTransactionButton')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('bottomNavDashboardTab')));
     await tester.pumpAndSettle();
 
     expect(find.text('Market data required'), findsWidgets);

@@ -1,5 +1,7 @@
 import '../models/app_state.dart';
 import '../models/investment_asset.dart';
+import '../models/transaction.dart';
+import '../models/saving.dart';
 import '../core/services/zakat_engine.dart';
 
 class IncomeLot {
@@ -67,10 +69,19 @@ class ReconciliationService {
     required AppStateModel state,
     required String currency,
     bool newestFirst = false,
+    String? asOfDate,
   }) {
     final String normalizedCurrency = currency.trim().toUpperCase();
+
+    List<Saving> savingsList = state.savings;
+    List<Transaction> transactionsList = state.transactions;
+    if (asOfDate != null && asOfDate.isNotEmpty) {
+      savingsList = savingsList.where((s) => s.dateAcquired.compareTo(asOfDate) <= 0).toList();
+      transactionsList = transactionsList.where((tx) => tx.date.compareTo(asOfDate) <= 0).toList();
+    }
+
     final List<CashSource> sources = <CashSource>[
-      ...state.savings
+      ...savingsList
           .where(
             (saving) =>
                 _normalizeAssetType(saving.assetType) == 'cash' &&
@@ -90,7 +101,7 @@ class ReconciliationService {
             ),
           ),
       ...getNetIncomeLotsForCurrency(
-            transactions: state.transactions
+            transactions: transactionsList
                 .map((transaction) => transaction.toJson())
                 .toList(growable: false),
             currency: normalizedCurrency,
@@ -121,8 +132,8 @@ class ReconciliationService {
 
     final double targetBalance =
         ZakatEngineService.calculateCashByCurrency(
-          transactions: state.transactions,
-          savings: state.savings,
+          transactions: transactionsList,
+          savings: savingsList,
           marketData: MarketData.fromJson(state.marketData),
           lastRollover: state.lastRollover,
         )[normalizedCurrency] ??
@@ -137,14 +148,14 @@ class ReconciliationService {
     if (difference > minAmount) {
       if (sources.isEmpty) {
         final List<String> matchingDates = <String>[
-          ...state.transactions
+          ...transactionsList
               .where(
                 (transaction) =>
                     transaction.currency.trim().toUpperCase() ==
                     normalizedCurrency,
               )
               .map((transaction) => transaction.date),
-          ...state.savings
+          ...savingsList
               .where(
                 (saving) =>
                     _normalizeAssetType(saving.assetType) == 'cash' &&
@@ -218,10 +229,17 @@ class ReconciliationService {
   double getAvailableCashBalance({
     required AppStateModel state,
     required String currency,
+    String? asOfDate,
   }) {
+    List<Transaction> txList = state.transactions;
+    List<Saving> savList = state.savings;
+    if (asOfDate != null && asOfDate.isNotEmpty) {
+      txList = txList.where((tx) => tx.date.compareTo(asOfDate) <= 0).toList();
+      savList = savList.where((s) => s.dateAcquired.compareTo(asOfDate) <= 0).toList();
+    }
     return ZakatEngineService.calculateCashByCurrency(
-          transactions: state.transactions,
-          savings: state.savings,
+          transactions: txList,
+          savings: savList,
           marketData: MarketData.fromJson(state.marketData),
           lastRollover: state.lastRollover,
         )[currency.trim().toUpperCase()] ??
@@ -319,7 +337,9 @@ class ReconciliationService {
 
     final Set<String> previouslyProcessedExpenseIds = input.processedExpenseIds
         .toSet();
-    final Set<String> processedExpenseIds = <String>{};
+    final Set<String> processedExpenseIds = <String>{
+      ...previouslyProcessedExpenseIds,
+    };
 
     for (final Map<String, dynamic> metalSaving in normalizedSavings.where((
       Map<String, dynamic> s,
@@ -367,16 +387,29 @@ class ReconciliationService {
         final String? metalSavingId = tx['exchangePairId']?.toString();
         if (metalSavingId != null && metalSavingId.isNotEmpty) {
           double soldWeight = 0.0;
-          final RegExp regex = RegExp(r'([0-9.]+)\s*g');
-          final Match? match = regex.firstMatch((tx['description'] ?? '').toString());
-          if (match != null) {
-            soldWeight = double.tryParse(match.group(1) ?? '') ?? 0.0;
+          if (tx['metalQuantity'] != null) {
+            if (tx['metalQuantity'] is num) {
+              soldWeight = (tx['metalQuantity'] as num).toDouble();
+            } else {
+              soldWeight =
+                  double.tryParse(tx['metalQuantity'].toString()) ?? 0.0;
+            }
+          } else {
+            final RegExp regex = RegExp(r'([0-9.]+)\s*g');
+            final Match? match = regex.firstMatch(
+              (tx['description'] ?? '').toString(),
+            );
+            if (match != null) {
+              soldWeight = double.tryParse(match.group(1) ?? '') ?? 0.0;
+            }
           }
           if (soldWeight > 0.0) {
             for (final Map<String, dynamic> s in normalizedSavings) {
               if ((s['id'] ?? '').toString() == metalSavingId) {
                 final double currentRemaining = _asDouble(s['remainingAmount']);
-                s['remainingAmount'] = _round6(_max(0.0, currentRemaining - soldWeight));
+                s['remainingAmount'] = _round6(
+                  _max(0.0, currentRemaining - soldWeight),
+                );
                 break;
               }
             }
@@ -735,6 +768,159 @@ class ReconciliationService {
     return ReconciliationResult(state: next, modified: true);
   }
 
+  ReconciliationResult markInstallmentPaid({
+    required AppStateModel input,
+    required String assetId,
+    required int installmentIndex,
+    required MarketData marketData,
+  }) {
+    final Map<String, dynamic> state = input.toJson();
+    final List<Map<String, dynamic>> investments = _asMapList(
+      state['investments'],
+    );
+
+    final int assetIdx = investments.indexWhere(
+      (Map<String, dynamic> a) => a['id'] == assetId,
+    );
+    if (assetIdx == -1) {
+      return ReconciliationResult(state: input, modified: false);
+    }
+
+    final Map<String, dynamic> asset = Map<String, dynamic>.from(
+      investments[assetIdx],
+    );
+    final List<Map<String, dynamic>> plan = _asMapList(
+      asset['installmentPlan'],
+    );
+
+    if (installmentIndex < 0 || installmentIndex >= plan.length) {
+      return ReconciliationResult(state: input, modified: false);
+    }
+
+    final Map<String, dynamic> installment = Map<String, dynamic>.from(
+      plan[installmentIndex],
+    );
+    if (_asBool(installment['isPaid'])) {
+      return ReconciliationResult(state: input, modified: false);
+    }
+
+    installment['isPaid'] = true;
+    installment['paymentCategory'] = '';
+    installment['paidExpenseId'] = '';
+    plan[installmentIndex] = installment;
+    asset['installmentPlan'] = plan;
+
+    _syncAssetInstallmentProgress(asset, marketData);
+
+    investments[assetIdx] = asset;
+    state['investments'] = investments;
+
+    final AppStateModel next = AppStateModel.fromJson(state);
+    return ReconciliationResult(state: next, modified: true);
+  }
+
+  ReconciliationResult payInstallment({
+    required AppStateModel input,
+    required String assetId,
+    required int installmentIndex,
+    required String paymentCategory,
+    required MarketData marketData,
+  }) {
+    final Map<String, dynamic> state = input.toJson();
+    final List<Map<String, dynamic>> investments = _asMapList(
+      state['investments'],
+    );
+    final List<Map<String, dynamic>> transactions = _asMapList(
+      state['transactions'],
+    );
+    final List<String> processedExpenseIds = _asStringList(
+      state['processedExpenseIds'],
+    );
+
+    final int assetIdx = investments.indexWhere(
+      (Map<String, dynamic> a) => a['id'] == assetId,
+    );
+    if (assetIdx == -1) {
+      return ReconciliationResult(state: input, modified: false);
+    }
+
+    final Map<String, dynamic> asset = Map<String, dynamic>.from(
+      investments[assetIdx],
+    );
+    final List<Map<String, dynamic>> plan = _asMapList(
+      asset['installmentPlan'],
+    );
+
+    if (installmentIndex < 0 || installmentIndex >= plan.length) {
+      return ReconciliationResult(state: input, modified: false);
+    }
+
+    final Map<String, dynamic> installment = Map<String, dynamic>.from(
+      plan[installmentIndex],
+    );
+    if (_asBool(installment['isPaid'])) {
+      return ReconciliationResult(state: input, modified: false);
+    }
+    if (paymentCategory.isEmpty) {
+      throw Exception('Payment category is required to mark as paid.');
+    }
+
+    final String installmentCurrency =
+        (installment['currency']?.toString().isNotEmpty == true)
+        ? installment['currency'].toString()
+        : (asset['currency']?.toString() ?? 'EGP');
+    final double installmentAmount = _asDouble(installment['amount']);
+    final double availableCash = getAvailableCashBalance(
+      state: input,
+      currency: installmentCurrency,
+    );
+    if (installmentAmount - availableCash > minAmount) {
+      throw StateError('Insufficient available cash to pay this installment.');
+    }
+
+    final String fallbackDate = DateTime.now()
+        .toUtc()
+        .toIso8601String()
+        .split('T')
+        .first;
+    final String dueDate = InvestmentAsset.installmentDueDate(installment);
+    final String expenseDate = dueDate.isEmpty ? fallbackDate : dueDate;
+    final String assetLabel = asset['location']?.toString().isNotEmpty == true
+        ? asset['location'].toString()
+        : (asset['assetSubtype']?.toString() ?? 'Asset');
+
+    final String txId = 'tx_${DateTime.now().millisecondsSinceEpoch}_inst';
+    final Map<String, dynamic> expense = <String, dynamic>{
+      'id': txId,
+      'type': 'expense',
+      'date': expenseDate,
+      'amount': installmentAmount,
+      'currency': installmentCurrency,
+      'category': paymentCategory,
+      'description': 'Installment payment - $assetLabel',
+      'createdAt': DateTime.now().toUtc().toIso8601String(),
+    };
+
+    transactions.add(expense);
+    processedExpenseIds.add(txId);
+
+    installment['isPaid'] = true;
+    installment['paymentCategory'] = paymentCategory;
+    installment['paidExpenseId'] = txId;
+    plan[installmentIndex] = installment;
+    asset['installmentPlan'] = plan;
+
+    _syncAssetInstallmentProgress(asset, marketData);
+
+    investments[assetIdx] = asset;
+    state['investments'] = investments;
+    state['transactions'] = transactions;
+    state['processedExpenseIds'] = processedExpenseIds;
+
+    final AppStateModel next = AppStateModel.fromJson(state);
+    return ReconciliationResult(state: next, modified: true);
+  }
+
   void _syncAssetInstallmentProgress(
     Map<String, dynamic> asset,
     MarketData marketData,
@@ -806,7 +992,7 @@ class ReconciliationService {
     );
 
     final List<Map<String, dynamic>> lots =
-        getAvailableCashSources(state: input, currency: sourceCurrency)
+        getAvailableCashSources(state: input, currency: sourceCurrency, asOfDate: date)
             .map((CashSource source) {
               return <String, dynamic>{
                 'sourceType': source.sourceType,
@@ -910,10 +1096,7 @@ class ReconciliationService {
 
       if (d['sourceType'] == 'savings') {
         final String sourceDate = _datePart(
-          _fallbackDate(
-            d['date']?.toString() ?? '',
-            normalizedDate,
-          ),
+          _fallbackDate(d['date']?.toString() ?? '', normalizedDate),
         );
         final Map<String, dynamic> ns = <String, dynamic>{
           'id': 'sav_${DateTime.now().millisecondsSinceEpoch}_$i',
@@ -1031,6 +1214,46 @@ class ReconciliationService {
 
     final AppStateModel next = AppStateModel.fromJson(state);
     return ReconciliationResult(state: next, modified: true);
+  }
+
+  ReconciliationResult markZakatPaid({
+    required AppStateModel input,
+    required String monthKey,
+  }) {
+    final Map<String, dynamic> state = input.toJson();
+    final List<String> zakatPaidMonths = _asStringList(
+      state['zakatPaidMonths'],
+    );
+    if (zakatPaidMonths.contains(monthKey)) {
+      return ReconciliationResult(state: input, modified: false);
+    }
+    zakatPaidMonths.add(monthKey);
+    state['zakatPaidMonths'] = zakatPaidMonths;
+    final AppStateModel next = AppStateModel.fromJson(state);
+    return ReconciliationResult(state: next, modified: true);
+  }
+
+  ReconciliationResult payZakat({
+    required AppStateModel input,
+    required String monthKey,
+    required double zakatAmountMainCurrency,
+    required String mainCurrency,
+    required String paymentDate,
+  }) {
+    final double availableCash = getAvailableCashBalance(
+      state: input,
+      currency: mainCurrency,
+    );
+    if (zakatAmountMainCurrency - availableCash > minAmount) {
+      throw StateError('Insufficient available cash to pay zakat.');
+    }
+    return toggleZakatPaid(
+      input: input,
+      monthKey: monthKey,
+      zakatAmountMainCurrency: zakatAmountMainCurrency,
+      mainCurrency: mainCurrency,
+      paymentDate: paymentDate,
+    );
   }
 
   DeductResult deductExpenseFromSavings({

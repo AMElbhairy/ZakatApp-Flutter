@@ -7,6 +7,7 @@ import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/theme/app_theme_extensions.dart';
 import '../../core/i18n/app_localizations.dart';
+import '../../core/widgets/app_ui.dart';
 import '../../services/app_state_controller.dart';
 
 class CategoriesScreen extends StatefulWidget {
@@ -323,7 +324,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
         itemCount: categories.length,
-        onReorder: (int oldIndex, int newIndex) {
+        onReorderItem: (int oldIndex, int newIndex) {
           controller.reorderCategories(
             type: _selectedSection.toLowerCase(),
             oldIndex: oldIndex,
@@ -409,11 +410,10 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
                 name: categoryName,
               );
               if (!success && context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: const Text('Cannot delete category in use.'),
-                    backgroundColor: tokens.colors.danger,
-                  ),
+                showTopSnackBar(
+                  context,
+                  'Cannot delete category in use.',
+                  kind: AppToastKind.error,
                 );
               }
             },

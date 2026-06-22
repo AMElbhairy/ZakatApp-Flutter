@@ -28,16 +28,24 @@ class _NoopMarketDataApiService implements MarketDataApiService {
 }
 
 class _FakeAuthService implements AuthService {
+  static const UserProfile _defaultUser = UserProfile(
+    id: 'test-user',
+    email: 'test@example.com',
+    displayName: 'Test User',
+    provider: 'google',
+    accessToken: 'token',
+  );
+
   @override
   Future<bool> ensureSession() async => true;
 
   @override
-  Future<UserProfile?> restoreSession() async => null;
+  Future<UserProfile?> restoreSession() async => _defaultUser;
 
   @override
   Future<UserProfile?> signIn({
     AuthProvider provider = AuthProvider.google,
-  }) async => null;
+  }) async => _defaultUser;
 
   @override
   Future<void> signOut() async {}
@@ -60,6 +68,8 @@ Widget _buildApp() {
         create: (_) => AppStateController(
           repository: repository,
           marketDataApiService: _NoopMarketDataApiService(),
+          enableBackgroundSync: false,
+          enableMarketAutoRefresh: false,
         ),
       ),
       ChangeNotifierProvider<AuthController>(
@@ -208,6 +218,8 @@ void main() {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
+    await tester.tap(find.byKey(const Key('bottomNavTab_1')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('addEntryFab')));
     await tester.pumpAndSettle();
 
@@ -226,6 +238,8 @@ void main() {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
+    await tester.tap(find.byKey(const Key('bottomNavTab_1')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('addEntryFab')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('actionAddIncome')));

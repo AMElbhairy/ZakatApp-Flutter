@@ -16,14 +16,22 @@ import 'package:zakatapp_flutter/services/auth_service.dart';
 import 'package:zakatapp_flutter/services/local_storage_service.dart';
 
 class _FakeAuthService implements AuthService {
+  static const UserProfile _defaultUser = UserProfile(
+    id: 'test-user',
+    email: 'test@example.com',
+    displayName: 'Test User',
+    provider: 'google',
+    accessToken: 'token',
+  );
+
   @override
   Future<bool> ensureSession() async => true;
   @override
-  Future<UserProfile?> restoreSession() async => null;
+  Future<UserProfile?> restoreSession() async => _defaultUser;
   @override
   Future<UserProfile?> signIn({
     AuthProvider provider = AuthProvider.google,
-  }) async => null;
+  }) async => _defaultUser;
   @override
   Future<void> signOut() async {}
 
@@ -42,7 +50,11 @@ Widget _buildApp() {
   return MultiProvider(
     providers: <ChangeNotifierProvider<dynamic>>[
       ChangeNotifierProvider<AppStateController>(
-        create: (_) => AppStateController(repository: repository),
+        create: (_) => AppStateController(
+          repository: repository,
+          enableBackgroundSync: false,
+          enableMarketAutoRefresh: false,
+        ),
       ),
       ChangeNotifierProvider<AuthController>(
         create: (_) => AuthController(
@@ -62,6 +74,8 @@ Future<void> _addTx(
   required bool income,
   String notes = '',
 }) async {
+  await tester.tap(find.byKey(const Key('bottomNavTab_1')));
+  await tester.pumpAndSettle();
   await tester.tap(find.byKey(const Key('addEntryFab')));
   await tester.pumpAndSettle();
   if (income) {
@@ -90,6 +104,7 @@ void main() {
     SharedPreferences.setMockInitialValues(<String, Object>{});
 
     await tester.pumpWidget(_buildApp());
+    await tester.pump(const Duration(seconds: 2));
     await tester.pumpAndSettle();
 
     await _addTx(tester, amount: '100', category: 'Salary', income: true);
@@ -128,6 +143,7 @@ void main() {
       SharedPreferences.setMockInitialValues(<String, Object>{});
 
       await tester.pumpWidget(_buildApp());
+      await tester.pump(const Duration(seconds: 2));
       await tester.pumpAndSettle();
 
       await _addTx(
@@ -181,6 +197,7 @@ void main() {
     SharedPreferences.setMockInitialValues(<String, Object>{});
 
     await tester.pumpWidget(_buildApp());
+    await tester.pump(const Duration(seconds: 2));
     await tester.pumpAndSettle();
 
     await _addTx(tester, amount: '100', category: 'Salary', income: true);
@@ -206,6 +223,7 @@ void main() {
     SharedPreferences.setMockInitialValues(<String, Object>{});
 
     await tester.pumpWidget(_buildApp());
+    await tester.pump(const Duration(seconds: 2));
     await tester.pumpAndSettle();
 
     await _addTx(tester, amount: '100', category: 'Salary', income: true);
@@ -223,6 +241,7 @@ void main() {
     expect(find.textContaining('E£ +250.00'), findsOneWidget);
 
     await tester.pumpWidget(_buildApp());
+    await tester.pump(const Duration(seconds: 2));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Activity').first);
@@ -236,6 +255,7 @@ void main() {
   ) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     await tester.pumpWidget(_buildApp());
+    await tester.pump(const Duration(seconds: 2));
     await tester.pumpAndSettle();
 
     final AppStateController controller = Provider.of<AppStateController>(
@@ -290,6 +310,7 @@ void main() {
   ) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     await tester.pumpWidget(_buildApp());
+    await tester.pump(const Duration(seconds: 2));
     await tester.pumpAndSettle();
 
     final AppStateController controller = Provider.of<AppStateController>(
@@ -398,6 +419,7 @@ void main() {
       });
 
       await tester.pumpWidget(_buildApp());
+      await tester.pump(const Duration(seconds: 2));
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Activity').first);

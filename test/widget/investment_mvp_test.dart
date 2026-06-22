@@ -15,6 +15,14 @@ import 'package:zakatapp_flutter/services/market_data_api_service.dart';
 import 'package:zakatapp_flutter/services/sync_controller.dart';
 
 class _FakeAuthService implements AuthService {
+  static const UserProfile _defaultUser = UserProfile(
+    id: 'test-user',
+    email: 'test@example.com',
+    displayName: 'Test User',
+    provider: 'google',
+    accessToken: 'token',
+  );
+
   @override
   Future<bool> ensureSession() async => true;
 
@@ -25,7 +33,7 @@ class _FakeAuthService implements AuthService {
     AuthProvider provider = AuthProvider.google,
   }) async => user;
   @override
-  Future<UserProfile?> restoreSession() async => user;
+  Future<UserProfile?> restoreSession() async => user ?? _defaultUser;
   @override
   Future<void> signOut() async {}
 
@@ -68,6 +76,8 @@ void main() {
     final appStateController = AppStateController(
       repository: repository,
       marketDataApiService: _FakeMarketDataApiService(),
+      enableBackgroundSync: false,
+      enableMarketAutoRefresh: false,
     );
     final authController = AuthController(
       authService: _FakeAuthService(null),

@@ -19,14 +19,22 @@ import 'package:zakatapp_flutter/services/plan_health_service.dart';
 import 'package:zakatapp_flutter/services/projection_service.dart';
 
 class _FakeAuthService implements AuthService {
+  static const UserProfile _defaultUser = UserProfile(
+    id: 'test-user',
+    email: 'test@example.com',
+    displayName: 'Test User',
+    provider: 'google',
+    accessToken: 'token',
+  );
+
   @override
   Future<bool> ensureSession() async => true;
   @override
-  Future<UserProfile?> restoreSession() async => null;
+  Future<UserProfile?> restoreSession() async => _defaultUser;
   @override
   Future<UserProfile?> signIn({
     AuthProvider provider = AuthProvider.google,
-  }) async => null;
+  }) async => _defaultUser;
   @override
   Future<void> signOut() async {}
 
@@ -45,7 +53,11 @@ Widget _buildApp() {
   return MultiProvider(
     providers: <ChangeNotifierProvider<dynamic>>[
       ChangeNotifierProvider<AppStateController>(
-        create: (_) => AppStateController(repository: repository),
+        create: (_) => AppStateController(
+          repository: repository,
+          enableBackgroundSync: false,
+          enableMarketAutoRefresh: false,
+        ),
       ),
       ChangeNotifierProvider<AuthController>(
         create: (_) => AuthController(
@@ -344,6 +356,7 @@ void main() {
 
       SharedPreferences.setMockInitialValues(<String, Object>{});
       await tester.pumpWidget(_buildApp());
+      await tester.pump(const Duration(seconds: 2));
       await tester.pumpAndSettle();
 
       await _addPlan(
@@ -376,6 +389,7 @@ void main() {
 
         SharedPreferences.setMockInitialValues(<String, Object>{});
         await tester.pumpWidget(_buildApp());
+        await tester.pump(const Duration(seconds: 2));
         await tester.pumpAndSettle();
 
         // Creates a snapshot plan (default)

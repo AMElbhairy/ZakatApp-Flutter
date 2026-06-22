@@ -210,29 +210,29 @@ class _AddFinancialPlanScreenState extends State<AddFinancialPlanScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                RadioListTile<String>(
-                  title: Text(
-                    isArabic
-                        ? 'استخدام الرصيد الحالي للثروة'
-                        : 'Use Current Balance',
+                RadioGroup<String>(
+                  groupValue: _startingBalanceMode,
+                  onChanged: (String? value) {
+                    if (value != null) {
+                      setState(() => _startingBalanceMode = value);
+                    }
+                  },
+                  child: Column(
+                    children: <Widget>[
+                      RadioListTile<String>(
+                        title: Text(
+                          isArabic
+                              ? 'استخدام الرصيد الحالي للثروة'
+                              : 'Use Current Balance',
+                        ),
+                        value: 'snapshot',
+                      ),
+                      RadioListTile<String>(
+                        title: Text(isArabic ? 'إدخال يدوي' : 'Enter Manually'),
+                        value: 'manual',
+                      ),
+                    ],
                   ),
-                  value: 'snapshot',
-                  groupValue: _startingBalanceMode,
-                  onChanged: (String? value) {
-                    if (value != null) {
-                      setState(() => _startingBalanceMode = value);
-                    }
-                  },
-                ),
-                RadioListTile<String>(
-                  title: Text(isArabic ? 'إدخال يدوي' : 'Enter Manually'),
-                  value: 'manual',
-                  groupValue: _startingBalanceMode,
-                  onChanged: (String? value) {
-                    if (value != null) {
-                      setState(() => _startingBalanceMode = value);
-                    }
-                  },
                 ),
                 if (_startingBalanceMode == 'manual') ...<Widget>[
                   const SizedBox(height: 8),

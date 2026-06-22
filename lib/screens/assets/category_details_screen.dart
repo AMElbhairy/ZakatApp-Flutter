@@ -1021,7 +1021,8 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
       );
     } else if (saving.assetType == 'gold') {
       if (saving.remainingAmount < saving.amount) {
-        originalAmountStr = 'Purchased: ${saving.amount.toStringAsFixed(2)} g (${saving.unit}k) • ${saving.remainingAmount.toStringAsFixed(2)} g available';
+        originalAmountStr =
+            'Purchased: ${saving.amount.toStringAsFixed(2)} g (${saving.unit}k) • ${saving.remainingAmount.toStringAsFixed(2)} g available';
       } else {
         originalAmountStr =
             '${saving.remainingAmount.toStringAsFixed(2)} g • ${saving.unit}k';
@@ -1038,7 +1039,8 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
       );
     } else if (saving.assetType == 'silver') {
       if (saving.remainingAmount < saving.amount) {
-        originalAmountStr = 'Purchased: ${saving.amount.toStringAsFixed(2)} g • ${saving.remainingAmount.toStringAsFixed(2)} g available';
+        originalAmountStr =
+            'Purchased: ${saving.amount.toStringAsFixed(2)} g • ${saving.remainingAmount.toStringAsFixed(2)} g available';
       } else {
         originalAmountStr = '${saving.remainingAmount.toStringAsFixed(2)} g';
       }
@@ -1152,14 +1154,17 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                       fontSize: 15,
                     ),
                   ),
-                  if (saving.assetType == 'gold' || saving.assetType == 'silver')
+                  if (saving.assetType == 'gold' ||
+                      saving.assetType == 'silver')
                     PopupMenuButton<String>(
                       icon: const Icon(Icons.more_vert, size: 20),
                       onSelected: (String val) {
                         if (val == 'buy_more') {
                           Navigator.of(context).push(
                             MaterialPageRoute<void>(
-                              builder: (_) => AddSavingScreen(initialAssetType: saving.assetType),
+                              builder: (_) => AddSavingScreen(
+                                initialAssetType: saving.assetType,
+                              ),
                             ),
                           );
                         } else if (val == 'sell') {
@@ -1167,43 +1172,45 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                         } else if (val == 'edit') {
                           Navigator.of(context).push(
                             MaterialPageRoute<void>(
-                              builder: (_) => AddSavingScreen(initialSaving: saving),
+                              builder: (_) =>
+                                  AddSavingScreen(initialSaving: saving),
                             ),
                           );
                         } else if (val == 'delete') {
                           _confirmDeleteSaving(context, saving);
                         }
                       },
-                      itemBuilder: (BuildContext ctx) => <PopupMenuEntry<String>>[
-                        PopupMenuItem<String>(
-                          value: 'buy_more',
-                          child: Text(
-                            saving.assetType == 'gold'
-                                ? context.l10n.tr('buy_more_gold')
-                                : context.l10n.tr('buy_more_silver'),
-                          ),
-                        ),
-                        PopupMenuItem<String>(
-                          value: 'sell',
-                          child: Text(
-                            saving.assetType == 'gold'
-                                ? context.l10n.tr('sell_gold')
-                                : context.l10n.tr('sell_silver'),
-                          ),
-                        ),
-                        PopupMenuItem<String>(
-                          value: 'edit',
-                          child: Text(
-                            saving.assetType == 'gold'
-                                ? context.l10n.tr('edit_gold')
-                                : context.l10n.tr('edit_silver'),
-                          ),
-                        ),
-                        PopupMenuItem<String>(
-                          value: 'delete',
-                          child: Text(context.l10n.tr('delete')),
-                        ),
-                      ],
+                      itemBuilder: (BuildContext ctx) =>
+                          <PopupMenuEntry<String>>[
+                            PopupMenuItem<String>(
+                              value: 'buy_more',
+                              child: Text(
+                                saving.assetType == 'gold'
+                                    ? context.l10n.tr('buy_more_gold')
+                                    : context.l10n.tr('buy_more_silver'),
+                              ),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'sell',
+                              child: Text(
+                                saving.assetType == 'gold'
+                                    ? context.l10n.tr('sell_gold')
+                                    : context.l10n.tr('sell_silver'),
+                              ),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'edit',
+                              child: Text(
+                                saving.assetType == 'gold'
+                                    ? context.l10n.tr('edit_gold')
+                                    : context.l10n.tr('edit_silver'),
+                              ),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'delete',
+                              child: Text(context.l10n.tr('delete')),
+                            ),
+                          ],
                     ),
                 ],
               ),
@@ -1524,6 +1531,27 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
     MarketData market,
     bool isArabic,
   ) {
+    final double unpaidLiability = asset.installmentPlan.isNotEmpty
+        ? asset.installmentPlan
+            .where((item) => item['isPaid'] != true)
+            .fold(0.0, (sum, item) {
+              final String itemCurrency = (item['currency']?.toString().isNotEmpty == true)
+                  ? item['currency'].toString()
+                  : asset.currency;
+              final double amount = ((item['amount'] ?? 0) as num).toDouble();
+              final double amountEgp = ZakatEngineService.convertToEgp(
+                amount,
+                itemCurrency,
+                market,
+              );
+              final double inAssetCur = ZakatEngineService.convertFromEgp(
+                amountEgp,
+                asset.currency,
+                market,
+              );
+              return sum + inAssetCur;
+            })
+        : asset.loanBalance;
     final double share = (asset.ownershipSharePct / 100).clamp(0, 1);
     final double gross = ZakatEngineService.convertToEgp(
       asset.marketValue * share,
@@ -1616,14 +1644,15 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                         fontSize: 13,
                       ),
                     ),
-                    if (asset.loanBalance > 0) ...[
+                    if (unpaidLiability > 0) ...[
                       const SizedBox(height: 6),
                       Align(
                         alignment: AlignmentDirectional.centerStart,
                         child: Material(
                           color: Colors.transparent,
                           child: InkWell(
-                            onTap: () => _showInstallmentSchedule(context, asset),
+                            onTap: () =>
+                                _showInstallmentSchedule(context, asset),
                             borderRadius: BorderRadius.circular(6),
                             child: Ink(
                               width: double.infinity,
@@ -1653,7 +1682,7 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                                   const SizedBox(width: 4),
                                   Expanded(
                                     child: Text(
-                                      'Installments: ${ZakatEngineService.formatCurrency(asset.loanBalance, asset.currency, isArabic: isArabic)} remaining',
+                                      'Installments: ${ZakatEngineService.formatCurrency(unpaidLiability, asset.currency, isArabic: isArabic)} remaining',
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
                                       style: const TextStyle(
@@ -1697,32 +1726,6 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
         ),
       ),
     );
-  }
-
-  void _navigateToAdd(BuildContext context) {
-    if (widget.categoryType == 'cash') {
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => const AddTransactionScreen(cashMode: true),
-        ),
-      );
-    } else if (widget.categoryType == 'gold' ||
-        widget.categoryType == 'silver') {
-      Navigator.of(
-        context,
-      ).push(
-        MaterialPageRoute<void>(
-          builder: (_) => AddSavingScreen(
-            initialAssetType: widget.categoryType,
-          ),
-        ),
-      );
-    } else if (widget.categoryType == 'investments' ||
-        widget.categoryType == 'property') {
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => const AddInvestmentScreen()),
-      );
-    }
   }
 
   Future<void> _confirmDeleteSaving(BuildContext context, Saving saving) async {
@@ -1823,8 +1826,7 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
           initialValue: selected,
           items: categories
               .map(
-                (String c) =>
-                    DropdownMenuItem<String>(
+                (String c) => DropdownMenuItem<String>(
                   value: c,
                   child: Text(ctx.l10n.translateCategory(c)),
                 ),
@@ -1851,6 +1853,7 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
     final bool isArabic =
         Localizations.localeOf(context).languageCode.toLowerCase() == 'ar';
     final AppStateController controller = context.read<AppStateController>();
+    final MarketData market = MarketData.fromJson(controller.state.marketData);
 
     showModalBottomSheet<void>(
       context: context,
@@ -1867,6 +1870,27 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
               orElse: () => asset,
             );
             final plan = latestAsset.installmentPlan;
+            final double unpaidLiability = latestAsset.installmentPlan.isNotEmpty
+                ? latestAsset.installmentPlan
+                    .where((item) => item['isPaid'] != true)
+                    .fold(0.0, (sum, item) {
+                      final String itemCurrency = (item['currency']?.toString().isNotEmpty == true)
+                          ? item['currency'].toString()
+                          : latestAsset.currency;
+                      final double amount = ((item['amount'] ?? 0) as num).toDouble();
+                      final double amountEgp = ZakatEngineService.convertToEgp(
+                        amount,
+                        itemCurrency,
+                        market,
+                      );
+                      final double inAssetCur = ZakatEngineService.convertFromEgp(
+                        amountEgp,
+                        latestAsset.currency,
+                        market,
+                      );
+                      return sum + inAssetCur;
+                    })
+                : latestAsset.loanBalance;
 
             return DraggableScrollableSheet(
               expand: false,
@@ -1901,7 +1925,7 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Remaining Liability: ${ZakatEngineService.formatCurrency(latestAsset.loanBalance, latestAsset.currency, isArabic: isArabic)}',
+                        'Remaining Liability: ${ZakatEngineService.formatCurrency(unpaidLiability, latestAsset.currency, isArabic: isArabic)}',
                         style: TextStyle(
                           color: tokens.colors.textSecondary,
                           fontSize: 13,
@@ -2035,6 +2059,8 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                                                 noZakat: latestAsset.noZakat,
                                                 createdAt:
                                                     latestAsset.createdAt,
+                                                yearlyGrowthRate:
+                                                    latestAsset.yearlyGrowthRate,
                                               );
                                               await controller.updateInvestment(
                                                 updatedAsset,
@@ -2087,67 +2113,156 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                                               ),
                                             ),
                                             const SizedBox(width: 8),
-                                            TextButton(
-                                              style: TextButton.styleFrom(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: 10,
-                                                      vertical: 4,
-                                                    ),
-                                                minimumSize: Size.zero,
-                                                tapTargetSize:
-                                                    MaterialTapTargetSize
-                                                        .shrinkWrap,
-                                                foregroundColor: isPaid
-                                                    ? Colors.grey
-                                                    : tokens.colors.emerald,
-                                              ),
-                                              onPressed: () async {
-                                                if (isPaid) {
+                                            if (isPaid)
+                                              TextButton(
+                                                key: Key(
+                                                  'toggleInstallmentPaid_${latestAsset.id}_$index',
+                                                ),
+                                                style: TextButton.styleFrom(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 10,
+                                                        vertical: 4,
+                                                      ),
+                                                  minimumSize: Size.zero,
+                                                  tapTargetSize:
+                                                      MaterialTapTargetSize
+                                                          .shrinkWrap,
+                                                  foregroundColor: Colors.grey,
+                                                ),
+                                                onPressed: () async {
                                                   await controller
                                                       .toggleInstallmentPaid(
                                                         assetId: latestAsset.id,
                                                         installmentIndex: index,
                                                         paymentCategory: '',
                                                       );
-                                                } else {
-                                                  final List<String>
-                                                  expenseCategories = controller
-                                                      .state
-                                                      .categories
-                                                      .expense;
-                                                  final String? category =
-                                                      await _pickInstallmentCategory(
-                                                        context,
-                                                        expenseCategories,
-                                                      );
-                                                  if (category != null) {
-                                                    await controller
-                                                        .toggleInstallmentPaid(
-                                                          assetId:
-                                                              latestAsset.id,
-                                                          installmentIndex:
-                                                              index,
-                                                          paymentCategory:
-                                                              category,
-                                                        );
-                                                  }
-                                                }
-                                                setModalState(() {});
-                                                setState(() {});
-                                              },
-                                              child: Text(
-                                                isPaid
-                                                    ? context.l10n.tr(
-                                                        'mark_as_unpaid',
-                                                      )
-                                                    : context.l10n.tr('pay'),
-                                                style: const TextStyle(
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.w700,
+                                                  setModalState(() {});
+                                                  setState(() {});
+                                                },
+                                                child: Text(
+                                                  context.l10n.tr(
+                                                    'mark_as_unpaid',
+                                                  ),
+                                                  style: const TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
                                                 ),
+                                              )
+                                            else
+                                              Wrap(
+                                                spacing: 6,
+                                                runSpacing: 4,
+                                                alignment: WrapAlignment.end,
+                                                children: <Widget>[
+                                                  TextButton(
+                                                    key: Key(
+                                                      'markInstallmentPaid_${latestAsset.id}_$index',
+                                                    ),
+                                                    style: TextButton.styleFrom(
+                                                      padding:
+                                                          const EdgeInsets.symmetric(
+                                                            horizontal: 10,
+                                                            vertical: 4,
+                                                          ),
+                                                      minimumSize: Size.zero,
+                                                      tapTargetSize:
+                                                          MaterialTapTargetSize
+                                                              .shrinkWrap,
+                                                      foregroundColor:
+                                                          tokens.colors.emerald,
+                                                    ),
+                                                    onPressed: () async {
+                                                      await controller
+                                                          .markInstallmentPaid(
+                                                            assetId:
+                                                                latestAsset.id,
+                                                            installmentIndex:
+                                                                index,
+                                                          );
+                                                      setModalState(() {});
+                                                      setState(() {});
+                                                    },
+                                                    child: Text(
+                                                      context.l10n.tr(
+                                                        'mark_as_paid',
+                                                      ),
+                                                      style: const TextStyle(
+                                                        fontSize: 11,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  TextButton(
+                                                    key: Key(
+                                                      'toggleInstallmentPaid_${latestAsset.id}_$index',
+                                                    ),
+                                                    style: TextButton.styleFrom(
+                                                      padding:
+                                                          const EdgeInsets.symmetric(
+                                                            horizontal: 10,
+                                                            vertical: 4,
+                                                          ),
+                                                      minimumSize: Size.zero,
+                                                      tapTargetSize:
+                                                          MaterialTapTargetSize
+                                                              .shrinkWrap,
+                                                      foregroundColor:
+                                                          tokens.colors.gold,
+                                                    ),
+                                                    onPressed: () async {
+                                                      try {
+                                                        final List<String>
+                                                        expenseCategories =
+                                                            controller
+                                                                .state
+                                                                .categories
+                                                                .expense;
+                                                        final String? category =
+                                                            await _pickInstallmentCategory(
+                                                              context,
+                                                              expenseCategories,
+                                                            );
+                                                        if (category != null) {
+                                                          await controller
+                                                              .payInstallment(
+                                                                assetId:
+                                                                    latestAsset
+                                                                        .id,
+                                                                installmentIndex:
+                                                                    index,
+                                                                paymentCategory:
+                                                                    category,
+                                                              );
+                                                        } else {
+                                                          return;
+                                                        }
+                                                      } on StateError catch (
+                                                        error
+                                                      ) {
+                                                        if (!context.mounted) return;
+                                                        showTopSnackBar(
+                                                          context,
+                                                          error.message,
+                                                        );
+                                                        return;
+                                                      }
+                                                      setModalState(() {});
+                                                      setState(() {});
+                                                    },
+                                                    child: Text(
+                                                      context.l10n.tr('pay'),
+                                                      style: const TextStyle(
+                                                        fontSize: 11,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
                                               ),
-                                            ),
                                           ],
                                         ),
                                       ),
@@ -2172,5 +2287,31 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
     dynamic item,
   ) async {
     await openEditCurrencyExchangeDialog(context, item);
+  }
+
+  void _navigateToAdd(BuildContext context) {
+    if (widget.categoryType == 'cash') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => const AddTransactionScreen(cashMode: true),
+        ),
+      );
+    } else if (widget.categoryType == 'gold' ||
+        widget.categoryType == 'silver') {
+      Navigator.of(
+        context,
+      ).push(MaterialPageRoute<void>(builder: (_) => const AddSavingScreen()));
+    } else if (widget.categoryType == 'investments' ||
+        widget.categoryType == 'property') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => AddInvestmentScreen(
+            initialAssetType: widget.categoryType == 'investments'
+                ? 'company_share'
+                : 'property',
+          ),
+        ),
+      );
+    }
   }
 }

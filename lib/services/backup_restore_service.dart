@@ -2,6 +2,7 @@ import '../models/app_state.dart';
 import 'app_state_controller.dart';
 import 'backup_service.dart';
 import 'legacy_backup_migration_service.dart';
+import 'sync_diagnostics_service.dart';
 
 class RestoreResult {
   const RestoreResult({
@@ -34,8 +35,41 @@ class BackupRestoreService {
     final LegacyMigrationReport report = _migrationService
         .parseAndMigrateWithReport(rawJson);
     _ensureOwnership(report.state, expectedUserId);
-    final AppStateModel next = AppStateModel.fromJson(report.state);
+    final String effectiveUserId = _resolveEffectiveUserId(expectedUserId);
+    final AppStateModel previous = controller.state;
+    final Map<String, dynamic> normalized = Map<String, dynamic>.from(
+      report.state,
+    );
+    if (effectiveUserId.isNotEmpty) {
+      normalized['userId'] = effectiveUserId;
+    }
+    final AppStateModel next = AppStateModel.fromJson(normalized);
     await controller.updateState(next);
+    await controller.enqueueAllLocalDataForCloudSync();
+    await controller.syncRestoredStateToFirestore(
+      previousState: previous,
+      nextState: next,
+    );
+    final Map<String, int> counts = _stateCounts(next.toJson());
+    await SyncDiagnosticsService.record(
+      level: 'info',
+      subsystem: 'restore',
+      message: 'Import completed',
+      metadata: <String, dynamic>{
+        'mode': 'replace',
+        'counts': counts,
+      },
+    );
+    await SyncDiagnosticsService.record(
+      level: 'info',
+      subsystem: 'restore',
+      message: 'Sync auto-triggered after import',
+      metadata: <String, dynamic>{
+        'reason': 'import_restore',
+        'counts': counts,
+      },
+    );
+    await controller.triggerSyncPipeline(reason: 'import_restore');
 
     return RestoreResult(
       mode: 'replace',
@@ -54,15 +88,24 @@ class BackupRestoreService {
     final LegacyMigrationReport report = _migrationService
         .parseAndMigrateWithReport(rawJson);
     _ensureOwnership(report.state, expectedUserId);
+    final String effectiveUserId = _resolveEffectiveUserId(expectedUserId);
+    final AppStateModel previous = controller.state;
     final Map<String, dynamic> current = controller.state.toJson();
     final Map<String, dynamic> incoming = report.state;
 
     final Map<String, dynamic> merged = <String, dynamic>{...current};
+    if (effectiveUserId.isNotEmpty) {
+      merged['userId'] = effectiveUserId;
+    }
     merged['transactions'] = _mergeById(
       current['transactions'],
       incoming['transactions'],
     );
     merged['savings'] = _mergeById(current['savings'], incoming['savings']);
+    merged['pendingTransactions'] = _mergeById(
+      current['pendingTransactions'],
+      incoming['pendingTransactions'],
+    );
     merged['investments'] = _mergeById(
       current['investments'],
       incoming['investments'],
@@ -75,12 +118,40 @@ class BackupRestoreService {
       current['financialPlans'],
       incoming['financialPlans'],
     );
+    merged['correctionFeedback'] = _mergeById(
+      current['correctionFeedback'],
+      incoming['correctionFeedback'],
+    );
+    merged['merchantConfirmations'] = _mergeById(
+      current['merchantConfirmations'],
+      incoming['merchantConfirmations'],
+    );
 
     final Map<String, dynamic> categories = _mergeCategories(
       current['categories'],
       incoming['categories'],
     );
     merged['categories'] = categories;
+    merged['zakatPaidMonths'] = _mergeStringLists(
+      current['zakatPaidMonths'],
+      incoming['zakatPaidMonths'],
+    );
+    merged['processedExpenseIds'] = _mergeStringLists(
+      current['processedExpenseIds'],
+      incoming['processedExpenseIds'],
+    );
+    merged['zakatExpenseIds'] = _mergeStringMap(
+      current['zakatExpenseIds'],
+      incoming['zakatExpenseIds'],
+    );
+    merged['merchantRules'] = _mergeStringMap(
+      current['merchantRules'],
+      incoming['merchantRules'],
+    );
+    merged['merchantAliases'] = _mergeStringMap(
+      current['merchantAliases'],
+      incoming['merchantAliases'],
+    );
 
     merged['mainCurrency'] =
         (incoming['mainCurrency'] ?? current['mainCurrency']).toString();
@@ -99,16 +170,19 @@ class BackupRestoreService {
             .toString();
     merged['themeMode'] =
         (incoming['themeMode'] ?? current['themeMode'] ?? 'system').toString();
-    final Map<String, dynamic>? incomingMarketData = incoming['marketData'] is Map
-      ? Map<String, dynamic>.from(incoming['marketData'] as Map)
-      : null;
-    final bool hasIncomingMarketData = incomingMarketData != null &&
-      incomingMarketData.values.any(
-        (dynamic value) => value != null && value.toString().trim().isNotEmpty,
-      );
+    final Map<String, dynamic>? incomingMarketData =
+        incoming['marketData'] is Map
+        ? Map<String, dynamic>.from(incoming['marketData'] as Map)
+        : null;
+    final bool hasIncomingMarketData =
+        incomingMarketData != null &&
+        incomingMarketData.values.any(
+          (dynamic value) =>
+              value != null && value.toString().trim().isNotEmpty,
+        );
     merged['marketData'] = hasIncomingMarketData
-      ? incomingMarketData
-      : current['marketData'];
+        ? incomingMarketData
+        : current['marketData'];
     merged['aiSettings'] = incoming['aiSettings'] is Map
         ? Map<String, dynamic>.from(incoming['aiSettings'] as Map)
         : current['aiSettings'];
@@ -120,6 +194,31 @@ class BackupRestoreService {
 
     final AppStateModel next = AppStateModel.fromJson(merged);
     await controller.updateState(next);
+    await controller.enqueueAllLocalDataForCloudSync();
+    await controller.syncRestoredStateToFirestore(
+      previousState: previous,
+      nextState: next,
+    );
+    final Map<String, int> counts = _stateCounts(next.toJson());
+    await SyncDiagnosticsService.record(
+      level: 'info',
+      subsystem: 'restore',
+      message: 'Import completed',
+      metadata: <String, dynamic>{
+        'mode': 'merge',
+        'counts': counts,
+      },
+    );
+    await SyncDiagnosticsService.record(
+      level: 'info',
+      subsystem: 'restore',
+      message: 'Sync auto-triggered after import',
+      metadata: <String, dynamic>{
+        'reason': 'import_restore',
+        'counts': counts,
+      },
+    );
+    await controller.triggerSyncPipeline(reason: 'import_restore');
 
     return RestoreResult(
       mode: 'merge',
@@ -139,13 +238,20 @@ class BackupRestoreService {
 
   void _ensureOwnership(Map<String, dynamic> state, [String? expectedUserId]) {
     final String backupUserId = (state['userId'] ?? '').toString().trim();
-    final String currentUserId =
-        (expectedUserId ?? controller.state.userId ?? '').trim();
+    final String currentUserId = _resolveEffectiveUserId(expectedUserId);
     if (backupUserId.isNotEmpty &&
         currentUserId.isNotEmpty &&
         backupUserId != currentUserId) {
       throw StateError('This backup belongs to another account.');
     }
+  }
+
+  String _resolveEffectiveUserId([String? expectedUserId]) {
+    final String currentUserId = (controller.state.userId ?? '').trim();
+    final String expected = (expectedUserId ?? '').trim();
+    if (expected.isNotEmpty) return expected;
+    if (currentUserId.isNotEmpty) return currentUserId;
+    return '';
   }
 
   List<Map<String, dynamic>> _mergeById(dynamic left, dynamic right) {
@@ -230,6 +336,24 @@ class BackupRestoreService {
   List<String> _asStringList(dynamic value) {
     if (value is! List) return <String>[];
     return value.map((dynamic e) => e.toString()).toList(growable: false);
+  }
+
+  List<String> _mergeStringLists(dynamic left, dynamic right) {
+    final Set<String> merged = <String>{
+      ..._asStringList(left),
+      ..._asStringList(right),
+    };
+    return merged.toList(growable: false);
+  }
+
+  Map<String, dynamic> _mergeStringMap(dynamic left, dynamic right) {
+    final Map<String, dynamic> merged = left is Map
+        ? Map<String, dynamic>.from(left)
+        : <String, dynamic>{};
+    if (right is Map) {
+      merged.addAll(Map<String, dynamic>.from(right));
+    }
+    return merged;
   }
 
   Map<String, int> _stateCounts(Map<String, dynamic> state) {

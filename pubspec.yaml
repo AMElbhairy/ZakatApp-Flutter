@@ -41,15 +41,23 @@ dependencies:
   flutter_secure_storage: ^9.2.2
   intl: ^0.20.2
   uuid: ^4.5.1
+  drift: ^2.28.1
+  sqlite3_flutter_libs: ^0.5.39
   google_sign_in: 6.3.0
   http: ^1.2.2
-  file_picker: ^8.1.4
+  path: ^1.9.1
+  # Local override keeps the iOS FileUtils -> ZWFileUtils rename durable.
+  # Prevents the duplicate-class warning with OSAnalytics.framework on iOS.
+  file_picker:
+    path: third_party/file_picker
   share_plus: ^10.1.2
   path_provider: ^2.1.5
   flutter_slidable: ^3.0.1
   image_picker: ^1.2.2
   local_auth: ^3.0.1
   app_links: ^6.4.0
+  flutter_local_notifications: ^22.0.1
+  flutter_app_badger: ^1.5.0
   firebase_core: ^4.11.0
   firebase_auth: ^6.5.3
   cloud_firestore: ^6.6.0
@@ -62,6 +70,8 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   fake_cloud_firestore: ^4.1.1
   firebase_auth_mocks: ^0.15.2
+  drift_dev: ^2.28.1
+  build_runner: ^2.8.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

@@ -48,6 +48,12 @@ post_install do |installer|
       config.build_settings['OTHER_MODULE_VERIFIER_FLAGS'] = ''
       config.build_settings['CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER'] = 'NO'
     end
+
+    if target.name == 'flutter_app_badger'
+      target.build_configurations.each do |config|
+        config.build_settings['GCC_WARN_INHIBIT_ALL_WARNINGS'] = 'YES'
+      end
+    end
   end
 
   # Flutter tooling can regenerate these files with 13.0, which causes

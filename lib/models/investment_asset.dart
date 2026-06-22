@@ -27,6 +27,7 @@ class InvestmentAsset {
     required this.description,
     required this.noZakat,
     required this.createdAt,
+    this.yearlyGrowthRate = 0.0,
   });
 
   final String id;
@@ -56,6 +57,7 @@ class InvestmentAsset {
   final String description;
   final bool noZakat;
   final String createdAt;
+  final double yearlyGrowthRate;
 
   factory InvestmentAsset.fromJson(Map<String, dynamic> json) {
     return InvestmentAsset(
@@ -86,6 +88,7 @@ class InvestmentAsset {
       description: (json['description'] ?? '').toString(),
       noZakat: json['noZakat'] == null ? true : _asBool(json['noZakat']),
       createdAt: (json['createdAt'] ?? '').toString(),
+      yearlyGrowthRate: _asDouble(json['yearlyGrowthRate']),
     );
   }
 
@@ -118,6 +121,7 @@ class InvestmentAsset {
       'description': description,
       'noZakat': noZakat,
       'createdAt': createdAt,
+      'yearlyGrowthRate': yearlyGrowthRate,
     };
   }
 

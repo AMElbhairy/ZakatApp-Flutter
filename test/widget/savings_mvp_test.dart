@@ -14,14 +14,22 @@ import 'package:zakatapp_flutter/services/auth_service.dart';
 import 'package:zakatapp_flutter/services/local_storage_service.dart';
 
 class _FakeAuthService implements AuthService {
+  static const UserProfile _defaultUser = UserProfile(
+    id: 'test-user',
+    email: 'test@example.com',
+    displayName: 'Test User',
+    provider: 'google',
+    accessToken: 'token',
+  );
+
   @override
   Future<bool> ensureSession() async => true;
   @override
-  Future<UserProfile?> restoreSession() async => null;
+  Future<UserProfile?> restoreSession() async => _defaultUser;
   @override
   Future<UserProfile?> signIn({
     AuthProvider provider = AuthProvider.google,
-  }) async => null;
+  }) async => _defaultUser;
   @override
   Future<void> signOut() async {}
 
@@ -37,11 +45,16 @@ Widget _buildApp({Key? key}) {
   final AppStateRepository repository = AppStateRepository(
     localStorage: localStorage,
   );
+  final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
   return MultiProvider(
     key: key,
     providers: <ChangeNotifierProvider<dynamic>>[
       ChangeNotifierProvider<AppStateController>(
-        create: (_) => AppStateController(repository: repository),
+        create: (_) => AppStateController(
+          repository: repository,
+          enableBackgroundSync: false,
+          enableMarketAutoRefresh: false,
+        ),
       ),
       ChangeNotifierProvider<AuthController>(
         create: (_) => AuthController(
@@ -50,11 +63,13 @@ Widget _buildApp({Key? key}) {
         ),
       ),
     ],
-    child: const ZakatApp(),
+    child: ZakatApp(navigatorKey: navigatorKey),
   );
 }
 
 Future<void> _openAddCash(WidgetTester tester) async {
+  await tester.tap(find.byKey(const Key('bottomNavTab_1')));
+  await tester.pumpAndSettle();
   await tester.tap(find.byKey(const Key('addEntryFab')));
   await tester.pumpAndSettle();
   await tester.tap(find.byKey(const Key('actionAddIncome')));

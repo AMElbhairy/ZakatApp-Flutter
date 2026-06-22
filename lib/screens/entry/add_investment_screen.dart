@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
@@ -9,9 +10,14 @@ import '../../models/investment_asset.dart';
 import '../../services/app_state_controller.dart';
 
 class AddInvestmentScreen extends StatefulWidget {
-  const AddInvestmentScreen({super.key, this.initialInvestment});
+  const AddInvestmentScreen({
+    super.key,
+    this.initialInvestment,
+    this.initialAssetType,
+  });
 
   final InvestmentAsset? initialInvestment;
+  final String? initialAssetType;
 
   bool get isEditMode => initialInvestment != null;
 
@@ -28,6 +34,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
       TextEditingController();
   final TextEditingController _liabilityController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
+  final TextEditingController _growthRateController = TextEditingController();
   final Uuid _uuid = const Uuid();
 
   late String _assetType;
@@ -39,12 +46,43 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
   late List<Map<String, dynamic>> _installmentPlan;
   final TextEditingController _numInstallmentsController =
       TextEditingController();
+  final TextEditingController _totalInstallmentsAmountController =
+      TextEditingController();
   final TextEditingController _oneByOneAmountController =
       TextEditingController();
   DateTime _oneByOneDate = DateTime.now();
   DateTime _autoStartDate = DateTime.now().add(const Duration(days: 30));
   String _autoFrequency = 'monthly';
   String _scheduleInputMode = 'auto';
+  late String _oneByOneCurrency;
+
+  double _calculateLiabilityFromInstallments(MarketData market) {
+    double totalUnpaidInAssetCurrency = 0.0;
+    for (final Map<String, dynamic> item in _installmentPlan) {
+      if (item['isPaid'] == true) continue;
+      final String itemCurrency = (item['currency']?.toString().isNotEmpty == true)
+          ? item['currency'].toString()
+          : _currency;
+      final double amount = ((item['amount'] ?? 0) as num).toDouble();
+      final double amountEgp = ZakatEngineService.convertToEgp(
+        amount,
+        itemCurrency,
+        market,
+      );
+      final double inAssetCur = ZakatEngineService.convertFromEgp(
+        amountEgp,
+        _currency,
+        market,
+      );
+      totalUnpaidInAssetCurrency += inAssetCur;
+    }
+    return double.parse(totalUnpaidInAssetCurrency.toStringAsFixed(2));
+  }
+
+  void _updateLiabilityFromInstallments(MarketData market) {
+    final double totalUnpaid = _calculateLiabilityFromInstallments(market);
+    _liabilityController.text = _fmt(totalUnpaid);
+  }
 
   @override
   void initState() {
@@ -54,14 +92,16 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
         .read<AppStateController>()
         .state
         .defaultEntryCurrency;
-    _assetType =
-        ZakatEngineService.isCompanyInvestmentType(initial?.investmentType)
-        ? 'company_share'
-        : 'property';
+    _assetType = initial != null
+        ? (ZakatEngineService.isCompanyInvestmentType(initial.investmentType)
+            ? 'company_share'
+            : 'property')
+        : (widget.initialAssetType ?? 'property');
     _currency = initial?.currency.isNotEmpty == true
         ? initial!.currency
         : (defaultEntryCurrency.trim().isEmpty ? 'EGP' : defaultEntryCurrency);
     _selectedDate = _tryParseDate(initial?.valuationDate) ?? DateTime.now();
+    _oneByOneCurrency = _currency;
 
     _installmentPlan = initial?.installmentPlan != null
         ? List<Map<String, dynamic>>.from(
@@ -74,36 +114,189 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
       _currentValueController.text = _fmt(initial.marketValue);
       _ownershipPctController.text = _fmt(initial.ownershipSharePct);
       _purchasePriceController.text = _fmt(initial.originalPrice);
-      _liabilityController.text = _fmt(initial.loanBalance);
       _notesController.text = initial.description;
       _showInstallmentConfig = initial.loanBalance > 0;
+      _growthRateController.text = initial.yearlyGrowthRate > 0 ? _fmt(initial.yearlyGrowthRate) : '';
     } else {
       _ownershipPctController.text = '100';
     }
-    _liabilityController.addListener(_onLiabilityChanged);
+    _purchasePriceController.addListener(_onGrowthInputsChanged);
+    _growthRateController.addListener(_onGrowthInputsChanged);
+    if (initial != null && initial.yearlyGrowthRate > 0 && initial.originalPrice > 0) {
+      _calculateCurrentValue();
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        final controller = context.read<AppStateController>();
+        final market = MarketData.fromJson(controller.state.marketData);
+        _updateLiabilityFromInstallments(market);
+      }
+    });
   }
 
-  void _onLiabilityChanged() {
-    final double liability =
-        double.tryParse(_liabilityController.text.trim()) ?? 0;
-    final bool hasLiability = liability > 0;
-    if (hasLiability != _showInstallmentConfig) {
-      setState(() {
-        _showInstallmentConfig = hasLiability;
-      });
+  void _calculateCurrentValue() {
+    final double purchasePrice =
+        double.tryParse(_purchasePriceController.text.trim()) ?? 0;
+    final double growthRate =
+        double.tryParse(_growthRateController.text.trim()) ?? 0;
+
+    if (purchasePrice <= 0 || growthRate == 0) {
+      return;
     }
+
+    final DateTime valDate = _selectedDate;
+    final DateTime today = DateTime.now();
+
+    final int diffDays = today.difference(valDate).inDays;
+    if (diffDays <= 0) {
+      _currentValueController.text = _fmt(purchasePrice);
+      return;
+    }
+
+    final double t = diffDays / 365.25;
+    final double r = growthRate / 100.0;
+
+    final double calculatedValue = purchasePrice * math.pow(1.0 + r, t);
+    _currentValueController.text = _fmt(calculatedValue);
+  }
+
+  void _onGrowthInputsChanged() {
+    _calculateCurrentValue();
+  }
+
+  void _showEditInstallmentDialog(int index) {
+    final Map<String, dynamic> item = _installmentPlan[index];
+    final TextEditingController amountController = TextEditingController(
+      text: item['amount']?.toString() ?? '',
+    );
+    String selectedCurrency = item['currency'] ?? _currency;
+    DateTime selectedDate =
+        DateTime.tryParse(InvestmentAsset.installmentDueDate(item)) ??
+            DateTime.now();
+
+    showDialog<void>(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter dialogSetState) {
+            return AlertDialog(
+              title: Text('Edit Installment #${index + 1}'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      controller: amountController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: const InputDecoration(
+                        labelText: 'Amount',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      value: selectedCurrency,
+                      decoration: const InputDecoration(
+                        labelText: 'Currency',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: ZakatEngineService.supportedCurrencies
+                          .map(
+                            (String currency) => DropdownMenuItem<String>(
+                              value: currency,
+                              child: Text(
+                                ZakatEngineService.getCurrencySymbol(
+                                  currency,
+                                  isArabic:
+                                      Localizations.localeOf(
+                                        context,
+                                      ).languageCode.toLowerCase() ==
+                                      'ar',
+                                ),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (String? value) {
+                        if (value != null) {
+                          dialogSetState(() => selectedCurrency = value);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Payment Date'),
+                      subtitle: Text(_dateIso(selectedDate)),
+                      trailing: const Icon(Icons.calendar_today),
+                      onTap: () async {
+                        final DateTime? picked = await showDatePicker(
+                          context: context,
+                          initialDate: selectedDate,
+                          firstDate: DateTime(2000),
+                          lastDate: DateTime(2100),
+                        );
+                        if (picked != null) {
+                          dialogSetState(() => selectedDate = picked);
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    final double? amount =
+                        double.tryParse(amountController.text.trim());
+                    if (amount == null || amount <= 0) {
+                      showTopSnackBar(
+                        context,
+                        'Please enter a valid amount.',
+                      );
+                      return;
+                    }
+                    final controller = context.read<AppStateController>();
+                    final market = MarketData.fromJson(controller.state.marketData);
+                    setState(() {
+                      _installmentPlan[index]['amount'] = amount;
+                      _installmentPlan[index]['currency'] = selectedCurrency;
+                      final String dateStr = _dateIso(selectedDate);
+                      _installmentPlan[index]['date'] = dateStr;
+                      _installmentPlan[index]['recurrenceDate'] = dateStr;
+                      _updateLiabilityFromInstallments(market);
+                    });
+                    Navigator.pop(context);
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
   void dispose() {
-    _liabilityController.removeListener(_onLiabilityChanged);
+    _purchasePriceController.removeListener(_onGrowthInputsChanged);
+    _growthRateController.removeListener(_onGrowthInputsChanged);
     _nameController.dispose();
     _currentValueController.dispose();
     _ownershipPctController.dispose();
     _purchasePriceController.dispose();
     _liabilityController.dispose();
     _notesController.dispose();
+    _growthRateController.dispose();
     _numInstallmentsController.dispose();
+    _totalInstallmentsAmountController.dispose();
     _oneByOneAmountController.dispose();
     super.dispose();
   }
@@ -179,19 +372,19 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
-                  key: const Key('investmentCurrentValueField'),
-                  controller: _currentValueController,
+                  key: const Key('investmentPurchasePriceField'),
+                  controller: _purchasePriceController,
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
                   decoration: InputDecoration(
-                    labelText: context.l10n.tr('current_value'),
-                    border: OutlineInputBorder(),
+                    labelText: context.l10n.tr('purchase_price'),
+                    border: const OutlineInputBorder(),
                   ),
                   validator: (String? value) {
                     final double v = double.tryParse((value ?? '').trim()) ?? 0;
                     if (v <= 0) {
-                      return context.l10n.tr('current_value_gt_zero');
+                      return context.l10n.tr('purchase_price_gt_zero');
                     }
                     return null;
                   },
@@ -202,7 +395,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                   initialValue: _currency,
                   decoration: InputDecoration(
                     labelText: context.l10n.tr('currency'),
-                    border: OutlineInputBorder(),
+                    border: const OutlineInputBorder(),
                   ),
                   items: ZakatEngineService.supportedCurrencies
                       .map(
@@ -241,7 +434,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                   ),
                   decoration: InputDecoration(
                     labelText: context.l10n.tr('ownership_pct'),
-                    border: OutlineInputBorder(),
+                    border: const OutlineInputBorder(),
                   ),
                   validator: (String? value) {
                     final double pct =
@@ -254,29 +447,69 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
-                  key: const Key('investmentPurchasePriceField'),
-                  controller: _purchasePriceController,
+                  key: const Key('investmentCurrentValueField'),
+                  controller: _currentValueController,
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
                   decoration: InputDecoration(
-                    labelText: context.l10n.tr('purchase_price_optional'),
-                    border: OutlineInputBorder(),
+                    labelText: context.l10n.tr('current_value_optional'),
+                    border: const OutlineInputBorder(),
                   ),
+                  validator: (String? value) {
+                    final String trimmed = (value ?? '').trim();
+                    if (trimmed.isEmpty) return null;
+                    final double v = double.tryParse(trimmed) ?? 0;
+                    if (v < 0) {
+                      return context.l10n.tr('current_value_negative');
+                    }
+                    return null;
+                  },
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
-                  key: const Key('investmentLiabilityField'),
-                  controller: _liabilityController,
+                  key: const Key('investmentGrowthRateField'),
+                  controller: _growthRateController,
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
                   decoration: InputDecoration(
-                    labelText: context.l10n.tr('remaining_liability_optional'),
-                    border: OutlineInputBorder(),
+                    labelText: context.l10n.tr('yearly_growth_rate'),
+                    border: const OutlineInputBorder(),
                   ),
                 ),
+                const SizedBox(height: 16),
+                SwitchListTile(
+                  key: const Key('includeInstallmentsSwitch'),
+                  title: Text(context.l10n.tr('include_installments')),
+                  value: _showInstallmentConfig,
+                  onChanged: (bool value) {
+                    setState(() {
+                      _showInstallmentConfig = value;
+                      if (!value) {
+                        _installmentPlan.clear();
+                        _liabilityController.text = '0';
+                      } else {
+                        final controller = context.read<AppStateController>();
+                        final market = MarketData.fromJson(controller.state.marketData);
+                        _updateLiabilityFromInstallments(market);
+                      }
+                    });
+                  },
+                ),
                 if (_showInstallmentConfig) ...[
+                  const SizedBox(height: 8),
+                  TextFormField(
+                    key: const Key('investmentLiabilityField'),
+                    controller: _liabilityController,
+                    readOnly: true,
+                    decoration: InputDecoration(
+                      labelText: context.l10n.tr('remaining_liability_optional'),
+                      border: const OutlineInputBorder(),
+                      filled: true,
+                      fillColor: Theme.of(context).disabledColor.withValues(alpha: 0.05),
+                    ),
+                  ),
                   const SizedBox(height: 16),
                   const Divider(),
                   const SizedBox(height: 8),
@@ -290,16 +523,33 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                   const SizedBox(height: 8),
                   Builder(
                     builder: (BuildContext ctx) {
+                      final controller = context.read<AppStateController>();
+                      final market = MarketData.fromJson(controller.state.marketData);
                       final double liability =
                           double.tryParse(_liabilityController.text.trim()) ??
                           0;
-                      final double scheduledTotal = _installmentPlan.fold(
-                        0.0,
-                        (sum, item) =>
-                            sum + ((item['amount'] ?? 0) as num).toDouble(),
-                      );
+
+                      double scheduledTotal = 0.0;
+                      for (final Map<String, dynamic> item in _installmentPlan) {
+                        final String itemCurrency = (item['currency']?.toString().isNotEmpty == true)
+                            ? item['currency'].toString()
+                            : _currency;
+                        final double amount = ((item['amount'] ?? 0) as num).toDouble();
+                        final double amountEgp = ZakatEngineService.convertToEgp(
+                          amount,
+                          itemCurrency,
+                          market,
+                        );
+                        final double inAssetCur = ZakatEngineService.convertFromEgp(
+                          amountEgp,
+                          _currency,
+                          market,
+                        );
+                        scheduledTotal += inAssetCur;
+                      }
+
                       final double remainingToSchedule =
-                          liability - scheduledTotal;
+                          (liability - scheduledTotal).clamp(0.0, double.infinity);
                       final String liabilityStr =
                           ZakatEngineService.formatCurrency(
                             liability,
@@ -403,9 +653,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                                     fontWeight: FontWeight.bold,
                                     color: remainingToSchedule > 0.01
                                         ? Colors.orange
-                                        : (remainingToSchedule < -0.01
-                                              ? Colors.red
-                                              : Colors.green),
+                                        : Colors.green,
                                   ),
                                 ),
                               ],
@@ -453,6 +701,30 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                         border: OutlineInputBorder(),
                         hintText: 'e.g. 12',
                       ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      key: const Key('investmentTotalInstallmentsAmountField'),
+                      controller: _totalInstallmentsAmountController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: InputDecoration(
+                        labelText: context.l10n.tr('total_installments_amount'),
+                        border: const OutlineInputBorder(),
+                        hintText: 'e.g. 50000',
+                      ),
+                      validator: (String? value) {
+                        if (_showInstallmentConfig &&
+                            _scheduleInputMode == 'auto' &&
+                            _installmentPlan.isEmpty) {
+                          final double? amt = double.tryParse((value ?? '').trim());
+                          if (amt == null || amt <= 0) {
+                            return context.l10n.tr('total_installments_amount_required');
+                          }
+                        }
+                        return null;
+                      },
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
@@ -503,24 +775,22 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                       width: double.infinity,
                       child: OutlinedButton.icon(
                         icon: const Icon(Icons.flash_on),
-                        label: const Text('Generate Remaining Liability'),
+                        label: const Text('Generate Installments'),
                         onPressed: () {
-                          final double liability =
-                              double.tryParse(
-                                _liabilityController.text.trim(),
-                              ) ??
-                              0;
-                          final double scheduledTotal = _installmentPlan.fold(
-                            0.0,
-                            (sum, item) =>
-                                sum + ((item['amount'] ?? 0) as num).toDouble(),
+                          final double? totalAmount = double.tryParse(
+                            _totalInstallmentsAmountController.text.trim(),
                           );
-                          final double remainingToSchedule =
-                              liability - scheduledTotal;
                           final int? numInst = int.tryParse(
                             _numInstallmentsController.text.trim(),
                           );
 
+                          if (totalAmount == null || totalAmount <= 0) {
+                            showTopSnackBar(
+                              context,
+                              'Please enter a valid total installments amount.',
+                            );
+                            return;
+                          }
                           if (numInst == null || numInst <= 0) {
                             showTopSnackBar(
                               context,
@@ -528,17 +798,11 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                             );
                             return;
                           }
-                          if (remainingToSchedule <= 0.01) {
-                            showTopSnackBar(
-                              context,
-                              'No remaining liability left to schedule.',
-                            );
-                            return;
-                          }
 
-                          final double instAmount =
-                              remainingToSchedule / numInst;
+                          final double instAmount = totalAmount / numInst;
                           DateTime nextDate = _autoStartDate;
+                          final controller = context.read<AppStateController>();
+                          final market = MarketData.fromJson(controller.state.marketData);
                           setState(() {
                             for (int i = 0; i < numInst; i++) {
                               _installmentPlan.add(<String, dynamic>{
@@ -571,8 +835,10 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                                 );
                               }
                             }
+                            _updateLiabilityFromInstallments(market);
                           });
                           _numInstallmentsController.clear();
+                          _totalInstallmentsAmountController.clear();
                         },
                       ),
                     ),
@@ -587,6 +853,37 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                         border: OutlineInputBorder(),
                         hintText: 'e.g. 1000',
                       ),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      key: const Key('investmentOneByOneCurrencyField'),
+                      value: _oneByOneCurrency,
+                      decoration: const InputDecoration(
+                        labelText: 'Currency',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: ZakatEngineService.supportedCurrencies
+                          .map(
+                            (String currency) => DropdownMenuItem<String>(
+                              value: currency,
+                              child: Text(
+                                ZakatEngineService.getCurrencySymbol(
+                                  currency,
+                                  isArabic:
+                                      Localizations.localeOf(
+                                        context,
+                                      ).languageCode.toLowerCase() ==
+                                      'ar',
+                                ),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (String? value) {
+                        if (value != null) {
+                          setState(() => _oneByOneCurrency = value);
+                        }
+                      },
                     ),
                     const SizedBox(height: 12),
                     ListTile(
@@ -623,14 +920,17 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                             );
                             return;
                           }
+                          final controller = context.read<AppStateController>();
+                          final market = MarketData.fromJson(controller.state.marketData);
                           setState(() {
                             _installmentPlan.add(<String, dynamic>{
                               'amount': amount,
                               'date': _dateIso(_oneByOneDate),
                               'recurrenceDate': _dateIso(_oneByOneDate),
                               'isPaid': false,
-                              'currency': _currency,
+                              'currency': _oneByOneCurrency,
                             });
+                            _updateLiabilityFromInstallments(market);
                           });
                           _oneByOneAmountController.clear();
                         },
@@ -663,7 +963,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                         final String amountStr =
                             ZakatEngineService.formatCurrency(
                               amount,
-                              _currency,
+                              item['currency'] ?? _currency,
                               isArabic:
                                   Localizations.localeOf(
                                     context,
@@ -683,58 +983,152 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                                     : null,
                               ),
                             ),
-                            subtitle: InkWell(
-                              onTap: () async {
-                                final DateTime? picked = await showDatePicker(
-                                  context: context,
-                                  initialDate:
-                                      DateTime.tryParse(date) ?? DateTime.now(),
-                                  firstDate: DateTime(2000),
-                                  lastDate: DateTime(2100),
-                                );
-                                if (picked != null) {
-                                  setState(() {
-                                    final String pickedDate = _dateIso(picked);
-                                    _installmentPlan[index]['date'] =
-                                        pickedDate;
-                                    _installmentPlan[index]['recurrenceDate'] =
-                                        pickedDate;
-                                  });
-                                }
-                              },
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 4.0,
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      date,
-                                      style: TextStyle(
-                                        color: Theme.of(context).hintColor,
-                                        fontSize: 12,
+                            subtitle: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 4.0,
+                              ),
+                              child: Wrap(
+                                spacing: 12,
+                                runSpacing: 4,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  InkWell(
+                                    onTap: () async {
+                                      final DateTime? picked = await showDatePicker(
+                                        context: context,
+                                        initialDate:
+                                            DateTime.tryParse(date) ?? DateTime.now(),
+                                        firstDate: DateTime(2000),
+                                        lastDate: DateTime(2100),
+                                      );
+                                      if (picked != null) {
+                                        final controller = context.read<AppStateController>();
+                                        final market = MarketData.fromJson(controller.state.marketData);
+                                        setState(() {
+                                          final String pickedDate = _dateIso(picked);
+                                          _installmentPlan[index]['date'] =
+                                              pickedDate;
+                                          _installmentPlan[index]['recurrenceDate'] =
+                                              pickedDate;
+                                          _updateLiabilityFromInstallments(market);
+                                        });
+                                      }
+                                    },
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          date,
+                                          style: TextStyle(
+                                            color: Theme.of(context).hintColor,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Icon(
+                                          Icons.edit_calendar,
+                                          size: 12,
+                                          color: Theme.of(context).hintColor,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  if (index == _installmentPlan.length - 1)
+                                    InkWell(
+                                      onTap: () {
+                                        final DateTime? current =
+                                            DateTime.tryParse(date);
+                                        if (current != null) {
+                                          int year = current.year;
+                                          int month = current.month + 1;
+                                          if (month > 12) {
+                                            year += 1;
+                                            month = 1;
+                                          }
+                                          final int daysInMonth =
+                                              DateUtils.getDaysInMonth(
+                                                year,
+                                                month,
+                                              );
+                                          final int day =
+                                              current.day > daysInMonth
+                                                  ? daysInMonth
+                                                  : current.day;
+                                          final DateTime nextMonth = DateTime(
+                                            year,
+                                            month,
+                                            day,
+                                          );
+                                          final controller = context.read<AppStateController>();
+                                          final market = MarketData.fromJson(controller.state.marketData);
+                                          setState(() {
+                                            _installmentPlan.add(<String,
+                                                dynamic>{
+                                              'amount': amount,
+                                              'date': _dateIso(nextMonth),
+                                              'recurrenceDate':
+                                                  _dateIso(nextMonth),
+                                              'isPaid': false,
+                                              'currency':
+                                                  item['currency'] ??
+                                                  _currency,
+                                            });
+                                            _updateLiabilityFromInstallments(market);
+                                          });
+                                        }
+                                      },
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.control_point_duplicate,
+                                            size: 12,
+                                            color:
+                                                Theme.of(context)
+                                                    .colorScheme
+                                                    .primary,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            context.l10n.tr(
+                                              'repeat',
+                                            ),
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color:
+                                                  Theme.of(context)
+                                                      .colorScheme
+                                                      .primary,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
-                                    const SizedBox(width: 4),
-                                    Icon(
-                                      Icons.edit_calendar,
-                                      size: 12,
-                                      color: Theme.of(context).hintColor,
-                                    ),
-                                  ],
-                                ),
+                                ],
                               ),
                             ),
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.edit_outlined,
+                                    color: Colors.blue,
+                                    size: 20,
+                                  ),
+                                  onPressed: () =>
+                                      _showEditInstallmentDialog(index),
+                                ),
                                 Checkbox(
                                   value: isPaid,
                                   onChanged: (bool? val) {
+                                    final controller = context.read<AppStateController>();
+                                    final market = MarketData.fromJson(controller.state.marketData);
                                     setState(() {
                                       _installmentPlan[index]['isPaid'] =
                                           val == true;
+                                      _updateLiabilityFromInstallments(market);
                                     });
                                   },
                                 ),
@@ -745,8 +1139,11 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                                     size: 20,
                                   ),
                                   onPressed: () {
+                                    final controller = context.read<AppStateController>();
+                                    final market = MarketData.fromJson(controller.state.marketData);
                                     setState(() {
                                       _installmentPlan.removeAt(index);
+                                      _updateLiabilityFromInstallments(market);
                                     });
                                   },
                                 ),
@@ -782,7 +1179,10 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                       lastDate: DateTime(2100),
                     );
                     if (picked != null) {
-                      setState(() => _selectedDate = picked);
+                      setState(() {
+                        _selectedDate = picked;
+                        _calculateCurrentValue();
+                      });
                     }
                   },
                 ),
@@ -814,21 +1214,39 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
     setState(() => _saving = true);
 
     final InvestmentAsset? original = widget.initialInvestment;
-    final double currentValue = double.parse(
-      _currentValueController.text.trim(),
-    );
     final double ownershipPct = double.parse(
       _ownershipPctController.text.trim(),
     );
     final double purchasePrice =
         double.tryParse(_purchasePriceController.text.trim()) ?? 0;
-    final double liability =
-        double.tryParse(_liabilityController.text.trim()) ?? 0;
+    
+    final String rawCurrentValue = _currentValueController.text.trim();
+    final double currentValue = rawCurrentValue.isEmpty
+        ? purchasePrice
+        : (double.tryParse(rawCurrentValue) ?? purchasePrice);
+
+    double liability = double.tryParse(_liabilityController.text.trim()) ?? 0;
+    if (_showInstallmentConfig && _installmentPlan.isNotEmpty) {
+      final double computed = _installmentPlan
+          .where((item) => item['isPaid'] != true)
+          .fold(0.0, (sum, item) => sum + ((item['amount'] ?? 0) as num).toDouble());
+      liability = double.parse(computed.toStringAsFixed(2));
+    }
+
     final String valuationDate = _dateIso(_selectedDate);
 
     final List<Map<String, dynamic>> finalPlan = liability > 0
         ? InvestmentAsset.normalizeInstallmentPlan(_installmentPlan)
         : const <Map<String, dynamic>>[];
+
+    final double growthRate =
+        double.tryParse(_growthRateController.text.trim()) ?? 0;
+
+    final double finalRemainingAmount = liability;
+    final double finalPaidAmount = purchasePrice > liability
+        ? (purchasePrice - liability)
+        : (purchasePrice > 0 ? 0.0 : (original?.paidAmount ?? 0.0));
+    final double finalPaidAmountToDate = finalPaidAmount;
 
     final InvestmentAsset asset = InvestmentAsset(
       id: original?.id ?? _uuid.v4(),
@@ -841,9 +1259,9 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
       currency: _currency,
       originalPrice: purchasePrice,
       totalInterest: original?.totalInterest ?? 0,
-      totalPayable: original?.totalPayable ?? purchasePrice,
-      paidAmount: original?.paidAmount ?? (purchasePrice - liability),
-      remainingAmount: original?.remainingAmount ?? liability,
+      totalPayable: purchasePrice > 0 ? purchasePrice : (original?.totalPayable ?? purchasePrice),
+      paidAmount: finalPaidAmount,
+      remainingAmount: finalRemainingAmount,
       installmentPlan: finalPlan,
       valuationDate: valuationDate,
       marketValue: currentValue,
@@ -851,7 +1269,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
       valuationSource: 'manual',
       loanBalance: liability,
       loanAsOfDate: valuationDate,
-      paidAmountToDate: original?.paidAmountToDate ?? (purchasePrice - liability),
+      paidAmountToDate: finalPaidAmountToDate,
       ownershipSharePct: ownershipPct,
       country: original?.country ?? 'EG',
       location: _nameController.text.trim(),
@@ -860,6 +1278,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
       description: _notesController.text.trim(),
       noZakat: original?.noZakat ?? true,
       createdAt: original?.createdAt ?? DateTime.now().toIso8601String(),
+      yearlyGrowthRate: growthRate,
     );
 
     final AppStateController controller = context.read<AppStateController>();

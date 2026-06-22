@@ -107,11 +107,21 @@ class SmartCaptureParser {
       'chargeback',
       'returned payment',
       'payment returned',
+      'reverse transaction',
+      'reversed transaction',
+      'refunded transaction',
       'استرداد',
       'إرجاع',
       'تم رد المبلغ',
       'عكس العملية',
       'عكس القيد',
+      'عملية عكسية',
+      'استرجاع',
+      'إسترجاع',
+      'مرتجع',
+      'مسترجع',
+      'مسترد',
+      'مستردة',
     ]);
 
     // 1. Stage 2 — Transaction Type Classification (Strict Precedence)
@@ -194,6 +204,9 @@ class SmartCaptureParser {
               'received',
               'transfer received',
               'payment received',
+              'inward transfer',
+              'cashback',
+              'repayment',
               'تم الإيداع',
               'تم إضافة مبلغ',
               'حوالة واردة',
@@ -203,6 +216,11 @@ class SmartCaptureParser {
               'تم تحويل إليك',
               'تم إضافة',
               'added',
+              'ايداع',
+              'إيداع',
+              'إيداع نقدي',
+              'ايداع نقدي',
+              'كاش باك',
             ]));
 
     // General Transfer (if not captured above and contains transfer words)

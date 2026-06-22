@@ -388,27 +388,6 @@ Future<void> openSellMetalDialog(
                     : 0.0;
                 final double calcRealizedGain = sAmt - calcCostBasis;
 
-                List<Saving> nextSavings = List<Saving>.from(
-                  controller.state.savings,
-                );
-                List<Transaction> nextTransactions = List<Transaction>.from(
-                  controller.state.transactions,
-                );
-
-                // 1. Update metal holding remainingAmount
-                nextSavings = nextSavings.map((Saving s) {
-                  if (s.id == metalSaving.id) {
-                    final double currentRemaining = editTransaction != null
-                        ? s.remainingAmount + originalWeightToSell
-                        : s.remainingAmount;
-                    return s.copyWith(
-                      remainingAmount: currentRemaining - wSell,
-                    );
-                  }
-                  return s;
-                }).toList();
-
-                // 2. Create/Update single Transaction for Transfer activity
                 final Transaction transferTx = Transaction(
                   id: activityId,
                   type: 'transfer',
@@ -428,27 +407,26 @@ Future<void> openSellMetalDialog(
                   saleValue: sAmt,
                   realizedGain: calcRealizedGain,
                   realizedGainLossCurrency: sellingCurrency,
+                  metalQuantity: wSell,
                 );
 
-                if (editTransaction != null) {
-                  nextTransactions = nextTransactions.map((Transaction tx) {
-                    return tx.id == activityId ? transferTx : tx;
-                  }).toList();
-                } else {
-                  nextTransactions.add(transferTx);
-                }
-
-                // 3. Create/Update proceeds cash Saving
-                // First, clean up previous cash proceeds if editing
-                nextSavings.removeWhere(
-                  (Saving s) =>
-                      s.transferActivityId == activityId &&
-                      s.assetType == 'cash',
-                );
-
+                Saving? cashSaving;
                 if (depositIntoCash) {
-                  final Saving cashSaving = Saving(
-                    id: 'sav_${DateTime.now().millisecondsSinceEpoch}_cash',
+                  String cashSavingId = 'sav_${DateTime.now().millisecondsSinceEpoch}_cash';
+                  if (editTransaction != null) {
+                    final Saving? existing = controller.state.savings
+                        .where(
+                          (s) =>
+                              s.transferActivityId == activityId &&
+                              s.assetType == 'cash',
+                        )
+                        .firstOrNull;
+                    if (existing != null) {
+                      cashSavingId = existing.id;
+                    }
+                  }
+                  cashSaving = Saving(
+                    id: cashSavingId,
                     assetType: 'cash',
                     dateAcquired: date,
                     amount: sAmt,
@@ -464,16 +442,20 @@ Future<void> openSellMetalDialog(
                     createdAt: createdAt,
                     transferActivityId: activityId,
                   );
-                  nextSavings.add(cashSaving);
                 }
 
-                // Update app state
-                await controller.updateState(
-                  controller.state.copyWith(
-                    savings: nextSavings,
-                    transactions: nextTransactions,
-                  ),
-                );
+                if (editTransaction != null) {
+                  await controller.updateMetalSale(
+                    oldTransactionId: activityId,
+                    transaction: transferTx,
+                    generatedTargetSaving: cashSaving,
+                  );
+                } else {
+                  await controller.executeMetalSale(
+                    transaction: transferTx,
+                    generatedTargetSaving: cashSaving,
+                  );
+                }
 
                 if (context.mounted) {
                   showTopSnackBar(

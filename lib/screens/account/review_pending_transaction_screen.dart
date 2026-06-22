@@ -5,8 +5,10 @@ import 'package:intl/intl.dart';
 import '../../core/widgets/app_ui.dart';
 import '../../core/theme/app_theme_extensions.dart';
 import '../../core/theme/app_radii.dart';
+import '../../models/app_state.dart';
 import '../../models/merchant_rule.dart';
 import '../../models/pending_transaction.dart';
+import '../../models/transaction.dart';
 import '../../services/app_state_controller.dart';
 import '../../services/smart_capture_parser.dart';
 import '../../core/i18n/app_localizations.dart';
@@ -80,12 +82,13 @@ class _ReviewPendingTransactionScreenState
   void _initCategory() {
     final categories = context.read<AppStateController>().state.categories;
     final availableCategories = _getAvailableCategories(categories);
+    final String? resolvedCategory = _resolvedCaptureCategory(
+      context.read<AppStateController>().state,
+    );
 
     if (_selectedType == 'expense') {
-      if (availableCategories.contains(
-        widget.pendingTransaction.suggestedCategory,
-      )) {
-        _selectedCategory = widget.pendingTransaction.suggestedCategory;
+      if (availableCategories.contains(resolvedCategory)) {
+        _selectedCategory = resolvedCategory;
       } else if (availableCategories.contains('Uncategorized')) {
         _selectedCategory = 'Uncategorized';
       } else {
@@ -94,10 +97,8 @@ class _ReviewPendingTransactionScreenState
             : null;
       }
     } else if (_selectedType == 'income') {
-      if (availableCategories.contains(
-        widget.pendingTransaction.suggestedCategory,
-      )) {
-        _selectedCategory = widget.pendingTransaction.suggestedCategory;
+      if (availableCategories.contains(resolvedCategory)) {
+        _selectedCategory = resolvedCategory;
       } else if (availableCategories.contains('Income')) {
         _selectedCategory = 'Income';
       } else {
@@ -110,6 +111,24 @@ class _ReviewPendingTransactionScreenState
     } else {
       _selectedCategory = null;
     }
+  }
+
+  String? _resolvedCaptureCategory(AppStateModel state) {
+    final PendingTransaction pending = widget.pendingTransaction;
+    final String? linkedId = pending.linkedTransactionId;
+    if (linkedId != null && linkedId.isNotEmpty) {
+      final List<Transaction> matches = state.transactions
+          .where((Transaction tx) => tx.id == linkedId)
+          .toList(growable: false);
+      final Transaction? linkedTransaction = matches.isNotEmpty
+          ? matches.first
+          : null;
+      if (linkedTransaction != null &&
+          linkedTransaction.category.trim().isNotEmpty) {
+        return linkedTransaction.category;
+      }
+    }
+    return pending.suggestedCategory;
   }
 
   List<String> _getAvailableCategories(dynamic categories) {
@@ -475,13 +494,19 @@ class _ReviewPendingTransactionScreenState
     final bool isApprovedCapture =
         widget.pendingTransaction.status == CaptureStatus.autoApproved ||
         widget.pendingTransaction.status == CaptureStatus.manuallyApproved;
+    final String? resolvedCategory = _resolvedCaptureCategory(state);
 
     // If type requires category, and category is not in list, pick the first
     if ((_selectedType == 'expense' || _selectedType == 'income') &&
         (availableCategories.isNotEmpty) &&
         (_selectedCategory == null ||
             !availableCategories.contains(_selectedCategory))) {
-      _selectedCategory = availableCategories.first;
+      if (resolvedCategory != null &&
+          availableCategories.contains(resolvedCategory)) {
+        _selectedCategory = resolvedCategory;
+      } else {
+        _selectedCategory = availableCategories.first;
+      }
     }
 
     return Scaffold(

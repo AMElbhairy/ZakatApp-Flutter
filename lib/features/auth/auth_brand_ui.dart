@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../main.dart';
 import '../../core/i18n/app_localizations.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/theme/app_spacing.dart';
@@ -415,6 +416,7 @@ class AuthChecklistItem extends StatelessWidget {
             child: CircularProgressIndicator(
               strokeWidth: 1.8,
               color: tokens.colors.gold,
+              value: ZakatApp.isTesting ? 0.5 : null,
             ),
           )
         : Icon(

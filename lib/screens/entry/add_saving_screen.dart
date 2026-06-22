@@ -405,6 +405,20 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
       );
       return;
     }
+    if (_linkPurchaseToCashEntries) {
+      final double availableFunding = _fundingSources().fold<double>(
+        0,
+        (double sum, _FundingSource source) => sum + source.available,
+      );
+      if (purchaseAmount - availableFunding > 0.01) {
+        setState(() => _saving = false);
+        showTopSnackBar(
+          context,
+          'Cannot link this purchase to more cash than is currently available.',
+        );
+        return;
+      }
+    }
 
     final Saving? original = widget.initialSaving;
     final String unit = _assetType == 'cash'
@@ -434,12 +448,19 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
     );
 
     final AppStateController controller = context.read<AppStateController>();
-    if (widget.isEditMode) {
-      await controller.updateSaving(entry);
-    } else if (fundingAllocations.isNotEmpty) {
-      await controller.addSavingWithFundingAllocations(entry);
-    } else {
-      await controller.addSaving(entry);
+    try {
+      if (widget.isEditMode) {
+        await controller.updateSaving(entry);
+      } else if (fundingAllocations.isNotEmpty) {
+        await controller.addSavingWithFundingAllocations(entry);
+      } else {
+        await controller.addSaving(entry);
+      }
+    } on StateError catch (error) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      showTopSnackBar(context, error.message);
+      return;
     }
 
     if (!mounted) return;
@@ -471,10 +492,12 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
       );
     }
 
-    final List<_FundingSource> linkedSources =
-        sources.where((_FundingSource s) => s.isHistorical).toList();
-    final List<_FundingSource> additionalSources =
-        sources.where((_FundingSource s) => !s.isHistorical).toList();
+    final List<_FundingSource> linkedSources = sources
+        .where((_FundingSource s) => s.isHistorical)
+        .toList();
+    final List<_FundingSource> additionalSources = sources
+        .where((_FundingSource s) => !s.isHistorical)
+        .toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -486,7 +509,9 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
           ),
           const SizedBox(height: 8),
-          ...linkedSources.map((_FundingSource source) => _buildSourceCard(context, source)),
+          ...linkedSources.map(
+            (_FundingSource source) => _buildSourceCard(context, source),
+          ),
         ],
         if (additionalSources.isNotEmpty) ...<Widget>[
           const SizedBox(height: 16),
@@ -495,7 +520,9 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
           ),
           const SizedBox(height: 8),
-          ...additionalSources.map((_FundingSource source) => _buildSourceCard(context, source)),
+          ...additionalSources.map(
+            (_FundingSource source) => _buildSourceCard(context, source),
+          ),
         ],
       ],
     );

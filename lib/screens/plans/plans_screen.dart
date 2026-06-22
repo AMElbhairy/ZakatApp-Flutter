@@ -1449,7 +1449,7 @@ class _MilestonesCard extends StatelessWidget {
                               milestone.date != null
                                   ? '${isArabic ? "متوقع" : "Estimated"} ${DateFormat('MMM yyyy').format(milestone.date!)}'
                                   : (balancesHidden
-                                        ? '${isArabic ? "متبقية" : "to go"}'
+                                        ? (isArabic ? 'متبقية' : 'to go')
                                         : '${_compactMoney(milestone.remaining, currencyCode)} ${isArabic ? "متبقية" : "to go"}'),
                               style: TextStyle(
                                 color:
@@ -1751,7 +1751,7 @@ class _DashboardCard extends StatelessWidget {
                   ),
                 ),
               ),
-              if (trailing != null) trailing!,
+              trailing ?? const SizedBox.shrink(),
             ],
           ),
           const SizedBox(height: 18),

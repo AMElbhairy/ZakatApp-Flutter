@@ -1032,9 +1032,10 @@ class ActivityScreenState extends State<ActivityScreen> {
                                 }
                                 if (isCurrencyExchange &&
                                     entry.exchangeActivityId != null) {
-                                  await controller.deleteCurrencyExchangeActivity(
-                                    entry.exchangeActivityId!,
-                                  );
+                                  await controller
+                                      .deleteCurrencyExchangeActivity(
+                                        entry.exchangeActivityId!,
+                                      );
                                 } else if (entry.transaction != null) {
                                   await controller.deleteTransaction(
                                     entry.transaction!.id,
@@ -1560,30 +1561,91 @@ class ActivityScreenState extends State<ActivityScreen> {
                                       ),
                                     ],
                                   ),
-                                  TextButton(
-                                    key: Key('toggleZakatPaid_$monthKey'),
-                                    style: TextButton.styleFrom(
-                                      foregroundColor: tokens.colors.gold,
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                      ),
-                                    ),
-                                    onPressed: () => context
-                                        .read<AppStateController>()
-                                        .toggleZakatPaid(
-                                          monthKey: monthKey,
-                                          zakatAmountMainCurrency: totalZakat,
-                                          paymentDate: paymentDate,
+                                  if (isPaid)
+                                    TextButton(
+                                      key: Key('toggleZakatPaid_$monthKey'),
+                                      style: TextButton.styleFrom(
+                                        foregroundColor: tokens.colors.gold,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
                                         ),
-                                    child: Text(
-                                      isPaid
-                                          ? context.l10n.tr('undo_paid')
-                                          : context.l10n.tr('mark_zakat_paid'),
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
                                       ),
+                                      onPressed: () => context
+                                          .read<AppStateController>()
+                                          .toggleZakatPaid(
+                                            monthKey: monthKey,
+                                            zakatAmountMainCurrency: totalZakat,
+                                            paymentDate: paymentDate,
+                                          ),
+                                      child: Text(
+                                        context.l10n.tr('undo_paid'),
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    )
+                                  else
+                                    Wrap(
+                                      spacing: 6,
+                                      runSpacing: 4,
+                                      alignment: WrapAlignment.end,
+                                      children: <Widget>[
+                                        TextButton(
+                                          key: Key('markZakatPaid_$monthKey'),
+                                          style: TextButton.styleFrom(
+                                            foregroundColor:
+                                                tokens.colors.emerald,
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                            ),
+                                          ),
+                                          onPressed: () => context
+                                              .read<AppStateController>()
+                                              .markZakatPaid(
+                                                monthKey: monthKey,
+                                              ),
+                                          child: Text(
+                                            context.l10n.tr('mark_as_paid'),
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                        TextButton(
+                                          key: Key('toggleZakatPaid_$monthKey'),
+                                          style: TextButton.styleFrom(
+                                            foregroundColor: tokens.colors.gold,
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                            ),
+                                          ),
+                                          onPressed: () async {
+                                            try {
+                                              await context
+                                                  .read<AppStateController>()
+                                                  .payZakat(
+                                                    monthKey: monthKey,
+                                                    zakatAmountMainCurrency:
+                                                        totalZakat,
+                                                    paymentDate: paymentDate,
+                                                  );
+                                            } on StateError catch (error) {
+                                              if (!context.mounted) return;
+                                              showTopSnackBar(
+                                                context,
+                                                error.message,
+                                              );
+                                            }
+                                          },
+                                          child: Text(
+                                            context.l10n.tr('pay'),
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                  ),
                                 ],
                               ),
                             ),
@@ -1763,11 +1825,13 @@ class ActivityScreenState extends State<ActivityScreen> {
     if (titleLower.contains('gold sale')) {
       final Transaction? tx = entry.transaction;
       if (tx != null) {
-        double weight = 0.0;
-        final RegExp regex = RegExp(r'([0-9.]+)\s*g');
-        final Match? match = regex.firstMatch(tx.description);
-        if (match != null) {
-          weight = double.tryParse(match.group(1) ?? '') ?? 0.0;
+        double weight = tx.metalQuantity ?? 0.0;
+        if (weight == 0.0) {
+          final RegExp regex = RegExp(r'([0-9.]+)\s*g');
+          final Match? match = regex.firstMatch(tx.description);
+          if (match != null) {
+            weight = double.tryParse(match.group(1) ?? '') ?? 0.0;
+          }
         }
         final String formattedCost = ZakatEngineService.formatCurrency(
           tx.amount,
@@ -1791,11 +1855,13 @@ class ActivityScreenState extends State<ActivityScreen> {
     if (titleLower.contains('silver sale')) {
       final Transaction? tx = entry.transaction;
       if (tx != null) {
-        double weight = 0.0;
-        final RegExp regex = RegExp(r'([0-9.]+)\s*g');
-        final Match? match = regex.firstMatch(tx.description);
-        if (match != null) {
-          weight = double.tryParse(match.group(1) ?? '') ?? 0.0;
+        double weight = tx.metalQuantity ?? 0.0;
+        if (weight == 0.0) {
+          final RegExp regex = RegExp(r'([0-9.]+)\s*g');
+          final Match? match = regex.firstMatch(tx.description);
+          if (match != null) {
+            weight = double.tryParse(match.group(1) ?? '') ?? 0.0;
+          }
         }
         final String formattedCost = ZakatEngineService.formatCurrency(
           tx.amount,
@@ -2012,17 +2078,17 @@ class _ActivityEntry {
       transferDescription:
           '$sourceCurrency ${sourceAmount.toStringAsFixed(2)} → $targetCurrency ${targetAmount.toStringAsFixed(2)}',
       transferKey: 'exchange_${source.exchangePairId ?? source.id}',
-      exchangeActivityId:
-          source.exchangePairId?.trim().isNotEmpty == true
+      exchangeActivityId: source.exchangePairId?.trim().isNotEmpty == true
           ? source.exchangePairId!.trim()
           : (targetSaving?.transferActivityId?.trim().isNotEmpty == true
                 ? targetSaving!.transferActivityId!.trim()
                 : null),
-      transferDate: (sourceTransaction?.createdAt.isNotEmpty == true
-              ? sourceTransaction!.createdAt
-              : (targetSaving?.createdAt ?? source.createdAt))
-          .split('T')
-          .first,
+      transferDate:
+          (sourceTransaction?.createdAt.isNotEmpty == true
+                  ? sourceTransaction!.createdAt
+                  : (targetSaving?.createdAt ?? source.createdAt))
+              .split('T')
+              .first,
       transferCreatedAt: sourceTransaction?.createdAt.isNotEmpty == true
           ? sourceTransaction!.createdAt
           : (targetSaving?.createdAt ?? source.createdAt),
@@ -2054,8 +2120,7 @@ class _ActivityEntry {
       transferDescription:
           '$sourceCurrency ${sourceAmount.toStringAsFixed(2)} → ${saving.unit} ${saving.amount.toStringAsFixed(2)}',
       transferKey: 'legacy_exchange_${saving.id}',
-      exchangeActivityId:
-          saving.transferActivityId?.trim().isNotEmpty == true
+      exchangeActivityId: saving.transferActivityId?.trim().isNotEmpty == true
           ? saving.transferActivityId!.trim()
           : null,
       transferDate: saving.dateAcquired.trim().isNotEmpty
@@ -2075,8 +2140,7 @@ class _ActivityEntry {
       transferDescription:
           '${saving.amount.toStringAsFixed(2)}g $metal • ${saving.purchaseCurrency} ${saving.purchaseAmount.toStringAsFixed(2)}',
       transferKey: 'metal_${saving.id}',
-      exchangeActivityId:
-          saving.transferActivityId?.trim().isNotEmpty == true
+      exchangeActivityId: saving.transferActivityId?.trim().isNotEmpty == true
           ? saving.transferActivityId!.trim()
           : null,
       transferDate: saving.dateAcquired.trim().isNotEmpty

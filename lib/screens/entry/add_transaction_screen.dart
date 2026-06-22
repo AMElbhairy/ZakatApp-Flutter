@@ -310,6 +310,19 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                               _amountController.text.trim(),
                             );
 
+                            if (!widget.isEditMode && _type == 'expense') {
+                              final double availableBalance = context
+                                  .read<AppStateController>()
+                                  .getAvailableBalance(currency: _currency);
+                              if (availableBalance <= 0) {
+                                setState(() => _saving = false);
+                                _showError(
+                                  _expenseBlockedMessage(context, _currency),
+                                );
+                                return;
+                              }
+                            }
+
                             final Transaction? original =
                                 widget.initialTransaction;
                             final Transaction transaction = Transaction(
@@ -398,6 +411,23 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   void _showSuccess(String message) {
     if (!mounted) return;
     showTopSnackBar(context, message);
+  }
+
+  static String _expenseBlockedMessage(
+    BuildContext context,
+    String currency,
+  ) {
+    final bool isArabic =
+        Localizations.localeOf(context).languageCode.toLowerCase() == 'ar';
+    final String normalizedCurrency = currency.trim().toUpperCase();
+    if (isArabic) {
+      return normalizedCurrency.isEmpty
+          ? 'لا يوجد رصيد متاح لإضافة هذا المصروف.'
+          : 'لا يوجد رصيد متاح بعملة $normalizedCurrency لإضافة هذا المصروف.';
+    }
+    return normalizedCurrency.isEmpty
+        ? 'No available balance to add this expense.'
+        : 'No available balance in $normalizedCurrency to add this expense.';
   }
 
   Future<void> _scanReceiptWithAi() async {

@@ -148,8 +148,7 @@ class _ObligationsListScreenState extends State<ObligationsListScreen> {
           initialValue: selected,
           items: categories
               .map(
-                (String c) =>
-                    DropdownMenuItem<String>(
+                (String c) => DropdownMenuItem<String>(
                   value: c,
                   child: Text(ctx.l10n.translateCategory(c)),
                 ),
@@ -389,7 +388,9 @@ class _ObligationsListScreenState extends State<ObligationsListScreen> {
                       child: Row(
                         children: <Widget>[
                           CircleAvatar(
-                            backgroundColor: Colors.white.withValues(alpha: 0.15),
+                            backgroundColor: Colors.white.withValues(
+                              alpha: 0.15,
+                            ),
                             radius: 28,
                             child: const Icon(
                               Icons.event_available_rounded,
@@ -559,33 +560,30 @@ class _ObligationsListScreenState extends State<ObligationsListScreen> {
                                       ],
                                     ),
                                     const SizedBox(width: 8),
-                                    TextButton(
-                                      key: Key(
-                                        'toggleObligation_${item.type}_${item.id}_$index',
-                                      ),
-                                      style: TextButton.styleFrom(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 10,
-                                          vertical: 4,
+                                    if (item.isPaid)
+                                      TextButton(
+                                        key: Key(
+                                          'toggleObligation_${item.type}_${item.id}_$index',
                                         ),
-                                        minimumSize: Size.zero,
-                                        tapTargetSize:
-                                            MaterialTapTargetSize.shrinkWrap,
-                                        foregroundColor: item.isPaid
-                                            ? Colors.grey
-                                            : tokens.colors.emerald,
-                                      ),
-                                      onPressed: () async {
-                                        if (item.type == 'zakat') {
-                                          await controller.toggleZakatPaid(
-                                            monthKey: item.id,
-                                            zakatAmountMainCurrency:
-                                                item.amountEgp,
-                                            paymentDate: item.dateStr,
-                                          );
-                                        } else {
-                                          if (item.isPaid) {
-                                            // Mark installment unpaid
+                                        style: TextButton.styleFrom(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                            vertical: 4,
+                                          ),
+                                          minimumSize: Size.zero,
+                                          tapTargetSize:
+                                              MaterialTapTargetSize.shrinkWrap,
+                                          foregroundColor: Colors.grey,
+                                        ),
+                                        onPressed: () async {
+                                          if (item.type == 'zakat') {
+                                            await controller.toggleZakatPaid(
+                                              monthKey: item.id,
+                                              zakatAmountMainCurrency:
+                                                  item.amountEgp,
+                                              paymentDate: item.dateStr,
+                                            );
+                                          } else {
                                             await controller
                                                 .toggleInstallmentPaid(
                                                   assetId: item.id,
@@ -593,40 +591,129 @@ class _ObligationsListScreenState extends State<ObligationsListScreen> {
                                                       item.installmentIndex!,
                                                   paymentCategory: '',
                                                 );
-                                          } else {
-                                            // Mark installment paid
-                                            final List<String>
-                                            expenseCategories = controller
-                                                .state
-                                                .categories
-                                                .expense;
-                                            final String? category =
-                                                await _pickInstallmentCategory(
-                                                  context,
-                                                  expenseCategories,
-                                                );
-                                            if (category != null) {
-                                              await controller
-                                                  .toggleInstallmentPaid(
-                                                    assetId: item.id,
-                                                    installmentIndex:
-                                                        item.installmentIndex!,
-                                                    paymentCategory: category,
-                                                  );
-                                            }
                                           }
-                                        }
-                                      },
-                                      child: Text(
-                                        item.isPaid
-                                            ? context.l10n.tr('mark_as_unpaid')
-                                            : context.l10n.tr('pay'),
-                                        style: const TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w700,
+                                        },
+                                        child: Text(
+                                          context.l10n.tr('mark_as_unpaid'),
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w700,
+                                          ),
                                         ),
+                                      )
+                                    else
+                                      Wrap(
+                                        spacing: 6,
+                                        runSpacing: 4,
+                                        alignment: WrapAlignment.end,
+                                        children: <Widget>[
+                                          TextButton(
+                                            key: Key(
+                                              'markObligation_${item.type}_${item.id}_$index',
+                                            ),
+                                            style: TextButton.styleFrom(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 10,
+                                                    vertical: 4,
+                                                  ),
+                                              minimumSize: Size.zero,
+                                              tapTargetSize:
+                                                  MaterialTapTargetSize
+                                                      .shrinkWrap,
+                                              foregroundColor:
+                                                  tokens.colors.emerald,
+                                            ),
+                                            onPressed: () async {
+                                              if (item.type == 'zakat') {
+                                                await controller.markZakatPaid(
+                                                  monthKey: item.id,
+                                                );
+                                              } else {
+                                                await controller
+                                                    .markInstallmentPaid(
+                                                      assetId: item.id,
+                                                      installmentIndex: item
+                                                          .installmentIndex!,
+                                                    );
+                                              }
+                                            },
+                                            child: Text(
+                                              context.l10n.tr('mark_as_paid'),
+                                              style: const TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                          ),
+                                          TextButton(
+                                            key: Key(
+                                              'toggleObligation_${item.type}_${item.id}_$index',
+                                            ),
+                                            style: TextButton.styleFrom(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 10,
+                                                    vertical: 4,
+                                                  ),
+                                              minimumSize: Size.zero,
+                                              tapTargetSize:
+                                                  MaterialTapTargetSize
+                                                      .shrinkWrap,
+                                              foregroundColor:
+                                                  tokens.colors.gold,
+                                            ),
+                                            onPressed: () async {
+                                              try {
+                                                if (item.type == 'zakat') {
+                                                  await controller.payZakat(
+                                                    monthKey: item.id,
+                                                    zakatAmountMainCurrency:
+                                                        item.amountEgp,
+                                                    paymentDate: item.dateStr,
+                                                  );
+                                                } else {
+                                                  final List<String>
+                                                  expenseCategories = controller
+                                                      .state
+                                                      .categories
+                                                      .expense;
+                                                  final String? category =
+                                                      await _pickInstallmentCategory(
+                                                        context,
+                                                        expenseCategories,
+                                                      );
+                                                  if (category != null) {
+                                                    await controller
+                                                        .payInstallment(
+                                                          assetId: item.id,
+                                                          installmentIndex: item
+                                                              .installmentIndex!,
+                                                          paymentCategory:
+                                                              category,
+                                                        );
+                                                  } else {
+                                                    return;
+                                                  }
+                                                }
+                                              } on StateError catch (error) {
+                                                if (!context.mounted) return;
+                                                showTopSnackBar(
+                                                  context,
+                                                  error.message,
+                                                );
+                                              }
+                                            },
+                                            child: Text(
+                                              context.l10n.tr('pay'),
+                                              style: const TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
                                       ),
-                                    ),
                                   ],
                                 ),
                               ),

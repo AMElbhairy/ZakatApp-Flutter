@@ -1,9 +1,12 @@
+import 'dart:convert';
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart' hide Transaction;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
+import 'sync_diagnostics_service.dart';
+import '../data/sync/sync_reports.dart';
 import '../models/correction_feedback.dart';
 import '../models/financial_plan.dart';
 import '../models/investment_asset.dart';
@@ -51,6 +54,7 @@ class FirestoreSyncManager {
     : _firestore = firestore ?? FirebaseFirestore.instance,
       _auth = auth ?? FirebaseAuth.instance;
 
+  static const int currentSyncSchemaVersion = 1;
   static const String captureInboxCollection = 'captureInboxItems';
   static const String merchantRulesCollection = 'merchantRules';
   static const String transactionsCollection = 'transactions';
@@ -119,6 +123,15 @@ class FirestoreSyncManager {
       },
     );
   }
+
+  String collectionPathForUid(String uid, String collection) =>
+      _userCollection(uid, collection).path;
+
+  String savingsCollectionPath(String uid) =>
+      collectionPathForUid(uid, savingsCollection);
+
+  String deletedSavingsCollectionPath(String uid) =>
+      collectionPathForUid(uid, deletedSavingsCollection);
 
   Stream<List<RecurringTransaction>> watchRecurringTransactions({
     required String uid,
@@ -291,6 +304,15 @@ class FirestoreSyncManager {
             'doc ${doc.id} — $error',
           );
           debugPrintStack(stackTrace: stack);
+          await SyncDiagnosticsService.recordSkippedRecord(
+            subsystem: 'firebase',
+            reason: 'Malformed document in $collection',
+            metadata: <String, dynamic>{
+              'collection': collection,
+              'documentId': doc.id,
+              'error': error.toString(),
+            },
+          );
         }
       }
       return items;
@@ -389,6 +411,11 @@ class FirestoreSyncManager {
     required String uid,
     required String sinceCursor,
   }) {
+    if (kDebugMode) {
+      debugPrint(
+        '[FIREBASE_SAVINGS] pullPath=${savingsCollectionPath(uid)} cursor=$sinceCursor',
+      );
+    }
     return _loadDeltaSince<Saving>(
       uid: uid,
       collection: savingsCollection,
@@ -523,6 +550,16 @@ class FirestoreSyncManager {
             'doc ${doc.id} — $error',
           );
           debugPrintStack(stackTrace: stack);
+          await SyncDiagnosticsService.recordSkippedRecord(
+            subsystem: 'firebase',
+            reason: 'Malformed delta document in $collection',
+            metadata: <String, dynamic>{
+              'collection': collection,
+              'documentId': doc.id,
+              'cursorField': 'updatedAt',
+              'error': error.toString(),
+            },
+          );
         }
       }
       return FirestoreCollectionDelta<T>(items: items, cursor: cursor);
@@ -654,6 +691,15 @@ class FirestoreSyncManager {
         final String id = (doc.data()['id'] ?? doc.id).toString().trim();
         if (id.isNotEmpty) {
           ids.add(id);
+        } else {
+          await SyncDiagnosticsService.recordSkippedRecord(
+            subsystem: 'firebase',
+            reason: 'Missing id in deleted collection',
+            metadata: <String, dynamic>{
+              'collection': collection,
+              'documentId': doc.id,
+            },
+          );
         }
         cursor = _maxCursor(cursor, _cursorFromMap(doc.data(), 'deletedAt'));
       }
@@ -673,7 +719,7 @@ class FirestoreSyncManager {
       collection: savingsCollection,
       items: items,
       idSelector: (Saving item) => item.id,
-      encoder: (Saving item) => item.toJson(),
+      encoder: (Saving item) => item.toFirestoreJson(),
       deletedIds: deletedIds,
     );
     await _recordDeletedIds(
@@ -820,6 +866,71 @@ class FirestoreSyncManager {
     }
   }
 
+  Future<FirestoreAuthValidationResult> validateSession({
+    required String expectedUid,
+  }) async {
+    final User? current = _auth.currentUser;
+    if (current == null) {
+      return FirestoreAuthValidationResult(
+        expectedUid: expectedUid,
+        currentUid: null,
+        isSignedIn: false,
+        isUidMatch: false,
+        tokenRefreshed: false,
+        isValid: false,
+        errorCode: 'not-signed-in',
+        errorMessage: 'Not signed in.',
+      );
+    }
+    if (current.uid != expectedUid) {
+      return FirestoreAuthValidationResult(
+        expectedUid: expectedUid,
+        currentUid: current.uid,
+        isSignedIn: true,
+        isUidMatch: false,
+        tokenRefreshed: false,
+        isValid: false,
+        errorCode: 'user-mismatch',
+        errorMessage:
+            'FirebaseAuth uid ${current.uid} does not match expected uid $expectedUid.',
+      );
+    }
+    try {
+      await current.getIdToken(true);
+      return FirestoreAuthValidationResult(
+        expectedUid: expectedUid,
+        currentUid: current.uid,
+        isSignedIn: true,
+        isUidMatch: true,
+        tokenRefreshed: true,
+        isValid: true,
+      );
+    } on FirebaseAuthException catch (error) {
+      final bool expired = _isTokenExpired(error);
+      return FirestoreAuthValidationResult(
+        expectedUid: expectedUid,
+        currentUid: current.uid,
+        isSignedIn: true,
+        isUidMatch: true,
+        tokenRefreshed: false,
+        isValid: false,
+        errorCode: expired ? 'auth-expired' : error.code,
+        errorMessage: _readableAuthError(error),
+      );
+    } catch (error) {
+      return FirestoreAuthValidationResult(
+        expectedUid: expectedUid,
+        currentUid: current.uid,
+        isSignedIn: true,
+        isUidMatch: true,
+        tokenRefreshed: false,
+        isValid: false,
+        errorCode: 'auth-validation-failed',
+        errorMessage: error.toString(),
+      );
+    }
+  }
+
   Stream<List<T>> watchCollection<T>({
     required String uid,
     required String collection,
@@ -870,16 +981,31 @@ class FirestoreSyncManager {
           <String, Map<String, dynamic>>{};
       for (final T item in items) {
         final String id = idSelector(item).trim();
-        if (id.isEmpty) continue;
+        if (id.isEmpty) {
+          await SyncDiagnosticsService.recordSkippedRecord(
+            subsystem: 'firebase',
+            reason: 'Empty document id',
+            metadata: <String, dynamic>{
+              'collection': collection,
+              'payload': _jsonSafeValue(encoder(item)),
+            },
+          );
+          continue;
+        }
         payloads[id] = <String, dynamic>{
           ...encoder(item),
+          'schemaVersion': currentSyncSchemaVersion,
           'updatedAt': FieldValue.serverTimestamp(),
         };
       }
 
       await _commitSetOperations(collectionRef, payloads);
       await _commitDeleteOperations(collectionRef, deletedIds);
-    } on FirebaseException catch (error) {
+    } on FirebaseException catch (error, stack) {
+      debugPrint(
+        'FirestoreSyncManager.syncCollection failed for $collection: $error',
+      );
+      debugPrintStack(stackTrace: stack);
       throw _mapFirebaseException(error);
     }
   }
@@ -926,20 +1052,75 @@ class FirestoreSyncManager {
     final List<MapEntry<String, Map<String, dynamic>>> entries = payloads
         .entries
         .toList(growable: false);
+    final bool isSavingsCollection = collectionRef.path.endsWith(
+      '/$savingsCollection',
+    );
     for (int index = 0; index < entries.length; index += maxBatchSize) {
       final WriteBatch batch = _firestore.batch();
       final int end = (index + maxBatchSize < entries.length)
           ? index + maxBatchSize
           : entries.length;
+      final List<MapEntry<String, Map<String, dynamic>>> batchEntries = entries
+          .sublist(index, end);
       for (int i = index; i < end; i++) {
         final MapEntry<String, Map<String, dynamic>> entry = entries[i];
+        if (isSavingsCollection) {
+          final String documentPath = collectionRef.doc(entry.key).path;
+          _logSavingsWrite(
+            collectionName: savingsCollection,
+            documentPath: documentPath,
+            documentId: entry.key,
+            operation: 'upsert',
+            savingsId: (entry.value['id'] ?? entry.key).toString(),
+            assetType: (entry.value['assetType'] ?? '').toString(),
+            payload: entry.value,
+          );
+          await SyncDiagnosticsService.recordSavingsFirestoreAttempt(
+            documentPath: documentPath,
+            documentId: entry.key,
+            savingsId: (entry.value['id'] ?? entry.key).toString(),
+            assetType: (entry.value['assetType'] ?? '').toString(),
+            payloadJson: jsonEncode(_jsonSafeValue(entry.value)),
+          );
+        }
         batch.set(
           collectionRef.doc(entry.key),
           entry.value,
           SetOptions(merge: true),
         );
       }
-      await batch.commit();
+      try {
+        await batch.commit();
+        if (isSavingsCollection) {
+          for (final MapEntry<String, Map<String, dynamic>> entry
+              in batchEntries) {
+            final String documentPath = collectionRef.doc(entry.key).path;
+            await SyncDiagnosticsService.recordSavingsFirestoreSuccess(
+              documentPath: documentPath,
+              documentId: entry.key,
+              savingsId: (entry.value['id'] ?? entry.key).toString(),
+              assetType: (entry.value['assetType'] ?? '').toString(),
+              payloadJson: jsonEncode(_jsonSafeValue(entry.value)),
+            );
+          }
+        }
+      } catch (error) {
+        if (isSavingsCollection) {
+          for (final MapEntry<String, Map<String, dynamic>> entry
+              in batchEntries) {
+            final String documentPath = collectionRef.doc(entry.key).path;
+            await SyncDiagnosticsService.recordSavingsFirestoreFailure(
+              documentPath: documentPath,
+              documentId: entry.key,
+              savingsId: (entry.value['id'] ?? entry.key).toString(),
+              assetType: (entry.value['assetType'] ?? '').toString(),
+              payloadJson: jsonEncode(_jsonSafeValue(entry.value)),
+              error: error,
+            );
+          }
+        }
+        rethrow;
+      }
     }
   }
 
@@ -988,6 +1169,7 @@ class FirestoreSyncManager {
         final String id = cleaned[i];
         batch.set(collectionRef.doc(id), <String, dynamic>{
           'id': id,
+          'schemaVersion': currentSyncSchemaVersion,
           'deletedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
       }
@@ -1064,5 +1246,62 @@ class FirestoreSyncManager {
       return FirestoreSyncPermissionException(message);
     }
     return Exception(message);
+  }
+
+  void _logSavingsWrite({
+    required String collectionName,
+    required String documentPath,
+    required String documentId,
+    required String operation,
+    required String savingsId,
+    required String assetType,
+    required Map<String, dynamic> payload,
+  }) {
+    if (!kDebugMode) return;
+    debugPrint(
+      '[FIREBASE_SAVINGS] collection=$collectionName path=$documentPath documentId=$documentId '
+      'operation=$operation savingsId=$savingsId assetType=$assetType '
+      'payload=${jsonEncode(_jsonSafeValue(payload))}',
+    );
+  }
+
+  dynamic _jsonSafeValue(dynamic value) {
+    if (value is Map) {
+      return value.map(
+        (dynamic key, dynamic entry) =>
+            MapEntry(key.toString(), _jsonSafeValue(entry)),
+      );
+    }
+    if (value is Iterable) {
+      return value.map(_jsonSafeValue).toList(growable: false);
+    }
+    if (value == null || value is String || value is num || value is bool) {
+      return value;
+    }
+    return value.toString();
+  }
+
+  bool _isTokenExpired(FirebaseAuthException error) {
+    const Set<String> expiredCodes = <String>{
+      'user-token-expired',
+      'invalid-user-token',
+      'requires-recent-login',
+    };
+    return expiredCodes.contains(error.code.toLowerCase());
+  }
+
+  String _readableAuthError(FirebaseAuthException error) {
+    switch (error.code) {
+      case 'network-request-failed':
+        return 'Network error. Please check your connection and try again.';
+      case 'user-disabled':
+        return 'Your account has been disabled.';
+      case 'user-token-expired':
+      case 'invalid-user-token':
+      case 'requires-recent-login':
+        return 'Your session expired. Please sign in again.';
+      default:
+        return error.message ?? error.toString();
+    }
   }
 }

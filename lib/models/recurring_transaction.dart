@@ -65,6 +65,38 @@ class RecurringTransaction {
     };
   }
 
+  RecurringTransaction copyWith({
+    String? id,
+    String? name,
+    String? type,
+    double? amount,
+    String? currency,
+    String? category,
+    String? description,
+    int? dayOfMonth,
+    String? frequency,
+    String? lastProcessed,
+    bool? enabled,
+    String? skipMonth,
+    String? createdAt,
+  }) {
+    return RecurringTransaction(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      type: type ?? this.type,
+      amount: amount ?? this.amount,
+      currency: currency ?? this.currency,
+      category: category ?? this.category,
+      description: description ?? this.description,
+      dayOfMonth: dayOfMonth ?? this.dayOfMonth,
+      frequency: frequency ?? this.frequency,
+      lastProcessed: lastProcessed ?? this.lastProcessed,
+      enabled: enabled ?? this.enabled,
+      skipMonth: skipMonth ?? this.skipMonth,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
+
   static double _asDouble(dynamic value) {
     if (value is num) return value.toDouble();
     return double.tryParse(value?.toString() ?? '') ?? 0;

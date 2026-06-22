@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'dart:convert';
@@ -7,18 +8,23 @@ import 'package:http/http.dart' as http;
 import '../../core/i18n/app_localizations.dart';
 import '../../core/widgets/app_ui.dart';
 import '../../models/market_snapshot.dart';
-import '../../models/recurring_transaction.dart';
 import 'categories_screen.dart';
 import 'merchant_rules_screen.dart';
+import 'recurring_transactions_screen.dart';
 import '../../core/services/zakat_engine.dart';
-import '../../core/utils/amount_parser.dart';
 import '../../models/user_profile.dart';
 import '../../services/app_state_controller.dart';
+import '../../services/account_deletion_auth_backend.dart';
+import '../../services/account_deletion_service.dart';
+import '../../services/account_reauthentication_service.dart';
 import '../../services/auth_controller.dart';
 import '../../features/auth/auth_service.dart';
 import '../../services/backup_restore_card.dart';
-import '../../core/widgets/currency_dropdown_form_field.dart';
+import '../../services/diagnostics_flags.dart';
+import '../../data/sync/sync_reports.dart';
+import 'diagnostics_screen.dart';
 import '../../services/biometric_service.dart';
+import '../entry/currency_exchange_screen.dart';
 
 class AccountScreen extends StatefulWidget {
   const AccountScreen({super.key});
@@ -56,7 +62,6 @@ class _AccountScreenState extends State<AccountScreen> {
   bool _isRefreshingMarket = false;
   String _refreshMarketMessage = '';
   bool _manualOverrideExpanded = false;
-  bool _recurringExpanded = false;
   bool _securityExpanded = false;
   bool _aiExpanded = false;
   bool _aiInitialized = false;
@@ -284,49 +289,11 @@ class _AccountScreenState extends State<AccountScreen> {
                       icon: Icons.event_repeat_outlined,
                       title: context.l10n.tr('recurring_section'),
                       onTap: () {
-                        setState(
-                          () => _recurringExpanded = !_recurringExpanded,
-                        );
+                        Navigator.of(
+                          context,
+                        ).push(RecurringTransactionsScreen.route());
                       },
                     ),
-                    if (_recurringExpanded)
-                      Padding(
-                        padding: const EdgeInsets.only(
-                          left: 36,
-                          top: 4,
-                          bottom: 8,
-                        ),
-                        child: Column(
-                          children: [
-                            ...state.recurringTransactions.map(
-                              (RecurringTransaction item) => ListTile(
-                                dense: true,
-                                contentPadding: EdgeInsets.zero,
-                                title: Text(item.name),
-                                subtitle: Text(
-                                  '${item.type} • ${item.amount} ${item.currency} • ${context.l10n.tr('day_of_month')}: ${item.dayOfMonth}',
-                                ),
-                                trailing: IconButton(
-                                  key: Key('deleteRecurring_${item.id}'),
-                                  onPressed: () => context
-                                      .read<AppStateController>()
-                                      .deleteRecurringTransaction(item.id),
-                                  icon: const Icon(Icons.delete_outline),
-                                ),
-                              ),
-                            ),
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: FilledButton(
-                                key: const Key('addRecurringButton'),
-                                onPressed: () =>
-                                    _showAddRecurringDialog(context),
-                                child: Text(context.l10n.tr('add_recurring')),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
                   ],
                 ),
               ),
@@ -497,7 +464,13 @@ class _AccountScreenState extends State<AccountScreen> {
                       alignment: Alignment.centerLeft,
                       child: OutlinedButton(
                         key: const Key('openCurrencyExchangeButton'),
-                        onPressed: () => _openCurrencyExchangeDialog(context),
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const CurrencyExchangeScreen(),
+                            ),
+                          );
+                        },
                         child: Text(context.l10n.tr('currency_exchange')),
                       ),
                     ),
@@ -812,6 +785,30 @@ class _AccountScreenState extends State<AccountScreen> {
                             style: const TextStyle(fontWeight: FontWeight.w600),
                           ),
                         ),
+                        TextButton.icon(
+                          onPressed: () async {
+                            showTopSnackBar(
+                              context,
+                              'Syncing with cloud...',
+                              kind: AppToastKind.info,
+                            );
+                            final ManualSyncResult result = await controller
+                                .runManualSync();
+                            if (!context.mounted) return;
+                            showTopSnackBar(
+                              context,
+                              result.message,
+                              kind: result.success
+                                  ? AppToastKind.success
+                                  : AppToastKind.error,
+                            );
+                          },
+                          icon: const Icon(Icons.sync, size: 16),
+                          label: const Text(
+                            'Sync Now',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 12),
@@ -1054,132 +1051,33 @@ class _AccountScreenState extends State<AccountScreen> {
                   ],
                 ),
               ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Future<void> _showAddRecurringDialog(BuildContext context) async {
-    final TextEditingController name = TextEditingController();
-    final TextEditingController amount = TextEditingController();
-    final TextEditingController day = TextEditingController(text: '1');
-    String type = 'income';
-    String currency = context
-        .read<AppStateController>()
-        .state
-        .defaultEntryCurrency;
-    final String? result = await showDialog<String>(
-      context: context,
-      builder: (BuildContext dialogContext) => StatefulBuilder(
-        builder:
-            (
-              BuildContext dialogContext,
-              void Function(void Function()) setDialogState,
-            ) {
-              return AlertDialog(
-                title: Text(context.l10n.tr('add_recurring')),
-                content: SingleChildScrollView(
+              if (kDebugMode && enableDeveloperDiagnostics) ...<Widget>[
+                const SizedBox(height: 12),
+                _SectionCard(
+                  title: 'Developer Diagnostics',
                   child: Column(
-                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: <Widget>[
-                      TextField(
-                        controller: name,
-                        decoration: InputDecoration(
-                          labelText: context.l10n.tr('name'),
-                        ),
-                      ),
-                      TextField(
-                        controller: amount,
-                        decoration: InputDecoration(
-                          labelText: context.l10n.tr('amount'),
-                        ),
-                      ),
-                      TextField(
-                        controller: day,
-                        decoration: InputDecoration(
-                          labelText: context.l10n.tr('day_of_month'),
-                        ),
-                      ),
-                      DropdownButton<String>(
-                        value: type,
-                        items: const <DropdownMenuItem<String>>[
-                          DropdownMenuItem<String>(
-                            value: 'income',
-                            child: Text('income'),
-                          ),
-                          DropdownMenuItem<String>(
-                            value: 'expense',
-                            child: Text('expense'),
-                          ),
-                        ],
-                        onChanged: (String? v) =>
-                            setDialogState(() => type = v ?? type),
-                      ),
-                      DropdownButton<String>(
-                        value: currency.isEmpty ? 'EGP' : currency,
-                        items: _supportedCurrencies
-                            .map(
-                              (String c) => DropdownMenuItem<String>(
-                                value: c,
-                                child: Text(
-                                  ZakatEngineService.getCurrencySymbol(
-                                    c,
-                                    isArabic:
-                                        Localizations.localeOf(
-                                          context,
-                                        ).languageCode.toLowerCase() ==
-                                        'ar',
-                                  ),
-                                ),
-                              ),
-                            )
-                            .toList(growable: false),
-                        onChanged: (String? v) =>
-                            setDialogState(() => currency = v ?? currency),
+                      FilledButton.tonalIcon(
+                        key: const Key('developerDiagnosticsButton'),
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const DiagnosticsScreen(),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.bug_report_outlined),
+                        label: const Text('Developer Diagnostics'),
                       ),
                     ],
                   ),
                 ),
-                actions: <Widget>[
-                  TextButton(
-                    onPressed: () => Navigator.pop(dialogContext),
-                    child: Text(context.l10n.tr('cancel')),
-                  ),
-                  FilledButton(
-                    onPressed: () => Navigator.pop(dialogContext, 'ok'),
-                    child: Text(context.l10n.tr('save')),
-                  ),
-                ],
-              );
-            },
-      ),
-    );
-    if (result == null || !context.mounted) return;
-    final int parsedDay = int.tryParse(day.text.trim()) ?? 1;
-    final double parsedAmount = double.tryParse(amount.text.trim()) ?? 0;
-    if (name.text.trim().isEmpty || parsedAmount <= 0) return;
-    final List<String> categories = type == 'income'
-        ? context.read<AppStateController>().state.categories.income
-        : context.read<AppStateController>().state.categories.expense;
-    final String category = categories.isEmpty ? '' : categories.first;
-    await context.read<AppStateController>().addRecurringTransaction(
-      RecurringTransaction(
-        id: 'rt-${DateTime.now().microsecondsSinceEpoch}',
-        name: name.text.trim(),
-        type: type,
-        amount: parsedAmount,
-        currency: currency.isEmpty ? 'EGP' : currency,
-        category: category,
-        description: '',
-        dayOfMonth: parsedDay.clamp(1, 28),
-        frequency: 'monthly',
-        lastProcessed: null,
-        enabled: true,
-        skipMonth: '',
-        createdAt: DateTime.now().toUtc().toIso8601String(),
-      ),
+              ],
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -1219,173 +1117,131 @@ class _AccountScreenState extends State<AccountScreen> {
     if (ok == true && context.mounted) {
       final AppStateController appStateController = context
           .read<AppStateController>();
-      await appStateController.deleteAccountData(userId: user.id);
+      final FirebaseAccountDeletionAuthBackend authBackend =
+          FirebaseAccountDeletionAuthBackend();
+      final AccountDeletionService deletionService = AccountDeletionService(
+        appStateController: appStateController,
+        authController: authController!,
+        authBackend: authBackend,
+        reauthenticationService: AccountReauthenticationService(
+          authBackend: authBackend,
+          promptPassword: (UserProfile reauthUser) {
+            return _promptPasswordForReauthentication(context, reauthUser);
+          },
+          chooseMethod:
+              ({required List<AccountReauthMethod> availableMethods}) {
+                return _chooseReauthMethod(context, availableMethods);
+              },
+        ),
+      );
       try {
-        await authController!.deleteAccount();
-      } finally {
-        await authController?.signOut();
+        await deletionService.deleteAccount();
+      } catch (error, stackTrace) {
+        debugPrint('AccountScreen.deleteAccount failed: $error');
+        debugPrintStack(stackTrace: stackTrace);
+        if (!context.mounted) return;
+        showTopSnackBar(
+          context,
+          _presentDeleteAccountError(error),
+          kind: AppToastKind.error,
+        );
       }
     }
   }
 
-  Future<void> _openCurrencyExchangeDialog(BuildContext context) async {
-    final TextEditingController sourceAmount = TextEditingController();
-    final TextEditingController targetAmount = TextEditingController();
-    String sourceCurrency = context
-        .read<AppStateController>()
-        .state
-        .mainCurrency;
-    if (sourceCurrency.trim().isEmpty) sourceCurrency = 'EGP';
-    String targetCurrency = _supportedCurrencies.firstWhere(
-      (String c) => c != sourceCurrency,
-      orElse: () => 'USD',
-    );
-    final String date = DateTime.now()
-        .toUtc()
-        .toIso8601String()
-        .split('T')
-        .first;
-
-    final bool? ok = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext ctx) => StatefulBuilder(
-        builder: (BuildContext ctx, void Function(void Function()) setDialogState) {
-          final double available = context
-              .read<AppStateController>()
-              .getAvailableBalance(currency: sourceCurrency);
-          return AlertDialog(
-            title: Text(context.l10n.tr('currency_exchange')),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  CurrencyDropdownFormField(
-                    key: const Key('exchangeSourceCurrencyField'),
-                    value: sourceCurrency,
-                    labelText: context.l10n.tr('source_currency'),
-                    currencies: _supportedCurrencies,
-                    onChanged: (String nextCurrency) {
-                      setDialogState(() {
-                        if (nextCurrency == targetCurrency) {
-                          targetCurrency = sourceCurrency;
-                        }
-                        sourceCurrency = nextCurrency;
-                      });
-                    },
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6.0, bottom: 2.0),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        Localizations.localeOf(context).languageCode == 'ar'
-                            ? 'الرصيد المتاح: ${available.toStringAsFixed(2)} $sourceCurrency'
-                            : 'Available balance: ${available.toStringAsFixed(2)} $sourceCurrency',
-                        style: TextStyle(
-                          color: available <= 0 ? Colors.red : Colors.green,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  CurrencyDropdownFormField(
-                    key: const Key('exchangeTargetCurrencyField'),
-                    value: targetCurrency,
-                    labelText: context.l10n.tr('target_currency'),
-                    currencies: _supportedCurrencies
-                        .where((String currency) => currency != sourceCurrency)
-                        .toList(growable: false),
-                    onChanged: (String nextCurrency) {
-                      setDialogState(() => targetCurrency = nextCurrency);
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: sourceAmount,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    decoration: InputDecoration(
-                      labelText: context.l10n.tr('source_amount'),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: targetAmount,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    decoration: InputDecoration(
-                      labelText: context.l10n.tr('target_amount'),
-                    ),
-                  ),
-                ],
+  Future<String?> _promptPasswordForReauthentication(
+    BuildContext context,
+    UserProfile user,
+  ) async {
+    final TextEditingController passwordController = TextEditingController();
+    try {
+      final bool? confirmed = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext dialogContext) => AlertDialog(
+          title: Text(context.l10n.tr('delete_account')),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Text(
+                user.email.isEmpty
+                    ? 'Re-enter your password to continue.'
+                    : 'Re-enter the password for ${user.email} to continue.',
               ),
-            ),
-            actions: <Widget>[
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: Text(context.l10n.tr('cancel')),
-              ),
-              FilledButton(
-                onPressed: () {
-                  final double sAmount = tryParseAmount(sourceAmount.text) ?? 0;
-                  if (sAmount <= 0) return;
-                  if (sAmount > available) {
-                    showTopSnackBar(
-                      context,
-                      Localizations.localeOf(context).languageCode == 'ar'
-                          ? 'المبلغ المدخل أكبر من الرصيد المتاح'
-                          : 'Amount entered exceeds available balance',
-                    );
-                    return;
-                  }
-                  Navigator.pop(ctx, true);
-                },
-                child: Text(context.l10n.tr('confirm')),
+              const SizedBox(height: 12),
+              TextField(
+                controller: passwordController,
+                obscureText: true,
+                autofocus: true,
+                decoration: InputDecoration(
+                  labelText: context.l10n.tr('password'),
+                ),
               ),
             ],
-          );
-        },
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: Text(context.l10n.tr('cancel')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(context.l10n.tr('continue')),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return null;
+      return passwordController.text;
+    } finally {
+      passwordController.dispose();
+    }
+  }
+
+  Future<AccountReauthMethod?> _chooseReauthMethod(
+    BuildContext context,
+    List<AccountReauthMethod> availableMethods,
+  ) async {
+    final bool hasGoogle = availableMethods.contains(
+      AccountReauthMethod.google,
+    );
+    final bool hasPassword = availableMethods.contains(
+      AccountReauthMethod.password,
+    );
+    if (!hasGoogle || !hasPassword) {
+      return availableMethods.isEmpty ? null : availableMethods.first;
+    }
+    final bool? google = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: Text(context.l10n.tr('delete_account')),
+        content: Text(
+          'Choose how to reauthenticate before deleting your account.',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Continue with Password'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Continue with Google'),
+          ),
+        ],
       ),
     );
+    if (google == null) return null;
+    return google ? AccountReauthMethod.google : AccountReauthMethod.password;
+  }
 
-    if (ok != true || !context.mounted) {
-      return;
+  String _presentDeleteAccountError(Object error) {
+    if (error is StateError) {
+      final String message = error.message.trim();
+      if (message.isNotEmpty) return message;
     }
-    final double sAmount = tryParseAmount(sourceAmount.text) ?? 0;
-    final double tAmount = tryParseAmount(targetAmount.text) ?? 0;
-    if (sAmount <= 0 || tAmount <= 0 || sourceCurrency == targetCurrency) {
-      return;
-    }
-    try {
-      await context.read<AppStateController>().executeCurrencyExchange(
-        date: date,
-        sourceCurrency: sourceCurrency,
-        targetCurrency: targetCurrency,
-        sourceAmount: sAmount,
-        targetAmount: tAmount,
-      );
-      if (context.mounted) {
-        showTopSnackBar(
-          context,
-          Localizations.localeOf(context).languageCode == 'ar'
-              ? 'تم إجراء عملية التحويل بنجاح'
-              : 'Currency exchange completed successfully',
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        showTopSnackBar(
-          context,
-          Localizations.localeOf(context).languageCode == 'ar'
-              ? 'فشل التحويل: $e'
-              : 'Exchange failed: $e',
-        );
-      }
-    }
+    final String raw = error.toString().trim();
+    const String prefix = 'Bad state: ';
+    return raw.startsWith(prefix) ? raw.substring(prefix.length) : raw;
   }
 
   void _syncMarketControllers(MarketSnapshot snapshot) {
