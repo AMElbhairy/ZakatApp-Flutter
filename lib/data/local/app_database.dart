@@ -213,6 +213,9 @@ LazyDatabase _openConnection(String? userId) {
         ? 'zakat_app.sqlite'
         : 'zakatapp_$cleanUserId.sqlite';
     final File file = File(p.join(directory.path, filename));
+    if (Platform.environment.containsKey('FLUTTER_TEST')) {
+      return NativeDatabase(file);
+    }
     return NativeDatabase.createInBackground(file);
   });
 }

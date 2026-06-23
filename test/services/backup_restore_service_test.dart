@@ -395,6 +395,7 @@ void main() {
         useSqliteLocalStoreProvider: _AllowSqliteProvider(),
       );
       await sqliteController.loadAuthenticated('user-1');
+      await Future<void>.delayed(const Duration(milliseconds: 100));
       final BackupRestoreService sqliteService = BackupRestoreService(
         controller: sqliteController,
       );
@@ -451,6 +452,7 @@ void main() {
       useSqliteLocalStoreProvider: _AllowSqliteProvider(),
     );
     await sqliteController.loadAuthenticated('user-1');
+    await Future<void>.delayed(const Duration(milliseconds: 100));
     await sqliteController.updateState(
       AppStateDefaults.create().copyWith(
         userId: 'user-1',
@@ -486,6 +488,79 @@ void main() {
     await Future.wait(<Future<void>>[first, second]);
 
     expect(firestore.savingsSyncCalls, 1);
+    await database.close();
+  });
+
+  test('restoreReplace clears old queue rows and enqueues only restored backup records', () async {
+    final AppDatabase database = AppDatabase(executor: NativeDatabase.memory());
+    final RecordingFirestoreSyncManager firestore =
+        RecordingFirestoreSyncManager(uid: 'user-1');
+    final AppStateController sqliteController = AppStateController(
+      repository: AppStateRepository(localStorage: const LocalStorageService()),
+      firestoreSyncManager: firestore,
+      database: database,
+      useSqliteLocalStoreProvider: _AllowSqliteProvider(),
+    );
+    await sqliteController.loadAuthenticated('user-1');
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+
+    // 1. Add some initial savings so they end up in syncQueue
+    await sqliteController.addSaving(
+      const model_saving.Saving(
+        id: 'sv-old-1',
+        assetType: 'cash',
+        dateAcquired: '2026-06-19',
+        amount: 200,
+        remainingAmount: 200,
+        unit: 'USD',
+        description: 'old cash saving',
+        purchaseCurrency: 'USD',
+        purchaseAmount: 200,
+        createdAt: '2026-06-19T08:00:00.000Z',
+      ),
+    );
+
+    // Verify queue contains the old saving
+    final int queueCountBefore = await database.select(database.syncQueue).get()
+        .then((rows) => rows.length);
+    expect(queueCountBefore, greaterThan(0));
+
+    // 2. Perform restoreReplace with only a transaction record
+    final BackupRestoreService sqliteService = BackupRestoreService(
+      controller: sqliteController,
+    );
+    final String raw = jsonEncode(<String, dynamic>{
+      'appName': 'ZakatApp',
+      'appState': <String, dynamic>{
+        'transactions': <dynamic>[
+          <String, dynamic>{
+            'id': 'tx-restored-1',
+            'type': 'income',
+            'date': '2026-06-20',
+            'amount': 500,
+            'currency': 'USD',
+            'category': 'Gift',
+            'description': 'restored gift',
+            'createdAt': '2026-06-20T00:00:00Z',
+          },
+        ],
+        'savings': <dynamic>[],
+        'investments': <dynamic>[],
+        'recurringTransactions': <dynamic>[],
+        'financialPlans': <dynamic>[],
+      },
+    });
+
+    await sqliteService.restoreReplace(raw, allowWhenLocalDataExists: true);
+
+    // Verify that the old savings record was cleared from the queue and never synced,
+    // and only the newly restored transaction was synced/uploaded.
+    expect(firestore.transactionSyncCalls, 1);
+    expect(firestore.savingsSyncCalls, 0);
+
+    final List<SyncQueueData> queueRows = await database.select(database.syncQueue).get();
+    expect(queueRows, isEmpty);
+
     await database.close();
   });
 }

@@ -147,12 +147,12 @@ void main() {
       // Create a transaction and add it to the state
       final tx = Transaction(
         id: 'tx-123',
-        type: 'expense',
+        type: 'income',
         date: '2026-06-20',
         amount: 100.0,
         currency: 'USD',
-        category: 'Zakat',
-        description: 'Zakat Payment',
+        category: 'Salary',
+        description: 'Salary Payment',
         createdAt: '2026-06-20T11:20:00Z',
         rolledOver: false,
       );

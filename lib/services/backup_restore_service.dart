@@ -3,6 +3,7 @@ import 'app_state_controller.dart';
 import 'backup_service.dart';
 import 'legacy_backup_migration_service.dart';
 import 'sync_diagnostics_service.dart';
+import '../data/local/app_database.dart';
 
 class RestoreResult {
   const RestoreResult({
@@ -45,6 +46,14 @@ class BackupRestoreService {
     }
     final AppStateModel next = AppStateModel.fromJson(normalized);
     await controller.updateState(next);
+
+    // Clear sync queue and reset cursors before enqueuing backup records for upload
+    final AppDatabase? db = controller.database;
+    if (db != null) {
+      await db.delete(db.syncQueue).go();
+      await db.delete(db.syncMetadata).go();
+    }
+
     await controller.enqueueAllLocalDataForCloudSync();
     await controller.syncRestoredStateToFirestore(
       previousState: previous,

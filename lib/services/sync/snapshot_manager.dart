@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:cryptography/cryptography.dart' as crypto;
 import 'package:uuid/uuid.dart';
 import '../../data/local/app_database.dart';
@@ -7,10 +8,57 @@ import 'cloud_sync_manifest.dart';
 import 'sync_encryption_service.dart';
 import 'user_cloud_storage_provider.dart';
 
+class BackupCorruptedException implements Exception {
+  final String message;
+  const BackupCorruptedException(this.message);
+  @override
+  String toString() => 'BackupCorruptedException: $message';
+}
+
+class BackupSchemaIncompatibleException implements Exception {
+  final String message;
+  const BackupSchemaIncompatibleException(this.message);
+  @override
+  String toString() => 'BackupSchemaIncompatibleException: $message';
+}
+
+class BackupDecryptionException implements Exception {
+  final String message;
+  const BackupDecryptionException(this.message);
+  @override
+  String toString() => 'BackupDecryptionException: $message';
+}
+
 class SnapshotManager {
   final SyncEncryptionService encryptionService;
 
   SnapshotManager({required this.encryptionService});
+
+  Future<String> calculateDatabaseChecksum({
+    required AppDatabase db,
+    String? customDbPath,
+  }) async {
+    final tempDir = Directory.systemTemp;
+    final tempSnapshotFile = File(
+      '${tempDir.path}/temp_checksum_${DateTime.now().microsecondsSinceEpoch}.sqlite',
+    );
+
+    try {
+      if (await tempSnapshotFile.exists()) {
+        await tempSnapshotFile.delete();
+      }
+      await db.customStatement("VACUUM INTO '${tempSnapshotFile.path}'");
+      final rawBytes = await tempSnapshotFile.readAsBytes();
+      final hash = await crypto.Sha256().hash(rawBytes);
+      return base64Encode(hash.bytes);
+    } finally {
+      if (await tempSnapshotFile.exists()) {
+        try {
+          await tempSnapshotFile.delete();
+        } catch (_) {}
+      }
+    }
+  }
 
   /// Exports an encrypted SQLite snapshot of the active Drift [db] to the [provider].
   /// Updates or creates the global manifest.json using [expectedManifestRevision].
@@ -26,33 +74,27 @@ class SnapshotManager {
     String? expectedManifestRevision,
     String? customDbPath,
   }) async {
-    // 1. Resolve active SQLite db path
-    final dbPath = customDbPath ?? await db.resolveDatabasePath();
-    if (dbPath == null) {
-      throw StateError('Cannot resolve database path.');
-    }
-
-    // 2. Prepare temporary file for vacuum snapshot
+    // 1. Prepare temporary file for vacuum snapshot
     final tempDir = Directory.systemTemp;
     final tempSnapshotFile = File(
       '${tempDir.path}/temp_snapshot_${DateTime.now().microsecondsSinceEpoch}.sqlite',
     );
 
     try {
-      // 3. Create a clean SQLite snapshot via VACUUM INTO
+      // 2. Create a clean SQLite snapshot via VACUUM INTO
       if (await tempSnapshotFile.exists()) {
         await tempSnapshotFile.delete();
       }
       await db.customStatement("VACUUM INTO '${tempSnapshotFile.path}'");
 
-      // 4. Read snapshot bytes
+      // 3. Read snapshot bytes
       final rawBytes = await tempSnapshotFile.readAsBytes();
 
       // Calculate unencrypted SHA-256 checksum for history duplication detection
       final hash = await crypto.Sha256().hash(rawBytes);
       final checksum = base64Encode(hash.bytes);
 
-      // 5. Read current manifest (if it exists) to fetch salt or create new salt
+      // 4. Read current manifest (if it exists) to fetch salt or create new salt
       final existingCloudManifest = await provider.readManifest();
       CloudSyncManifest manifest;
       List<int> salt;
@@ -88,7 +130,7 @@ class SnapshotManager {
         );
       }
 
-      // 6. Derive key & encrypt snapshot
+      // 5. Derive key & encrypt snapshot
       final key = await encryptionService.deriveKey(
         passphrase: passphrase,
         salt: salt,
@@ -98,12 +140,12 @@ class SnapshotManager {
         secretKey: key,
       );
 
-      // 7. Write encrypted snapshot file to provider
+      // 6. Write encrypted snapshot file to provider
       final snapshotPath =
           'snapshots/snapshot_${snapshotSeq.toString().padLeft(8, '0')}.sqlite.enc';
       await provider.writeFile(snapshotPath, encryptedBytes);
 
-      // 8. Construct new SnapshotEntry and append it
+      // 7. Construct new SnapshotEntry and append it
       final newEntry = SnapshotEntry(
         id: const Uuid().v4(),
         sequence: snapshotSeq,
@@ -117,9 +159,15 @@ class SnapshotManager {
         appVersion: appVersion,
       );
 
-      final List<SnapshotEntry> updatedSnapshots = List.from(manifest.snapshots)..add(newEntry);
+      final bool alreadyPresent = manifest.snapshots.any(
+        (s) => s.checksum == checksum || s.path == snapshotPath,
+      );
+      final List<SnapshotEntry> updatedSnapshots = List.from(manifest.snapshots);
+      if (!alreadyPresent) {
+        updatedSnapshots.add(newEntry);
+      }
 
-      // 9. Prune snapshots history to keep only the last 5 snapshots
+      // 8. Prune snapshots history to keep only the last 5 snapshots in memory
       while (updatedSnapshots.length > 5) {
         final oldest = updatedSnapshots.removeAt(0);
         try {
@@ -129,7 +177,7 @@ class SnapshotManager {
         }
       }
 
-      // 10. Update manifest JSON content
+      // 9. Update manifest JSON content
       final updatedDevices = Map<String, DeviceMetadata>.from(manifest.knownDevices);
       final now = DateTime.now().toUtc();
       final existingDevice = updatedDevices[deviceId];
@@ -159,11 +207,24 @@ class SnapshotManager {
         knownDevices: updatedDevices,
       );
 
-      // 11. Write manifest back using conditional write / optimistic locking
+      // 10. Write manifest back using conditional write / optimistic locking
       await provider.writeManifest(
         newManifest.toJson(),
         expectedRevision: expectedManifestRevision ?? existingCloudManifest?.revision,
       );
+
+      // 11. Strict cleanup of old/orphaned snapshots on Google Drive AppDataFolder
+      try {
+        final List<CloudFileInfo> allRemoteFiles = await provider.listFiles('snapshots/');
+        final Set<String> allowedPaths = updatedSnapshots.map((s) => s.path).toSet();
+        for (final fileInfo in allRemoteFiles) {
+          if (!allowedPaths.contains(fileInfo.path)) {
+            try {
+              await provider.deleteFile(fileInfo.path);
+            } catch (_) {}
+          }
+        }
+      } catch (_) {}
     } finally {
       // 12. Clean up temp file
       if (await tempSnapshotFile.exists()) {
@@ -179,17 +240,29 @@ class SnapshotManager {
     required UserCloudStorageProvider provider,
     required String passphrase,
     required String targetPath,
+    int? localSchemaVersion,
   }) async {
     // 1. Read manifest to identify snapshot location
     final manifestInfo = await provider.readManifest();
     if (manifestInfo == null) {
-      throw StateError('No manifest file found in cloud storage.');
+      throw const BackupCorruptedException('No manifest file found in cloud storage.');
     }
 
     final manifest = CloudSyncManifest.fromJson(manifestInfo.content);
-    final snapshotPath = manifest.latestSnapshotPath;
+    if (manifest.snapshots.isEmpty) {
+      throw const BackupCorruptedException('No snapshots registered in the manifest.');
+    }
+    final latestSnapshot = manifest.snapshots.last;
+    final snapshotPath = latestSnapshot.path;
     if (snapshotPath == null || snapshotPath.isEmpty) {
-      throw StateError('No snapshot path registered in the manifest.');
+      throw const BackupCorruptedException('No snapshot path registered in the manifest.');
+    }
+
+    // Check schema version compatibility
+    if (localSchemaVersion != null && latestSnapshot.databaseSchemaVersion > localSchemaVersion) {
+      throw BackupSchemaIncompatibleException(
+        'This backup requires database schema version ${latestSnapshot.databaseSchemaVersion}, but this device only supports schema version $localSchemaVersion.',
+      );
     }
 
     final salt = base64Decode(manifest.encryption.saltBase64);
@@ -207,10 +280,22 @@ class SnapshotManager {
     }
 
     // 4. Decrypt snapshot bytes
-    final decryptedBytes = await encryptionService.decrypt(
-      encryptedData: encryptedBytes,
-      secretKey: key,
-    );
+    Uint8List decryptedBytes;
+    try {
+      decryptedBytes = await encryptionService.decrypt(
+        encryptedData: encryptedBytes,
+        secretKey: key,
+      );
+    } catch (e) {
+      throw const BackupDecryptionException('Failed to decrypt backup. Verify your passphrase.');
+    }
+
+    // Verify decrypted backup checksum
+    final hash = await crypto.Sha256().hash(decryptedBytes);
+    final calculatedChecksum = base64Encode(hash.bytes);
+    if (calculatedChecksum != latestSnapshot.checksum) {
+      throw const BackupCorruptedException('Decrypted backup checksum does not match expected checksum.');
+    }
 
     // 5. Write raw SQLite snapshot to target file path
     final targetFile = File(targetPath);

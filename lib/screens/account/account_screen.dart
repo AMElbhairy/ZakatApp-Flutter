@@ -23,6 +23,7 @@ import '../../services/backup_restore_card.dart';
 import '../../services/diagnostics_flags.dart';
 import '../../data/sync/sync_reports.dart';
 import 'diagnostics_screen.dart';
+import 'cloud_backup_screen.dart';
 import '../../services/biometric_service.dart';
 import '../entry/currency_exchange_screen.dart';
 
@@ -827,6 +828,22 @@ class _AccountScreenState extends State<AccountScreen> {
                           child: BackupRestoreCard(controller: controller),
                         ),
                       ],
+                    ),
+                    const Divider(height: 16),
+                    ListTile(
+                      key: const Key('cloudBackupTile'),
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.cloud_upload_outlined, color: Colors.blue),
+                      title: const Text('Google Drive Backup & Restore'),
+                      subtitle: const Text('Encrypt and backup your database to your personal Google Drive'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const CloudBackupScreen(),
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),

@@ -129,6 +129,7 @@ class CloudSyncManager {
   /// Downloads, decrypts, and restores the latest snapshot from cloud storage to [targetPath].
   Future<CloudSyncResult> pullAndRestore({
     required String targetPath,
+    int? localSchemaVersion,
   }) async {
     if (!isConfigured) {
       return const CloudSyncResult(
@@ -142,6 +143,7 @@ class CloudSyncManager {
         provider: provider,
         passphrase: _passphrase!,
         targetPath: targetPath,
+        localSchemaVersion: localSchemaVersion,
       );
 
       return const CloudSyncResult(

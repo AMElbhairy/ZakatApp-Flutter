@@ -1531,7 +1531,7 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
     MarketData market,
     bool isArabic,
   ) {
-    final double unpaidLiability = asset.installmentPlan.isNotEmpty
+    final double unpaidLiabilityEgp = asset.installmentPlan.isNotEmpty
         ? asset.installmentPlan
             .where((item) => item['isPaid'] != true)
             .fold(0.0, (sum, item) {
@@ -1539,19 +1539,18 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                   ? item['currency'].toString()
                   : asset.currency;
               final double amount = ((item['amount'] ?? 0) as num).toDouble();
-              final double amountEgp = ZakatEngineService.convertToEgp(
+              return sum + ZakatEngineService.convertToEgp(
                 amount,
                 itemCurrency,
                 market,
               );
-              final double inAssetCur = ZakatEngineService.convertFromEgp(
-                amountEgp,
-                asset.currency,
-                market,
-              );
-              return sum + inAssetCur;
             })
-        : asset.loanBalance;
+        : ZakatEngineService.convertToEgp(asset.loanBalance, asset.currency, market);
+    final double unpaidLiabilityMain = ZakatEngineService.convertFromEgp(
+      unpaidLiabilityEgp,
+      mainCurrency,
+      market,
+    );
     final double share = (asset.ownershipSharePct / 100).clamp(0, 1);
     final double gross = ZakatEngineService.convertToEgp(
       asset.marketValue * share,
@@ -1644,7 +1643,7 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                         fontSize: 13,
                       ),
                     ),
-                    if (unpaidLiability > 0) ...[
+                    if (unpaidLiabilityMain > 0) ...[
                       const SizedBox(height: 6),
                       Align(
                         alignment: AlignmentDirectional.centerStart,
@@ -1652,7 +1651,7 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                           color: Colors.transparent,
                           child: InkWell(
                             onTap: () =>
-                                _showInstallmentSchedule(context, asset),
+                                _showInstallmentSchedule(context, asset, mainCurrency),
                             borderRadius: BorderRadius.circular(6),
                             child: Ink(
                               width: double.infinity,
@@ -1682,7 +1681,7 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                                   const SizedBox(width: 4),
                                   Expanded(
                                     child: Text(
-                                      'Installments: ${ZakatEngineService.formatCurrency(unpaidLiability, asset.currency, isArabic: isArabic)} remaining',
+                                      'Installments: ${ZakatEngineService.formatCurrency(unpaidLiabilityMain, mainCurrency, isArabic: isArabic)} remaining',
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
                                       style: const TextStyle(
@@ -1848,7 +1847,7 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
     );
   }
 
-  void _showInstallmentSchedule(BuildContext context, InvestmentAsset asset) {
+  void _showInstallmentSchedule(BuildContext context, InvestmentAsset asset, String mainCurrency) {
     final tokens = context.premiumTokens;
     final bool isArabic =
         Localizations.localeOf(context).languageCode.toLowerCase() == 'ar';
@@ -1870,7 +1869,7 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
               orElse: () => asset,
             );
             final plan = latestAsset.installmentPlan;
-            final double unpaidLiability = latestAsset.installmentPlan.isNotEmpty
+            final double unpaidLiabilityEgp = latestAsset.installmentPlan.isNotEmpty
                 ? latestAsset.installmentPlan
                     .where((item) => item['isPaid'] != true)
                     .fold(0.0, (sum, item) {
@@ -1878,19 +1877,18 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                           ? item['currency'].toString()
                           : latestAsset.currency;
                       final double amount = ((item['amount'] ?? 0) as num).toDouble();
-                      final double amountEgp = ZakatEngineService.convertToEgp(
+                      return sum + ZakatEngineService.convertToEgp(
                         amount,
                         itemCurrency,
                         market,
                       );
-                      final double inAssetCur = ZakatEngineService.convertFromEgp(
-                        amountEgp,
-                        latestAsset.currency,
-                        market,
-                      );
-                      return sum + inAssetCur;
                     })
-                : latestAsset.loanBalance;
+                : ZakatEngineService.convertToEgp(latestAsset.loanBalance, latestAsset.currency, market);
+            final double unpaidLiabilityMain = ZakatEngineService.convertFromEgp(
+              unpaidLiabilityEgp,
+              mainCurrency,
+              market,
+            );
 
             return DraggableScrollableSheet(
               expand: false,
@@ -1925,7 +1923,7 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Remaining Liability: ${ZakatEngineService.formatCurrency(unpaidLiability, latestAsset.currency, isArabic: isArabic)}',
+                        'Remaining Liability: ${ZakatEngineService.formatCurrency(unpaidLiabilityMain, mainCurrency, isArabic: isArabic)}',
                         style: TextStyle(
                           color: tokens.colors.textSecondary,
                           fontSize: 13,

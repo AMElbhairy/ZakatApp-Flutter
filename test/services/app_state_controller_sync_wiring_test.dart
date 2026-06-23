@@ -469,7 +469,7 @@ void main() {
   });
 
   test(
-    'app start with empty queue and existing cursor skips pull when last pull timestamp is missing',
+    'app start with empty queue and existing cursor skips pull when last pull timestamp is recent',
     () async {
       await repository.saveAppState(
         AppStateDefaults.create().copyWith(userId: 'user-1'),
@@ -479,7 +479,8 @@ void main() {
       fakePipeline.shouldPullNowValue = true;
       fakePipeline.queueCountValue = 0;
       fakePipeline.hasPullCursorValue = true;
-      fakePipeline.lastPullSuccessAtValue = null;
+      fakePipeline.lastPullSuccessAtValue =
+          DateTime.now().toUtc().toIso8601String();
 
       final AppStateController controller = AppStateController(
         repository: repository,

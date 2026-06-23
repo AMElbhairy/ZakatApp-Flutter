@@ -981,12 +981,26 @@ class ZakatEngineService {
     required MarketData marketData,
   }) {
     return investments.fold<double>(0, (double sum, InvestmentAsset asset) {
-      final double nativeLoan =
-          (asset.loanBalance.isFinite && asset.loanBalance > 0)
-          ? asset.loanBalance
-          : asset.remainingAmount;
-      return sum +
-          convertToEgp(math.max(0, nativeLoan), asset.currency, marketData);
+      if (asset.installmentPlan.isNotEmpty) {
+        double assetInstallmentLiabilityEgp = 0.0;
+        for (final Map<String, dynamic> item in asset.installmentPlan) {
+          final bool isPaid = item['isPaid'] == true;
+          if (isPaid) continue;
+          final String itemCurrency = (item['currency']?.toString().isNotEmpty == true)
+              ? item['currency'].toString()
+              : asset.currency;
+          final double amount = ((item['amount'] ?? 0) as num).toDouble();
+          assetInstallmentLiabilityEgp += convertToEgp(amount, itemCurrency, marketData);
+        }
+        return sum + assetInstallmentLiabilityEgp;
+      } else {
+        final double nativeLoan =
+            (asset.loanBalance.isFinite && asset.loanBalance > 0)
+            ? asset.loanBalance
+            : asset.remainingAmount;
+        return sum +
+            convertToEgp(math.max(0, nativeLoan), asset.currency, marketData);
+      }
     });
   }
 

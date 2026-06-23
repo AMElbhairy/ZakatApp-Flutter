@@ -174,7 +174,31 @@ class BackupRestoreCard extends StatelessWidget {
             TextButton(
               onPressed: () async {
                 Navigator.pop(ctx);
-                await _executeRestore(context, preview, replace: true);
+                final bool? confirm = await showDialog<bool>(
+                  context: context,
+                  builder: (BuildContext c) => AlertDialog(
+                    title: const Text('Confirm Replacement'),
+                    content: const Text(
+                      'Warning: Replacing everything will overwrite all local data. '
+                      'Any unsynced local changes will be permanently lost and replaced. '
+                      'Do you want to proceed?',
+                    ),
+                    actions: <Widget>[
+                      TextButton(
+                        onPressed: () => Navigator.pop(c, false),
+                        child: const Text('Cancel'),
+                      ),
+                      ElevatedButton(
+                        onPressed: () => Navigator.pop(c, true),
+                        child: const Text('Confirm Replace'),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirm == true) {
+                  if (!context.mounted) return;
+                  await _executeRestore(context, preview, replace: true);
+                }
               },
               child: const Text('Replace Everything'),
             ),

@@ -3,7 +3,35 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:googleapis/drive/v3.dart' as drive;
+import 'package:google_sign_in/google_sign_in.dart';
 import 'user_cloud_storage_provider.dart';
+import '../sync_diagnostics_service.dart';
+
+enum DriveConnectionFailureReason {
+  cancelled,
+  permissionDenied,
+  driveApiDisabled,
+  oauthTestUserMissing,
+  missingIosConfig,
+  authMissing,
+  unknown,
+}
+
+class DriveConnectionStatus {
+  const DriveConnectionStatus({
+    required this.connected,
+    this.failureReason,
+    this.message,
+    this.grantedScopes = const <String>[],
+    this.accountEmail,
+  });
+
+  final bool connected;
+  final DriveConnectionFailureReason? failureReason;
+  final String? message;
+  final List<String> grantedScopes;
+  final String? accountEmail;
+}
 
 class AuthenticatedClient extends http.BaseClient {
   final Future<Map<String, String>> Function() _getHeaders;
@@ -39,13 +67,25 @@ class GoogleDriveStorageProvider implements UserCloudStorageProvider {
   final Future<bool> Function() checkConnected;
   final Future<bool> Function() requestConnect;
   final Future<void> Function() requestDisconnect;
+  final GoogleSignIn? googleSignIn;
+  final Future<bool> Function()? hasGrantedDriveScope;
+  final Future<void> Function(bool granted)? setGrantedDriveScope;
   final http.Client? _mockHttpClient;
+
+  static const List<String> _driveScopes = <String>[
+    'https://www.googleapis.com/auth/drive.appdata',
+  ];
+
+  DriveConnectionStatus? _lastConnectionStatus;
 
   GoogleDriveStorageProvider({
     required this.getAuthHeaders,
     required this.checkConnected,
     required this.requestConnect,
     required this.requestDisconnect,
+    this.googleSignIn,
+    this.hasGrantedDriveScope,
+    this.setGrantedDriveScope,
     http.Client? httpClient,
   }) : _mockHttpClient = httpClient;
 
@@ -53,16 +93,320 @@ class GoogleDriveStorageProvider implements UserCloudStorageProvider {
   String get providerId => 'google_drive';
 
   @override
-  Future<bool> isConnected() => checkConnected();
+  Future<bool> isConnected() async {
+    if (googleSignIn != null) {
+      final status = await resolveConnection(interactive: false, phase: 'is_connected');
+      return status.connected;
+    }
+    return checkConnected();
+  }
 
   @override
-  Future<bool> connect() => requestConnect();
+  Future<bool> connect() async {
+    if (googleSignIn != null) {
+      final status = await resolveConnection(interactive: true, phase: 'connect');
+      return status.connected;
+    }
+    return requestConnect();
+  }
 
   @override
   Future<void> disconnect() => requestDisconnect();
 
   drive.DriveApi _getDriveApi() {
     return drive.DriveApi(AuthenticatedClient(getAuthHeaders, inner: _mockHttpClient));
+  }
+
+  DriveConnectionStatus? get lastConnectionStatus => _lastConnectionStatus;
+  String? get lastConnectionErrorMessage => _lastConnectionStatus?.message;
+
+  void _logAuth(String phase, {GoogleSignInAccount? account, Object? error}) {
+    final String providerIds = _providerIds().join(',');
+    final String googleAccount = account?.email ?? googleSignIn?.currentUser?.email ?? 'null';
+    final String errMsg = error?.toString() ?? 'none';
+    SyncDiagnosticsService.record(
+      level: error != null ? 'error' : 'info',
+      subsystem: 'google_drive',
+      message: 'Auth phase: $phase',
+      metadata: <String, dynamic>{
+        'providerIds': providerIds,
+        'googleAccount': googleAccount,
+        'error': errMsg,
+      },
+    );
+  }
+
+  List<String> _providerIds() {
+    final List<String> values = <String>[];
+    final GoogleSignInAccount? account = googleSignIn?.currentUser;
+    if (account != null) {
+      values.add(account.email);
+    }
+    return values;
+  }
+
+  Future<GoogleSignInAccount?> _resolveGoogleAccount({
+    required bool interactive,
+  }) async {
+    if (googleSignIn == null) return null;
+    GoogleSignInAccount? account;
+    try {
+      account = await googleSignIn!.signInSilently();
+      _logAuth('sign_in_silently', account: account);
+    } catch (error) {
+      _logAuth('sign_in_silently_error', error: error);
+    }
+
+    if (account == null && interactive) {
+      account = await googleSignIn!.signIn();
+      _logAuth('sign_in', account: account);
+    }
+
+    return account;
+  }
+
+  Future<DriveConnectionStatus> _probeAppDataAccess({
+    required String phase,
+    required GoogleSignInAccount account,
+  }) async {
+    try {
+      final headers = await account.authHeaders;
+      final api = drive.DriveApi(
+        AuthenticatedClient(
+          () async => headers,
+          inner: _mockHttpClient,
+        ),
+      );
+      final list = await api.files.list(
+        spaces: 'appDataFolder',
+        pageSize: 1,
+        $fields: 'files(id)',
+      );
+      _logAuth(
+        '$phase:drive_probe',
+        account: account,
+        error: 'success files=${list.files?.length ?? 0}',
+      );
+      return DriveConnectionStatus(
+        connected: true,
+        grantedScopes: _driveScopes,
+        accountEmail: account.email,
+      );
+    } on drive.DetailedApiRequestError catch (error) {
+      final message = _mapDriveApiError(error);
+      _logAuth('$phase:drive_probe_error', account: account, error: message);
+      return DriveConnectionStatus(
+        connected: false,
+        failureReason: _failureReasonFromDriveError(error),
+        message: message,
+        grantedScopes: _driveScopes,
+        accountEmail: account.email,
+      );
+    } catch (error) {
+      final message = _mapGenericConnectionError(error);
+      _logAuth('$phase:drive_probe_error', account: account, error: message);
+      return DriveConnectionStatus(
+        connected: false,
+        failureReason: _failureReasonFromGenericError(error),
+        message: message,
+        grantedScopes: _driveScopes,
+        accountEmail: account.email,
+      );
+    }
+  }
+
+  Future<bool?> _canAccessDriveScope(GoogleSignInAccount account) async {
+    try {
+      final Map<String, String> headers = await account.authHeaders;
+      final String? authorization = headers['Authorization'];
+      final String? accessToken = authorization != null &&
+              authorization.toLowerCase().startsWith('bearer ')
+          ? authorization.substring('Bearer '.length)
+          : null;
+      final bool result = await googleSignIn!.canAccessScopes(
+        _driveScopes,
+        accessToken: accessToken,
+      );
+      _logAuth('can_access_scopes', account: account, error: 'result=$result');
+      return result;
+    } catch (error) {
+      _logAuth('can_access_scopes_error', account: account, error: error);
+      return null;
+    }
+  }
+
+  DriveConnectionFailureReason _failureReasonFromDriveError(
+    drive.DetailedApiRequestError error,
+  ) {
+    final String raw = '${error.message} ${error.toString()}'.toLowerCase();
+    if (error.status == 401) {
+      return DriveConnectionFailureReason.authMissing;
+    }
+    if (error.status == 403) {
+      if (raw.contains('access_not_configured') ||
+          raw.contains('drive api has not been used') ||
+          raw.contains('api not used')) {
+        return DriveConnectionFailureReason.driveApiDisabled;
+      }
+      if (raw.contains('test user') || raw.contains('testing') || raw.contains('oauth consent')) {
+        return DriveConnectionFailureReason.oauthTestUserMissing;
+      }
+      return DriveConnectionFailureReason.permissionDenied;
+    }
+    if (error.status == 404) {
+      return DriveConnectionFailureReason.driveApiDisabled;
+    }
+    return DriveConnectionFailureReason.unknown;
+  }
+
+  DriveConnectionFailureReason _failureReasonFromGenericError(Object error) {
+    final String raw = error.toString().toLowerCase();
+    if (raw.contains('cancel') || raw.contains('canceled') || raw.contains('cancelled')) {
+      return DriveConnectionFailureReason.cancelled;
+    }
+    if (raw.contains('reversed_client_id') ||
+        raw.contains('client id') ||
+        raw.contains('url scheme') ||
+        raw.contains('gIDclientid'.toLowerCase())) {
+      return DriveConnectionFailureReason.missingIosConfig;
+    }
+    if (raw.contains('403')) {
+      return DriveConnectionFailureReason.permissionDenied;
+    }
+    return DriveConnectionFailureReason.unknown;
+  }
+
+  String _mapDriveApiError(drive.DetailedApiRequestError error) {
+    final raw = error.toString();
+    if (error.status == 401) {
+      return 'Google Drive authorization is missing or expired.';
+    }
+    if (error.status == 403) {
+      if (raw.toLowerCase().contains('access_not_configured') ||
+          raw.toLowerCase().contains('drive api has not been used')) {
+        return 'Google Drive API is disabled or not configured for this project.';
+      }
+      if (raw.toLowerCase().contains('test user') || raw.toLowerCase().contains('oauth consent')) {
+        return 'Google OAuth consent screen may need the account added as a test user.';
+      }
+      return 'Google Drive permission was denied.';
+    }
+    if (error.status == 404) {
+      return 'Google Drive API appears to be unavailable for this account.';
+    }
+    return 'Google Drive access failed: ${error.message ?? raw}';
+  }
+
+  String _mapGenericConnectionError(Object error) {
+    final raw = error.toString();
+    final lower = raw.toLowerCase();
+    if (lower.contains('cancel')) {
+      return 'Google Drive connection was cancelled.';
+    }
+    if (lower.contains('reversed_client_id') ||
+        lower.contains('url scheme') ||
+        lower.contains('client id') ||
+        lower.contains('gidclientid')) {
+      return 'Google Drive iOS client configuration is missing or invalid.';
+    }
+    return 'Google Drive connection failed: $raw';
+  }
+
+  Future<DriveConnectionStatus> resolveConnection({
+    required bool interactive,
+    required String phase,
+  }) async {
+    _lastConnectionStatus = null;
+    _logAuth('$phase:start');
+
+    final account = await _resolveGoogleAccount(interactive: interactive);
+    if (account == null) {
+      final status = DriveConnectionStatus(
+        connected: false,
+        failureReason: DriveConnectionFailureReason.cancelled,
+        message: interactive
+            ? 'Google Drive connection was cancelled.'
+            : 'Google Drive is not connected.',
+      );
+      _lastConnectionStatus = status;
+      return status;
+    }
+
+    if (!interactive) {
+      final bool? cachedGrant = hasGrantedDriveScope == null
+          ? null
+          : await hasGrantedDriveScope!();
+      final bool? scopeGrant = await _canAccessDriveScope(account);
+      if (scopeGrant == false ||
+          (cachedGrant == false && scopeGrant == false)) {
+        final status = DriveConnectionStatus(
+          connected: false,
+          failureReason: DriveConnectionFailureReason.permissionDenied,
+          message: 'Google Drive permission is required for cloud backup.',
+          accountEmail: account.email,
+        );
+        if (setGrantedDriveScope != null) {
+          await setGrantedDriveScope!(false);
+        }
+        _lastConnectionStatus = status;
+        return status;
+      }
+      final status = await _probeAppDataAccess(
+        phase: phase,
+        account: account,
+      );
+      if (status.connected && setGrantedDriveScope != null) {
+        await setGrantedDriveScope!(true);
+      } else if (setGrantedDriveScope != null) {
+        await setGrantedDriveScope!(false);
+      }
+      _lastConnectionStatus = status;
+      return status;
+    }
+
+    final bool requested = await googleSignIn!.requestScopes(_driveScopes);
+    _logAuth(
+      '$phase:request_scopes',
+      account: account,
+      error: requested ? null : 'denied',
+    );
+
+    final status = await _probeAppDataAccess(
+      phase: phase,
+      account: account,
+    );
+
+    if (!requested) {
+      if (setGrantedDriveScope != null) {
+        await setGrantedDriveScope!(false);
+      }
+      final deniedStatus = DriveConnectionStatus(
+        connected: false,
+        failureReason: DriveConnectionFailureReason.permissionDenied,
+        message: 'Google Drive permission is required for cloud backup.',
+        grantedScopes: _driveScopes,
+        accountEmail: account.email,
+      );
+      _lastConnectionStatus = deniedStatus;
+      return deniedStatus;
+    }
+
+    if (setGrantedDriveScope != null && !status.connected) {
+      await setGrantedDriveScope!(false);
+    }
+    if (setGrantedDriveScope != null) {
+      await setGrantedDriveScope!(status.connected);
+    }
+
+    final resolved = DriveConnectionStatus(
+      connected: status.connected,
+      failureReason: status.failureReason,
+      message: status.message,
+      grantedScopes: _driveScopes,
+      accountEmail: account.email,
+    );
+    _lastConnectionStatus = resolved;
+    return resolved;
   }
 
   Future<drive.File?> _findFile(drive.DriveApi api, String path) async {

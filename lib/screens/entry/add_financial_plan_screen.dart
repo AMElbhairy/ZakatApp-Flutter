@@ -516,21 +516,11 @@ class _AddFinancialPlanScreenState extends State<AddFinancialPlanScreen> {
         final double totalAssetsEgp =
             cashEgp + goldEgp + silverEgp + investmentsEgp;
 
-        double totalLiabilitiesEgp = 0.0;
-        for (final InvestmentAsset asset in investments) {
-          final double liability =
-              (asset.loanBalance.isFinite && asset.loanBalance > 0
-                      ? asset.loanBalance
-                      : asset.remainingAmount)
-                  .clamp(0.0, double.infinity);
-          if (liability > 0) {
-            totalLiabilitiesEgp += ZakatEngineService.convertToEgp(
-              liability,
-              asset.currency,
-              marketData,
-            );
-          }
-        }
+        final double totalLiabilitiesEgp =
+            ZakatEngineService.calculateTotalInvestmentLoanBalancesEgp(
+          investments: investments,
+          marketData: marketData,
+        );
 
         startingAssets = ProjectionService.convertToCurrency(
           amount: totalAssetsEgp,
@@ -727,21 +717,11 @@ class _AddFinancialPlanScreenState extends State<AddFinancialPlanScreen> {
           (investmentGroupEgp[type] ?? 0.0) + assetValueEgp;
     }
 
-    double liabilityEgp = 0.0;
-    for (final InvestmentAsset asset in investments) {
-      final double liability =
-          (asset.loanBalance.isFinite && asset.loanBalance > 0
-                  ? asset.loanBalance
-                  : asset.remainingAmount)
-              .clamp(0.0, double.infinity);
-      if (liability > 0) {
-        liabilityEgp += ZakatEngineService.convertToEgp(
-          liability,
-          asset.currency,
-          marketData,
-        );
-      }
-    }
+    final double liabilityEgp =
+        ZakatEngineService.calculateTotalInvestmentLoanBalancesEgp(
+      investments: investments,
+      marketData: marketData,
+    );
 
     final Map<String, double> breakdown = <String, double>{};
     if (cashEgp > 0) {

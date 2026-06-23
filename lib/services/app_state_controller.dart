@@ -1,7 +1,7 @@
 // ignore_for_file: avoid_print, prefer_initializing_formals
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Platform;
+import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:drift/drift.dart';
@@ -111,6 +111,9 @@ class AppStateController extends ChangeNotifier {
   final SecureStorageService secureStorageService;
   final bool _sqliteEnabled;
   final bool _ownsDatabase;
+
+  bool _isRestoringDatabase = false;
+  bool get isRestoringDatabase => _isRestoringDatabase;
 
   AppDatabase? _database;
   AppDatabase? get database => _database;
@@ -430,6 +433,7 @@ class AppStateController extends ChangeNotifier {
   }
 
   Future<void> resetForSignedOutUser() async {
+    _cancelDebouncedPush();
     await stopLiveFirestoreSync();
     if (_database != null) {
       await _database!.close();
@@ -439,6 +443,80 @@ class AppStateController extends ChangeNotifier {
     await _initDatabase(null);
     notifyListeners();
     unawaited(_syncPendingReviewBadge());
+  }
+
+  /// Safely replaces the active SQLite database file with the restored file at [restoredPath],
+  /// creates a timestamped local backup, reinitializes the database instance, and refreshes the in-memory AppState.
+  ///
+  /// This operation does NOT trigger any Firestore push/sync operations.
+  Future<void> replaceActiveDatabaseWithRestoredFile(String restoredPath) async {
+    if (_database == null) {
+      throw StateError('No active database initialized.');
+    }
+
+    _isRestoringDatabase = true;
+    notifyListeners();
+
+    try {
+      // 1. Cancel debounced sync/push timers
+      _cancelDebouncedPush();
+
+      // 2. Resolve active DB path
+      final activeDbPath = await _database!.resolveDatabasePath();
+      if (activeDbPath == null) {
+        throw StateError('Cannot resolve active database path.');
+      }
+
+      // 3. Close the active DB safely
+      await _database!.close();
+      _database = null;
+
+      final activeFile = File(activeDbPath);
+      final restoredFile = File(restoredPath);
+
+      if (!await restoredFile.exists()) {
+        throw StateError('Restored file does not exist at $restoredPath');
+      }
+
+      // 4. Create timestamped local backup before replace:
+      // Formatted as zakatapp_<uid>.sqlite.restore_backup_yyyyMMdd_HHmmss.bak
+      final timestamp = DateTime.now()
+          .toUtc()
+          .toIso8601String()
+          .replaceAll(RegExp(r'[-:]'), '')
+          .split('.')
+          .first
+          .replaceAll('T', '_');
+      final backupPath = '$activeDbPath.restore_backup_$timestamp.bak';
+      final backupFile = File(backupPath);
+      if (await backupFile.exists()) {
+        await backupFile.delete();
+      }
+      if (await activeFile.exists()) {
+        await activeFile.copy(backupPath);
+      }
+
+      // 5. Delete active companion files at the destination path
+      final walFile = File('$activeDbPath-wal');
+      final shmFile = File('$activeDbPath-shm');
+      final journalFile = File('$activeDbPath-journal');
+      if (await walFile.exists()) await walFile.delete();
+      if (await shmFile.exists()) await shmFile.delete();
+      if (await journalFile.exists()) await journalFile.delete();
+
+      // 6. Overwrite active DB file with the restored file
+      await restoredFile.copy(activeDbPath);
+
+      // 7. Reopen database connection
+      final String? userId = _state.loadedUserId;
+      await _initDatabase(userId);
+
+      // 8. Refresh AppState from SQLite
+      await _refreshStateFromLocalRepositories(reason: 'manual_restore');
+    } finally {
+      _isRestoringDatabase = false;
+      notifyListeners();
+    }
   }
 
   Future<void> markRestorePromptDismissedForCurrentUser({
@@ -2550,6 +2628,13 @@ class AppStateController extends ChangeNotifier {
   }
 
   Future<void> triggerSyncPipeline({String reason = 'manual'}) async {
+    if (_isRestoringDatabase) {
+      if (kDebugMode) {
+        print('[SYNC-TRIGGER] Sync skipped: database restore in progress');
+      }
+      return;
+    }
+
     _lastSyncTriggerReason = reason;
     _lastSyncPullSkippedDueToThrottle = false;
     if (kDebugMode) {
@@ -2609,7 +2694,7 @@ class AppStateController extends ChangeNotifier {
     if (isStartupReason &&
         queueCountBeforeTrigger == 0 &&
         hasPullCursor &&
-        !hasRecentPull) {
+        hasRecentPull) {
       if (kDebugMode) {
         print(
           '[SYNC-TRIGGER] pull skipped on $reason: empty queue with existing pull cursor',
@@ -2799,19 +2884,26 @@ class AppStateController extends ChangeNotifier {
     final PullSyncResult pullResult = await pipeline.pullOnlyDetailed(uid);
     if (pullResult.success) {
       await pipeline.markPullSuccess();
+      await _refreshStateFromLocalRepositories(reason: 'manual_sync');
     }
     final int queueAfter = await _queueCount();
-    final bool success = pushResult.failed == 0 && pullResult.success;
+    final bool pushSucceeded = pushResult.failed == 0;
+    final bool pullSucceeded = pullResult.success;
+    final bool success = pushSucceeded && pullSucceeded;
     final bool alreadySynced =
         !pushAttempted &&
-        pullResult.success &&
+        pullSucceeded &&
         pullResult.docsApplied == 0 &&
         pullResult.deletedDocsApplied == 0;
-    final String message = !success
-        ? (authCheck.errorMessage ?? pullResult.errorMessage ?? 'Sync failed.')
-        : alreadySynced
-        ? 'Already synced'
-        : 'Manual sync completed';
+
+    String message;
+    if (success) {
+      message = alreadySynced ? 'Already up to date' : 'Synced';
+    } else if (!pushSucceeded && !pullSucceeded) {
+      message = 'Failed';
+    } else {
+      message = 'Partial failure';
+    }
 
     await SyncDiagnosticsService.record(
       level: success ? 'info' : 'error',
@@ -2901,6 +2993,20 @@ class AppStateController extends ChangeNotifier {
   }
 
   Future<void> _runDebouncedPush(String uid) async {
+    final String? currentStateUid = _state.userId;
+    if (uid != currentStateUid) {
+      debugPrint('[SYNC-SECURITY] Debounced push aborted: uid ($uid) does not match currentState.uid ($currentStateUid).');
+      return;
+    }
+    try {
+      final String? currentAuthUid = FirebaseAuth.instance.currentUser?.uid;
+      if (currentAuthUid != null && uid != currentAuthUid) {
+        debugPrint('[SYNC-SECURITY] Debounced push aborted: uid ($uid) does not match FirebaseAuth.uid ($currentAuthUid).');
+        return;
+      }
+    } catch (_) {
+      // FirebaseAuth not initialized or throws in unit tests
+    }
     if (_useSqliteLocalStore == false || localSyncPipeline == null) return;
     if (localSyncPipeline!.syncInProgress) {
       final int queueCount = await _queueCount();
@@ -2959,33 +3065,23 @@ class AppStateController extends ChangeNotifier {
           ? await localCorrectionFeedbackRepository!
                 .getActiveCorrectionFeedback()
           : _state.correctionFeedback;
+      final investments = localInvestmentsRepository != null
+          ? await localInvestmentsRepository!.getActiveInvestments()
+          : _state.investments;
 
       _state = _state.copyWith(
-        transactions: transactions.isNotEmpty
-            ? transactions
-            : _state.transactions,
-        savings: savings.isNotEmpty ? savings : _state.savings,
-        financialPlans: financialPlans.isNotEmpty
-            ? financialPlans
-            : _state.financialPlans,
-        recurringTransactions: recurringTransactions.isNotEmpty
-            ? recurringTransactions
-            : _state.recurringTransactions,
-        pendingTransactions: pending.isNotEmpty
-            ? pending
-            : _state.pendingTransactions,
-        merchantRules: merchantRules.isNotEmpty
-            ? merchantRules
-            : _state.merchantRules,
-        merchantAliases: merchantRules.isNotEmpty
+        transactions: transactions,
+        savings: savings,
+        financialPlans: financialPlans,
+        recurringTransactions: recurringTransactions,
+        pendingTransactions: pending,
+        merchantRules: merchantRules,
+        merchantAliases: localMerchantRulesRepository != null
             ? _merchantAliasesFromRules(merchantRules)
             : _state.merchantAliases,
-        merchantConfirmations: merchantConfirmations.isNotEmpty
-            ? merchantConfirmations
-            : _state.merchantConfirmations,
-        correctionFeedback: correctionFeedback.isNotEmpty
-            ? correctionFeedback
-            : _state.correctionFeedback,
+        merchantConfirmations: merchantConfirmations,
+        correctionFeedback: correctionFeedback,
+        investments: investments,
       );
       _state = _state.copyWith(
         syncHealth: _state.syncHealth.copyWith(

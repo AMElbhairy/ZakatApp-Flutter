@@ -308,7 +308,7 @@ void main() {
 
       expect(result.success, isTrue);
       expect(result.alreadySynced, isTrue);
-      expect(result.message, 'Already synced');
+      expect(result.message, 'Already up to date');
       expect(result.pushAttempted, isFalse);
       expect(result.pullAttempted, isTrue);
     },

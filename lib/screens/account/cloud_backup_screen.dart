@@ -1,17 +1,24 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart' as crypto;
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:intl/intl.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/widgets/app_ui.dart';
+import '../../services/backup_key_manager.dart';
 import '../../services/app_state_controller.dart';
+import '../../services/cloud_backup_controller.dart';
 import '../../services/sync/cloud_sync_manager.dart';
 import '../../services/sync/cloud_sync_manifest.dart';
 import '../../services/sync/google_drive_storage_provider.dart';
@@ -22,11 +29,15 @@ import '../../services/sync/user_cloud_storage_provider.dart';
 class CloudBackupScreen extends StatefulWidget {
   final GoogleSignIn? googleSignIn;
   final CloudSyncManager? syncManager;
+  final BackupKeyManager? backupKeyManager;
+  final http.Client? driveHttpClient;
 
   const CloudBackupScreen({
     super.key,
     this.googleSignIn,
     this.syncManager,
+    this.backupKeyManager,
+    this.driveHttpClient,
   });
 
   @override
@@ -38,6 +49,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     'APP_VERSION',
     defaultValue: '1.0.0',
   );
+  static const List<String> _driveScopes = <String>[
+    'https://www.googleapis.com/auth/drive.appdata',
+  ];
 
   late final GoogleSignIn _googleSignIn;
 
@@ -53,28 +67,36 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
   int _latestGlobalSequence = 0;
   String? _localChecksum;
   String? _currentDeviceId;
+  String? _latestRestoreLocalBackupPath;
 
   final TextEditingController _passphraseController = TextEditingController();
-  bool _obscurePassphrase = true;
+  final TextEditingController _confirmPassphraseController =
+      TextEditingController();
+  bool _hasExistingPassphrase = false;
+  bool _isChangingPassphrase = false;
   final SyncEncryptionService _encryptionService = SyncEncryptionService();
 
   @override
   void initState() {
     super.initState();
-    _googleSignIn = widget.googleSignIn ??
-        GoogleSignIn(
-          scopes: const <String>[
-            'profile',
-            'email',
-            'https://www.googleapis.com/auth/drive.appdata',
-          ],
-        );
+    _googleSignIn = widget.googleSignIn ?? _resolveSharedGoogleSignIn();
     _initStatus();
+  }
+
+  GoogleSignIn _resolveSharedGoogleSignIn() {
+    try {
+      return context.read<GoogleSignIn>();
+    } catch (_) {
+    return GoogleSignIn(
+        scopes: const <String>['profile', 'email'],
+      );
+    }
   }
 
   @override
   void dispose() {
     _passphraseController.dispose();
+    _confirmPassphraseController.dispose();
     super.dispose();
   }
 
@@ -83,25 +105,15 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
       _busy = true;
     });
     try {
-      final signedIn = await _googleSignIn.isSignedIn();
-      if (signedIn) {
-        final currentUser = _googleSignIn.currentUser;
-        if (currentUser != null) {
-          final scopesGranted = await _googleSignIn.canAccessScopes([
-            'https://www.googleapis.com/auth/drive.appdata',
-          ]);
-          if (scopesGranted) {
-            setState(() {
-              _isConnected = true;
-              _userEmail = currentUser.email;
-              _statusMessage = 'Connected';
-            });
-            await _loadLocalChecksum();
-            await _loadBackupPassphrase();
-            await _fetchBackups();
-            return;
-          }
-        }
+      final bool connected = await _tryAuthorizeDrive(
+        interactive: false,
+        phase: 'init',
+      );
+      if (connected) {
+        await _loadLocalChecksum();
+        await _loadBackupPassphrase();
+        await _fetchBackups();
+        return;
       }
       setState(() {
         _isConnected = false;
@@ -125,13 +137,232 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     }
   }
 
+  void _logDriveAuth(String phase, {GoogleSignInAccount? account, Object? error}) {
+    String firebaseUid = 'unavailable';
+    String firebaseProviders = 'unavailable';
+    try {
+      final User? firebaseUser = FirebaseAuth.instance.currentUser;
+      firebaseUid = firebaseUser?.uid ?? 'null';
+      firebaseProviders = firebaseUser?.providerData.map((p) => p.providerId).join(',') ?? '';
+    } catch (_) {
+      // Firebase may not be initialized in widget tests; keep logs best-effort.
+    }
+    debugPrint(
+      '[CloudBackupDriveAuth][$phase] '
+      'firebaseUid=$firebaseUid '
+      'firebaseProviders=$firebaseProviders '
+      'googleCurrentUser=${_googleSignIn.currentUser?.email ?? 'null'} '
+      'account=${account?.email ?? 'null'} '
+      'error=${error?.toString() ?? 'none'}',
+    );
+  }
+
+  Future<bool> _tryAuthorizeDrive({
+    required bool interactive,
+    required String phase,
+  }) async {
+    final provider = GoogleDriveStorageProvider(
+      googleSignIn: _googleSignIn,
+      getAuthHeaders: () async {
+        final headers = await _googleSignIn.currentUser?.authHeaders;
+        return headers ?? {};
+      },
+      checkConnected: () async => _isConnected,
+      requestConnect: () async => false,
+      requestDisconnect: () async {},
+      httpClient: widget.driveHttpClient,
+    );
+    final status = await provider.resolveConnection(
+      interactive: interactive,
+      phase: phase,
+    );
+    if (mounted) {
+      setState(() {
+        _isConnected = status.connected;
+        _userEmail = status.accountEmail;
+        _statusMessage = status.connected
+            ? 'Connected'
+            : (status.message ?? 'Google Drive permission is required for cloud backup.');
+      });
+    }
+    return status.connected;
+  }
+
   Future<void> _loadBackupPassphrase() async {
     final controller = context.read<AppStateController>();
     final userId = controller.state.loadedUserId;
-    final saved =
-        await controller.secureStorageService.loadBackupPassphrase(userId: userId);
-    if (saved != null && saved.isNotEmpty) {
-      _passphraseController.text = saved;
+    final String? saved = await controller.secureStorageService.loadBackupPassphrase(
+      userId: userId,
+    );
+    Uint8List? recoveredKey;
+    if (saved == null || saved.isEmpty) {
+      try {
+        await _backupKeyManager().recoverKeyFromFirestore();
+        recoveredKey = await _backupKeyManager().getExistingKey();
+      } catch (_) {
+        recoveredKey = null;
+      }
+    }
+    final String? resolvedSecret = (saved != null && saved.isNotEmpty)
+        ? saved
+        : (recoveredKey == null ? null : base64UrlEncode(recoveredKey));
+    if (!mounted) return;
+    setState(() {
+      _hasExistingPassphrase = resolvedSecret != null && resolvedSecret.isNotEmpty;
+      _isChangingPassphrase = false;
+      if (_hasExistingPassphrase) {
+        _passphraseController.text = resolvedSecret!;
+      } else {
+        _passphraseController.clear();
+      }
+      _confirmPassphraseController.clear();
+    });
+  }
+
+  BackupKeyManager _backupKeyManager() {
+    return widget.backupKeyManager ??
+        BackupKeyManager(
+          secureStorageService: context.read<AppStateController>().secureStorageService,
+        );
+  }
+
+  String _drivePermissionPrefsKey() {
+    final controller = context.read<AppStateController>();
+    final String userId = (controller.state.loadedUserId?.trim().isNotEmpty ?? false)
+        ? controller.state.loadedUserId!.trim()
+        : 'default';
+    return 'cloud_backup_drive_permission_granted_$userId';
+  }
+
+  Future<bool> _hasDrivePermissionGranted() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_drivePermissionPrefsKey()) ?? false;
+  }
+
+  Future<void> _setDrivePermissionGranted(bool granted) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (granted) {
+      await prefs.setBool(_drivePermissionPrefsKey(), true);
+    } else {
+      await prefs.remove(_drivePermissionPrefsKey());
+    }
+  }
+
+  Future<String?> _resolveOperationSecret({bool showDialogOnFailure = true}) async {
+    final String manualSecret = _passphraseController.text.trim();
+    if (manualSecret.isNotEmpty) {
+      return manualSecret;
+    }
+
+    try {
+      final Uint8List key = await _backupKeyManager().getOrCreateKey();
+      final String encoded = base64UrlEncode(key);
+      if (mounted) {
+        setState(() {
+          _passphraseController.text = encoded;
+          _hasExistingPassphrase = true;
+          _isChangingPassphrase = false;
+        });
+      }
+      return encoded;
+    } on BackupKeyRecoveryException catch (error) {
+      if (mounted) {
+        setState(() {
+          _statusMessage = 'Backup key recovery failed';
+        });
+        if (showDialogOnFailure) {
+          await _showBlockingDialog(
+            title: 'Backup Key Recovery Failed',
+            message: error.message,
+            buttonLabel: 'OK',
+          );
+        }
+      }
+      return null;
+    }
+  }
+
+  bool _isWrongPassphraseError(Object error) {
+    final str = error.toString().toLowerCase();
+    return str.contains('secretboxauthenticationerror') ||
+        str.contains('mac check failed') ||
+        str.contains('wrong passphrase') ||
+        str.contains('authentication failed');
+  }
+
+  bool _isPermissionRevokedError(Object error) {
+    final str = error.toString().toLowerCase();
+    return str.contains('insufficientpermissions') ||
+        (str.contains('403') && str.contains('permission'));
+  }
+
+  bool _isNetworkError(Object error) {
+    final str = error.toString().toLowerCase();
+    return str.contains('socketexception') ||
+        str.contains('handshake') ||
+        str.contains('network') ||
+        str.contains('http') ||
+        str.contains('detailedapirequesterror');
+  }
+
+  bool _isConflictError(Object error) {
+    final str = error.toString().toLowerCase();
+    return str.contains('etag') ||
+        str.contains('revision mismatch') ||
+        str.contains('conflict');
+  }
+
+  String _shortChecksum(String checksum) {
+    if (checksum.length <= 12) {
+      return checksum;
+    }
+    return '${checksum.substring(0, 12)}...';
+  }
+
+  String _formatMaybeDate(DateTime? value) {
+    if (value == null) return 'Not available';
+    return DateFormat.yMMMd().add_Hm().format(value.toLocal());
+  }
+
+  Future<String?> _findLatestLocalRestoreBackupPath(String activeDbPath) async {
+    try {
+      final directory = Directory(p.dirname(activeDbPath));
+      if (!await directory.exists()) {
+        return null;
+      }
+      final baseName = p.basename(activeDbPath);
+      final prefix = '$baseName.restore_backup_';
+
+      final files = await directory
+          .list()
+          .where((entity) => entity is File)
+          .cast<File>()
+          .where((file) {
+            final name = p.basename(file.path);
+            return name.startsWith(prefix) && name.endsWith('.bak');
+          })
+          .toList();
+
+      if (files.isEmpty) {
+        return null;
+      }
+
+      files.sort((a, b) {
+        final aTime = a.statSync().modified;
+        final bTime = b.statSync().modified;
+        return bTime.compareTo(aTime);
+      });
+      return files.first.path;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  CloudBackupController? _maybeBackupController() {
+    try {
+      return context.read<CloudBackupController>();
+    } catch (_) {
+      return null;
     }
   }
 
@@ -192,22 +423,16 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
   }
 
   String _mapErrorToMessage(Object e) {
-    final str = e.toString().toLowerCase();
-    if (str.contains('secretboxauthenticationerror') ||
-        str.contains('mac check failed') ||
-        str.contains('wrong passphrase')) {
+    if (_isWrongPassphraseError(e)) {
       return 'Wrong passphrase';
     }
-    if (str.contains('socketexception') ||
-        str.contains('handshake') ||
-        str.contains('network') ||
-        str.contains('http') ||
-        str.contains('detailedapirequesterror')) {
+    if (_isPermissionRevokedError(e)) {
+      return 'Google Drive permission was revoked. Please reconnect.';
+    }
+    if (_isNetworkError(e)) {
       return 'Network error';
     }
-    if (str.contains('etag') ||
-        str.contains('revision mismatch') ||
-        str.contains('conflict')) {
+    if (_isConflictError(e)) {
       return 'Conflict / try again';
     }
     return 'Error: $e';
@@ -215,6 +440,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
 
   UserCloudStorageProvider _getProvider() {
     return GoogleDriveStorageProvider(
+      googleSignIn: _googleSignIn,
       getAuthHeaders: () async {
         final headers = await _googleSignIn.currentUser?.authHeaders;
         return headers ?? {};
@@ -225,6 +451,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
         return _isConnected;
       },
       requestDisconnect: () => _disconnect(),
+      hasGrantedDriveScope: _hasDrivePermissionGranted,
+      setGrantedDriveScope: _setDrivePermissionGranted,
+      httpClient: widget.driveHttpClient,
     );
   }
 
@@ -277,25 +506,13 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
       _statusMessage = 'Connecting...';
     });
     try {
-      final account = await _googleSignIn.signIn();
-      if (account != null) {
-        final scopesGranted = await _googleSignIn.requestScopes([
-          'https://www.googleapis.com/auth/drive.appdata',
-        ]);
-        if (scopesGranted) {
-          setState(() {
-            _isConnected = true;
-            _userEmail = account.email;
-            _statusMessage = 'Connected';
-          });
-          await _fetchBackups();
-        } else {
-          setState(() {
-            _isConnected = false;
-            _statusMessage = 'Not connected';
-          });
-        }
-      } else {
+      final bool connected = await _tryAuthorizeDrive(
+        interactive: true,
+        phase: 'connect',
+      );
+      if (connected) {
+        await _fetchBackups();
+      } else if (mounted && _statusMessage == 'Connecting...') {
         setState(() {
           _isConnected = false;
           _statusMessage = 'Not connected';
@@ -303,6 +520,10 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
       }
     } catch (e) {
       setState(() {
+        if (_isPermissionRevokedError(e)) {
+          _isConnected = false;
+          _userEmail = null;
+        }
         _isConnected = false;
         _statusMessage = _mapErrorToMessage(e);
       });
@@ -321,19 +542,26 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     });
     try {
       await _googleSignIn.signOut();
+      await _setDrivePermissionGranted(false);
       await _deleteBackupPassphrase();
       setState(() {
         _isConnected = false;
         _userEmail = null;
         _statusMessage = 'Not connected';
         _backups = [];
+        _knownDevices = {};
         _latestSnapshotChecksum = null;
         _latestGlobalSequence = 0;
+        _hasExistingPassphrase = false;
+        _isChangingPassphrase = false;
+        _passphraseController.clear();
+        _confirmPassphraseController.clear();
       });
     } catch (e) {
       setState(() {
         _statusMessage = _mapErrorToMessage(e);
       });
+      await _setDrivePermissionGranted(false);
     } finally {
       if (mounted) {
         setState(() {
@@ -354,6 +582,19 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
         localSequence: 0,
         localChecksum: '',
       );
+
+      if (checkResult.status == CloudSyncStatus.error) {
+        if (mounted) {
+          setState(() {
+            if (_isPermissionRevokedError(checkResult.message)) {
+              _isConnected = false;
+              _userEmail = null;
+            }
+            _statusMessage = _mapErrorToMessage(checkResult.message);
+          });
+        }
+        return;
+      }
 
       if (checkResult.manifest != null) {
         final manifest = checkResult.manifest!;
@@ -389,6 +630,10 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     } catch (e) {
       if (mounted) {
         setState(() {
+          if (_isPermissionRevokedError(e)) {
+            _isConnected = false;
+            _userEmail = null;
+          }
           _statusMessage = _mapErrorToMessage(e);
         });
       }
@@ -402,23 +647,24 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
   }
 
   Future<void> _createBackup() async {
-    final passphrase = _passphraseController.text.trim();
-    if (passphrase.isEmpty) {
-      showTopSnackBar(
-        context,
-        'Please enter a backup passphrase',
-        kind: AppToastKind.warning,
-      );
+    final String? passphrase = await _resolveOperationSecret();
+    if (passphrase == null || passphrase.isEmpty) {
       return;
     }
 
     final controller = context.read<AppStateController>();
+    final backupController = _maybeBackupController();
+    final wasChangingPassphrase = _isChangingPassphrase;
     setState(() {
       _busy = true;
       _statusMessage = 'Backing up...';
     });
 
     try {
+      if (backupController != null) {
+        backupController.setBackupPassphrase(passphrase);
+        await backupController.saveBackupPassphrase(passphrase);
+      }
       await _saveBackupPassphrase(passphrase);
       final syncManager = await _getSyncManager();
       final db = controller.database;
@@ -426,23 +672,44 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
         throw StateError('Active database is not initialized.');
       }
 
-      final result = await syncManager.pushSnapshot(db: db);
+      CloudSyncResult result = await syncManager.pushSnapshot(db: db);
+      if (result.status == CloudSyncStatus.conflict ||
+          _isConflictError(result.message)) {
+        result = await syncManager.pushSnapshot(db: db);
+      }
       if (!mounted) return;
 
       if (result.status == CloudSyncStatus.success) {
         setState(() {
           _statusMessage = 'Backup completed';
+          _hasExistingPassphrase = true;
+          _isChangingPassphrase = false;
+          _confirmPassphraseController.clear();
         });
         showTopSnackBar(
           context,
           'Backup completed successfully',
           kind: AppToastKind.success,
         );
+        if (wasChangingPassphrase) {
+          showTopSnackBar(
+            context,
+            'Changing your passphrase affects future backups. Older backups may still require the passphrase used when they were created.',
+            kind: AppToastKind.warning,
+          );
+        }
+        if (backupController != null) {
+          await backupController.refreshCloudState(evaluatePrompt: false);
+        }
         await _loadLocalChecksum();
         if (!mounted) return;
         await _fetchBackups();
       } else {
         setState(() {
+          if (_isPermissionRevokedError(result.message)) {
+            _isConnected = false;
+            _userEmail = null;
+          }
           _statusMessage = _mapErrorToMessage(result.message);
         });
         showTopSnackBar(
@@ -454,6 +721,10 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
+        if (_isPermissionRevokedError(e)) {
+          _isConnected = false;
+          _userEmail = null;
+        }
         _statusMessage = _mapErrorToMessage(e);
       });
       showTopSnackBar(context, 'Backup failed: $e', kind: AppToastKind.error);
@@ -464,6 +735,165 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
         });
       }
     }
+  }
+
+  Widget _buildAutomaticBackupPanel(
+    BuildContext context,
+    CloudBackupController controller,
+  ) {
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (BuildContext context, Widget? _) {
+        return Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.schedule, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Automatic Cloud Backup',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                      ),
+                    ),
+                    if (controller.isBackingUp)
+                      const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                SwitchListTile.adaptive(
+                  contentPadding: EdgeInsets.zero,
+                  value: controller.automaticBackupEnabled,
+                  onChanged: _busy
+                      ? null
+                      : (bool enabled) async {
+                          await controller.setAutomaticBackupEnabled(enabled);
+                          if (enabled) {
+                            await controller.refreshCloudState(evaluatePrompt: true);
+                          }
+                        },
+                  title: const Text('Enable automatic backups'),
+                  subtitle: const Text(
+                    'Backups run in the background when the app is idle, resumes, or important data changes.',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Text(
+                      'Minimum interval',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const Spacer(),
+                    DropdownButton<int>(
+                      value: controller.minimumIntervalHours,
+                      items: const <DropdownMenuItem<int>>[
+                        DropdownMenuItem<int>(
+                          value: 6,
+                          child: Text('6 hours'),
+                        ),
+                        DropdownMenuItem<int>(
+                          value: 12,
+                          child: Text('12 hours'),
+                        ),
+                      ],
+                      onChanged: _busy
+                          ? null
+                          : (int? value) {
+                              if (value != null) {
+                                controller.setMinimumIntervalHours(value);
+                              }
+                            },
+                    ),
+                  ],
+                ),
+                const Divider(height: 24),
+                _detailRow(
+                  context,
+                  icon: Icons.history,
+                  label: 'Last backup time',
+                  value: _formatMaybeDate(controller.lastBackupAt),
+                ),
+                const SizedBox(height: 8),
+                _detailRow(
+                  context,
+                  icon: Icons.event_available,
+                  label: 'Next eligible backup',
+                  value: _formatMaybeDate(controller.nextEligibleBackupAt),
+                ),
+                const SizedBox(height: 8),
+                _detailRow(
+                  context,
+                  icon: Icons.info_outline,
+                  label: 'Status',
+                  value: controller.statusMessage,
+                ),
+                if (controller.lastBackupError.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    controller.lastBackupError,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _detailRow(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 16),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          flex: 2,
+          child: Text(
+            value,
+            textAlign: TextAlign.end,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   int _compareVersionStrings(String left, String right) {
@@ -599,13 +1029,8 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
   }
 
   Future<void> _confirmAndRestore(SnapshotEntry snapshot) async {
-    final passphrase = _passphraseController.text.trim();
-    if (passphrase.isEmpty) {
-      showTopSnackBar(
-        context,
-        'Please enter the backup passphrase to decrypt',
-        kind: AppToastKind.warning,
-      );
+    final String? passphrase = await _resolveOperationSecret();
+    if (passphrase == null || passphrase.isEmpty) {
       return;
     }
 
@@ -631,8 +1056,13 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
       builder: (context) => AlertDialog(
         title: const Text('Restore Cloud Backup?'),
         content: Text(
-          'Are you sure you want to replace your local database with Cloud Backup Sequence #${snapshot.sequence}?\n\n'
-          'All current local data will be replaced. A timestamped local backup file will be created first.',
+          'This will replace your current data.\n'
+          'A local safety copy will be created automatically.\n\n'
+          'Are you sure you want to replace your local database with Cloud Backup Sequence #${snapshot.sequence}?\n'
+          'Device: ${snapshot.deviceName.isEmpty ? 'Unknown device' : snapshot.deviceName} (${_formatPlatformLabel(_platformForBackup(snapshot))})\n'
+          'Backup date: ${_formatBackupDate(snapshot.createdAt)}\n'
+          'Schema/App: ${snapshot.databaseSchemaVersion} / ${snapshot.appVersion}\n'
+          'Checksum: ${_shortChecksum(snapshot.checksum)}',
         ),
         actions: [
           TextButton(
@@ -682,17 +1112,34 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     try {
       await _saveBackupPassphrase(passphrase);
       final syncManager = await _getSyncManager();
+      final activeDbPath = await controller.database?.resolveDatabasePath();
 
       final tempDir = await getTemporaryDirectory();
       final tempPath =
           '${tempDir.path}/restored_user_backup_${DateTime.now().millisecondsSinceEpoch}.sqlite';
 
-      final pullResult = await syncManager.pullAndRestore(targetPath: tempPath);
+      final pullResult = await syncManager.pullAndRestore(
+        targetPath: tempPath,
+        localSchemaVersion: controller.database?.schemaVersion,
+      );
       if (pullResult.status != CloudSyncStatus.success) {
+        if (_isWrongPassphraseError(pullResult.message)) {
+          await _showBlockingDialog(
+            title: 'Wrong Passphrase',
+            message:
+                'The selected cloud backup could not be decrypted with this passphrase. Please verify your passphrase and try again.',
+            buttonLabel: 'OK',
+          );
+          return;
+        }
         throw StateError(pullResult.message);
       }
 
       await controller.replaceActiveDatabaseWithRestoredFile(tempPath);
+      if (activeDbPath != null && activeDbPath.isNotEmpty) {
+        _latestRestoreLocalBackupPath =
+            await _findLatestLocalRestoreBackupPath(activeDbPath);
+      }
 
       final tempFile = File(tempPath);
       if (await tempFile.exists()) {
@@ -703,24 +1150,88 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
         setState(() {
           _statusMessage = 'Restore completed';
         });
-        showTopSnackBar(
-          context,
-          'Restore completed successfully',
-          kind: AppToastKind.success,
+        await _showBlockingDialog(
+          title: 'Restore Completed',
+          message: 'Restore completed successfully.',
+          buttonLabel: 'OK',
         );
       }
       await _loadLocalChecksum();
       await _fetchBackups();
+    } on crypto.SecretBoxAuthenticationError {
+      if (mounted) {
+        await _showBlockingDialog(
+          title: 'Wrong Passphrase',
+          message:
+              'The selected cloud backup could not be decrypted with this passphrase. Please verify your passphrase and try again.',
+          buttonLabel: 'OK',
+        );
+        setState(() {
+          _statusMessage = 'Wrong passphrase';
+        });
+      }
     } catch (e) {
       if (mounted) {
+        final reason = _mapErrorToMessage(e);
         setState(() {
-          _statusMessage = _mapErrorToMessage(e);
+          if (_isPermissionRevokedError(e)) {
+            _isConnected = false;
+            _userEmail = null;
+          }
+          _statusMessage = reason;
         });
-        showTopSnackBar(
-          context,
-          'Restore failed: $_statusMessage',
-          kind: AppToastKind.error,
+
+        final bool? restoreSafety = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Restore Failed'),
+            content: Text(
+              'Reason: $reason\n\n'
+              'Would you like to restore the local safety copy created before the restore attempt?\n\n'
+              'Local safety backup:\n${_latestRestoreLocalBackupPath ?? 'Unknown path'}',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Restore Safety Copy', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
         );
+
+        if (restoreSafety == true && mounted && _latestRestoreLocalBackupPath != null) {
+          setState(() {
+            _busy = true;
+            _statusMessage = 'Restoring safety copy...';
+          });
+          try {
+            await controller.replaceActiveDatabaseWithRestoredFile(_latestRestoreLocalBackupPath!);
+            showTopSnackBar(
+              context,
+              'Restore completed successfully.',
+              kind: AppToastKind.success,
+            );
+            setState(() {
+              _statusMessage = 'Safety copy restored';
+            });
+            await _loadLocalChecksum();
+            await _fetchBackups();
+          } catch (restoreErr) {
+            showTopSnackBar(
+              context,
+              'Failed to restore safety copy: $restoreErr',
+              kind: AppToastKind.error,
+            );
+          } finally {
+            setState(() {
+              _busy = false;
+            });
+          }
+        }
       }
     } finally {
       if (mounted) {
@@ -928,7 +1439,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
             ),
             const SizedBox(height: 12),
             Text(
-              'Checksum: ${backup.checksum.length > 12 ? '${backup.checksum.substring(0, 12)}...' : backup.checksum}',
+              'Checksum: ${_shortChecksum(backup.checksum)}',
               style: TextStyle(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
                 fontSize: 12,
@@ -995,14 +1506,39 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final backupController = _maybeBackupController();
     final sortedBackups = _sortedBackups;
     final latestBackup = sortedBackups.isNotEmpty ? sortedBackups.first : null;
     final previousBackups =
         sortedBackups.length > 1 ? sortedBackups.skip(1).toList() : <SnapshotEntry>[];
+    final lastBackupTime = backupController?.lastBackupAt ?? latestBackup?.createdAt;
+    final nextEligibleTime = backupController?.nextEligibleBackupAt;
+    final autoBackupSummary = backupController == null
+      ? 'Not available'
+      : (backupController.automaticBackupEnabled ? 'Enabled' : 'Disabled');
+    final lastError = backupController == null || backupController.lastBackupError.trim().isEmpty
+      ? 'None'
+      : backupController.lastBackupError.trim();
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Cloud Backup & Sync'),
+        actions: [
+          if (_isConnected)
+            PopupMenuButton<String>(
+              onSelected: (value) {
+                if (value == 'disconnect') {
+                  _disconnect();
+                }
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'disconnect',
+                  child: Text('Disconnect Google Drive'),
+                ),
+              ],
+            ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -1051,6 +1587,54 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                               ),
                             ),
                           ],
+                          const SizedBox(height: 12),
+                          _detailRow(
+                            context,
+                            icon: Icons.history,
+                            label: 'Last backup',
+                            value: _formatMaybeDate(lastBackupTime),
+                          ),
+                          const SizedBox(height: 8),
+                          _detailRow(
+                            context,
+                            icon: Icons.schedule,
+                            label: 'Auto backup',
+                            value: autoBackupSummary,
+                          ),
+                          const SizedBox(height: 8),
+                          _detailRow(
+                            context,
+                            icon: Icons.event,
+                            label: 'Next eligible backup',
+                            value: _formatMaybeDate(nextEligibleTime),
+                          ),
+                          const SizedBox(height: 8),
+                          _detailRow(
+                            context,
+                            icon: Icons.error_outline,
+                            label: 'Last error',
+                            value: lastError,
+                          ),
+                           if (kDebugMode) ...[
+                             const SizedBox(height: 8),
+                             _detailRow(
+                               context,
+                               icon: Icons.inventory_2_outlined,
+                               label: 'Backup count',
+                               value: '${_backups.length}',
+                             ),
+                           ],
+                          if (_isConnected && _statusMessage == 'Network error') ...[
+                            const SizedBox(height: 12),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: OutlinedButton.icon(
+                                onPressed: _busy ? null : _fetchBackups,
+                                icon: const Icon(Icons.refresh),
+                                label: const Text('Retry'),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -1058,22 +1642,71 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 20),
-            if (!_isConnected)
-              AppPrimaryButton(
-                onPressed: _busy ? null : _connect,
-                label: 'Connect Google Drive',
-                icon: Icons.login,
-              )
-            else ...[
-              AppPrimaryButton(
-                onPressed: _busy ? null : _disconnect,
-                label: 'Disconnect Google Drive',
-                icon: Icons.logout,
-              ),
+              const SizedBox(height: 20),
+              if (!_isConnected)
+                Card(
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Connect Google Drive to enable cloud backups',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                        ),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'Google Drive appDataFolder is app-private. Backup files are not visible in your Drive files list.',
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Backups are encrypted automatically on this device before upload.',
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Your backup key is recovered securely when you sign in.',
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Firebase app login is separate from Google Drive access. Connecting Drive does not change your app login session.',
+                        ),
+                        const SizedBox(height: 16),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton(
+                            onPressed: _busy
+                                ? null
+                                : () {
+                                    Navigator.of(context).maybePop();
+                                  },
+                            child: const Text('Skip'),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        AppPrimaryButton(
+                          onPressed: _busy ? null : _connect,
+                          label: 'Connect Google Drive',
+                          icon: Icons.login,
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              else ...[
+                if (backupController != null) ...[
+                  _buildAutomaticBackupPanel(context, backupController),
+                  const SizedBox(height: 24),
+                ],
               const SizedBox(height: 24),
               Text(
-                'Encryption Passphrase',
+                'Cloud Backup',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),
@@ -1088,25 +1721,23 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      TextFormField(
-                        controller: _passphraseController,
-                        obscureText: _obscurePassphrase,
-                        decoration: InputDecoration(
-                          labelText: 'Backup Passphrase',
-                          hintText: 'Enter a strong passphrase to encrypt backups',
-                          suffixIcon: IconButton(
-                            icon: Icon(
-                              _obscurePassphrase
-                                  ? Icons.visibility
-                                  : Icons.visibility_off,
-                            ),
-                            onPressed: () {
-                              setState(() {
-                                _obscurePassphrase = !_obscurePassphrase;
-                              });
-                            },
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest
+                              .withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: Theme.of(context).colorScheme.outlineVariant,
                           ),
+                        ),
+                      child: const Text(
+                          'Backups are encrypted automatically on this device before upload to Google Drive. Your backup key is recovered securely upon sign in.',
                         ),
                       ),
                       const SizedBox(height: 16),
@@ -1116,7 +1747,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                         ),
                         onPressed: _busy ? null : _createBackup,
                         icon: const Icon(Icons.backup),
-                        label: const Text('Backup Now'),
+                        label: const Text('Create Backup Now'),
                       ),
                     ],
                   ),

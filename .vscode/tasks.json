@@ -1,0 +1,53 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "cloud-backup-screen-test",
+			"type": "shell",
+			"command": "flutter",
+			"args": [
+				"test",
+				"test/widget/cloud_backup_screen_test.dart",
+				"--reporter",
+				"expanded"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "cloud-backup-screen-test",
+			"type": "shell",
+			"command": "flutter",
+			"args": [
+				"test",
+				"test/widget/cloud_backup_screen_test.dart",
+				"--reporter",
+				"expanded"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "cloud-backup-screen-test",
+			"type": "shell",
+			"command": "flutter",
+			"args": [
+				"test",
+				"test/widget/cloud_backup_screen_test.dart",
+				"--reporter",
+				"expanded"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "cloud-backup-screen-test",
+			"type": "shell",
+			"command": "flutter",
+			"args": [
+				"test",
+				"test/widget/cloud_backup_screen_test.dart",
+				"--reporter",
+				"expanded"
+			],
+			"isBackground": false
+		}
+	]
+}

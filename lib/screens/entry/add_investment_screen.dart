@@ -55,6 +55,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
   String _autoFrequency = 'monthly';
   String _scheduleInputMode = 'auto';
   late String _oneByOneCurrency;
+  late String _autoCurrency;
 
   double _calculateLiabilityFromInstallments(MarketData market) {
     double totalUnpaidInAssetCurrency = 0.0;
@@ -102,6 +103,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
         : (defaultEntryCurrency.trim().isEmpty ? 'EGP' : defaultEntryCurrency);
     _selectedDate = _tryParseDate(initial?.valuationDate) ?? DateTime.now();
     _oneByOneCurrency = _currency;
+    _autoCurrency = _currency;
 
     _installmentPlan = initial?.installmentPlan != null
         ? List<Map<String, dynamic>>.from(
@@ -728,6 +730,37 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
+                      key: const Key('investmentAutoCurrencyField'),
+                      value: _autoCurrency,
+                      decoration: const InputDecoration(
+                        labelText: 'Currency',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: ZakatEngineService.supportedCurrencies
+                          .map(
+                            (String currency) => DropdownMenuItem<String>(
+                              value: currency,
+                              child: Text(
+                                ZakatEngineService.getCurrencySymbol(
+                                  currency,
+                                  isArabic:
+                                      Localizations.localeOf(
+                                        context,
+                                      ).languageCode.toLowerCase() ==
+                                      'ar',
+                                ),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (String? value) {
+                        if (value != null) {
+                          setState(() => _autoCurrency = value);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
                       initialValue: _autoFrequency,
                       decoration: const InputDecoration(
                         labelText: 'Installment Frequency',
@@ -812,7 +845,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                                 'date': _dateIso(nextDate),
                                 'recurrenceDate': _dateIso(nextDate),
                                 'isPaid': false,
-                                'currency': _currency,
+                                'currency': _autoCurrency,
                               });
 
                               if (_autoFrequency == 'monthly') {
@@ -1225,12 +1258,12 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
         ? purchasePrice
         : (double.tryParse(rawCurrentValue) ?? purchasePrice);
 
+    final AppStateController controller = context.read<AppStateController>();
+    final MarketData market = MarketData.fromJson(controller.state.marketData);
+
     double liability = double.tryParse(_liabilityController.text.trim()) ?? 0;
     if (_showInstallmentConfig && _installmentPlan.isNotEmpty) {
-      final double computed = _installmentPlan
-          .where((item) => item['isPaid'] != true)
-          .fold(0.0, (sum, item) => sum + ((item['amount'] ?? 0) as num).toDouble());
-      liability = double.parse(computed.toStringAsFixed(2));
+      liability = _calculateLiabilityFromInstallments(market);
     }
 
     final String valuationDate = _dateIso(_selectedDate);
@@ -1281,7 +1314,6 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
       yearlyGrowthRate: growthRate,
     );
 
-    final AppStateController controller = context.read<AppStateController>();
     if (widget.isEditMode) {
       await controller.updateInvestment(asset);
     } else {

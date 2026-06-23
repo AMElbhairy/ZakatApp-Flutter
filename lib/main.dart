@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:provider/provider.dart';
 import 'package:provider/single_child_widget.dart';
 
@@ -36,6 +37,7 @@ import 'services/auth_controller.dart';
 import 'services/auth_service.dart';
 import 'services/cloud_backup_controller.dart';
 import 'services/firestore_sync_manager.dart';
+import 'services/backup_key_manager.dart';
 import 'services/google_sheets_service.dart';
 import 'services/local_storage_service.dart';
 import 'services/smart_capture_alert_service.dart';
@@ -84,6 +86,11 @@ Future<void> main() async {
   runApp(
     MultiProvider(
       providers: <SingleChildWidget>[
+        Provider<GoogleSignIn>(
+          create: (_) => GoogleSignIn(
+            scopes: const <String>['profile', 'email'],
+          ),
+        ),
         Provider<SmartCaptureAlertService>.value(
           value: smartCaptureAlertService,
         ),
@@ -134,11 +141,18 @@ Future<void> main() async {
             localStorage: localStorage,
           ),
         ),
+        Provider<BackupKeyManager>(
+          create: (BuildContext ctx) => BackupKeyManager(
+            secureStorageService: ctx.read<AppStateController>().secureStorageService,
+          ),
+        ),
         Provider<FirestoreSyncManager>.value(value: firestoreSyncManager),
         ChangeNotifierProvider<CloudBackupController>(
           create: (BuildContext ctx) => CloudBackupController(
             appStateController: ctx.read<AppStateController>(),
             authController: ctx.read<AuthController>(),
+            backupKeyManager: ctx.read<BackupKeyManager>(),
+            googleSignIn: ctx.read<GoogleSignIn>(),
           ),
         ),
         ChangeNotifierProvider<SyncController>(
@@ -445,7 +459,6 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
   Future<void> _handleAuthGateState(AuthGateState state) async {
     if (!mounted) return;
     if (!_initialBootstrapComplete) {
-      debugPrint('[BootstrapDebug] ignoring stream auth state ${state.status} because initial bootstrap is not complete');
       return;
     }
     switch (state.status) {
@@ -459,7 +472,7 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
         return;
       case AuthGateStatus.signedOut:
       case AuthGateStatus.error:
-        await context.read<AppStateController>().stopLiveFirestoreSync();
+        await context.read<AppStateController>().resetForSignedOutUser();
         if (!mounted) return;
         if (_phase == _BootstrapPhase.signedOut) return;
         setState(() {
@@ -512,7 +525,7 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
 
   Future<void> _routeToSignedOut() async {
     if (!mounted) return;
-    await context.read<AppStateController>().stopLiveFirestoreSync();
+    await context.read<AppStateController>().resetForSignedOutUser();
     if (!mounted) return;
     setState(() {
       _phase = _BootstrapPhase.signedOut;
@@ -533,7 +546,7 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
 
   Future<void> _routeToEmailVerification(UserProfile user) async {
     if (!mounted) return;
-    await context.read<AppStateController>().stopLiveFirestoreSync();
+    await context.read<AppStateController>().resetForSignedOutUser();
     if (!mounted) return;
     setState(() {
       _phase = _BootstrapPhase.emailVerification;
@@ -766,7 +779,6 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
 
   @override
   Widget build(BuildContext context) {
-    debugPrint('[BootstrapDebug] building with phase=$_phase');
     final Widget body = switch (_phase) {
       _BootstrapPhase.authLoading => AuthLoadingScreen(
         isAccountVerified: _accountVerified,

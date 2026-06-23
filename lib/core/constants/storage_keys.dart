@@ -5,6 +5,7 @@ class StorageKeys {
   static const String appStateAnonymousKey = 'zakatAppData';
   static const String userProfileKey = 'zakatUserProfile';
   static const String aiKeysAnonymousKey = 'zakatAiKeys';
+  static const String backupKeyAnonymousKey = 'zakatBackupKey';
   static const String savedCredentialEmailPrefix = 'savedCredentialEmail_';
 
   static String? appStateKeyForUser(String? userId) {
@@ -17,6 +18,12 @@ class StorageKeys {
     final String clean = (userId ?? '').trim();
     if (clean.isEmpty) return aiKeysAnonymousKey;
     return 'zakatAiKeys_$clean';
+  }
+
+  static String backupKeyKeyForUser(String? userId) {
+    final String clean = (userId ?? '').trim();
+    if (clean.isEmpty) return backupKeyAnonymousKey;
+    return 'zakatBackupKey_$clean';
   }
 
   static String? savedCredentialEmailKey(String? email) {
