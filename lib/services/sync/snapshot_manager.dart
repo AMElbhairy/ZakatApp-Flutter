@@ -242,7 +242,7 @@ class SnapshotManager {
     required String targetPath,
     int? localSchemaVersion,
   }) async {
-    // 1. Read manifest to identify snapshot location
+    // 1. Read manifest to identify the newest snapshot file that still exists.
     final manifestInfo = await provider.readManifest();
     if (manifestInfo == null) {
       throw const BackupCorruptedException('No manifest file found in cloud storage.');
@@ -252,11 +252,24 @@ class SnapshotManager {
     if (manifest.snapshots.isEmpty) {
       throw const BackupCorruptedException('No snapshots registered in the manifest.');
     }
-    final latestSnapshot = manifest.snapshots.last;
-    final snapshotPath = latestSnapshot.path;
-    if (snapshotPath == null || snapshotPath.isEmpty) {
-      throw const BackupCorruptedException('No snapshot path registered in the manifest.');
+    final Set<String> availableSnapshotPaths = <String>{
+      for (final CloudFileInfo file in await provider.listFiles('snapshots/'))
+        file.path,
+    };
+    SnapshotEntry? latestSnapshot;
+    for (final SnapshotEntry candidate in manifest.snapshots.reversed) {
+      if (candidate.path.trim().isEmpty) continue;
+      if (availableSnapshotPaths.contains(candidate.path)) {
+        latestSnapshot = candidate;
+        break;
+      }
     }
+    if (latestSnapshot == null) {
+      throw const BackupCorruptedException(
+        'No snapshot files from the manifest are available in cloud storage.',
+      );
+    }
+    final String snapshotPath = latestSnapshot.path;
 
     // Check schema version compatibility
     if (localSchemaVersion != null && latestSnapshot.databaseSchemaVersion > localSchemaVersion) {
@@ -276,7 +289,9 @@ class SnapshotManager {
     // 3. Download encrypted snapshot
     final encryptedBytes = await provider.readFile(snapshotPath);
     if (encryptedBytes == null) {
-      throw StateError('Snapshot file at $snapshotPath could not be retrieved.');
+      throw BackupCorruptedException(
+        'Snapshot file at $snapshotPath could not be retrieved.',
+      );
     }
 
     // 4. Decrypt snapshot bytes

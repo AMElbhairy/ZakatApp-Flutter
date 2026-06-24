@@ -312,10 +312,8 @@ class AuthController extends ChangeNotifier {
         _currentUser = restored;
         await _persistCurrentUser();
         return true;
-      } else {
-        await signOut();
-        return false;
       }
+      return _currentUser != null;
     }
     return true;
   }

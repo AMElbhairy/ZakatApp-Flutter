@@ -128,4 +128,104 @@ void main() {
 
     await restoredDb.close();
   });
+
+  test('Restore falls back to the newest valid snapshot when the latest file is missing', () async {
+    final originalDbPath = p.join(tempDir.path, 'original_fallback.sqlite');
+    final originalDbFile = File(originalDbPath);
+    final originalDb = AppDatabase(
+      userId: 'test-user',
+      executor: NativeDatabase(originalDbFile),
+    );
+
+    await originalDb.customStatement(
+      "INSERT INTO app_settings (key, value_json, updated_at) VALUES ('locale', '\"en\"', '2026-06-23T08:00:00Z')",
+    );
+    await snapshotManager.exportSnapshot(
+      db: originalDb,
+      provider: mockProvider,
+      passphrase: 'secret-passphrase-abc',
+      deviceId: 'device-1',
+      deviceName: 'Device 1',
+      platform: 'android',
+      appVersion: '1.0.0',
+      customDbPath: originalDbPath,
+    );
+
+    await originalDb.customStatement(
+      "UPDATE app_settings SET value_json = '\"fr\"' WHERE key = 'locale'",
+    );
+    await snapshotManager.exportSnapshot(
+      db: originalDb,
+      provider: mockProvider,
+      passphrase: 'secret-passphrase-abc',
+      deviceId: 'device-1',
+      deviceName: 'Device 1',
+      platform: 'android',
+      appVersion: '1.0.0',
+      customDbPath: originalDbPath,
+    );
+    await originalDb.close();
+
+    await mockProvider.deleteFile('snapshots/snapshot_00000002.sqlite.enc');
+
+    final restoredDbPath = p.join(tempDir.path, 'restored_fallback.sqlite');
+    await snapshotManager.restoreSnapshot(
+      provider: mockProvider,
+      passphrase: 'secret-passphrase-abc',
+      targetPath: restoredDbPath,
+    );
+
+    final restoredDb = AppDatabase(
+      userId: 'test-user-restored',
+      executor: NativeDatabase(File(restoredDbPath)),
+    );
+    final restoredSettings = await restoredDb.customSelect("SELECT * FROM app_settings").get();
+    expect(restoredSettings.first.read<String>('value_json'), equals('"en"'));
+    await restoredDb.close();
+  });
+
+  test('Restore fails with a friendly error when no snapshot files are present', () async {
+    final originalDbPath = p.join(tempDir.path, 'original_missing.sqlite');
+    final originalDbFile = File(originalDbPath);
+    final originalDb = AppDatabase(
+      userId: 'test-user',
+      executor: NativeDatabase(originalDbFile),
+    );
+    await originalDb.customStatement(
+      "INSERT INTO app_settings (key, value_json, updated_at) VALUES ('locale', '\"en\"', '2026-06-23T08:00:00Z')",
+    );
+    await snapshotManager.exportSnapshot(
+      db: originalDb,
+      provider: mockProvider,
+      passphrase: 'secret-passphrase-abc',
+      deviceId: 'device-1',
+      deviceName: 'Device 1',
+      platform: 'android',
+      appVersion: '1.0.0',
+      customDbPath: originalDbPath,
+    );
+    await originalDb.close();
+
+    for (final path in List<String>.from(mockProvider.files.keys)) {
+      if (path.startsWith('snapshots/')) {
+        await mockProvider.deleteFile(path);
+      }
+    }
+
+    final restoredDbPath = p.join(tempDir.path, 'restored_missing.sqlite');
+    await expectLater(
+      snapshotManager.restoreSnapshot(
+        provider: mockProvider,
+        passphrase: 'secret-passphrase-abc',
+        targetPath: restoredDbPath,
+      ),
+      throwsA(
+        isA<BackupCorruptedException>().having(
+          (e) => e.message,
+          'message',
+          contains('No snapshot files from the manifest'),
+        ),
+      ),
+    );
+  });
 }

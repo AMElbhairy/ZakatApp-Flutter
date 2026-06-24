@@ -37,6 +37,11 @@ class _MemorySecureStorageService extends SecureStorageService {
   }
 }
 
+class _UnwritableSecureStorageService extends _MemorySecureStorageService {
+  @override
+  Future<void> saveBackupKey(String keyValue, {String? userId}) async {}
+}
+
 String _encodeKey(Uint8List key) => base64UrlEncode(key);
 
 void main() {
@@ -199,6 +204,32 @@ void main() {
     await manager.recoverKeyFromFirestore();
     final Uint8List? recovered = await manager.getExistingKey();
     expect(recovered, isNull);
+  });
+
+  test('existing recovery key is not replaced when local save fails', () async {
+    final Uint8List original = await manager.getOrCreateKey();
+
+    final BackupKeyManager failingManager = BackupKeyManager(
+      auth: auth,
+      firestore: firestore,
+      secureStorageService: _UnwritableSecureStorageService(),
+      nowProvider: () => DateTime.utc(2026, 6, 23, 12),
+    );
+
+    expect(
+      () => failingManager.getOrCreateKey(),
+      throwsA(isA<BackupKeyRecoveryException>()),
+    );
+
+    final snapshot = await firestore
+        .collection('users')
+        .doc('user-1')
+        .collection('security')
+        .doc('backupKey')
+        .get();
+    expect(snapshot.data()!['version'], equals(1));
+    expect(snapshot.data()!['keyStatus'], equals('active'));
+    expect(original, isNotEmpty);
   });
 
   test('key rotation creates a new version', () async {

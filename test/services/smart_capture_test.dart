@@ -1574,6 +1574,7 @@ void main() {
 
       expect(find.text('Talabat'), findsOneWidget);
       expect(find.text('Expense Capture'), findsNothing);
+      await tester.pump(const Duration(milliseconds: 300));
     });
 
     testWidgets('Smart Capture cards keep emerald contrast in both themes', (
@@ -1584,6 +1585,20 @@ void main() {
         Brightness.dark,
       ]) {
         final controller = await makeController();
+        // Fund the wallet first to pass available balance check
+        await controller.addTransaction(
+          const Transaction(
+            id: 'funding-1',
+            type: 'income',
+            date: '2026-06-14',
+            amount: 1000,
+            currency: 'EGP',
+            category: 'Salary',
+            description: 'Funding',
+            createdAt: '2026-06-14T00:00:00.000Z',
+            rolledOver: false,
+          ),
+        );
         await controller.createPendingTransaction(
           source: 'sms',
           rawMessage: 'Purchase at Talabat EGP 90',
@@ -1595,7 +1610,7 @@ void main() {
           suggestedCategory: 'Food & Dining',
         );
         await controller.approvePendingTransaction(
-          controller.state.pendingTransactions.single.id,
+          controller.state.pendingTransactions.firstWhere((t) => t.suggestedAmount == 90).id,
           type: 'expense',
           amount: 90,
           currency: 'EGP',
@@ -1631,6 +1646,7 @@ void main() {
 
         final Text amount = tester.widget<Text>(find.text('EGP 90.00'));
         expect(amount.style?.color, expected.gold);
+        await tester.pump(const Duration(milliseconds: 300));
       }
     });
 

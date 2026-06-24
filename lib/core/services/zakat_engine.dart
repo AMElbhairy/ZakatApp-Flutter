@@ -161,64 +161,27 @@ class ZakatEngineService {
     bool isArabic = false,
   }) {
     final String cur = currencyCode.toUpperCase().trim();
-    if (isArabic) {
-      switch (cur) {
-        case 'EGP':
-          return 'ج.م';
-        case 'USD':
-          return r'$';
-        case 'SAR':
-          return '⃁';
-        case 'EUR':
-          return '€';
-        case 'GBP':
-          return '£';
-        case 'TRY':
-          return '₺';
-        case 'AED':
-          return 'د.إ';
-        case 'KWD':
-          return 'د.ك';
-        case 'QAR':
-          return 'ر.ق';
-        case 'BHD':
-          return 'د.ب';
-        case 'OMR':
-          return 'ر.ع';
-        case 'JOD':
-          return 'د.أ';
-        case 'MYR':
-          return 'ر.م';
-        case 'PKR':
-          return 'ر.ب';
-        case 'IDR':
-          return 'ر.إ';
-        default:
-          return cur;
-      }
-    } else {
-      switch (cur) {
-        case 'EGP':
-          return 'E£';
-        case 'USD':
-          return r'$';
-        case 'SAR':
-          return '⃁';
-        case 'EUR':
-          return '€';
-        case 'GBP':
-          return '£';
-        case 'TRY':
-          return '₺';
-        case 'MYR':
-          return 'RM';
-        case 'PKR':
-          return 'Rs';
-        case 'IDR':
-          return 'Rp';
-        default:
-          return cur;
-      }
+    switch (cur) {
+      case 'EGP':
+        return 'E£';
+      case 'USD':
+        return r'$';
+      case 'SAR':
+        return '⃁';
+      case 'EUR':
+        return '€';
+      case 'GBP':
+        return '£';
+      case 'TRY':
+        return '₺';
+      case 'MYR':
+        return 'RM';
+      case 'PKR':
+        return 'Rs';
+      case 'IDR':
+        return 'Rp';
+      default:
+        return cur;
     }
   }
 
@@ -243,23 +206,13 @@ class ZakatEngineService {
       formattedNumber = NumberFormat('#,##0.00', 'en_US').format(absAmount);
     }
 
-    if (isArabic) {
-      if (amount < 0) {
-        return '\u200E$symbol $formattedNumber-';
-      }
-      if (showSign && amount > 0) {
-        return '\u200E$symbol $formattedNumber+';
-      }
-      return '\u200E$symbol $formattedNumber';
-    } else {
-      if (amount < 0) {
-        return '\u200E$symbol -$formattedNumber';
-      }
-      if (showSign && amount > 0) {
-        return '\u200E$symbol +$formattedNumber';
-      }
-      return '\u200E$symbol $formattedNumber';
+    if (amount < 0) {
+      return '\u200E$symbol -$formattedNumber';
     }
+    if (showSign && amount > 0) {
+      return '\u200E$symbol +$formattedNumber';
+    }
+    return '\u200E$symbol $formattedNumber';
   }
 
   static const List<String> supportedCurrencies = <String>[
@@ -986,11 +939,16 @@ class ZakatEngineService {
         for (final Map<String, dynamic> item in asset.installmentPlan) {
           final bool isPaid = item['isPaid'] == true;
           if (isPaid) continue;
-          final String itemCurrency = (item['currency']?.toString().isNotEmpty == true)
+          final String itemCurrency =
+              (item['currency']?.toString().isNotEmpty == true)
               ? item['currency'].toString()
               : asset.currency;
           final double amount = ((item['amount'] ?? 0) as num).toDouble();
-          assetInstallmentLiabilityEgp += convertToEgp(amount, itemCurrency, marketData);
+          assetInstallmentLiabilityEgp += convertToEgp(
+            amount,
+            itemCurrency,
+            marketData,
+          );
         }
         return sum + assetInstallmentLiabilityEgp;
       } else {

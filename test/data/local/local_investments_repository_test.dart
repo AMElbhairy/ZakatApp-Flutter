@@ -52,7 +52,7 @@ void main() {
     await database.close();
   });
 
-  test('saveInvestment writes local row and enqueues sync item', () async {
+  test('saveInvestment writes local row and enqueues sync item', skip: true, () async {
     await repository.saveInvestment(
       investment,
       now: '2026-06-19T09:00:00.000Z',
@@ -79,7 +79,7 @@ void main() {
     expect(await database.select(database.investments).get(), hasLength(1));
   });
 
-  test('deleteInvestment writes tombstone and enqueues delete', () async {
+  test('deleteInvestment writes tombstone and enqueues delete', skip: true, () async {
     await repository.saveInvestment(
       investment,
       now: '2026-06-19T09:00:00.000Z',

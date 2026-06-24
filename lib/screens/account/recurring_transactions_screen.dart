@@ -61,6 +61,7 @@ class _RecurringTransactionsScreenState
         : (controller.state.defaultEntryCurrency.isEmpty
               ? 'EGP'
               : controller.state.defaultEntryCurrency);
+    String selectedCategory = existing?.category.trim() ?? '';
 
     showDialog<void>(
       context: context,
@@ -75,12 +76,18 @@ class _RecurringTransactionsScreenState
                 final List<String> categories = type == 'income'
                     ? controller.state.categories.income
                     : controller.state.categories.expense;
-                final String existingCategory = existing?.category.trim() ?? '';
-                final String selectedCategory =
-                    existingCategory.isNotEmpty &&
-                        categories.contains(existingCategory)
-                    ? existingCategory
-                    : (categories.isEmpty ? '' : categories.first);
+                final List<String> categoryOptions = <String>[];
+                if (selectedCategory.isNotEmpty) {
+                  categoryOptions.add(selectedCategory);
+                }
+                for (final String category in categories) {
+                  if (!categoryOptions.contains(category)) {
+                    categoryOptions.add(category);
+                  }
+                }
+                if (selectedCategory.isEmpty && categories.isNotEmpty) {
+                  selectedCategory = categories.first;
+                }
 
                 return AlertDialog(
                   backgroundColor: tokens.colors.surface,
@@ -123,7 +130,7 @@ class _RecurringTransactionsScreenState
                         ),
                         const SizedBox(height: AppSpacing.sm),
                         DropdownButtonFormField<String>(
-                          value: type,
+                          initialValue: type,
                           decoration: InputDecoration(
                             labelText: context.l10n.tr('type'),
                           ),
@@ -139,12 +146,23 @@ class _RecurringTransactionsScreenState
                           ],
                           onChanged: (String? value) {
                             if (value == null) return;
-                            setDialogState(() => type = value);
+                            setDialogState(() {
+                              type = value;
+                              final List<String> nextCategories =
+                                  value == 'income'
+                                  ? controller.state.categories.income
+                                  : controller.state.categories.expense;
+                              if (selectedCategory.isNotEmpty &&
+                                  !nextCategories.contains(selectedCategory) &&
+                                  nextCategories.isNotEmpty) {
+                                selectedCategory = nextCategories.first;
+                              }
+                            });
                           },
                         ),
                         const SizedBox(height: AppSpacing.sm),
                         DropdownButtonFormField<String>(
-                          value: currency.isEmpty ? 'EGP' : currency,
+                          initialValue: currency.isEmpty ? 'EGP' : currency,
                           decoration: InputDecoration(
                             labelText: context.l10n.tr('currency'),
                           ),
@@ -171,22 +189,41 @@ class _RecurringTransactionsScreenState
                           },
                         ),
                         const SizedBox(height: AppSpacing.sm),
+                        if (categoryOptions.isNotEmpty)
+                          DropdownButtonFormField<String>(
+                            initialValue: selectedCategory,
+                            decoration: InputDecoration(
+                              labelText: context.l10n.tr('category'),
+                            ),
+                            items: categoryOptions
+                                .map(
+                                  (String category) => DropdownMenuItem<String>(
+                                    value: category,
+                                    child: Text(category),
+                                  ),
+                                )
+                                .toList(growable: false),
+                            onChanged: (String? value) {
+                              if (value == null) return;
+                              setDialogState(() => selectedCategory = value);
+                            },
+                          )
+                        else
+                          TextFormField(
+                            initialValue: selectedCategory,
+                            decoration: InputDecoration(
+                              labelText: context.l10n.tr('category'),
+                            ),
+                            onChanged: (String value) {
+                              setDialogState(() => selectedCategory = value);
+                            },
+                          ),
+                        const SizedBox(height: AppSpacing.sm),
                         TextField(
                           controller: description,
                           maxLines: 2,
                           decoration: InputDecoration(
                             labelText: context.l10n.tr('notes'),
-                          ),
-                        ),
-                        const SizedBox(height: AppSpacing.sm),
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            '${context.l10n.tr('category')}: ${selectedCategory.isEmpty ? '-' : selectedCategory}',
-                            style: TextStyle(
-                              color: tokens.colors.textSecondary,
-                              fontSize: 12.5,
-                            ),
                           ),
                         ),
                       ],
@@ -218,7 +255,7 @@ class _RecurringTransactionsScreenState
                                           : currency,
                                       category: selectedCategory,
                                       description: description.text.trim(),
-                                      dayOfMonth: parsedDay.clamp(1, 28),
+                                      dayOfMonth: parsedDay.clamp(1, 31),
                                       frequency: 'monthly',
                                       lastProcessed: null,
                                       enabled: true,
@@ -234,7 +271,7 @@ class _RecurringTransactionsScreenState
                                   currency: currency.isEmpty ? 'EGP' : currency,
                                   category: selectedCategory,
                                   description: description.text.trim(),
-                                  dayOfMonth: parsedDay.clamp(1, 28),
+                                  dayOfMonth: parsedDay.clamp(1, 31),
                                 );
 
                         if (existing == null) {
@@ -244,6 +281,7 @@ class _RecurringTransactionsScreenState
                             recurring,
                           );
                         }
+                        if (!dialogContext.mounted) return;
                         Navigator.pop(dialogContext);
                       },
                       child: Text(

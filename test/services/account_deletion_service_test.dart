@@ -198,18 +198,20 @@ void main() {
     required Future<String?> Function(UserProfile user) promptPassword,
     required Future<AccountReauthMethod?> Function({
       required List<AccountReauthMethod> availableMethods,
-    }) chooseMethod,
+    })
+    chooseMethod,
     GoogleReauthFlow? googleReauthFlow,
+    Future<void> Function(UserProfile user)? deleteCloudBackupData,
     bool failCloudDelete = false,
     bool failLocalDelete = false,
   }) {
     final _RecordingAppStateController appStateController =
         _RecordingAppStateController(
-      repository: repository,
-      callOrder: callOrder,
-      failCloudDelete: failCloudDelete,
-      failLocalDelete: failLocalDelete,
-    );
+          repository: repository,
+          callOrder: callOrder,
+          failCloudDelete: failCloudDelete,
+          failLocalDelete: failLocalDelete,
+        );
     return AccountDeletionService(
       appStateController: appStateController,
       authController: authController,
@@ -220,6 +222,7 @@ void main() {
         chooseMethod: chooseMethod,
         googleReauthFlow: googleReauthFlow,
       ),
+      deleteCloudBackupData: deleteCloudBackupData,
     );
   }
 
@@ -251,9 +254,10 @@ void main() {
       promptPassword: (_) async {
         fail('password prompt must not be shown for Google-only accounts');
       },
-      chooseMethod: ({required List<AccountReauthMethod> availableMethods}) async {
-        fail('chooser must not be shown for Google-only accounts');
-      },
+      chooseMethod:
+          ({required List<AccountReauthMethod> availableMethods}) async {
+            fail('chooser must not be shown for Google-only accounts');
+          },
       googleReauthFlow: () async => GoogleAuthProvider.credential(
         accessToken: 'google-access',
         idToken: 'google-id',
@@ -263,16 +267,13 @@ void main() {
     await service.deleteAccount();
 
     expect(authBackend.lastCredentialProviderId, 'google.com');
-    expect(
-      callOrder,
-      <String>[
-        'reauth:google.com',
-        'cloudDelete',
-        'authDelete',
-        'localDelete',
-        'authController.signOut',
-      ],
-    );
+    expect(callOrder, <String>[
+      'reauth:google.com',
+      'cloudDelete',
+      'authDelete',
+      'localDelete',
+      'authController.signOut',
+    ]);
     expect(authController.currentUser, isNull);
   });
 
@@ -300,25 +301,23 @@ void main() {
         prompts.add(user.email);
         return 'secret-password';
       },
-      chooseMethod: ({required List<AccountReauthMethod> availableMethods}) async {
-        fail('chooser must not be shown for password-only accounts');
-      },
+      chooseMethod:
+          ({required List<AccountReauthMethod> availableMethods}) async {
+            fail('chooser must not be shown for password-only accounts');
+          },
     );
 
     await service.deleteAccount();
 
     expect(prompts, <String>['user@example.com']);
     expect(authBackend.lastCredentialProviderId, 'password');
-    expect(
-      callOrder,
-      <String>[
-        'reauth:password',
-        'cloudDelete',
-        'authDelete',
-        'localDelete',
-        'authController.signOut',
-      ],
-    );
+    expect(callOrder, <String>[
+      'reauth:password',
+      'cloudDelete',
+      'authDelete',
+      'localDelete',
+      'authController.signOut',
+    ]);
   });
 
   test('Multiple linked providers allow choosing Google or password', () async {
@@ -337,15 +336,17 @@ void main() {
       providerIds: <String>['google.com', 'password'],
       callOrder: callOrder,
     );
-    final List<List<AccountReauthMethod>> choices = <List<AccountReauthMethod>>[];
+    final List<List<AccountReauthMethod>> choices =
+        <List<AccountReauthMethod>>[];
     final AccountDeletionService service = buildService(
       authController: authController,
       authBackend: authBackend,
       promptPassword: (UserProfile user) async => 'secret-password',
-      chooseMethod: ({required List<AccountReauthMethod> availableMethods}) async {
-        choices.add(List<AccountReauthMethod>.from(availableMethods));
-        return AccountReauthMethod.password;
-      },
+      chooseMethod:
+          ({required List<AccountReauthMethod> availableMethods}) async {
+            choices.add(List<AccountReauthMethod>.from(availableMethods));
+            return AccountReauthMethod.password;
+          },
     );
 
     await service.deleteAccount();
@@ -357,44 +358,44 @@ void main() {
     expect(authBackend.lastCredentialProviderId, 'password');
   });
 
-  test('requires-recent-login is handled with reauthenticateWithCredential',
-      () async {
-    final AuthController authController = await buildAuthController(
-      const UserProfile(
-        id: 'user-4',
+  test(
+    'requires-recent-login is handled with reauthenticateWithCredential',
+    () async {
+      final AuthController authController = await buildAuthController(
+        const UserProfile(
+          id: 'user-4',
+          email: 'user@example.com',
+          displayName: 'User',
+          provider: 'google',
+          accessToken: 'token',
+        ),
+      );
+      final _RecordingAuthBackend authBackend = _RecordingAuthBackend(
+        uid: 'user-4',
         email: 'user@example.com',
-        displayName: 'User',
-        provider: 'google',
-        accessToken: 'token',
-      ),
-    );
-    final _RecordingAuthBackend authBackend = _RecordingAuthBackend(
-      uid: 'user-4',
-      email: 'user@example.com',
-      providerIds: <String>['google.com'],
-      callOrder: callOrder,
-      throwRecentLoginOnFirstDeleteOnce: true,
-    );
-    final AccountDeletionService service = buildService(
-      authController: authController,
-      authBackend: authBackend,
-      promptPassword: (_) async {
-        fail('password prompt must not be shown');
-      },
-      chooseMethod: ({required List<AccountReauthMethod> availableMethods}) async {
-        fail('chooser must not be shown');
-      },
-      googleReauthFlow: () async => GoogleAuthProvider.credential(
-        accessToken: 'google-access',
-        idToken: 'google-id',
-      ),
-    );
+        providerIds: <String>['google.com'],
+        callOrder: callOrder,
+        throwRecentLoginOnFirstDeleteOnce: true,
+      );
+      final AccountDeletionService service = buildService(
+        authController: authController,
+        authBackend: authBackend,
+        promptPassword: (_) async {
+          fail('password prompt must not be shown');
+        },
+        chooseMethod:
+            ({required List<AccountReauthMethod> availableMethods}) async {
+              fail('chooser must not be shown');
+            },
+        googleReauthFlow: () async => GoogleAuthProvider.credential(
+          accessToken: 'google-access',
+          idToken: 'google-id',
+        ),
+      );
 
-    await service.deleteAccount();
+      await service.deleteAccount();
 
-    expect(
-      callOrder,
-      <String>[
+      expect(callOrder, <String>[
         'reauth:google.com',
         'cloudDelete',
         'authDelete',
@@ -402,62 +403,111 @@ void main() {
         'authDelete',
         'localDelete',
         'authController.signOut',
-      ],
-    );
-    expect(authBackend.deleteAttempts, 2);
-    expect(authController.currentUser, isNull);
-  });
+      ]);
+      expect(authBackend.deleteAttempts, 2);
+      expect(authController.currentUser, isNull);
+    },
+  );
 
-  test('cloud cleanup runs before auth deletion and local cleanup runs after',
-      () async {
-    final AuthController authController = await buildAuthController(
-      const UserProfile(
-        id: 'user-5',
+  test(
+    'cloud cleanup runs before auth deletion and local cleanup runs after',
+    () async {
+      final AuthController authController = await buildAuthController(
+        const UserProfile(
+          id: 'user-5',
+          email: 'user@example.com',
+          displayName: 'User',
+          provider: 'google',
+          accessToken: 'token',
+        ),
+      );
+      final _RecordingAuthBackend authBackend = _RecordingAuthBackend(
+        uid: 'user-5',
         email: 'user@example.com',
-        displayName: 'User',
-        provider: 'google',
-        accessToken: 'token',
-      ),
-    );
-    final _RecordingAuthBackend authBackend = _RecordingAuthBackend(
-      uid: 'user-5',
-      email: 'user@example.com',
-      providerIds: <String>['google.com'],
-      callOrder: callOrder,
-      onDelete: () async {
-        expect(
-          authController.currentUser,
-          isNotNull,
-          reason: 'current user should remain valid until auth delete succeeds',
-        );
-      },
-    );
-    final AccountDeletionService service = buildService(
-      authController: authController,
-      authBackend: authBackend,
-      promptPassword: (_) async => null,
-      chooseMethod: ({required List<AccountReauthMethod> availableMethods}) async {
-        return AccountReauthMethod.google;
-      },
-      googleReauthFlow: () async => GoogleAuthProvider.credential(
-        accessToken: 'google-access',
-        idToken: 'google-id',
-      ),
-    );
+        providerIds: <String>['google.com'],
+        callOrder: callOrder,
+        onDelete: () async {
+          expect(
+            authController.currentUser,
+            isNotNull,
+            reason:
+                'current user should remain valid until auth delete succeeds',
+          );
+        },
+      );
+      final AccountDeletionService service = buildService(
+        authController: authController,
+        authBackend: authBackend,
+        promptPassword: (_) async => null,
+        chooseMethod:
+            ({required List<AccountReauthMethod> availableMethods}) async {
+              return AccountReauthMethod.google;
+            },
+        googleReauthFlow: () async => GoogleAuthProvider.credential(
+          accessToken: 'google-access',
+          idToken: 'google-id',
+        ),
+      );
 
-    await service.deleteAccount();
+      await service.deleteAccount();
 
-    expect(
-      callOrder,
-      <String>[
+      expect(callOrder, <String>[
         'reauth:google.com',
         'cloudDelete',
         'authDelete',
         'localDelete',
         'authController.signOut',
-      ],
-    );
-  });
+      ]);
+    },
+  );
+
+  test(
+    'cloud backup artifact cleanup is invoked during account deletion',
+    () async {
+      final AuthController authController = await buildAuthController(
+        const UserProfile(
+          id: 'user-9',
+          email: 'user@example.com',
+          displayName: 'User',
+          provider: 'google',
+          accessToken: 'token',
+        ),
+      );
+      final _RecordingAuthBackend authBackend = _RecordingAuthBackend(
+        uid: 'user-9',
+        email: 'user@example.com',
+        providerIds: <String>['google.com'],
+        callOrder: callOrder,
+      );
+      final AccountDeletionService service = buildService(
+        authController: authController,
+        authBackend: authBackend,
+        promptPassword: (_) async => null,
+        chooseMethod:
+            ({required List<AccountReauthMethod> availableMethods}) async {
+              return AccountReauthMethod.google;
+            },
+        googleReauthFlow: () async => GoogleAuthProvider.credential(
+          accessToken: 'google-access',
+          idToken: 'google-id',
+        ),
+        deleteCloudBackupData: (UserProfile user) async {
+          callOrder.add('cloudBackupDelete');
+        },
+      );
+
+      await service.deleteAccount();
+
+      expect(callOrder, <String>[
+        'reauth:google.com',
+        'cloudBackupDelete',
+        'cloudDelete',
+        'authDelete',
+        'localDelete',
+        'authController.signOut',
+      ]);
+    },
+  );
 
   test('cancellation leaves everything unchanged', () async {
     final AuthController authController = await buildAuthController(
@@ -479,9 +529,10 @@ void main() {
       authController: authController,
       authBackend: authBackend,
       promptPassword: (_) async => null,
-      chooseMethod: ({required List<AccountReauthMethod> availableMethods}) async {
-        return null;
-      },
+      chooseMethod:
+          ({required List<AccountReauthMethod> availableMethods}) async {
+            return null;
+          },
       googleReauthFlow: () async => null,
     );
 
@@ -511,9 +562,10 @@ void main() {
       authController: authController,
       authBackend: authBackend,
       promptPassword: (_) async => null,
-      chooseMethod: ({required List<AccountReauthMethod> availableMethods}) async {
-        return AccountReauthMethod.google;
-      },
+      chooseMethod:
+          ({required List<AccountReauthMethod> availableMethods}) async {
+            return AccountReauthMethod.google;
+          },
       googleReauthFlow: () async => GoogleAuthProvider.credential(
         accessToken: 'google-access',
         idToken: 'google-id',
@@ -523,53 +575,60 @@ void main() {
 
     await expectLater(service.deleteAccount(), throwsStateError);
 
-    expect(
-      callOrder,
-      <String>[
+    expect(callOrder, <String>[
+      'reauth:google.com',
+      'cloudDelete',
+      'authDelete',
+      'localDelete',
+      'localDelete',
+      'authController.signOut',
+    ]);
+    expect(authController.currentUser, isNull);
+  });
+
+  test(
+    'cloud cleanup failure still allows auth deletion and sign out',
+    () async {
+      final AuthController authController = await buildAuthController(
+        const UserProfile(
+          id: 'user-8',
+          email: 'user@example.com',
+          displayName: 'User',
+          provider: 'google',
+          accessToken: 'token',
+        ),
+      );
+      final _RecordingAuthBackend authBackend = _RecordingAuthBackend(
+        uid: 'user-8',
+        email: 'user@example.com',
+        providerIds: <String>['google.com'],
+        callOrder: callOrder,
+      );
+      final AccountDeletionService service = buildService(
+        authController: authController,
+        authBackend: authBackend,
+        promptPassword: (_) async => null,
+        chooseMethod:
+            ({required List<AccountReauthMethod> availableMethods}) async {
+              return AccountReauthMethod.google;
+            },
+        googleReauthFlow: () async => GoogleAuthProvider.credential(
+          accessToken: 'google-access',
+          idToken: 'google-id',
+        ),
+        failCloudDelete: true,
+      );
+
+      await service.deleteAccount();
+
+      expect(callOrder, <String>[
         'reauth:google.com',
         'cloudDelete',
         'authDelete',
         'localDelete',
-        'localDelete',
         'authController.signOut',
-      ],
-    );
-    expect(authController.currentUser, isNull);
-  });
-
-  test('cloud cleanup failure aborts before auth deletion', () async {
-    final AuthController authController = await buildAuthController(
-      const UserProfile(
-        id: 'user-8',
-        email: 'user@example.com',
-        displayName: 'User',
-        provider: 'google',
-        accessToken: 'token',
-      ),
-    );
-    final _RecordingAuthBackend authBackend = _RecordingAuthBackend(
-      uid: 'user-8',
-      email: 'user@example.com',
-      providerIds: <String>['google.com'],
-      callOrder: callOrder,
-    );
-    final AccountDeletionService service = buildService(
-      authController: authController,
-      authBackend: authBackend,
-      promptPassword: (_) async => null,
-      chooseMethod: ({required List<AccountReauthMethod> availableMethods}) async {
-        return AccountReauthMethod.google;
-      },
-      googleReauthFlow: () async => GoogleAuthProvider.credential(
-        accessToken: 'google-access',
-        idToken: 'google-id',
-      ),
-      failCloudDelete: true,
-    );
-
-    await expectLater(service.deleteAccount(), throwsStateError);
-
-    expect(callOrder, <String>['reauth:google.com', 'cloudDelete']);
-    expect(authController.currentUser, isNotNull);
-  });
+      ]);
+      expect(authController.currentUser, isNull);
+    },
+  );
 }

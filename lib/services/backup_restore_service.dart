@@ -3,7 +3,6 @@ import 'app_state_controller.dart';
 import 'backup_service.dart';
 import 'legacy_backup_migration_service.dart';
 import 'sync_diagnostics_service.dart';
-import '../data/local/app_database.dart';
 
 class RestoreResult {
   const RestoreResult({
@@ -37,7 +36,6 @@ class BackupRestoreService {
         .parseAndMigrateWithReport(rawJson);
     _ensureOwnership(report.state, expectedUserId);
     final String effectiveUserId = _resolveEffectiveUserId(expectedUserId);
-    final AppStateModel previous = controller.state;
     final Map<String, dynamic> normalized = Map<String, dynamic>.from(
       report.state,
     );
@@ -47,38 +45,13 @@ class BackupRestoreService {
     final AppStateModel next = AppStateModel.fromJson(normalized);
     await controller.updateState(next);
 
-    // Clear sync queue and reset cursors before enqueuing backup records for upload
-    final AppDatabase? db = controller.database;
-    if (db != null) {
-      await db.delete(db.syncQueue).go();
-      await db.delete(db.syncMetadata).go();
-    }
-
-    await controller.enqueueAllLocalDataForCloudSync();
-    await controller.syncRestoredStateToFirestore(
-      previousState: previous,
-      nextState: next,
-    );
     final Map<String, int> counts = _stateCounts(next.toJson());
     await SyncDiagnosticsService.record(
       level: 'info',
       subsystem: 'restore',
-      message: 'Import completed',
-      metadata: <String, dynamic>{
-        'mode': 'replace',
-        'counts': counts,
-      },
+      message: 'Local restore completed',
+      metadata: <String, dynamic>{'mode': 'replace', 'counts': counts},
     );
-    await SyncDiagnosticsService.record(
-      level: 'info',
-      subsystem: 'restore',
-      message: 'Sync auto-triggered after import',
-      metadata: <String, dynamic>{
-        'reason': 'import_restore',
-        'counts': counts,
-      },
-    );
-    await controller.triggerSyncPipeline(reason: 'import_restore');
 
     return RestoreResult(
       mode: 'replace',
@@ -98,7 +71,6 @@ class BackupRestoreService {
         .parseAndMigrateWithReport(rawJson);
     _ensureOwnership(report.state, expectedUserId);
     final String effectiveUserId = _resolveEffectiveUserId(expectedUserId);
-    final AppStateModel previous = controller.state;
     final Map<String, dynamic> current = controller.state.toJson();
     final Map<String, dynamic> incoming = report.state;
 
@@ -203,11 +175,6 @@ class BackupRestoreService {
 
     final AppStateModel next = AppStateModel.fromJson(merged);
     await controller.updateState(next);
-    await controller.enqueueAllLocalDataForCloudSync();
-    await controller.syncRestoredStateToFirestore(
-      previousState: previous,
-      nextState: next,
-    );
     final Map<String, int> counts = _stateCounts(next.toJson());
     await SyncDiagnosticsService.record(
       level: 'info',
@@ -221,13 +188,9 @@ class BackupRestoreService {
     await SyncDiagnosticsService.record(
       level: 'info',
       subsystem: 'restore',
-      message: 'Sync auto-triggered after import',
-      metadata: <String, dynamic>{
-        'reason': 'import_restore',
-        'counts': counts,
-      },
+      message: 'Local restore completed',
+      metadata: <String, dynamic>{'mode': 'merge', 'counts': counts},
     );
-    await controller.triggerSyncPipeline(reason: 'import_restore');
 
     return RestoreResult(
       mode: 'merge',

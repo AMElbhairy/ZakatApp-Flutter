@@ -10,10 +10,11 @@ import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../core/theme/app_typography.dart';
 import '../../services/app_diagnostics.dart';
 import '../../services/app_state_controller.dart';
+import '../../services/google_sign_in_factory.dart';
 import '../../services/sync_diagnostics_service.dart';
-import '../../data/sync/sync_reports.dart';
 import '../../core/widgets/app_ui.dart';
 import '../../services/sync/google_drive_storage_provider.dart';
 import '../../services/sync/sync_encryption_service.dart';
@@ -93,43 +94,6 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     }
   }
 
-  Future<void> _compareLocalVsFirebase() async {
-    if (!widget.enableDeepDiagnostics) return;
-    setState(() {
-      _busy = true;
-      _bundleFuture = _loadBundle(includeFirebaseSavingsComparison: true);
-    });
-    try {
-      await _bundleFuture;
-      _showMessage('Local vs Firebase comparison loaded');
-    } finally {
-      if (mounted) {
-        setState(() {
-          _busy = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _manualSyncNow() async {
-    setState(() {
-      _busy = true;
-    });
-    try {
-      final ManualSyncResult result = await context
-          .read<AppStateController>()
-          .runManualSync();
-      await _refreshDiagnostics();
-      _showMessage(result.message);
-    } finally {
-      if (mounted) {
-        setState(() {
-          _busy = false;
-        });
-      }
-    }
-  }
-
   Future<void> _copyDiagnostics() async {
     final _DiagnosticsBundle bundle =
         _latestBundle ?? await (_bundleFuture ?? _loadBundle());
@@ -162,46 +126,6 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     await SyncDiagnosticsService.clear();
     await _refreshDiagnostics();
     _showMessage('Diagnostics logs cleared');
-  }
-
-  Future<void> _enqueueAllLocalData() async {
-    if (!widget.enableDeepDiagnostics) return;
-    await _runAction(
-      () =>
-          context.read<AppStateController>().enqueueAllLocalDataForCloudSync(),
-      successMessage: 'All local data enqueued',
-    );
-  }
-
-  Future<void> _forceUploadAllLocalData() async {
-    if (!widget.enableDeepDiagnostics) return;
-    await _runAction(
-      () => context.read<AppStateController>().forceUploadAllLocalData(),
-      successMessage: 'Force upload completed',
-    );
-  }
-
-  Future<void> _runFullReconciliation() async {
-    if (!widget.enableDeepDiagnostics) return;
-    await _runAction(
-      () => context.read<AppStateController>().runFullReconciliation(),
-      successMessage: 'Full reconciliation report refreshed',
-    );
-  }
-
-  Future<void> _repairSyncCursors() async {
-    if (!widget.enableDeepDiagnostics) return;
-    await _runAction(
-      () => context.read<AppStateController>().repairSavingsSyncCursors(),
-      successMessage: 'Savings cursors repaired',
-    );
-  }
-
-  Future<void> _enqueueMissingFirebaseSavings() async {
-    if (!widget.enableDeepDiagnostics) return;
-    await _runAction(() async {
-      await context.read<AppStateController>().enqueueMissingFirebaseSavings();
-    }, successMessage: 'Missing Firebase savings enqueued');
   }
 
   Future<void> _runAction(
@@ -264,10 +188,6 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                       busy: _busy,
                       deepEnabled: deepEnabled,
                       onRefreshDiagnostics: _busy ? null : _refreshDiagnostics,
-                      onCompareLocalVsFirebase: deepEnabled && !_busy
-                          ? _compareLocalVsFirebase
-                          : null,
-                      onManualSyncNow: _busy ? null : _manualSyncNow,
                       onCopyDiagnostics: !deepEnabled || report == null || _busy
                           ? null
                           : _copyDiagnostics,
@@ -275,21 +195,6 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                           ? null
                           : _exportDiagnosticsJson,
                       onClearLogs: !deepEnabled || _busy ? null : _clearLogs,
-                      onEnqueueAllLocalData: !deepEnabled || _busy
-                          ? null
-                          : _enqueueAllLocalData,
-                      onForceUploadAllLocalData: !deepEnabled || _busy
-                          ? null
-                          : _forceUploadAllLocalData,
-                      onRunFullReconciliation: !deepEnabled || _busy
-                          ? null
-                          : _runFullReconciliation,
-                      onRepairSyncCursors: !deepEnabled || _busy
-                          ? null
-                          : _repairSyncCursors,
-                      onEnqueueMissingFirebaseSavings: !deepEnabled || _busy
-                          ? null
-                          : _enqueueMissingFirebaseSavings,
                     ),
                     const SizedBox(height: 16),
                     if (loading)
@@ -334,45 +239,21 @@ class _ActionRow extends StatelessWidget {
     required this.busy,
     required this.deepEnabled,
     required this.onRefreshDiagnostics,
-    required this.onCompareLocalVsFirebase,
-    required this.onManualSyncNow,
     required this.onCopyDiagnostics,
     required this.onExportJson,
     required this.onClearLogs,
-    required this.onEnqueueAllLocalData,
-    required this.onForceUploadAllLocalData,
-    required this.onRunFullReconciliation,
-    required this.onRepairSyncCursors,
-    required this.onEnqueueMissingFirebaseSavings,
   });
 
   final bool busy;
   final bool deepEnabled;
   final VoidCallback? onRefreshDiagnostics;
-  final VoidCallback? onCompareLocalVsFirebase;
-  final VoidCallback? onManualSyncNow;
   final VoidCallback? onCopyDiagnostics;
   final VoidCallback? onExportJson;
   final VoidCallback? onClearLogs;
-  final VoidCallback? onEnqueueAllLocalData;
-  final VoidCallback? onForceUploadAllLocalData;
-  final VoidCallback? onRunFullReconciliation;
-  final VoidCallback? onRepairSyncCursors;
-  final VoidCallback? onEnqueueMissingFirebaseSavings;
 
   @override
   Widget build(BuildContext context) {
     final List<Widget> buttons = <Widget>[
-      FilledButton.icon(
-        onPressed: onManualSyncNow,
-        icon: busy
-            ? const SizedBox.square(
-                dimension: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Icon(Icons.sync),
-        label: const Text('Manual Sync Now'),
-      ),
       FilledButton.tonalIcon(
         onPressed: onRefreshDiagnostics,
         icon: const Icon(Icons.refresh),
@@ -381,11 +262,6 @@ class _ActionRow extends StatelessWidget {
     ];
     if (deepEnabled) {
       buttons.addAll(<Widget>[
-        FilledButton.tonalIcon(
-          onPressed: onCompareLocalVsFirebase,
-          icon: const Icon(Icons.compare),
-          label: const Text('Compare Local vs Firebase'),
-        ),
         FilledButton.tonalIcon(
           onPressed: onCopyDiagnostics,
           icon: const Icon(Icons.copy),
@@ -400,31 +276,6 @@ class _ActionRow extends StatelessWidget {
           onPressed: onClearLogs,
           icon: const Icon(Icons.delete_outline),
           label: const Text('Clear Diagnostics Logs'),
-        ),
-        OutlinedButton.icon(
-          onPressed: onEnqueueAllLocalData,
-          icon: const Icon(Icons.queue),
-          label: const Text('Enqueue All Local Data'),
-        ),
-        FilledButton.tonalIcon(
-          onPressed: onForceUploadAllLocalData,
-          icon: const Icon(Icons.cloud_upload),
-          label: const Text('Force Upload All Local Data'),
-        ),
-        OutlinedButton.icon(
-          onPressed: onRunFullReconciliation,
-          icon: const Icon(Icons.fact_check),
-          label: const Text('Run Full Reconciliation'),
-        ),
-        OutlinedButton.icon(
-          onPressed: onRepairSyncCursors,
-          icon: const Icon(Icons.tune),
-          label: const Text('Repair Sync Cursors'),
-        ),
-        OutlinedButton.icon(
-          onPressed: onEnqueueMissingFirebaseSavings,
-          icon: const Icon(Icons.fiber_new),
-          label: const Text('Enqueue Missing Firebase Savings'),
         ),
       ]);
     }
@@ -642,9 +493,10 @@ class _ReportCard extends StatelessWidget {
             const SizedBox(height: 12),
             SelectableText(
               reportText,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                fontFamily: 'monospace',
-                height: 1.35,
+              style: AppTypography.monospace(
+                color:
+                    Theme.of(context).textTheme.bodySmall?.color ??
+                    Theme.of(context).colorScheme.onSurface,
               ),
             ),
           ],
@@ -694,10 +546,8 @@ class _GoogleDrivePoCCard extends StatefulWidget {
 }
 
 class _GoogleDrivePoCCardState extends State<_GoogleDrivePoCCard> {
-  final GoogleSignIn _googleSignIn = GoogleSignIn(
-    scopes: const <String>[
-      'profile',
-      'email',
+  final GoogleSignIn _googleSignIn = createAppGoogleSignIn(
+    extraScopes: const <String>[
       'https://www.googleapis.com/auth/drive.appdata',
     ],
   );
@@ -729,8 +579,8 @@ class _GoogleDrivePoCCardState extends State<_GoogleDrivePoCCard> {
         setState(() {
           _isConnected = scopesGranted;
           _userEmail = currentUser.email;
-          _statusMessage = scopesGranted 
-              ? 'Connected (Scope granted)' 
+          _statusMessage = scopesGranted
+              ? 'Connected (Scope granted)'
               : 'Signed in, but Google Drive scope is missing';
         });
         if (scopesGranted) {
@@ -762,7 +612,8 @@ class _GoogleDrivePoCCardState extends State<_GoogleDrivePoCCard> {
         if (mounted) {
           setState(() {
             _remoteSnapshots = checkResult.manifest!.snapshots;
-            _statusMessage = 'Loaded ${_remoteSnapshots.length} remote snapshots.';
+            _statusMessage =
+                'Loaded ${_remoteSnapshots.length} remote snapshots.';
           });
         }
       } else {
@@ -854,6 +705,7 @@ class _GoogleDrivePoCCardState extends State<_GoogleDrivePoCCard> {
   }
 
   UserCloudStorageProvider _getProvider() {
+    final String namespace = _cloudNamespace();
     return GoogleDriveStorageProvider(
       getAuthHeaders: () async {
         final headers = await _googleSignIn.currentUser?.authHeaders;
@@ -865,12 +717,35 @@ class _GoogleDrivePoCCardState extends State<_GoogleDrivePoCCard> {
         return _isConnected;
       },
       requestDisconnect: () => _disconnect(),
+      namespacePrefix: namespace,
     );
+  }
+
+  String _cloudNamespace() {
+    try {
+      final controller = context.read<AppStateController>();
+      final String loadedUserId =
+          controller.state.loadedUserId?.trim().isNotEmpty == true
+          ? controller.state.loadedUserId!.trim()
+          : '';
+      if (loadedUserId.isNotEmpty) {
+        return loadedUserId;
+      }
+      final String userId = controller.state.userId?.trim().isNotEmpty == true
+          ? controller.state.userId!.trim()
+          : '';
+      if (userId.isNotEmpty) {
+        return userId;
+      }
+    } catch (_) {}
+    return 'default';
   }
 
   CloudSyncManager _getSyncManager() {
     final provider = _getProvider();
-    final snapshotManager = SnapshotManager(encryptionService: _encryptionService);
+    final snapshotManager = SnapshotManager(
+      encryptionService: _encryptionService,
+    );
     final syncManager = CloudSyncManager(
       provider: provider,
       snapshotManager: snapshotManager,
@@ -885,7 +760,8 @@ class _GoogleDrivePoCCardState extends State<_GoogleDrivePoCCard> {
   Future<void> _uploadTestFile() async {
     setState(() {
       _busy = true;
-      _statusMessage = 'Exporting and uploading encrypted SQLite database snapshot...';
+      _statusMessage =
+          'Exporting and uploading encrypted SQLite database snapshot...';
     });
     try {
       final controller = context.read<AppStateController>();
@@ -902,7 +778,8 @@ class _GoogleDrivePoCCardState extends State<_GoogleDrivePoCCard> {
 
       if (result.status == CloudSyncStatus.success) {
         setState(() {
-          _statusMessage = 'Active SQLite snapshot exported and uploaded successfully to Drive appDataFolder!';
+          _statusMessage =
+              'Active SQLite snapshot exported and uploaded successfully to Drive appDataFolder!';
         });
         _loadRemoteSnapshots();
       } else {
@@ -924,7 +801,8 @@ class _GoogleDrivePoCCardState extends State<_GoogleDrivePoCCard> {
   Future<void> _downloadTestFile() async {
     setState(() {
       _busy = true;
-      _statusMessage = 'Checking updates, downloading and restoring to temp database copy...';
+      _statusMessage =
+          'Checking updates, downloading and restoring to temp database copy...';
     });
     try {
       final syncManager = _getSyncManager();
@@ -936,15 +814,19 @@ class _GoogleDrivePoCCardState extends State<_GoogleDrivePoCCard> {
 
       if (checkResult.status == CloudSyncStatus.noRemoteSnapshot) {
         setState(() {
-          _statusMessage = 'No remote snapshot found on Google Drive appDataFolder.';
+          _statusMessage =
+              'No remote snapshot found on Google Drive appDataFolder.';
         });
         return;
       }
 
       final tempDir = await getTemporaryDirectory();
-      final tempTargetPath = '${tempDir.path}/restored_diagnostics_poc_${DateTime.now().millisecondsSinceEpoch}.sqlite';
+      final tempTargetPath =
+          '${tempDir.path}/restored_diagnostics_poc_${DateTime.now().millisecondsSinceEpoch}.sqlite';
 
-      final pullResult = await syncManager.pullAndRestore(targetPath: tempTargetPath);
+      final pullResult = await syncManager.pullAndRestore(
+        targetPath: tempTargetPath,
+      );
       if (pullResult.status != CloudSyncStatus.success) {
         setState(() {
           _statusMessage = 'Download/Restore failed: ${pullResult.message}';
@@ -965,8 +847,12 @@ class _GoogleDrivePoCCardState extends State<_GoogleDrivePoCCard> {
         executor: NativeDatabase(restoredFile),
       );
 
-      final transactions = await tempDb.customSelect("SELECT count(*) as count FROM transactions").get();
-      final savings = await tempDb.customSelect("SELECT count(*) as count FROM savings").get();
+      final transactions = await tempDb
+          .customSelect("SELECT count(*) as count FROM transactions")
+          .get();
+      final savings = await tempDb
+          .customSelect("SELECT count(*) as count FROM savings")
+          .get();
       final txCount = transactions.first.read<int>('count');
       final savCount = savings.first.read<int>('count');
 
@@ -981,13 +867,15 @@ class _GoogleDrivePoCCardState extends State<_GoogleDrivePoCCard> {
       final historyCount = cloudManifest?.snapshots.length ?? 0;
 
       setState(() {
-        _lastDecryptedData = 'SUCCESSFULLY OPENED RESTORED DB COPY:\n'
+        _lastDecryptedData =
+            'SUCCESSFULLY OPENED RESTORED DB COPY:\n'
             '- File path: $tempTargetPath (verified & cleaned up)\n'
             '- Restored Transactions Count: $txCount\n'
             '- Restored Savings Count: $savCount\n'
             '- Cloud Current Sequence: $sequence\n'
             '- Cloud Snapshots History Count: $historyCount';
-        _statusMessage = 'Downloaded snapshot sequence $sequence and verified restored temp DB copy successfully!';
+        _statusMessage =
+            'Downloaded snapshot sequence $sequence and verified restored temp DB copy successfully!';
       });
     } catch (e) {
       setState(() {
@@ -1010,7 +898,7 @@ class _GoogleDrivePoCCardState extends State<_GoogleDrivePoCCard> {
         title: const Text('Restore Database Snapshot?'),
         content: Text(
           'Are you sure you want to replace your active local database with the remote snapshot Sequence #${snapshot.sequence}?\n\n'
-          'All current local data will be replaced. A timestamped local backup file of your current database will be created.'
+          'All current local data will be replaced. A timestamped local backup file of your current database will be created.',
         ),
         actions: [
           TextButton(
@@ -1035,7 +923,7 @@ class _GoogleDrivePoCCardState extends State<_GoogleDrivePoCCard> {
         title: const Text('WARNING: Critical Operation'),
         content: const Text(
           'This will close your active database connections, overwrite the file, and reload your application state.\n\n'
-          'Do you really want to proceed?'
+          'Do you really want to proceed?',
         ),
         actions: [
           TextButton(
@@ -1044,7 +932,10 @@ class _GoogleDrivePoCCardState extends State<_GoogleDrivePoCCard> {
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Yes, Force Restore', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+            child: const Text(
+              'Yes, Force Restore',
+              style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
@@ -1054,7 +945,8 @@ class _GoogleDrivePoCCardState extends State<_GoogleDrivePoCCard> {
     if (!mounted) return;
     setState(() {
       _busy = true;
-      _statusMessage = 'Downloading and restoring active database from snapshot #${snapshot.sequence}...';
+      _statusMessage =
+          'Downloading and restoring active database from snapshot #${snapshot.sequence}...';
     });
 
     try {
@@ -1062,7 +954,8 @@ class _GoogleDrivePoCCardState extends State<_GoogleDrivePoCCard> {
 
       // Download and decrypt to a temporary location
       final tempDir = await getTemporaryDirectory();
-      final tempPath = '${tempDir.path}/restored_active_db_temp_${DateTime.now().millisecondsSinceEpoch}.sqlite';
+      final tempPath =
+          '${tempDir.path}/restored_active_db_temp_${DateTime.now().millisecondsSinceEpoch}.sqlite';
 
       final pullResult = await syncManager.pullAndRestore(targetPath: tempPath);
       if (pullResult.status != CloudSyncStatus.success) {
@@ -1080,7 +973,8 @@ class _GoogleDrivePoCCardState extends State<_GoogleDrivePoCCard> {
 
       if (mounted) {
         setState(() {
-          _statusMessage = 'Active database successfully replaced with Snapshot #${snapshot.sequence}!';
+          _statusMessage =
+              'Active database successfully replaced with Snapshot #${snapshot.sequence}!';
         });
         showTopSnackBar(context, 'Database restored successfully');
       }
@@ -1131,7 +1025,9 @@ class _GoogleDrivePoCCardState extends State<_GoogleDrivePoCCard> {
               'Status: $_statusMessage',
               style: TextStyle(
                 fontWeight: FontWeight.w600,
-                color: _isConnected ? Colors.green.shade300 : Colors.orange.shade300,
+                color: _isConnected
+                    ? Colors.green.shade300
+                    : Colors.orange.shade300,
               ),
             ),
             if (_userEmail != null) ...[
@@ -1178,11 +1074,16 @@ class _GoogleDrivePoCCardState extends State<_GoogleDrivePoCCard> {
                 children: [
                   Text(
                     'Available Remote Snapshots',
-                    style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue.shade200),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue.shade200,
+                    ),
                   ),
                   IconButton(
                     icon: const Icon(Icons.refresh, size: 20),
-                    onPressed: _busy || _fetchingSnapshots ? null : _loadRemoteSnapshots,
+                    onPressed: _busy || _fetchingSnapshots
+                        ? null
+                        : _loadRemoteSnapshots,
                     tooltip: 'Refresh Snapshot List',
                   ),
                 ],
@@ -1204,19 +1105,30 @@ class _GoogleDrivePoCCardState extends State<_GoogleDrivePoCCard> {
                   itemCount: _remoteSnapshots.length,
                   itemBuilder: (context, index) {
                     final snapshot = _remoteSnapshots[index];
-                    final dateStr = snapshot.createdAt.toLocal().toString().split('.').first;
-                    final checksumShort = snapshot.checksum.length > 8 
-                        ? snapshot.checksum.substring(0, 8) 
+                    final dateStr = snapshot.createdAt
+                        .toLocal()
+                        .toString()
+                        .split('.')
+                        .first;
+                    final checksumShort = snapshot.checksum.length > 8
+                        ? snapshot.checksum.substring(0, 8)
                         : snapshot.checksum;
                     return Card(
                       color: Colors.black26,
                       margin: const EdgeInsets.symmetric(vertical: 4),
                       child: ListTile(
                         dense: true,
-                        title: Text('Sequence #${snapshot.sequence}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Text('Date: $dateStr\nChecksum: $checksumShort'),
+                        title: Text(
+                          'Sequence #${snapshot.sequence}',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        subtitle: Text(
+                          'Date: $dateStr\nChecksum: $checksumShort',
+                        ),
                         trailing: ElevatedButton(
-                          onPressed: _busy ? null : () => _confirmAndRestoreSnapshot(snapshot),
+                          onPressed: _busy
+                              ? null
+                              : () => _confirmAndRestoreSnapshot(snapshot),
                           child: const Text('Restore Active DB'),
                         ),
                       ),
@@ -1239,12 +1151,18 @@ class _GoogleDrivePoCCardState extends State<_GoogleDrivePoCCard> {
                   children: [
                     const Text(
                       'Last Decrypted Snapshot Data:',
-                      style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green,
+                      ),
                     ),
                     const SizedBox(height: 6),
                     SelectableText(
                       _lastDecryptedData!,
-                      style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                      style: AppTypography.monospace(
+                        color: Colors.white,
+                        fontSize: 12,
+                      ),
                     ),
                   ],
                 ),

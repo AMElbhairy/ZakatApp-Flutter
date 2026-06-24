@@ -56,11 +56,19 @@ class BackupKeyManager {
       return existing;
     }
 
-    await recoverKeyFromFirestore();
-    final Uint8List? recovered = await getExistingKey();
-    if (recovered != null) {
-      return recovered;
+    final bool hasRecoveryKey = await _hasRecoveryKey();
+    if (hasRecoveryKey) {
+      await recoverKeyFromFirestore();
+      final Uint8List? recovered = await getExistingKey();
+      if (recovered != null) {
+        return recovered;
+      }
+      throw const BackupKeyRecoveryException(
+        BackupKeyRecoveryException.recoveryUnavailableMessage,
+      );
     }
+
+    await recoverKeyFromFirestore();
 
     final Uint8List generated = _generateKey();
     await _saveLocalKey(generated);
@@ -197,6 +205,23 @@ class BackupKeyManager {
       base64Encode(key),
       userId: _auth.currentUser?.uid,
     );
+  }
+
+  Future<bool> _hasRecoveryKey() async {
+    final User user = _requireUser();
+    try {
+      final DocumentSnapshot<Map<String, dynamic>> snapshot =
+          await _document(user.uid).get();
+      final Map<String, dynamic>? data = snapshot.data();
+      final String? wrappedKey = data?['wrappedKey'] as String?;
+      return snapshot.exists &&
+          wrappedKey != null &&
+          wrappedKey.trim().isNotEmpty;
+    } on FirebaseException catch (_) {
+      throw const BackupKeyRecoveryException(
+        BackupKeyRecoveryException.recoveryUnavailableMessage,
+      );
+    }
   }
 
   Future<SecretKey> _deriveWrappingKey(String uid) {

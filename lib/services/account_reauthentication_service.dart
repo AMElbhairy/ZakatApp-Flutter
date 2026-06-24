@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 import 'account_deletion_auth_backend.dart';
+import 'google_sign_in_factory.dart';
 import '../models/user_profile.dart';
 import 'sync_diagnostics_service.dart';
 
@@ -30,14 +31,7 @@ class AccountReauthenticationService {
   final PasswordPrompt promptPassword;
   final ReauthMethodChooser chooseMethod;
 
-  GoogleSignIn get googleSignIn => _googleSignIn ?? GoogleSignIn(
-    clientId: _iosClientId.trim().isEmpty ? null : _iosClientId,
-    scopes: const <String>['profile', 'email'],
-  );
-
-  static const String _iosClientId = String.fromEnvironment(
-    'GOOGLE_IOS_CLIENT_ID',
-  );
+  GoogleSignIn get googleSignIn => _googleSignIn ?? createAppGoogleSignIn();
 
   Future<AccountReauthMethod?> reauthenticateCurrentUser() async {
     final List<String> providers = authBackend.providerIds;

@@ -116,6 +116,17 @@ void main() {
     expect(ZakatEngineService.calculateCashZakat(1000), 25);
   });
 
+  test('currency formatting keeps negative sign before amount in rtl', () {
+    expect(
+      ZakatEngineService.formatCurrency(-15, 'USD', isArabic: true),
+      '\u200E\$ -15.00',
+    );
+    expect(
+      ZakatEngineService.formatCurrency(-15, 'USD', isArabic: false),
+      '\u200E\$ -15.00',
+    );
+  });
+
   test('gold/silver zakat calculation', () {
     expect(ZakatEngineService.calculateGoldZakat(100), 2.5);
 
@@ -427,84 +438,103 @@ void main() {
     },
   );
 
-  test('calculateTotalInvestmentLoanBalancesEgp handles multi-currency installments', () {
-    final List<InvestmentAsset> investments = <InvestmentAsset>[
-      InvestmentAsset(
-        id: 'inv-1',
-        investmentType: 'real_estate',
-        assetSubtype: 'property',
-        ownershipType: 'installment',
-        valuationMode: 'net_fair',
-        currency: 'EGP',
-        originalPrice: 1000000,
-        totalInterest: 0,
-        totalPayable: 1000000,
-        paidAmount: 500000,
-        remainingAmount: 500000,
-        installmentPlan: const <Map<String, dynamic>>[
-          <String, dynamic>{'amount': 2000.0, 'currency': 'USD', 'isPaid': false, 'date': '2026-07-01'},
-          <String, dynamic>{'amount': 10000.0, 'currency': 'EGP', 'isPaid': false, 'date': '2026-08-01'},
-          <String, dynamic>{'amount': 50000.0, 'currency': 'EGP', 'isPaid': true, 'date': '2026-09-01'},
-        ],
-        valuationDate: '2026-06-22',
-        marketValue: 1200000,
-        marketValueDate: '2026-06-22',
-        valuationSource: 'manual',
-        loanBalance: 500000,
-        loanAsOfDate: '2026-06-22',
-        paidAmountToDate: 500000,
-        ownershipSharePct: 100,
-        country: 'EG',
-        location: 'Cairo',
-        inflationRateAnnual: 0,
-        estimatedCurrentValue: 1200000,
-        description: 'Test Property',
-        noZakat: false,
-        createdAt: '2026-06-22T00:00:00.000Z',
-      ),
-      InvestmentAsset(
-        id: 'inv-2',
-        investmentType: 'real_estate',
-        assetSubtype: 'property',
-        ownershipType: 'installment',
-        valuationMode: 'net_fair',
-        currency: 'EGP',
-        originalPrice: 200000,
-        totalInterest: 0,
-        totalPayable: 200000,
-        paidAmount: 150000,
-        remainingAmount: 50000,
-        installmentPlan: const <Map<String, dynamic>>[],
-        valuationDate: '2026-06-22',
-        marketValue: 220000,
-        marketValueDate: '2026-06-22',
-        valuationSource: 'manual',
-        loanBalance: 50000,
-        loanAsOfDate: '2026-06-22',
-        paidAmountToDate: 150000,
-        ownershipSharePct: 100,
-        country: 'EG',
-        location: 'Alex',
-        inflationRateAnnual: 0,
-        estimatedCurrentValue: 220000,
-        description: 'Test Property 2',
-        noZakat: false,
-        createdAt: '2026-06-22T00:00:00.000Z',
-      ),
-    ];
+  test(
+    'calculateTotalInvestmentLoanBalancesEgp handles multi-currency installments',
+    () {
+      final List<InvestmentAsset> investments = <InvestmentAsset>[
+        InvestmentAsset(
+          id: 'inv-1',
+          investmentType: 'real_estate',
+          assetSubtype: 'property',
+          ownershipType: 'installment',
+          valuationMode: 'net_fair',
+          currency: 'EGP',
+          originalPrice: 1000000,
+          totalInterest: 0,
+          totalPayable: 1000000,
+          paidAmount: 500000,
+          remainingAmount: 500000,
+          installmentPlan: const <Map<String, dynamic>>[
+            <String, dynamic>{
+              'amount': 2000.0,
+              'currency': 'USD',
+              'isPaid': false,
+              'date': '2026-07-01',
+            },
+            <String, dynamic>{
+              'amount': 10000.0,
+              'currency': 'EGP',
+              'isPaid': false,
+              'date': '2026-08-01',
+            },
+            <String, dynamic>{
+              'amount': 50000.0,
+              'currency': 'EGP',
+              'isPaid': true,
+              'date': '2026-09-01',
+            },
+          ],
+          valuationDate: '2026-06-22',
+          marketValue: 1200000,
+          marketValueDate: '2026-06-22',
+          valuationSource: 'manual',
+          loanBalance: 500000,
+          loanAsOfDate: '2026-06-22',
+          paidAmountToDate: 500000,
+          ownershipSharePct: 100,
+          country: 'EG',
+          location: 'Cairo',
+          inflationRateAnnual: 0,
+          estimatedCurrentValue: 1200000,
+          description: 'Test Property',
+          noZakat: false,
+          createdAt: '2026-06-22T00:00:00.000Z',
+        ),
+        InvestmentAsset(
+          id: 'inv-2',
+          investmentType: 'real_estate',
+          assetSubtype: 'property',
+          ownershipType: 'installment',
+          valuationMode: 'net_fair',
+          currency: 'EGP',
+          originalPrice: 200000,
+          totalInterest: 0,
+          totalPayable: 200000,
+          paidAmount: 150000,
+          remainingAmount: 50000,
+          installmentPlan: const <Map<String, dynamic>>[],
+          valuationDate: '2026-06-22',
+          marketValue: 220000,
+          marketValueDate: '2026-06-22',
+          valuationSource: 'manual',
+          loanBalance: 50000,
+          loanAsOfDate: '2026-06-22',
+          paidAmountToDate: 150000,
+          ownershipSharePct: 100,
+          country: 'EG',
+          location: 'Alex',
+          inflationRateAnnual: 0,
+          estimatedCurrentValue: 220000,
+          description: 'Test Property 2',
+          noZakat: false,
+          createdAt: '2026-06-22T00:00:00.000Z',
+        ),
+      ];
 
-    // USD to EGP rate is 50.0 based on marketData (convertToEgp(2, 'USD') -> 100 EGP, so rate is 50.0)
-    // 2000 USD * 50 = 100,000 EGP
-    // 10000 EGP = 10,000 EGP
-    // Total for inv-1 = 110,000 EGP
-    // Fallback for inv-2 (loanBalance = 50,000 in currency EGP) = 50,000 EGP
-    // Grand Total = 160,000 EGP
-    final double totalLoan = ZakatEngineService.calculateTotalInvestmentLoanBalancesEgp(
-      investments: investments,
-      marketData: marketData,
-    );
-    expect(totalLoan, 160000);
-  });
+      // USD to EGP rate is 50.0 based on marketData (convertToEgp(2, 'USD') -> 100 EGP, so rate is 50.0)
+      // 2000 USD * 50 = 100,000 EGP
+      // 10000 EGP = 10,000 EGP
+      // Total for inv-1 = 110,000 EGP
+      // Fallback for inv-2 (loanBalance = 50,000 in currency EGP) = 50,000 EGP
+      // Grand Total = 160,000 EGP
+      final double totalLoan =
+          ZakatEngineService.calculateTotalInvestmentLoanBalancesEgp(
+            investments: investments,
+            marketData: marketData,
+          );
+      expect(totalLoan, 160000);
+    },
+  );
 
   test('legacy backup cash by currency does not double count derived cash', () {
     final File backup = File(

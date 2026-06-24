@@ -3,82 +3,402 @@ import 'package:flutter/material.dart';
 class AppTypography {
   AppTypography._();
 
-  static TextTheme build(Brightness brightness) {
-    final bool dark = brightness == Brightness.dark;
-    final Color primary = dark ? const Color(0xFFF3F5F8) : const Color(0xFF0F1720);
-    final Color secondary = dark ? const Color(0xFFB7C3CF) : const Color(0xFF5C6675);
+  static const String englishFamily = 'Inter';
+  static const String arabicFamily = 'IBMPlexSansArabic';
+
+  static bool isArabicLocale(Locale? locale) {
+    return locale?.languageCode.toLowerCase() == 'ar';
+  }
+
+  static String familyFor(Locale? locale) {
+    return isArabicLocale(locale) ? arabicFamily : englishFamily;
+  }
+
+  static TextTheme build({
+    required Brightness brightness,
+    required Locale? locale,
+  }) {
+    final String family = familyFor(locale);
+    final String fallback = isArabicLocale(locale)
+        ? englishFamily
+        : arabicFamily;
+    final Color primary = brightness == Brightness.dark
+        ? const Color(0xFFF3F5F8)
+        : const Color(0xFF0F1720);
+    final Color secondary = brightness == Brightness.dark
+        ? const Color(0xFFB7C3CF)
+        : const Color(0xFF5C6675);
 
     return TextTheme(
-      displayLarge: TextStyle(
-        fontSize: 54,
-        height: 1.06,
-        letterSpacing: -1.0,
-        fontWeight: FontWeight.w700,
+      displayLarge: displayLarge(
         color: primary,
+        family: family,
+        fallbackFamily: fallback,
       ),
-      displayMedium: TextStyle(
-        fontSize: 44,
-        height: 1.1,
-        letterSpacing: -0.7,
-        fontWeight: FontWeight.w700,
+      displayMedium: displayMedium(
         color: primary,
+        family: family,
+        fallbackFamily: fallback,
       ),
-      displaySmall: TextStyle(
-        fontSize: 34,
-        height: 1.12,
-        letterSpacing: -0.4,
-        fontWeight: FontWeight.w700,
+      displaySmall: displaySmall(
         color: primary,
+        family: family,
+        fallbackFamily: fallback,
       ),
-      headlineLarge: TextStyle(
-        fontSize: 32,
-        height: 1.2,
-        fontWeight: FontWeight.w700,
+      headlineLarge: headlineLarge(
         color: primary,
+        family: family,
+        fallbackFamily: fallback,
       ),
-      headlineMedium: TextStyle(
-        fontSize: 28,
-        height: 1.2,
-        fontWeight: FontWeight.w700,
+      headlineMedium: headlineMedium(
         color: primary,
+        family: family,
+        fallbackFamily: fallback,
       ),
-      titleLarge: TextStyle(
-        fontSize: 20,
-        height: 1.25,
-        fontWeight: FontWeight.w700,
+      headlineSmall: headlineSmall(
         color: primary,
+        family: family,
+        fallbackFamily: fallback,
       ),
-      titleMedium: TextStyle(
-        fontSize: 17,
-        height: 1.3,
-        fontWeight: FontWeight.w600,
+      titleLarge: titleLarge(
         color: primary,
+        family: family,
+        fallbackFamily: fallback,
       ),
-      bodyLarge: TextStyle(
-        fontSize: 16,
-        height: 1.4,
-        fontWeight: FontWeight.w500,
+      titleMedium: titleMedium(
         color: primary,
+        family: family,
+        fallbackFamily: fallback,
       ),
-      bodyMedium: TextStyle(
-        fontSize: 14,
-        height: 1.4,
-        fontWeight: FontWeight.w500,
+      titleSmall: titleSmall(
+        color: primary,
+        family: family,
+        fallbackFamily: fallback,
+      ),
+      bodyLarge: bodyLarge(
+        color: primary,
+        family: family,
+        fallbackFamily: fallback,
+      ),
+      bodyMedium: bodyMedium(
         color: secondary,
+        family: family,
+        fallbackFamily: fallback,
       ),
-      bodySmall: TextStyle(
-        fontSize: 12,
-        height: 1.35,
-        fontWeight: FontWeight.w500,
+      bodySmall: bodySmall(
         color: secondary,
+        family: family,
+        fallbackFamily: fallback,
       ),
-      labelSmall: TextStyle(
-        fontSize: 11,
-        height: 1.3,
-        letterSpacing: 0.1,
-        fontWeight: FontWeight.w500,
+      labelLarge: labelLarge(
+        color: primary,
+        family: family,
+        fallbackFamily: fallback,
+      ),
+      labelMedium: labelMedium(
         color: secondary,
+        family: family,
+        fallbackFamily: fallback,
       ),
+      labelSmall: labelSmall(
+        color: secondary,
+        family: family,
+        fallbackFamily: fallback,
+      ),
+    );
+  }
+
+  static TextStyle displayLarge({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return _base(
+      fontSize: 30,
+      height: 1.1,
+      fontWeight: FontWeight.w700,
+      letterSpacing: -0.8,
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle displayMedium({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return _base(
+      fontSize: 28,
+      height: 1.1,
+      fontWeight: FontWeight.w700,
+      letterSpacing: -0.6,
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle displaySmall({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return _base(
+      fontSize: 26,
+      height: 1.12,
+      fontWeight: FontWeight.w700,
+      letterSpacing: -0.4,
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle headlineLarge({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return _base(
+      fontSize: 22,
+      height: 1.2,
+      fontWeight: FontWeight.w600,
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle headlineMedium({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return _base(
+      fontSize: 20,
+      height: 1.22,
+      fontWeight: FontWeight.w600,
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle headlineSmall({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return _base(
+      fontSize: 18,
+      height: 1.25,
+      fontWeight: FontWeight.w600,
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle titleLarge({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return _base(
+      fontSize: 18,
+      height: 1.25,
+      fontWeight: FontWeight.w600,
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle titleMedium({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return _base(
+      fontSize: 17,
+      height: 1.28,
+      fontWeight: FontWeight.w500,
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle titleSmall({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return _base(
+      fontSize: 15,
+      height: 1.32,
+      fontWeight: FontWeight.w500,
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle bodyLarge({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return _base(
+      fontSize: 15,
+      height: 1.42,
+      fontWeight: FontWeight.w400,
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle bodyMedium({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return _base(
+      fontSize: 13,
+      height: 1.4,
+      fontWeight: FontWeight.w400,
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle bodySmall({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return _base(
+      fontSize: 12,
+      height: 1.35,
+      fontWeight: FontWeight.w400,
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle labelLarge({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return _base(
+      fontSize: 16,
+      height: 1.2,
+      fontWeight: FontWeight.w600,
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle labelMedium({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return _base(
+      fontSize: 13,
+      height: 1.2,
+      fontWeight: FontWeight.w400,
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle labelSmall({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return _base(
+      fontSize: 12,
+      height: 1.2,
+      fontWeight: FontWeight.w400,
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle financialValue({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+    bool large = true,
+  }) {
+    return _base(
+      fontSize: large ? 34 : 30,
+      height: 1.08,
+      fontWeight: FontWeight.w700,
+      letterSpacing: -0.8,
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle financialStat({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return _base(
+      fontSize: 20,
+      height: 1.18,
+      fontWeight: FontWeight.w600,
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle monospace({
+    required Color color,
+    double fontSize = 12,
+    FontWeight fontWeight = FontWeight.w400,
+  }) {
+    return TextStyle(
+      fontFamily: 'monospace',
+      fontSize: fontSize,
+      height: 1.35,
+      fontWeight: fontWeight,
+      color: color,
+    );
+  }
+
+  static TextStyle _base({
+    required double fontSize,
+    required double height,
+    required FontWeight fontWeight,
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+    double? letterSpacing,
+  }) {
+    return TextStyle(
+      fontFamily: family,
+      fontFamilyFallback: <String>[fallbackFamily],
+      fontSize: fontSize,
+      height: height,
+      fontWeight: fontWeight,
+      letterSpacing: letterSpacing,
+      color: color,
     );
   }
 }

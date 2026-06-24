@@ -8,9 +8,13 @@ import 'package:http/http.dart' as http;
 import '../../core/i18n/app_localizations.dart';
 import '../../core/widgets/app_ui.dart';
 import '../../models/market_snapshot.dart';
+import '../../core/utils/currency_presentation.dart';
 import 'categories_screen.dart';
+import 'market_snapshot_screen.dart';
 import 'merchant_rules_screen.dart';
 import 'recurring_transactions_screen.dart';
+import 'diagnostics_screen.dart';
+import 'cloud_backup_screen.dart';
 import '../../core/services/zakat_engine.dart';
 import '../../models/user_profile.dart';
 import '../../services/app_state_controller.dart';
@@ -18,14 +22,10 @@ import '../../services/account_deletion_auth_backend.dart';
 import '../../services/account_deletion_service.dart';
 import '../../services/account_reauthentication_service.dart';
 import '../../services/auth_controller.dart';
+import '../../services/cloud_backup_controller.dart';
 import '../../features/auth/auth_service.dart';
-import '../../services/backup_restore_card.dart';
-import '../../services/diagnostics_flags.dart';
-import '../../data/sync/sync_reports.dart';
-import 'diagnostics_screen.dart';
-import 'cloud_backup_screen.dart';
 import '../../services/biometric_service.dart';
-import '../entry/currency_exchange_screen.dart';
+import '../../services/diagnostics_flags.dart';
 
 class AccountScreen extends StatefulWidget {
   const AccountScreen({super.key});
@@ -36,33 +36,10 @@ class AccountScreen extends StatefulWidget {
 
 class _AccountScreenState extends State<AccountScreen> {
   final ScrollController _scrollController = ScrollController();
-  final GlobalKey _mainCurrencyKey = GlobalKey();
-  final GlobalKey _zakatMethodKey = GlobalKey();
-  final GlobalKey _marketDataKey = GlobalKey();
 
-  static const List<String> _supportedCurrencies = <String>[
-    'EGP',
-    'SAR',
-    'USD',
-    'AED',
-    'KWD',
-    'QAR',
-  ];
-
-  final TextEditingController _goldController = TextEditingController();
-  final TextEditingController _silverController = TextEditingController();
-  final TextEditingController _usdController = TextEditingController();
-  final TextEditingController _sarController = TextEditingController();
-  final TextEditingController _aedController = TextEditingController();
-  final TextEditingController _kwdController = TextEditingController();
-  final TextEditingController _qarController = TextEditingController();
   final TextEditingController _aiKey1Controller = TextEditingController();
   final TextEditingController _aiKey2Controller = TextEditingController();
-  String _lastUpdated = '';
-  bool _marketInitialized = false;
   bool _isRefreshingMarket = false;
-  String _refreshMarketMessage = '';
-  bool _manualOverrideExpanded = false;
   bool _securityExpanded = false;
   bool _aiExpanded = false;
   bool _aiInitialized = false;
@@ -72,13 +49,6 @@ class _AccountScreenState extends State<AccountScreen> {
   @override
   void dispose() {
     _scrollController.dispose();
-    _goldController.dispose();
-    _silverController.dispose();
-    _usdController.dispose();
-    _sarController.dispose();
-    _aedController.dispose();
-    _kwdController.dispose();
-    _qarController.dispose();
     _aiKey1Controller.dispose();
     _aiKey2Controller.dispose();
     super.dispose();
@@ -88,6 +58,12 @@ class _AccountScreenState extends State<AccountScreen> {
   Widget build(BuildContext context) {
     final controller = context.watch<AppStateController>();
     final authController = context.watch<AuthController?>();
+    CloudBackupController? backupController;
+    try {
+      backupController = context.watch<CloudBackupController>();
+    } catch (_) {
+      backupController = null;
+    }
     final state = controller.state;
 
     final String mainCurrency = state.mainCurrency.isEmpty
@@ -113,7 +89,8 @@ class _AccountScreenState extends State<AccountScreen> {
 
     final _AnnualDate annualDate = _AnnualDate.parse(state.zakatAnnualDate);
     final MarketSnapshot snapshot = controller.currentMarketSnapshot;
-    _syncMarketControllers(snapshot);
+    final bool isArabic =
+        Localizations.localeOf(context).languageCode.toLowerCase() == 'ar';
     _syncAiControllers(state.aiSettings);
 
     final double navSafeBottomPadding =
@@ -123,7 +100,7 @@ class _AccountScreenState extends State<AccountScreen> {
         SingleChildScrollView(
           controller:
               PrimaryScrollController.maybeOf(context) ?? _scrollController,
-          padding: EdgeInsets.fromLTRB(16, 16, 16, navSafeBottomPadding),
+          padding: EdgeInsets.fromLTRB(20, 16, 20, navSafeBottomPadding),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
@@ -132,6 +109,7 @@ class _AccountScreenState extends State<AccountScreen> {
                 email: authController?.currentUser?.email,
                 photoUrl: authController?.currentUser?.photoUrl,
                 connected: authController?.isSignedIn == true,
+                backupEnabled: backupController?.automaticBackupEnabled == true,
                 isLoading: authController?.isLoading == true,
                 onSignIn: authController == null
                     ? null
@@ -165,909 +143,173 @@ class _AccountScreenState extends State<AccountScreen> {
                       },
               ),
               const SizedBox(height: 18),
-              _SettingsOverview(
+              _MarketSnapshotCard(
+                snapshot: snapshot,
+                isArabic: isArabic,
+                refreshing: _isRefreshingMarket,
+                onRefresh: _isRefreshingMarket ? null : _refreshMarketData,
+                onViewAll: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const MarketSnapshotScreen(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
+              _BackupOverviewCard(
+                controller: backupController,
+                isArabic: isArabic,
+                onOpenDetails: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const CloudBackupScreen(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
+              _WealthZakatCard(
+                supportedCurrencies: CurrencyPresentation.marketCurrencyCodes,
                 mainCurrency: mainCurrency,
                 defaultCurrency: defaultEntryCurrency,
                 zakatMethod: zakatMethod,
                 nisabBasis: zakatNisabBasis,
-                goldPrice: snapshot.gold24kPricePerGramEgp,
-                silverPrice: snapshot.silverPricePerGramEgp,
-                lastUpdated: _formatLastUpdatedForDisplay(_lastUpdated),
-                refreshing: _isRefreshingMarket,
-                onRefresh: _isRefreshingMarket ? null : _refreshMarketData,
-                isArabic:
-                    Localizations.localeOf(
-                      context,
-                    ).languageCode.toLowerCase() ==
-                    'ar',
-                onTapMainCurrency: () {
-                  Scrollable.ensureVisible(
-                    _mainCurrencyKey.currentContext!,
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeInOut,
-                    alignment: 0.1,
+                annualDate: annualDate,
+                onMainCurrencyChanged: (String value) {
+                  context.read<AppStateController>().updateMainCurrency(value);
+                },
+                onDefaultCurrencyChanged: (String value) {
+                  context.read<AppStateController>().updateDefaultEntryCurrency(
+                    value,
                   );
                 },
-                onTapDefaultCurrency: () {
-                  Scrollable.ensureVisible(
-                    _mainCurrencyKey.currentContext!,
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeInOut,
-                    alignment: 0.1,
+                onZakatMethodChanged: (String value) {
+                  context.read<AppStateController>().updateZakatMethod(value);
+                },
+                onNisabBasisChanged: (String value) {
+                  context.read<AppStateController>().updateZakatNisabBasis(
+                    value,
                   );
                 },
-                onTapZakatMethod: () {
-                  Scrollable.ensureVisible(
-                    _zakatMethodKey.currentContext!,
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeInOut,
-                    alignment: 0.1,
-                  );
+                onAnnualDateChanged: (int month, int day) {
+                  return _updateAnnualDate(month, day);
                 },
-                onTapNisabBasis: () {
-                  Scrollable.ensureVisible(
-                    _zakatMethodKey.currentContext!,
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeInOut,
-                    alignment: 0.1,
-                  );
-                },
-                onTapMarket: () {
-                  Scrollable.ensureVisible(
-                    _marketDataKey.currentContext!,
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeInOut,
-                    alignment: 0.1,
-                  );
-                },
+                isArabic: isArabic,
               ),
-              const SizedBox(height: 22),
-              Text(
-                context.l10n.tr('settings'),
-                style: Theme.of(
-                  context,
-                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 10),
-              _SectionCard(
+              const SizedBox(height: 12),
+              _CompactSectionCard(
                 title: context.l10n.tr('preferences_section'),
-                child: Column(
-                  children: <Widget>[
-                    _SettingsRowTile(
-                      key: const Key('settingsLanguageTile'),
-                      icon: Icons.language_outlined,
-                      title: context.l10n.tr('language'),
-                      value: languagePreference == 'ar' ? 'العربية' : 'English',
-                      onTap: () async {
-                        final String? selected = await showDialog<String>(
-                          context: context,
-                          builder: (BuildContext ctx) => SimpleDialog(
-                            title: Text(context.l10n.tr('language_label')),
-                            children: <Widget>[
-                              SimpleDialogOption(
-                                onPressed: () => Navigator.pop(ctx, 'en'),
-                                child: Text(context.l10n.tr('english')),
-                              ),
-                              SimpleDialogOption(
-                                onPressed: () => Navigator.pop(ctx, 'ar'),
-                                child: Text(context.l10n.tr('arabic')),
-                              ),
-                            ],
-                          ),
-                        );
-                        if (selected != null && context.mounted) {
-                          context
-                              .read<AppStateController>()
-                              .updateLanguagePreference(selected);
-                        }
-                      },
-                    ),
-                    const Divider(height: 1, indent: 36),
-                    _SettingsRowTile(
-                      key: const Key('settingsCategoriesTile'),
-                      icon: Icons.folder_outlined,
-                      title: context.l10n.tr('categories_section'),
-                      onTap: () {
-                        Navigator.of(context).push(CategoriesScreen.route());
-                      },
-                    ),
-                    const Divider(height: 1, indent: 36),
-                    _SettingsRowTile(
-                      key: const Key('settingsMerchantRulesTile'),
-                      icon: Icons.rule_folder_outlined,
-                      title: context.l10n.tr('merchant_rules_section'),
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => const MerchantRulesScreen(),
-                          ),
-                        );
-                      },
-                    ),
-                    const Divider(height: 1, indent: 36),
-                    _SettingsRowTile(
-                      key: const Key('settingsRecurringTile'),
-                      icon: Icons.event_repeat_outlined,
-                      title: context.l10n.tr('recurring_section'),
-                      onTap: () {
-                        Navigator.of(
-                          context,
-                        ).push(RecurringTransactionsScreen.route());
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              _SectionCard(
-                title: 'Security',
-                child: Column(
-                  children: [
-                    _buildSecuritySwitch(
-                      context: context,
-                      icon: Icons.fingerprint_outlined,
-                      title: 'Biometric App Lock',
-                      value: state.biometricLockEnabled,
-                      onChanged: (bool val) async {
-                        final canAuth =
-                            await BiometricService.canAuthenticate();
-                        if (!canAuth) {
-                          if (!context.mounted) return;
-                          showTopSnackBar(
-                            context,
-                            'Biometrics are not available or configured on this device.',
-                            kind: AppToastKind.warning,
-                          );
-                          return;
-                        }
-                        final authenticated = await BiometricService.authenticate(
-                          reason: val
-                              ? 'Confirm identity to enable Biometric App Lock'
-                              : 'Confirm identity to disable Biometric App Lock',
-                        );
-                        if (authenticated && context.mounted) {
-                          context
-                              .read<AppStateController>()
-                              .updateBiometricLockEnabled(val);
-                        }
-                      },
-                    ),
-                    const Divider(height: 1, indent: 36),
-                    _buildSecurityDropdown(
-                      context: context,
-                      icon: Icons.timer_outlined,
-                      title: 'Auto Lock Delay',
-                      value: state.biometricAutoLockDelay,
-                      onChanged: (String? val) {
-                        if (val != null) {
-                          context
-                              .read<AppStateController>()
-                              .updateBiometricAutoLockDelay(val);
-                        }
-                      },
-                    ),
-                    const Divider(height: 1, indent: 36),
-                    _buildSecuritySwitch(
-                      context: context,
-                      icon: Icons.visibility_off_outlined,
-                      title: 'Hide Wealth Values',
-                      value: state.biometricHideWealthEnabled,
-                      onChanged: (bool val) {
+                icon: Icons.tune_rounded,
+                children: <Widget>[
+                  _ActionSettingTile(
+                    key: const Key('settingsLanguageTile'),
+                    icon: Icons.language_outlined,
+                    title: context.l10n.tr('language'),
+                    subtitle: languagePreference == 'ar'
+                        ? 'العربية'
+                        : 'English',
+                    onTap: () async {
+                      final String? selected = await showDialog<String>(
+                        context: context,
+                        builder: (BuildContext ctx) => SimpleDialog(
+                          title: Text(context.l10n.tr('language_label')),
+                          children: <Widget>[
+                            SimpleDialogOption(
+                              onPressed: () => Navigator.pop(ctx, 'en'),
+                              child: Text(context.l10n.tr('english')),
+                            ),
+                            SimpleDialogOption(
+                              onPressed: () => Navigator.pop(ctx, 'ar'),
+                              child: Text(context.l10n.tr('arabic')),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (selected != null && context.mounted) {
                         context
                             .read<AppStateController>()
-                            .updateBiometricHideWealthEnabled(val);
-                      },
-                    ),
-                    const Divider(height: 1, indent: 36),
-                    _buildSecuritySwitch(
-                      context: context,
-                      icon: Icons.lock_outline_rounded,
-                      title: 'Protect Exports & Delete',
-                      value: state.biometricExportEnabled,
-                      onChanged: (bool val) {
-                        context
-                            .read<AppStateController>()
-                            .updateBiometricExportEnabled(val);
-                      },
-                    ),
-                    const Divider(height: 1, indent: 36),
-                    _buildSecuritySwitch(
-                      context: context,
-                      icon: Icons.restore_outlined,
-                      title: 'Protect Restore & Import',
-                      value: state.biometricRestoreEnabled,
-                      onChanged: (bool val) {
-                        context
-                            .read<AppStateController>()
-                            .updateBiometricRestoreEnabled(val);
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              _SectionCard(
-                key: _mainCurrencyKey,
-                title: context.l10n.tr('currency_section'),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    DropdownButtonFormField<String>(
-                      key: const Key('settingsMainCurrencyField'),
-                      initialValue: _supportedCurrencies.contains(mainCurrency)
-                          ? mainCurrency
-                          : 'EGP',
-                      decoration: InputDecoration(
-                        labelText: context.l10n.tr('main_currency'),
-                        border: OutlineInputBorder(),
-                      ),
-                      items: _supportedCurrencies
-                          .map(
-                            (String c) => DropdownMenuItem<String>(
-                              value: c,
-                              child: Text(
-                                ZakatEngineService.getCurrencySymbol(
-                                  c,
-                                  isArabic:
-                                      Localizations.localeOf(
-                                        context,
-                                      ).languageCode.toLowerCase() ==
-                                      'ar',
-                                ),
-                              ),
-                            ),
-                          )
-                          .toList(growable: false),
-                      onChanged: (String? value) {
-                        if (value == null) return;
-                        context.read<AppStateController>().updateMainCurrency(
-                          value,
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      key: const Key('settingsDefaultEntryCurrencyField'),
-                      initialValue:
-                          _supportedCurrencies.contains(defaultEntryCurrency)
-                          ? defaultEntryCurrency
-                          : 'EGP',
-                      decoration: InputDecoration(
-                        labelText: context.l10n.tr('default_entry_currency'),
-                        border: OutlineInputBorder(),
-                      ),
-                      items: _supportedCurrencies
-                          .map(
-                            (String c) => DropdownMenuItem<String>(
-                              value: c,
-                              child: Text(
-                                ZakatEngineService.getCurrencySymbol(
-                                  c,
-                                  isArabic:
-                                      Localizations.localeOf(
-                                        context,
-                                      ).languageCode.toLowerCase() ==
-                                      'ar',
-                                ),
-                              ),
-                            ),
-                          )
-                          .toList(growable: false),
-                      onChanged: (String? value) {
-                        if (value == null) return;
-                        context
-                            .read<AppStateController>()
-                            .updateDefaultEntryCurrency(value);
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: OutlinedButton(
-                        key: const Key('openCurrencyExchangeButton'),
-                        onPressed: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => const CurrencyExchangeScreen(),
-                            ),
-                          );
-                        },
-                        child: Text(context.l10n.tr('currency_exchange')),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              _SectionCard(
-                key: _zakatMethodKey,
-                title: context.l10n.tr('zakat_calculation_section'),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    DropdownButtonFormField<String>(
-                      key: const Key('settingsZakatMethodField'),
-                      initialValue: zakatMethod,
-                      decoration: InputDecoration(
-                        labelText: context.l10n.tr('method'),
-                        border: OutlineInputBorder(),
-                      ),
-                      items: <DropdownMenuItem<String>>[
-                        DropdownMenuItem<String>(
-                          value: 'hawl',
-                          child: Text(context.l10n.tr('monthly_hawl')),
-                        ),
-                        DropdownMenuItem<String>(
-                          value: 'annual',
-                          child: Text(context.l10n.tr('annual')),
-                        ),
-                      ],
-                      onChanged: (String? value) {
-                        if (value == null) return;
-                        context.read<AppStateController>().updateZakatMethod(
-                          value,
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      key: const Key('settingsZakatNisabBasisField'),
-                      initialValue: zakatNisabBasis,
-                      decoration: InputDecoration(
-                        labelText: context.l10n.tr('cash_nisab'),
-                        border: OutlineInputBorder(),
-                      ),
-                      items: <DropdownMenuItem<String>>[
-                        DropdownMenuItem<String>(
-                          value: ZakatEngineService.nisabBasisGold85,
-                          child: Text(context.l10n.tr('nisab_gold_85')),
-                        ),
-                        DropdownMenuItem<String>(
-                          value: ZakatEngineService.nisabBasisSilver595,
-                          child: Text(context.l10n.tr('nisab_silver_595')),
-                        ),
-                      ],
-                      onChanged: (String? value) {
-                        if (value == null) return;
-                        context
-                            .read<AppStateController>()
-                            .updateZakatNisabBasis(value);
-                      },
-                    ),
-                    if (zakatMethod == 'annual') ...<Widget>[
-                      const SizedBox(height: 12),
-                      Row(
-                        key: const Key('settingsAnnualDateSection'),
-                        children: <Widget>[
-                          Expanded(
-                            child: DropdownButtonFormField<int>(
-                              key: const Key('settingsHijriMonthField'),
-                              initialValue: annualDate.month,
-                              decoration: InputDecoration(
-                                labelText: context.l10n.tr('hijri_month'),
-                                border: OutlineInputBorder(),
-                              ),
-                              items: List<DropdownMenuItem<int>>.generate(12, (
-                                int index,
-                              ) {
-                                final int m = index + 1;
-                                return DropdownMenuItem<int>(
-                                  value: m,
-                                  child: Text(m.toString()),
-                                );
-                              }, growable: false),
-                              onChanged: (int? value) {
-                                if (value == null) return;
-                                final int d =
-                                    annualDate.day > _hijriMonthLength(value)
-                                    ? _hijriMonthLength(value)
-                                    : annualDate.day;
-                                _updateAnnualDate(value, d);
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: DropdownButtonFormField<int>(
-                              key: const Key('settingsHijriDayField'),
-                              initialValue: annualDate.day,
-                              decoration: InputDecoration(
-                                labelText: context.l10n.tr('hijri_day'),
-                                border: OutlineInputBorder(),
-                              ),
-                              items: List<DropdownMenuItem<int>>.generate(
-                                _hijriMonthLength(annualDate.month),
-                                (int index) {
-                                  final int d = index + 1;
-                                  return DropdownMenuItem<int>(
-                                    value: d,
-                                    child: Text(d.toString()),
-                                  );
-                                },
-                                growable: false,
-                              ),
-                              onChanged: (int? value) {
-                                if (value == null) return;
-                                _updateAnnualDate(annualDate.month, value);
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              _SectionCard(
-                key: _marketDataKey,
-                title: context.l10n.tr('market_data_section'),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    _MarketSummary(
-                      goldPrice: snapshot.gold24kPricePerGramEgp,
-                      silverPrice: snapshot.silverPricePerGramEgp,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '${context.l10n.tr('last_updated')}: ${_formatLastUpdatedForDisplay(_lastUpdated)}',
-                    ),
-                    const SizedBox(height: 12),
-                    FilledButton.tonal(
-                      key: const Key('refreshMarketDataButton'),
-                      onPressed: _isRefreshingMarket
-                          ? null
-                          : _refreshMarketData,
-                      child: _isRefreshingMarket
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : Text(context.l10n.tr('refresh_market_data')),
-                    ),
-                    if (_refreshMarketMessage.isNotEmpty) ...<Widget>[
-                      const SizedBox(height: 8),
-                      Text(
-                        _localizedRefreshMessage(
-                          context,
-                          _refreshMarketMessage,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 12),
-                    ExpansionTile(
-                      key: const Key('marketAdvancedOverrideTile'),
-                      title: Text(context.l10n.tr('advanced_manual_override')),
-                      initiallyExpanded: _manualOverrideExpanded,
-                      onExpansionChanged: (bool expanded) {
-                        setState(() => _manualOverrideExpanded = expanded);
-                      },
-                      childrenPadding: const EdgeInsets.symmetric(
-                        horizontal: 2,
-                        vertical: 12,
-                      ),
-                      children: <Widget>[
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 2),
-                          child: Column(
-                            children: <Widget>[
-                              TextFormField(
-                                key: const Key('marketGoldField'),
-                                controller: _goldController,
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                      decimal: true,
-                                    ),
-                                decoration: InputDecoration(
-                                  labelText: context.l10n.tr(
-                                    'gold_24k_price_per_gram_egp',
-                                  ),
-                                  border: OutlineInputBorder(),
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                              TextFormField(
-                                key: const Key('marketSilverField'),
-                                controller: _silverController,
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                      decimal: true,
-                                    ),
-                                decoration: InputDecoration(
-                                  labelText: context.l10n.tr(
-                                    'silver_price_per_gram_egp',
-                                  ),
-                                  border: OutlineInputBorder(),
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                              TextFormField(
-                                key: const Key('marketUsdField'),
-                                controller: _usdController,
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                      decimal: true,
-                                    ),
-                                decoration: InputDecoration(
-                                  labelText: context.l10n.tr('usd_to_egp'),
-                                  border: OutlineInputBorder(),
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                              TextFormField(
-                                key: const Key('marketSarField'),
-                                controller: _sarController,
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                      decimal: true,
-                                    ),
-                                decoration: InputDecoration(
-                                  labelText: context.l10n.tr('sar_to_egp'),
-                                  border: OutlineInputBorder(),
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                              TextFormField(
-                                key: const Key('marketAedField'),
-                                controller: _aedController,
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                      decimal: true,
-                                    ),
-                                decoration: InputDecoration(
-                                  labelText: context.l10n.tr('aed_to_egp'),
-                                  border: OutlineInputBorder(),
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                              TextFormField(
-                                key: const Key('marketKwdField'),
-                                controller: _kwdController,
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                      decimal: true,
-                                    ),
-                                decoration: InputDecoration(
-                                  labelText: context.l10n.tr('kwd_to_egp'),
-                                  border: OutlineInputBorder(),
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                              TextFormField(
-                                key: const Key('marketQarField'),
-                                controller: _qarController,
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                      decimal: true,
-                                    ),
-                                decoration: InputDecoration(
-                                  labelText: context.l10n.tr('qar_to_egp'),
-                                  border: OutlineInputBorder(),
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              Align(
-                                alignment: Alignment.centerLeft,
-                                child: FilledButton(
-                                  key: const Key('saveMarketDataButton'),
-                                  onPressed: _saveMarketData,
-                                  child: Text(
-                                    context.l10n.tr('save_market_data'),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              _SectionCard(
-                title: context.l10n.tr('backup_sync_section'),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Row(
-                      children: <Widget>[
-                        Icon(
-                          Icons.cloud_done_outlined,
-                          size: 18,
-                          color: Colors.green,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Cloud Sync: Active',
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                        TextButton.icon(
-                          onPressed: () async {
-                            showTopSnackBar(
-                              context,
-                              'Syncing with cloud...',
-                              kind: AppToastKind.info,
-                            );
-                            final ManualSyncResult result = await controller
-                                .runManualSync();
-                            if (!context.mounted) return;
-                            showTopSnackBar(
-                              context,
-                              result.message,
-                              kind: result.success
-                                  ? AppToastKind.success
-                                  : AppToastKind.error,
-                            );
-                          },
-                          icon: const Icon(Icons.sync, size: 16),
-                          label: const Text(
-                            'Sync Now',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    ExpansionTile(
-                      title: Text(
-                        context.l10n.tr('local_backup_options'),
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      tilePadding: EdgeInsets.zero,
-                      children: <Widget>[
-                        Padding(
-                          padding: const EdgeInsets.only(top: 8.0),
-                          child: BackupRestoreCard(controller: controller),
-                        ),
-                      ],
-                    ),
-                    const Divider(height: 16),
-                    ListTile(
-                      key: const Key('cloudBackupTile'),
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.cloud_upload_outlined, color: Colors.blue),
-                      title: const Text('Google Drive Backup & Restore'),
-                      subtitle: const Text('Encrypt and backup your database to your personal Google Drive'),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => const CloudBackupScreen(),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              _SectionCard(
-                title: context.l10n.tr('security_section'),
-                child: ExpansionTile(
-                  key: const Key('settingsSecurityTile'),
-                  title: Text(context.l10n.tr('danger_zone')),
-                  initiallyExpanded: _securityExpanded,
-                  onExpansionChanged: (bool v) =>
-                      setState(() => _securityExpanded = v),
-                  children: <Widget>[
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: FilledButton(
-                        key: const Key('deleteAccountButton'),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: Colors.red,
-                        ),
-                        onPressed: () => _confirmDeleteAccount(context),
-                        child: Text(context.l10n.tr('delete_account')),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              _SectionCard(
-                title: context.l10n.tr('ai_section'),
-                child: ExpansionTile(
-                  key: const Key('settingsAiTile'),
-                  title: const Text('Gemini'),
-                  initiallyExpanded: _aiExpanded,
-                  onExpansionChanged: (bool v) =>
-                      setState(() => _aiExpanded = v),
-                  children: <Widget>[
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 4.0,
-                        vertical: 8.0,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: <Widget>[
-                          TextFormField(
-                            key: const Key('geminiKey1Field'),
-                            controller: _aiKey1Controller,
-                            obscureText: true,
-                            decoration: InputDecoration(
-                              labelText:
-                                  Localizations.localeOf(
-                                        context,
-                                      ).languageCode ==
-                                      'ar'
-                                  ? 'مفتاح Gemini 1'
-                                  : 'Gemini Key 1',
-                              border: const OutlineInputBorder(),
-                              prefixIcon: const Icon(Icons.vpn_key),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          TextFormField(
-                            key: const Key('geminiKey2Field'),
-                            controller: _aiKey2Controller,
-                            obscureText: true,
-                            decoration: InputDecoration(
-                              labelText:
-                                  Localizations.localeOf(
-                                        context,
-                                      ).languageCode ==
-                                      'ar'
-                                  ? 'مفتاح Gemini 2'
-                                  : 'Gemini Key 2',
-                              border: const OutlineInputBorder(),
-                              prefixIcon: const Icon(Icons.vpn_key),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          DropdownButtonFormField<int>(
-                            key: const Key('geminiDefaultKeyIndexField'),
-                            initialValue: _selectedAiKeyIndex,
-                            decoration: InputDecoration(
-                              labelText:
-                                  Localizations.localeOf(
-                                        context,
-                                      ).languageCode ==
-                                      'ar'
-                                  ? 'المفتاح الافتراضي'
-                                  : 'Default Key',
-                              border: const OutlineInputBorder(),
-                            ),
-                            items: <DropdownMenuItem<int>>[
-                              DropdownMenuItem<int>(
-                                value: 0,
-                                child: Text(
-                                  Localizations.localeOf(
-                                            context,
-                                          ).languageCode ==
-                                          'ar'
-                                      ? 'المفتاح 1'
-                                      : 'Key 1',
-                                ),
-                              ),
-                              DropdownMenuItem<int>(
-                                value: 1,
-                                child: Text(
-                                  Localizations.localeOf(
-                                            context,
-                                          ).languageCode ==
-                                          'ar'
-                                      ? 'المفتاح 2'
-                                      : 'Key 2',
-                                ),
-                              ),
-                            ],
-                            onChanged: (int? value) {
-                              if (value == null) return;
-                              setState(() {
-                                _selectedAiKeyIndex = value;
-                              });
-                            },
-                          ),
-                          const SizedBox(height: 16),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: <Widget>[
-                              OutlinedButton.icon(
-                                key: const Key('testGeminiConnectionButton'),
-                                onPressed: _isTestingConnection
-                                    ? null
-                                    : _testAiConnection,
-                                icon: _isTestingConnection
-                                    ? const SizedBox(
-                                        width: 16,
-                                        height: 16,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                        ),
-                                      )
-                                    : const Icon(Icons.wifi),
-                                label: Text(
-                                  Localizations.localeOf(
-                                            context,
-                                          ).languageCode ==
-                                          'ar'
-                                      ? 'اختبار الاتصال'
-                                      : 'Test Connection',
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              FilledButton.icon(
-                                key: const Key('saveGeminiKeysButton'),
-                                onPressed: _saveAiKeys,
-                                icon: const Icon(Icons.save),
-                                label: Text(
-                                  Localizations.localeOf(
-                                            context,
-                                          ).languageCode ==
-                                          'ar'
-                                      ? 'حفظ'
-                                      : 'Save AI Keys',
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              _SectionCard(
-                title: context.l10n.tr('appearance_section'),
-                child: DropdownButtonFormField<String>(
-                  key: const Key('settingsThemeModeField'),
-                  initialValue: themeMode,
-                  decoration: InputDecoration(
-                    labelText: context.l10n.tr('theme_mode'),
-                    border: OutlineInputBorder(),
+                            .updateLanguagePreference(selected);
+                      }
+                    },
                   ),
-                  items: <DropdownMenuItem<String>>[
-                    DropdownMenuItem<String>(
-                      value: 'system',
-                      child: Text(context.l10n.tr('theme_system')),
-                    ),
-                    DropdownMenuItem<String>(
-                      value: 'light',
-                      child: Text(context.l10n.tr('theme_light')),
-                    ),
-                    DropdownMenuItem<String>(
-                      value: 'dark',
-                      child: Text(context.l10n.tr('theme_dark')),
-                    ),
-                  ],
-                  onChanged: (String? value) {
-                    if (value == null) return;
-                    context.read<AppStateController>().updateThemeMode(value);
-                  },
-                ),
+                  _ActionSettingTile(
+                    key: const Key('settingsCategoriesTile'),
+                    icon: Icons.folder_outlined,
+                    title: context.l10n.tr('categories_section'),
+                    subtitle: 'Language, Currency, Categories and more',
+                    onTap: () {
+                      Navigator.of(context).push(CategoriesScreen.route());
+                    },
+                  ),
+                  _ActionSettingTile(
+                    key: const Key('settingsMerchantRulesTile'),
+                    icon: Icons.rule_folder_outlined,
+                    title: context.l10n.tr('merchant_rules_section'),
+                    subtitle: 'Manage auto-categorization rules',
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const MerchantRulesScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  _ActionSettingTile(
+                    key: const Key('settingsRecurringTile'),
+                    icon: Icons.event_repeat_outlined,
+                    title: context.l10n.tr('recurring_section'),
+                    subtitle: 'Manage recurring transactions',
+                    onTap: () {
+                      Navigator.of(
+                        context,
+                      ).push(RecurringTransactionsScreen.route());
+                    },
+                  ),
+                ],
               ),
               const SizedBox(height: 12),
-              _SectionCard(
-                title: context.l10n.tr('about_section'),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    const _CompactInfoRow(
-                      icon: Icons.account_balance_wallet_outlined,
-                      label: 'Zakah Wealth',
-                    ),
-                    _CompactInfoRow(
-                      icon: Icons.info_outline,
-                      label: context.l10n.tr('about_version'),
-                    ),
-                    _CompactInfoRow(
-                      icon: Icons.build_outlined,
-                      label: context.l10n.tr('about_build'),
-                    ),
-                  ],
-                ),
+              _SecurityPrivacyCard(
+                key: const Key('settingsSecurityTile'),
+                biometricLockEnabled: state.biometricLockEnabled,
+                biometricAutoLockDelay: state.biometricAutoLockDelay,
+                biometricHideWealthEnabled: state.biometricHideWealthEnabled,
+                biometricExportEnabled: state.biometricExportEnabled,
+                biometricRestoreEnabled: state.biometricRestoreEnabled,
+                onDeleteAccount: () => _confirmDeleteAccount(context),
               ),
+              const SizedBox(height: 12),
+              _AppearanceAiRow(
+                themeMode: themeMode,
+                onThemeTap: () async {
+                  final String? selected = await _showChoiceDialog<String>(
+                    context: context,
+                    title: context.l10n.tr('theme_mode'),
+                    options: const <String>['system', 'light', 'dark'],
+                    optionLabel: (String value) => switch (value) {
+                      'light' => context.l10n.tr('theme_light'),
+                      'dark' => context.l10n.tr('theme_dark'),
+                      _ => context.l10n.tr('theme_system'),
+                    },
+                  );
+                  if (selected == null) return;
+                  context.read<AppStateController>().updateThemeMode(selected);
+                },
+                aiExpanded: _aiExpanded,
+                isTestingConnection: _isTestingConnection,
+                selectedAiKeyIndex: _selectedAiKeyIndex,
+                onAiTap: () => setState(() => _aiExpanded = !_aiExpanded),
+                onTestAiConnection: () => _testAiConnection(),
+                onSaveAiKeys: () => _saveAiKeys(),
+                onSelectedAiKeyChanged: (int value) {
+                  setState(() => _selectedAiKeyIndex = value);
+                },
+                aiKey1Controller: _aiKey1Controller,
+                aiKey2Controller: _aiKey2Controller,
+                isArabic: isArabic,
+              ),
+              const SizedBox(height: 12),
+              _AboutCard(isArabic: isArabic),
               if (kDebugMode && enableDeveloperDiagnostics) ...<Widget>[
                 const SizedBox(height: 12),
                 _SectionCard(
@@ -1113,24 +355,67 @@ class _AccountScreenState extends State<AccountScreen> {
       if (!auth) return;
     }
     if (!context.mounted) return;
-    final bool? ok = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext ctx) => AlertDialog(
-        title: Text(l10n.tr('delete_account')),
-        content: Text(l10n.tr('delete_account_confirm')),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(l10n.tr('cancel')),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(l10n.tr('delete')),
-          ),
-        ],
-      ),
-    );
+    final TextEditingController confirmController = TextEditingController();
+    bool? ok;
+    try {
+      ok = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext ctx) {
+          bool canConfirm = false;
+          return StatefulBuilder(
+            builder: (BuildContext dialogContext, StateSetter setState) {
+              void refreshConfirmState(String value) {
+                final bool nextCanConfirm =
+                    value.trim().toLowerCase() == 'delete';
+                if (nextCanConfirm != canConfirm) {
+                  setState(() {
+                    canConfirm = nextCanConfirm;
+                  });
+                }
+              }
+
+              return AlertDialog(
+                title: Text(l10n.tr('delete_account')),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    const Text('Type DELETE to confirm account deletion.'),
+                    const SizedBox(height: 12),
+                    TextField(
+                      key: const Key('deleteAccountConfirmField'),
+                      controller: confirmController,
+                      autofocus: true,
+                      textCapitalization: TextCapitalization.characters,
+                      decoration: const InputDecoration(
+                        labelText: 'DELETE',
+                        hintText: 'DELETE',
+                      ),
+                      onChanged: refreshConfirmState,
+                    ),
+                  ],
+                ),
+                actions: <Widget>[
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogContext, false),
+                    child: Text(l10n.tr('cancel')),
+                  ),
+                  FilledButton(
+                    style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                    onPressed: canConfirm
+                        ? () => Navigator.pop(dialogContext, true)
+                        : null,
+                    child: Text(l10n.tr('delete')),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+    } finally {
+      confirmController.dispose();
+    }
     if (ok == true && context.mounted) {
       final AppStateController appStateController = context
           .read<AppStateController>();
@@ -1150,6 +435,17 @@ class _AccountScreenState extends State<AccountScreen> {
                 return _chooseReauthMethod(context, availableMethods);
               },
         ),
+        deleteCloudBackupData: (UserProfile user) async {
+          CloudBackupController? cloudBackupController;
+          try {
+            cloudBackupController = context.read<CloudBackupController>();
+          } catch (_) {
+            cloudBackupController = null;
+          }
+          if (cloudBackupController != null) {
+            await cloudBackupController.deleteCloudBackupData();
+          }
+        },
       );
       try {
         await deletionService.deleteAccount();
@@ -1261,65 +557,22 @@ class _AccountScreenState extends State<AccountScreen> {
     return raw.startsWith(prefix) ? raw.substring(prefix.length) : raw;
   }
 
-  void _syncMarketControllers(MarketSnapshot snapshot) {
-    if (_marketInitialized) return;
-    _goldController.text = _fmt(snapshot.gold24kPricePerGramEgp);
-    _silverController.text = _fmt(snapshot.silverPricePerGramEgp);
-    _usdController.text = _fmt(snapshot.usdToEgp);
-    _sarController.text = _fmt(snapshot.sarToEgp);
-    _aedController.text = _fmt(snapshot.aedToEgp);
-    _kwdController.text = _fmt(snapshot.kwdToEgp);
-    _qarController.text = _fmt(snapshot.qarToEgp);
-    _lastUpdated = snapshot.lastUpdated;
-    _marketInitialized = true;
-  }
-
-  Future<void> _saveMarketData() async {
-    final String lastUpdated = DateTime.now().toUtc().toIso8601String();
-
-    final MarketSnapshot snapshot = MarketSnapshot(
-      gold24kPricePerGramEgp: _asDouble(_goldController.text),
-      silverPricePerGramEgp: _asDouble(_silverController.text),
-      usdToEgp: _asDouble(_usdController.text),
-      sarToEgp: _asDouble(_sarController.text),
-      aedToEgp: _asDouble(_aedController.text),
-      kwdToEgp: _asDouble(_kwdController.text),
-      qarToEgp: _asDouble(_qarController.text),
-      eurToEgp: 0,
-      gbpToEgp: 0,
-      bhdToEgp: 0,
-      omrToEgp: 0,
-      jodToEgp: 0,
-      tryToEgp: 0,
-      myrToEgp: 0,
-      pkrToEgp: 0,
-      idrToEgp: 0,
-      lastUpdated: lastUpdated,
-    );
-
-    await context.read<AppStateController>().updateMarketSnapshot(snapshot);
-    if (!mounted) return;
-    setState(() => _lastUpdated = lastUpdated);
-  }
-
   Future<void> _refreshMarketData() async {
     setState(() {
       _isRefreshingMarket = true;
-      _refreshMarketMessage = '';
     });
     final result = await context.read<AppStateController>().refreshMarketData(
       force: true,
     );
     if (!mounted) return;
-    final MarketSnapshot updated = context
-        .read<AppStateController>()
-        .currentMarketSnapshot;
     setState(() {
       _isRefreshingMarket = false;
-      _marketInitialized = false;
-      _syncMarketControllers(updated);
-      _refreshMarketMessage = result.message;
     });
+    showTopSnackBar(
+      context,
+      _localizedRefreshMessage(context, result.message),
+      kind: result.success ? AppToastKind.success : AppToastKind.warning,
+    );
   }
 
   String _localizedRefreshMessage(BuildContext context, String raw) {
@@ -1343,10 +596,6 @@ class _AccountScreenState extends State<AccountScreen> {
 
   static int _hijriMonthLength(int month) {
     return month == 12 ? 30 : ((month % 2 == 1) ? 30 : 29);
-  }
-
-  static double _asDouble(String value) {
-    return double.tryParse(value.trim()) ?? 0;
   }
 
   static String _fmt(double value) {
@@ -1569,6 +818,1241 @@ class _AnnualDate {
   }
 }
 
+String _formatAgeText(String raw, {required bool isArabic}) {
+  final DateTime? parsed = _AccountScreenState._tryParseLegacyOrIso(raw);
+  if (parsed == null) return isArabic ? 'تم التحديث' : 'Updated';
+  final DateTime now = DateTime.now();
+  final Duration delta = now.difference(parsed.toLocal());
+  if (delta.inMinutes < 1) {
+    return isArabic ? 'تم التحديث منذ لحظات' : 'Updated moments ago';
+  }
+  if (delta.inHours < 1) {
+    final int mins = delta.inMinutes;
+    return isArabic ? 'تم التحديث منذ $mins د' : 'Updated $mins min ago';
+  }
+  if (delta.inDays < 1) {
+    final int hours = delta.inHours;
+    return isArabic ? 'تم التحديث منذ $hours س' : 'Updated $hours h ago';
+  }
+  return isArabic
+      ? 'تم التحديث ${DateFormat('yyyy-MM-dd').format(parsed.toLocal())}'
+      : 'Updated ${DateFormat('MMM d, yyyy').format(parsed.toLocal())}';
+}
+
+String _formatClockLabel(DateTime? value, {required bool isArabic}) {
+  if (value == null) return isArabic ? 'غير متاح' : 'Unavailable';
+  final DateTime local = value.toLocal();
+  final String time = DateFormat('h:mm a').format(local);
+  final DateTime today = DateTime.now();
+  final bool isSameDay =
+      today.year == local.year &&
+      today.month == local.month &&
+      today.day == local.day;
+  if (isSameDay) {
+    return isArabic ? 'اليوم $time' : 'Today $time';
+  }
+  return isArabic
+      ? DateFormat('yyyy-MM-dd h:mm a').format(local)
+      : DateFormat('MMM d, h:mm a').format(local);
+}
+
+String _formatCountdownLabel(DateTime? value, {required bool isArabic}) {
+  if (value == null) return isArabic ? 'غير محدد' : 'Not set';
+  final Duration delta = value.toLocal().difference(DateTime.now());
+  if (delta.isNegative || delta.inMinutes <= 0) {
+    return isArabic ? 'الآن' : 'Now';
+  }
+  final int hours = delta.inHours;
+  final int mins = delta.inMinutes.remainder(60);
+  if (hours > 0) {
+    return isArabic ? 'بعد $hours س $mins د' : 'In ${hours}h ${mins}m';
+  }
+  return isArabic ? 'بعد $mins د' : 'In ${mins}m';
+}
+
+String _formatEveryHoursLabel(int hours, {required bool isArabic}) {
+  return isArabic ? 'كل $hours ساعات' : 'Every $hours hours';
+}
+
+Future<T?> _showChoiceDialog<T>({
+  required BuildContext context,
+  required String title,
+  required List<T> options,
+  required String Function(T value) optionLabel,
+}) {
+  return showDialog<T>(
+    context: context,
+    builder: (BuildContext dialogContext) => SimpleDialog(
+      title: Text(title),
+      children: options
+          .map(
+            (T value) => SimpleDialogOption(
+              onPressed: () => Navigator.pop(dialogContext, value),
+              child: Text(optionLabel(value)),
+            ),
+          )
+          .toList(growable: false),
+    ),
+  );
+}
+
+class _MarketSnapshotCard extends StatelessWidget {
+  const _MarketSnapshotCard({
+    required this.snapshot,
+    required this.isArabic,
+    required this.refreshing,
+    required this.onRefresh,
+    required this.onViewAll,
+  });
+
+  final MarketSnapshot snapshot;
+  final bool isArabic;
+  final bool refreshing;
+  final VoidCallback? onRefresh;
+  final VoidCallback onViewAll;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return PremiumCard(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(Icons.show_chart_rounded, size: 20, color: colors.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  isArabic ? 'ملخص الأسعار' : 'Market Snapshot',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                ),
+              ),
+              TextButton(
+                key: const Key('viewAllMarketSnapshotButton'),
+                onPressed: onViewAll,
+                child: Text(context.l10n.tr('view_all')),
+              ),
+              IconButton(
+                key: const Key('refreshMarketDataOverviewButton'),
+                onPressed: onRefresh,
+                icon: refreshing
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.refresh_rounded),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: _StatCard(
+                  icon: Icons.brightness_7_outlined,
+                  label: isArabic ? 'ذهب 24K' : 'Gold',
+                  value: _price(snapshot.gold24kPricePerGramEgp),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _StatCard(
+                  icon: Icons.circle_outlined,
+                  label: isArabic ? 'فضة' : 'Silver',
+                  value: _price(snapshot.silverPricePerGramEgp),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            _formatAgeText(snapshot.lastUpdated, isArabic: isArabic),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: colors.onSurfaceVariant,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _price(double value) {
+    if (value <= 0) return isArabic ? 'غير متوفر' : 'Unavailable';
+    return 'E£ ${value.toStringAsFixed(2)}/g';
+  }
+}
+
+class _StatCard extends StatelessWidget {
+  const _StatCard({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHighest.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: colors.outlineVariant.withValues(alpha: 0.45),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Icon(icon, size: 18, color: colors.primary),
+          const SizedBox(height: 10),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: colors.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BackupOverviewCard extends StatelessWidget {
+  const _BackupOverviewCard({
+    required this.controller,
+    required this.isArabic,
+    required this.onOpenDetails,
+  });
+
+  final CloudBackupController? controller;
+  final bool isArabic;
+  final VoidCallback onOpenDetails;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final bool connected = controller?.isDriveConnected == true;
+    final String backupStatus = connected
+        ? (isArabic ? 'متصل' : 'Connected')
+        : (isArabic ? 'غير متصل' : 'Disconnected');
+    final DateTime? lastBackupAt = controller?.lastBackupAt;
+    final DateTime? nextCheckAt = controller?.nextEligibleBackupAt;
+    final int intervalHours = controller?.minimumIntervalHours ?? 3;
+
+    return PremiumCard(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(Icons.cloud_outlined, size: 20, color: colors.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  isArabic ? 'نسخ Google Drive' : 'Google Drive Backup',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: connected
+                      ? colors.primary.withValues(alpha: 0.12)
+                      : colors.errorContainer.withValues(alpha: 0.55),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  backupStatus,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: connected ? colors.primary : colors.error,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              IconButton(
+                onPressed: onOpenDetails,
+                icon: const Icon(Icons.arrow_forward_ios_rounded, size: 18),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: _InfoColumn(
+                  label: isArabic ? 'آخر نسخة' : 'Last Backup',
+                  value: _formatClockLabel(lastBackupAt, isArabic: isArabic),
+                ),
+              ),
+              Expanded(
+                child: _InfoColumn(
+                  label: isArabic ? 'النسخ التلقائي' : 'Automatic Backup',
+                  value: _formatEveryHoursLabel(
+                    intervalHours,
+                    isArabic: isArabic,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: _InfoColumn(
+                  label: isArabic ? 'الفحص التالي' : 'Next Check',
+                  value: _formatCountdownLabel(nextCheckAt, isArabic: isArabic),
+                ),
+              ),
+            ],
+          ),
+          if (!connected) ...<Widget>[
+            const SizedBox(height: 12),
+            Text(
+              isArabic
+                  ? 'اربط Google Drive لتفعيل النسخ المشفر.'
+                  : 'Connect Google Drive to enable encrypted backups.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _InfoColumn extends StatelessWidget {
+  const _InfoColumn({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            label,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: colors.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WealthZakatCard extends StatelessWidget {
+  const _WealthZakatCard({
+    required this.supportedCurrencies,
+    required this.mainCurrency,
+    required this.defaultCurrency,
+    required this.zakatMethod,
+    required this.nisabBasis,
+    required this.annualDate,
+    required this.onMainCurrencyChanged,
+    required this.onDefaultCurrencyChanged,
+    required this.onZakatMethodChanged,
+    required this.onNisabBasisChanged,
+    required this.onAnnualDateChanged,
+    required this.isArabic,
+  });
+
+  final List<String> supportedCurrencies;
+  final String mainCurrency;
+  final String defaultCurrency;
+  final String zakatMethod;
+  final String nisabBasis;
+  final _AnnualDate annualDate;
+  final ValueChanged<String> onMainCurrencyChanged;
+  final ValueChanged<String> onDefaultCurrencyChanged;
+  final ValueChanged<String> onZakatMethodChanged;
+  final ValueChanged<String> onNisabBasisChanged;
+  final Future<void> Function(int month, int day) onAnnualDateChanged;
+  final bool isArabic;
+
+  @override
+  Widget build(BuildContext context) {
+    return PremiumCard(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(Icons.account_balance_wallet_outlined, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  isArabic ? 'الثروة والزكاة' : 'Wealth & Zakat',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _ActionSettingTile(
+            key: const Key('settingsMainCurrencyField'),
+            icon: Icons.account_balance_wallet_outlined,
+            title: context.l10n.tr('main_currency'),
+            subtitle: CurrencyPresentation.label(_currencyValue(mainCurrency)),
+            onTap: () async {
+              final String? selected = await _showChoiceDialog<String>(
+                context: context,
+                title: context.l10n.tr('main_currency'),
+                options: supportedCurrencies,
+                optionLabel: CurrencyPresentation.label,
+              );
+              if (selected != null) onMainCurrencyChanged(selected);
+            },
+          ),
+          _ActionSettingTile(
+            key: const Key('settingsDefaultEntryCurrencyField'),
+            icon: Icons.payments_outlined,
+            title: context.l10n.tr('default_entry_currency'),
+            subtitle: CurrencyPresentation.label(
+              _currencyValue(defaultCurrency),
+            ),
+            onTap: () async {
+              final String? selected = await _showChoiceDialog<String>(
+                context: context,
+                title: context.l10n.tr('default_entry_currency'),
+                options: supportedCurrencies,
+                optionLabel: CurrencyPresentation.label,
+              );
+              if (selected != null) onDefaultCurrencyChanged(selected);
+            },
+          ),
+          _ActionSettingTile(
+            key: const Key('settingsZakatMethodField'),
+            icon: Icons.auto_awesome_outlined,
+            title: context.l10n.tr('method'),
+            subtitle: zakatMethod == 'annual'
+                ? context.l10n.tr('annual')
+                : context.l10n.tr('monthly_hawl'),
+            onTap: () async {
+              final String? selected = await _showChoiceDialog<String>(
+                context: context,
+                title: context.l10n.tr('method'),
+                options: const <String>['hawl', 'annual'],
+                optionLabel: (String value) => value == 'annual'
+                    ? context.l10n.tr('annual')
+                    : context.l10n.tr('monthly_hawl'),
+              );
+              if (selected != null) onZakatMethodChanged(selected);
+            },
+          ),
+          _ActionSettingTile(
+            key: const Key('settingsZakatNisabBasisField'),
+            icon: Icons.science_outlined,
+            title: context.l10n.tr('cash_nisab'),
+            subtitle: nisabBasis.contains('silver')
+                ? context.l10n.tr('nisab_silver_595')
+                : context.l10n.tr('nisab_gold_85'),
+            onTap: () async {
+              final String? selected = await _showChoiceDialog<String>(
+                context: context,
+                title: context.l10n.tr('cash_nisab'),
+                options: const <String>[
+                  ZakatEngineService.nisabBasisGold85,
+                  ZakatEngineService.nisabBasisSilver595,
+                ],
+                optionLabel: (String value) =>
+                    value == ZakatEngineService.nisabBasisSilver595
+                    ? context.l10n.tr('nisab_silver_595')
+                    : context.l10n.tr('nisab_gold_85'),
+              );
+              if (selected != null) onNisabBasisChanged(selected);
+            },
+          ),
+          if (zakatMethod == 'annual') ...<Widget>[
+            Column(
+              key: const Key('settingsAnnualDateSection'),
+              children: <Widget>[
+                _ActionSettingTile(
+                  key: const Key('settingsHijriMonthField'),
+                  icon: Icons.date_range_outlined,
+                  title: context.l10n.tr('hijri_month'),
+                  subtitle: annualDate.month.toString(),
+                  onTap: () async {
+                    final int? selected = await _showChoiceDialog<int>(
+                      context: context,
+                      title: context.l10n.tr('hijri_month'),
+                      options: List<int>.generate(12, (int index) => index + 1),
+                      optionLabel: (int value) => value.toString(),
+                    );
+                    if (selected != null) {
+                      final int nextDay =
+                          annualDate.day >
+                              _AccountScreenState._hijriMonthLength(selected)
+                          ? _AccountScreenState._hijriMonthLength(selected)
+                          : annualDate.day;
+                      await onAnnualDateChanged(selected, nextDay);
+                    }
+                  },
+                ),
+                _ActionSettingTile(
+                  key: const Key('settingsHijriDayField'),
+                  icon: Icons.date_range_outlined,
+                  title: context.l10n.tr('hijri_day'),
+                  subtitle: annualDate.day.toString(),
+                  onTap: () async {
+                    final int? selected = await _showChoiceDialog<int>(
+                      context: context,
+                      title: context.l10n.tr('hijri_day'),
+                      options: List<int>.generate(
+                        _AccountScreenState._hijriMonthLength(annualDate.month),
+                        (int index) => index + 1,
+                      ),
+                      optionLabel: (int value) => value.toString(),
+                    );
+                    if (selected != null) {
+                      await onAnnualDateChanged(annualDate.month, selected);
+                    }
+                  },
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _currencyValue(String currency) => currency.isEmpty ? 'EGP' : currency;
+}
+
+class _CompactSectionCard extends StatelessWidget {
+  const _CompactSectionCard({
+    required this.title,
+    required this.icon,
+    required this.children,
+  });
+
+  final String title;
+  final IconData icon;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return PremiumCard(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(icon, size: 20, color: colors.primary),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ...children,
+        ],
+      ),
+    );
+  }
+}
+
+class _ActionSettingTile extends StatelessWidget {
+  const _ActionSettingTile({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 9),
+        child: Row(
+          children: <Widget>[
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: colors.primary.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, size: 20, color: colors.primary),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    title,
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(Icons.chevron_right_rounded, color: colors.onSurfaceVariant),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ToggleSettingTile extends StatelessWidget {
+  const _ToggleSettingTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.onChanged,
+    this.leadingColor,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final Color? leadingColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final Color iconColor = leadingColor ?? colors.primary;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 9),
+      child: Row(
+        children: <Widget>[
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: iconColor.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, size: 20, color: iconColor),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  title,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch(value: value, onChanged: onChanged),
+        ],
+      ),
+    );
+  }
+}
+
+class _DropdownSettingTile extends StatelessWidget {
+  const _DropdownSettingTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.items,
+    required this.onChanged,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final String value;
+  final List<DropdownMenuItem<String>> items;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 9),
+      child: Row(
+        children: <Widget>[
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: colors.primary.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, size: 20, color: colors.primary),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  title,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          DropdownButton<String>(
+            value: value,
+            underline: const SizedBox(),
+            items: items,
+            onChanged: onChanged,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SecurityPrivacyCard extends StatelessWidget {
+  const _SecurityPrivacyCard({
+    super.key,
+    required this.biometricLockEnabled,
+    required this.biometricAutoLockDelay,
+    required this.biometricHideWealthEnabled,
+    required this.biometricExportEnabled,
+    required this.biometricRestoreEnabled,
+    required this.onDeleteAccount,
+  });
+
+  final bool biometricLockEnabled;
+  final String biometricAutoLockDelay;
+  final bool biometricHideWealthEnabled;
+  final bool biometricExportEnabled;
+  final bool biometricRestoreEnabled;
+  final VoidCallback onDeleteAccount;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return PremiumCard(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(Icons.shield_outlined, size: 20, color: colors.primary),
+              const SizedBox(width: 8),
+              Text(
+                context.l10n.tr('security_section'),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          _ToggleSettingTile(
+            icon: Icons.fingerprint_outlined,
+            title: 'Biometric Lock',
+            subtitle: 'Use Face ID or fingerprint',
+            value: biometricLockEnabled,
+            onChanged: (bool val) async {
+              final bool canAuth = await BiometricService.canAuthenticate();
+              if (!canAuth) {
+                if (!context.mounted) return;
+                showTopSnackBar(
+                  context,
+                  'Biometrics are not available or configured on this device.',
+                  kind: AppToastKind.warning,
+                );
+                return;
+              }
+              final bool authenticated = await BiometricService.authenticate(
+                reason: val
+                    ? 'Confirm identity to enable Biometric App Lock'
+                    : 'Confirm identity to disable Biometric App Lock',
+              );
+              if (authenticated && context.mounted) {
+                context.read<AppStateController>().updateBiometricLockEnabled(
+                  val,
+                );
+              }
+            },
+          ),
+          _DropdownSettingTile(
+            icon: Icons.timer_outlined,
+            title: 'Auto Lock Delay',
+            subtitle: 'Delay before the app locks itself',
+            value: biometricAutoLockDelay,
+            items: const <DropdownMenuItem<String>>[
+              DropdownMenuItem(value: 'immediate', child: Text('Immediately')),
+              DropdownMenuItem(value: '30_seconds', child: Text('30 Seconds')),
+              DropdownMenuItem(value: '1_minute', child: Text('1 Minute')),
+              DropdownMenuItem(value: '5_minutes', child: Text('5 Minutes')),
+            ],
+            onChanged: (String? val) {
+              if (val != null) {
+                context.read<AppStateController>().updateBiometricAutoLockDelay(
+                  val,
+                );
+              }
+            },
+          ),
+          _ToggleSettingTile(
+            icon: Icons.visibility_off_outlined,
+            title: 'Hide Wealth Values',
+            subtitle: 'Hide balances throughout the app',
+            value: biometricHideWealthEnabled,
+            onChanged: (bool val) {
+              context
+                  .read<AppStateController>()
+                  .updateBiometricHideWealthEnabled(val);
+            },
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'Data Protection',
+            style: Theme.of(
+              context,
+            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 4),
+          _ToggleSettingTile(
+            icon: Icons.lock_outline_rounded,
+            title: 'Protect Exports & Delete',
+            subtitle: 'Require approval before exporting or deleting data',
+            value: biometricExportEnabled,
+            onChanged: (bool val) {
+              context.read<AppStateController>().updateBiometricExportEnabled(
+                val,
+              );
+            },
+          ),
+          _ToggleSettingTile(
+            icon: Icons.restore_outlined,
+            title: 'Protect Restore & Import',
+            subtitle: 'Require approval before restore or import actions',
+            value: biometricRestoreEnabled,
+            onChanged: (bool val) {
+              context.read<AppStateController>().updateBiometricRestoreEnabled(
+                val,
+              );
+            },
+          ),
+          const SizedBox(height: 4),
+          InkWell(
+            key: const Key('deleteAccountButton'),
+            onTap: onDeleteAccount,
+            borderRadius: BorderRadius.circular(16),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: Row(
+                children: <Widget>[
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: colors.error.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      Icons.dangerous_outlined,
+                      size: 20,
+                      color: colors.error,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          'Danger Zone',
+                          style: Theme.of(context).textTheme.bodyLarge
+                              ?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: colors.error,
+                              ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Delete data or account',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: colors.onSurfaceVariant),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(Icons.chevron_right_rounded, color: colors.error),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AppearanceAiRow extends StatelessWidget {
+  const _AppearanceAiRow({
+    super.key,
+    required this.themeMode,
+    required this.onThemeTap,
+    required this.aiExpanded,
+    required this.isTestingConnection,
+    required this.selectedAiKeyIndex,
+    required this.onAiTap,
+    required this.onTestAiConnection,
+    required this.onSaveAiKeys,
+    required this.onSelectedAiKeyChanged,
+    required this.aiKey1Controller,
+    required this.aiKey2Controller,
+    required this.isArabic,
+  });
+
+  final String themeMode;
+  final VoidCallback onThemeTap;
+  final bool aiExpanded;
+  final bool isTestingConnection;
+  final int selectedAiKeyIndex;
+  final VoidCallback onAiTap;
+  final VoidCallback onTestAiConnection;
+  final VoidCallback onSaveAiKeys;
+  final ValueChanged<int> onSelectedAiKeyChanged;
+  final TextEditingController aiKey1Controller;
+  final TextEditingController aiKey2Controller;
+  final bool isArabic;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: _MiniSummaryCard(
+                key: const Key('settingsThemeModeField'),
+                icon: Icons.palette_outlined,
+                title: isArabic ? 'المظهر' : 'Appearance',
+                subtitle: isArabic ? 'وضع النظام' : 'Theme Mode',
+                value: switch (themeMode) {
+                  'light' => context.l10n.tr('theme_light'),
+                  'dark' => context.l10n.tr('theme_dark'),
+                  _ => context.l10n.tr('theme_system'),
+                },
+                onTap: onThemeTap,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _MiniSummaryCard(
+                icon: Icons.auto_awesome_outlined,
+                title: isArabic ? 'المساعد الذكي' : 'AI Assistant',
+                subtitle: 'Gemini',
+                value: isTestingConnection ? '...' : 'Enabled',
+                onTap: onAiTap,
+                trailing: Icon(
+                  aiExpanded
+                      ? Icons.keyboard_arrow_up_rounded
+                      : Icons.keyboard_arrow_down_rounded,
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (aiExpanded) ...<Widget>[
+          const SizedBox(height: 12),
+          PremiumCard(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Text(
+                  'Gemini',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: aiKey1Controller,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Gemini Key 1',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.vpn_key),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: aiKey2Controller,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Gemini Key 2',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.vpn_key),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<int>(
+                  initialValue: selectedAiKeyIndex,
+                  decoration: const InputDecoration(
+                    labelText: 'Default Key',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: const <DropdownMenuItem<int>>[
+                    DropdownMenuItem<int>(value: 0, child: Text('Key 1')),
+                    DropdownMenuItem<int>(value: 1, child: Text('Key 2')),
+                  ],
+                  onChanged: (int? value) {
+                    if (value != null) onSelectedAiKeyChanged(value);
+                  },
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: <Widget>[
+                    OutlinedButton.icon(
+                      onPressed: isTestingConnection
+                          ? null
+                          : onTestAiConnection,
+                      icon: isTestingConnection
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.wifi),
+                      label: const Text('Test Connection'),
+                    ),
+                    const SizedBox(width: 12),
+                    FilledButton.icon(
+                      onPressed: onSaveAiKeys,
+                      icon: const Icon(Icons.save),
+                      label: const Text('Save AI Keys'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _MiniSummaryCard extends StatelessWidget {
+  const _MiniSummaryCard({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.onTap,
+    this.trailing,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final String value;
+  final VoidCallback onTap;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return PremiumCard(
+      onTap: onTap,
+      padding: const EdgeInsets.all(14),
+      child: SizedBox(
+        height: 110,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Icon(icon, size: 20, color: colors.primary),
+                const Spacer(),
+                if (trailing != null) trailing!,
+              ],
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+            Text(
+              value,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w700),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AboutCard extends StatelessWidget {
+  const _AboutCard({required this.isArabic});
+
+  final bool isArabic;
+
+  @override
+  Widget build(BuildContext context) {
+    final String version = const String.fromEnvironment(
+      'APP_VERSION',
+      defaultValue: '1.0.0',
+    );
+    final String buildNumber = const String.fromEnvironment(
+      'APP_BUILD_NUMBER',
+      defaultValue: '1',
+    );
+
+    return _CompactSectionCard(
+      title: context.l10n.tr('about_section'),
+      icon: Icons.info_outline,
+      children: <Widget>[
+        _ActionSettingTile(
+          icon: Icons.account_balance_wallet_outlined,
+          title: isArabic ? 'About Zakah Wealth' : 'About Zakah Wealth',
+          subtitle: 'A premium zakah and wealth companion',
+          onTap: () {},
+        ),
+        _ActionSettingTile(
+          icon: Icons.info_outline,
+          title: 'Version',
+          subtitle: version,
+          onTap: () {},
+        ),
+        _ActionSettingTile(
+          icon: Icons.build_outlined,
+          title: 'Build',
+          subtitle: buildNumber,
+          onTap: () {},
+        ),
+        _ActionSettingTile(
+          icon: Icons.privacy_tip_outlined,
+          title: 'Privacy Policy',
+          subtitle: 'Read how your data is handled',
+          onTap: () {},
+        ),
+        _ActionSettingTile(
+          icon: Icons.description_outlined,
+          title: 'Terms of Service',
+          subtitle: 'Review the usage terms',
+          onTap: () {},
+        ),
+        _ActionSettingTile(
+          icon: Icons.support_agent_outlined,
+          title: 'Support & Feedback',
+          subtitle: 'Send feedback or get help',
+          onTap: () {},
+        ),
+      ],
+    );
+  }
+}
+
 class _SectionCard extends StatelessWidget {
   const _SectionCard({super.key, required this.title, required this.child});
 
@@ -1670,6 +2154,7 @@ class _SettingsProfileHeader extends StatelessWidget {
     required this.email,
     required this.photoUrl,
     required this.connected,
+    required this.backupEnabled,
     required this.isLoading,
     required this.onSignIn,
     required this.onSignOut,
@@ -1679,6 +2164,7 @@ class _SettingsProfileHeader extends StatelessWidget {
   final String? email;
   final String? photoUrl;
   final bool connected;
+  final bool backupEnabled;
   final bool isLoading;
   final VoidCallback? onSignIn;
   final VoidCallback? onSignOut;
@@ -1692,7 +2178,7 @@ class _SettingsProfileHeader extends StatelessWidget {
 
     return Container(
       key: const Key('settingsProfileHeader'),
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
         gradient: const LinearGradient(
@@ -1711,7 +2197,7 @@ class _SettingsProfileHeader extends StatelessWidget {
       child: Row(
         children: <Widget>[
           CircleAvatar(
-            radius: 29,
+            radius: 32,
             backgroundColor: const Color(0xFFD4AF37),
             backgroundImage: (photoUrl != null && photoUrl!.trim().isNotEmpty)
                 ? NetworkImage(photoUrl!)
@@ -1722,7 +2208,7 @@ class _SettingsProfileHeader extends StatelessWidget {
                     initial,
                     style: const TextStyle(
                       color: Color(0xFF073D32),
-                      fontSize: 22,
+                      fontSize: 24,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
@@ -1731,6 +2217,7 @@ class _SettingsProfileHeader extends StatelessWidget {
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: <Widget>[
                 Text(
                   displayName,
@@ -1738,7 +2225,7 @@ class _SettingsProfileHeader extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 18,
+                    fontSize: 22,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -1750,40 +2237,98 @@ class _SettingsProfileHeader extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.70),
-                      fontSize: 12,
+                      fontSize: 11.5,
                     ),
                   ),
                 ],
-                const SizedBox(height: 9),
-                SizedBox(
-                  height: 32,
-                  child: connected
-                      ? OutlinedButton.icon(
-                          key: const Key('googleSignOutButton'),
-                          onPressed: isLoading ? null : onSignOut,
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.white,
-                            side: BorderSide(
-                              color: Colors.white.withValues(alpha: 0.24),
-                            ),
-                            padding: const EdgeInsets.symmetric(horizontal: 10),
-                          ),
-                          icon: const Icon(Icons.logout_rounded, size: 15),
-                          label: const Text('Sign Out'),
-                        )
-                      : FilledButton.icon(
-                          key: const Key('googleSignInButton'),
-                          onPressed: isLoading ? null : onSignIn,
-                          style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFFD4AF37),
-                            foregroundColor: const Color(0xFF073D32),
-                            padding: const EdgeInsets.symmetric(horizontal: 10),
-                          ),
-                          icon: const Icon(Icons.login_rounded, size: 15),
-                          label: const Text('Sign in with Google'),
-                        ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: <Widget>[
+                    _ProfileChip(
+                      icon: connected ? Icons.check_circle_outline : Icons.link,
+                      label: 'Google Connected',
+                      active: connected,
+                    ),
+                    _ProfileChip(
+                      icon: backupEnabled
+                          ? Icons.cloud_done_outlined
+                          : Icons.cloud_off_outlined,
+                      label: 'Backup Enabled',
+                      active: backupEnabled,
+                    ),
+                  ],
                 ),
               ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          SizedBox(
+            height: 36,
+            child: connected
+                ? OutlinedButton.icon(
+                    key: const Key('googleSignOutButton'),
+                    onPressed: isLoading ? null : onSignOut,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: BorderSide(
+                        color: Colors.white.withValues(alpha: 0.24),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                    ),
+                    icon: const Icon(Icons.logout_rounded, size: 16),
+                    label: const Text('Sign Out'),
+                  )
+                : FilledButton.icon(
+                    key: const Key('googleSignInButton'),
+                    onPressed: isLoading ? null : onSignIn,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFFD4AF37),
+                      foregroundColor: const Color(0xFF073D32),
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                    ),
+                    icon: const Icon(Icons.login_rounded, size: 16),
+                    label: const Text('Sign in with Google'),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfileChip extends StatelessWidget {
+  const _ProfileChip({
+    required this.icon,
+    required this.label,
+    required this.active,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: active ? 0.12 : 0.06),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(icon, size: 13, color: Colors.white),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.92),
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],
@@ -1794,38 +2339,41 @@ class _SettingsProfileHeader extends StatelessWidget {
 
 class _SettingsOverview extends StatelessWidget {
   const _SettingsOverview({
+    super.key,
+    required this.snapshot,
+    required this.supportedCurrencies,
     required this.mainCurrency,
     required this.defaultCurrency,
     required this.zakatMethod,
     required this.nisabBasis,
-    required this.goldPrice,
-    required this.silverPrice,
-    required this.lastUpdated,
+    required this.annualDate,
+    required this.onMainCurrencyChanged,
+    required this.onDefaultCurrencyChanged,
+    required this.onZakatMethodChanged,
+    required this.onNisabBasisChanged,
+    required this.onAnnualDateChanged,
     required this.refreshing,
     required this.onRefresh,
+    required this.onViewAllMarket,
     required this.isArabic,
-    required this.onTapMainCurrency,
-    required this.onTapDefaultCurrency,
-    required this.onTapZakatMethod,
-    required this.onTapNisabBasis,
-    required this.onTapMarket,
   });
 
+  final MarketSnapshot snapshot;
+  final List<String> supportedCurrencies;
   final String mainCurrency;
   final String defaultCurrency;
   final String zakatMethod;
   final String nisabBasis;
-  final double goldPrice;
-  final double silverPrice;
-  final String lastUpdated;
+  final _AnnualDate annualDate;
+  final ValueChanged<String> onMainCurrencyChanged;
+  final ValueChanged<String> onDefaultCurrencyChanged;
+  final ValueChanged<String> onZakatMethodChanged;
+  final ValueChanged<String> onNisabBasisChanged;
+  final Future<void> Function(int month, int day) onAnnualDateChanged;
   final bool refreshing;
   final VoidCallback? onRefresh;
+  final VoidCallback onViewAllMarket;
   final bool isArabic;
-  final VoidCallback onTapMainCurrency;
-  final VoidCallback onTapDefaultCurrency;
-  final VoidCallback onTapZakatMethod;
-  final VoidCallback onTapNisabBasis;
-  final VoidCallback onTapMarket;
 
   @override
   Widget build(BuildContext context) {
@@ -1833,70 +2381,226 @@ class _SettingsOverview extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         _OverviewCard(
-          icon: Icons.account_balance_wallet_outlined,
-          title: isArabic ? 'الثروة والزكاة' : 'Wealth & Zakat',
+          icon: Icons.show_chart_rounded,
+          title: isArabic ? 'ملخص الأسعار' : 'Market Snapshot',
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              TextButton(
+                key: const Key('viewAllMarketSnapshotButton'),
+                onPressed: onViewAllMarket,
+                child: Text(context.l10n.tr('view_all')),
+              ),
+              IconButton(
+                key: const Key('refreshMarketDataOverviewButton'),
+                tooltip: isArabic ? 'تحديث البيانات' : 'Refresh Data',
+                onPressed: onRefresh,
+                icon: refreshing
+                    ? const SizedBox(
+                        width: 17,
+                        height: 17,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.refresh_rounded, size: 20),
+              ),
+            ],
+          ),
           children: <Widget>[
             _OverviewRow(
-              label: isArabic ? 'العملة الرئيسية' : 'Main Currency',
-              value: mainCurrency,
-              onTap: onTapMainCurrency,
+              label: isArabic ? 'الذهب' : 'Gold',
+              value: _price(snapshot.gold24kPricePerGramEgp),
             ),
             _OverviewRow(
-              label: isArabic ? 'عملة الإدخال' : 'Default Entry Currency',
-              value: defaultCurrency,
-              onTap: onTapDefaultCurrency,
+              label: isArabic ? 'الفضة' : 'Silver',
+              value: _price(snapshot.silverPricePerGramEgp),
             ),
             _OverviewRow(
-              label: isArabic ? 'طريقة الزكاة' : 'Zakat Method',
-              value: zakatMethod == 'annual' ? 'Annual' : 'Monthly Hawl',
-              onTap: onTapZakatMethod,
-            ),
-            _OverviewRow(
-              label: isArabic ? 'أساس النصاب' : 'Nisab Basis',
-              value: nisabBasis.contains('silver') ? 'Silver' : 'Gold',
-              onTap: onTapNisabBasis,
+              label: isArabic ? 'آخر تحديث' : 'Last Refresh',
+              value: _AccountScreenState._formatLastUpdatedForDisplay(
+                snapshot.lastUpdated,
+              ),
             ),
           ],
         ),
         const SizedBox(height: 10),
         _OverviewCard(
-          icon: Icons.show_chart_rounded,
-          title: isArabic ? 'ملخص الأسعار' : 'Market Snapshot',
-          trailing: IconButton(
-            key: const Key('refreshMarketDataOverviewButton'),
-            tooltip: isArabic ? 'تحديث البيانات' : 'Refresh Data',
-            onPressed: onRefresh,
-            icon: refreshing
-                ? const SizedBox(
-                    width: 17,
-                    height: 17,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.refresh_rounded, size: 20),
-          ),
+          icon: Icons.account_balance_wallet_outlined,
+          title: isArabic ? 'الثروة والزكاة' : 'Wealth & Zakat',
           children: <Widget>[
-            _OverviewRow(
-              label: isArabic ? 'الذهب' : 'Gold',
-              value: _price(goldPrice),
-              onTap: onTapMarket,
+            _SettingsRowTile(
+              key: const Key('settingsMainCurrencyField'),
+              icon: Icons.account_balance_wallet_outlined,
+              title: context.l10n.tr('main_currency'),
+              value: CurrencyPresentation.label(_currencyValue(mainCurrency)),
+              onTap: () async {
+                final String? selected = await _showChoiceDialog<String>(
+                  context: context,
+                  title: context.l10n.tr('main_currency'),
+                  options: supportedCurrencies,
+                  optionLabel: CurrencyPresentation.label,
+                );
+                if (selected != null) {
+                  onMainCurrencyChanged(selected);
+                }
+              },
             ),
-            _OverviewRow(
-              label: isArabic ? 'الفضة' : 'Silver',
-              value: _price(silverPrice),
-              onTap: onTapMarket,
+            const SizedBox(height: 10),
+            _SettingsRowTile(
+              key: const Key('settingsDefaultEntryCurrencyField'),
+              icon: Icons.account_balance_wallet_outlined,
+              title: context.l10n.tr('default_entry_currency'),
+              value: CurrencyPresentation.label(
+                _currencyValue(defaultCurrency),
+              ),
+              onTap: () async {
+                final String? selected = await _showChoiceDialog<String>(
+                  context: context,
+                  title: context.l10n.tr('default_entry_currency'),
+                  options: supportedCurrencies,
+                  optionLabel: CurrencyPresentation.label,
+                );
+                if (selected != null) {
+                  onDefaultCurrencyChanged(selected);
+                }
+              },
             ),
-            _OverviewRow(
-              label: isArabic ? 'آخر تحديث' : 'Last Refresh',
-              value: lastUpdated,
+            const SizedBox(height: 10),
+            _SettingsRowTile(
+              key: const Key('settingsZakatMethodField'),
+              icon: Icons.auto_awesome_outlined,
+              title: context.l10n.tr('method'),
+              value: zakatMethod == 'annual'
+                  ? context.l10n.tr('annual')
+                  : context.l10n.tr('monthly_hawl'),
+              onTap: () async {
+                final String? selected = await _showChoiceDialog<String>(
+                  context: context,
+                  title: context.l10n.tr('method'),
+                  options: const <String>['hawl', 'annual'],
+                  optionLabel: (String value) => value == 'annual'
+                      ? context.l10n.tr('annual')
+                      : context.l10n.tr('monthly_hawl'),
+                );
+                if (selected != null) {
+                  onZakatMethodChanged(selected);
+                }
+              },
             ),
+            const SizedBox(height: 10),
+            _SettingsRowTile(
+              key: const Key('settingsZakatNisabBasisField'),
+              icon: Icons.auto_awesome_outlined,
+              title: context.l10n.tr('cash_nisab'),
+              value: nisabBasis.contains('silver')
+                  ? context.l10n.tr('nisab_silver_595')
+                  : context.l10n.tr('nisab_gold_85'),
+              onTap: () async {
+                final String? selected = await _showChoiceDialog<String>(
+                  context: context,
+                  title: context.l10n.tr('cash_nisab'),
+                  options: const <String>[
+                    ZakatEngineService.nisabBasisGold85,
+                    ZakatEngineService.nisabBasisSilver595,
+                  ],
+                  optionLabel: (String value) =>
+                      value == ZakatEngineService.nisabBasisSilver595
+                      ? context.l10n.tr('nisab_silver_595')
+                      : context.l10n.tr('nisab_gold_85'),
+                );
+                if (selected != null) {
+                  onNisabBasisChanged(selected);
+                }
+              },
+            ),
+            if (zakatMethod == 'annual') ...<Widget>[
+              const SizedBox(height: 10),
+              Column(
+                key: const Key('settingsAnnualDateSection'),
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  _SettingsRowTile(
+                    key: const Key('settingsHijriMonthField'),
+                    icon: Icons.date_range_outlined,
+                    title: context.l10n.tr('hijri_month'),
+                    value: annualDate.month.toString(),
+                    onTap: () async {
+                      final int? selected = await _showChoiceDialog<int>(
+                        context: context,
+                        title: context.l10n.tr('hijri_month'),
+                        options: List<int>.generate(
+                          12,
+                          (int index) => index + 1,
+                        ),
+                        optionLabel: (int value) => value.toString(),
+                      );
+                      if (selected != null) {
+                        final int d =
+                            annualDate.day >
+                                _AccountScreenState._hijriMonthLength(selected)
+                            ? _AccountScreenState._hijriMonthLength(selected)
+                            : annualDate.day;
+                        await onAnnualDateChanged(selected, d);
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  _SettingsRowTile(
+                    key: const Key('settingsHijriDayField'),
+                    icon: Icons.date_range_outlined,
+                    title: context.l10n.tr('hijri_day'),
+                    value: annualDate.day.toString(),
+                    onTap: () async {
+                      final int? selected = await _showChoiceDialog<int>(
+                        context: context,
+                        title: context.l10n.tr('hijri_day'),
+                        options: List<int>.generate(
+                          _AccountScreenState._hijriMonthLength(
+                            annualDate.month,
+                          ),
+                          (int index) => index + 1,
+                        ),
+                        optionLabel: (int value) => value.toString(),
+                      );
+                      if (selected != null) {
+                        await onAnnualDateChanged(annualDate.month, selected);
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ],
     );
   }
 
+  String _currencyValue(String currency) => currency.isEmpty ? 'EGP' : currency;
+
   String _price(double value) =>
       value <= 0 ? '-' : 'E£ ${value.toStringAsFixed(2)}/g';
+
+  Future<T?> _showChoiceDialog<T>({
+    required BuildContext context,
+    required String title,
+    required List<T> options,
+    required String Function(T value) optionLabel,
+  }) {
+    return showDialog<T>(
+      context: context,
+      builder: (BuildContext dialogContext) => SimpleDialog(
+        title: Text(title),
+        children: options
+            .map(
+              (T value) => SimpleDialogOption(
+                onPressed: () => Navigator.pop(dialogContext, value),
+                child: Text(optionLabel(value)),
+              ),
+            )
+            .toList(growable: false),
+      ),
+    );
+  }
 }
 
 class _OverviewCard extends StatelessWidget {
@@ -1975,57 +2679,6 @@ class _OverviewRow extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
       child: content,
-    );
-  }
-}
-
-class _MarketSummary extends StatelessWidget {
-  const _MarketSummary({required this.goldPrice, required this.silverPrice});
-
-  final double goldPrice;
-  final double silverPrice;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: <Widget>[
-        Expanded(
-          child: _MarketValue(label: 'Gold', value: goldPrice),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: _MarketValue(label: 'Silver', value: silverPrice),
-        ),
-      ],
-    );
-  }
-}
-
-class _MarketValue extends StatelessWidget {
-  const _MarketValue({required this.label, required this.value});
-
-  final String label;
-  final double value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(label, style: Theme.of(context).textTheme.labelSmall),
-          const SizedBox(height: 3),
-          Text(
-            value <= 0 ? '-' : 'E£ ${value.toStringAsFixed(2)}/g',
-            style: const TextStyle(fontWeight: FontWeight.w800),
-          ),
-        ],
-      ),
     );
   }
 }

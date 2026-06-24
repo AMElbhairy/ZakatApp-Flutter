@@ -84,17 +84,23 @@ class CloudSyncManager {
       }
 
       final manifest = CloudSyncManifest.fromJson(cloudManifestMeta.content);
-      
-      // Get the latest snapshot entry from the manifest list
-      if (manifest.snapshots.isEmpty) {
+
+      final Set<String> availableSnapshotPaths = <String>{
+        for (final CloudFileInfo file in await provider.listFiles('snapshots/'))
+          file.path,
+      };
+      final SnapshotEntry? latestSnapshot = _resolveLatestAvailableSnapshot(
+        manifest,
+        availableSnapshotPaths,
+      );
+
+      if (latestSnapshot == null) {
         return CloudSyncResult(
           status: CloudSyncStatus.noRemoteSnapshot,
-          message: 'No snapshots registered in manifest.',
+          message: 'No available snapshots registered in manifest.',
           manifest: manifest,
         );
       }
-
-      final latestSnapshot = manifest.snapshots.last;
 
       if (latestSnapshot.sequence == localSequence && latestSnapshot.checksum == localChecksum) {
         return CloudSyncResult(
@@ -124,6 +130,19 @@ class CloudSyncManager {
         message: 'Failed checking updates: $e',
       );
     }
+  }
+
+  SnapshotEntry? _resolveLatestAvailableSnapshot(
+    CloudSyncManifest manifest,
+    Set<String> availableSnapshotPaths,
+  ) {
+    for (final SnapshotEntry snapshot in manifest.snapshots.reversed) {
+      if (snapshot.path.trim().isEmpty) continue;
+      if (availableSnapshotPaths.contains(snapshot.path)) {
+        return snapshot;
+      }
+    }
+    return null;
   }
 
   /// Downloads, decrypts, and restores the latest snapshot from cloud storage to [targetPath].

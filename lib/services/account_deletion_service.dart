@@ -14,12 +14,14 @@ class AccountDeletionService {
     required this.authController,
     required this.authBackend,
     required this.reauthenticationService,
+    this.deleteCloudBackupData,
   });
 
   final AppStateController appStateController;
   final AuthController authController;
   final AccountDeletionAuthBackend authBackend;
   final AccountReauthenticationService reauthenticationService;
+  final Future<void> Function(UserProfile user)? deleteCloudBackupData;
 
   Future<void> deleteAccount() async {
     final UserProfile? user = _currentUserProfile();
@@ -36,8 +38,8 @@ class AccountDeletionService {
       },
     );
 
-    final AccountReauthMethod? reauthMethod =
-        await reauthenticationService.reauthenticateCurrentUser();
+    final AccountReauthMethod? reauthMethod = await reauthenticationService
+        .reauthenticateCurrentUser();
     if (reauthMethod == null) {
       await _record(
         level: 'warn',
@@ -87,8 +89,8 @@ class AccountDeletionService {
       provider: authBackend.providerIds.contains('password')
           ? 'email'
           : authBackend.providerIds.contains('google.com')
-              ? 'google'
-              : 'google',
+          ? 'google'
+          : 'google',
     );
   }
 
@@ -98,26 +100,41 @@ class AccountDeletionService {
       message: 'Cloud delete started',
       metadata: <String, dynamic>{'userId': user.id},
     );
+    if (deleteCloudBackupData != null) {
+      try {
+        await deleteCloudBackupData!(user);
+      } catch (error, stackTrace) {
+        debugPrint('AccountDeletionService Drive cleanup failed: $error');
+        debugPrintStack(stackTrace: stackTrace);
+        await _record(
+          level: 'warn',
+          message: 'Drive cleanup failed',
+          metadata: <String, dynamic>{
+            'userId': user.id,
+            'error': error.toString(),
+          },
+        );
+      }
+    }
     try {
       await appStateController.deleteCloudDataForUser(userId: user.id);
-      await _record(
-        level: 'info',
-        message: 'Cloud delete completed',
-        metadata: <String, dynamic>{'userId': user.id},
-      );
     } catch (error, stackTrace) {
       debugPrint('AccountDeletionService cloud delete failed: $error');
       debugPrintStack(stackTrace: stackTrace);
       await _record(
-        level: 'error',
-        message: 'Cloud delete failed',
+        level: 'warn',
+        message: 'Cloud delete skipped',
         metadata: <String, dynamic>{
           'userId': user.id,
           'error': error.toString(),
         },
       );
-      rethrow;
     }
+    await _record(
+      level: 'info',
+      message: 'Cloud delete completed',
+      metadata: <String, dynamic>{'userId': user.id},
+    );
   }
 
   Future<void> _deleteAuthAccount(UserProfile user) async {
@@ -142,8 +159,8 @@ class AccountDeletionService {
           message: 'Auth delete requires recent login',
           metadata: <String, dynamic>{'userId': user.id},
         );
-        final AccountReauthMethod? retryMethod =
-            await reauthenticationService.reauthenticateCurrentUser();
+        final AccountReauthMethod? retryMethod = await reauthenticationService
+            .reauthenticateCurrentUser();
         if (retryMethod == null) {
           await _record(
             level: 'warn',
@@ -165,20 +182,14 @@ class AccountDeletionService {
         await _record(
           level: 'info',
           message: 'Auth delete completed',
-          metadata: <String, dynamic>{
-            'userId': user.id,
-            'retry': true,
-          },
+          metadata: <String, dynamic>{'userId': user.id, 'retry': true},
         );
         return;
       }
       await _record(
         level: 'error',
         message: 'Auth delete failed',
-        metadata: <String, dynamic>{
-          'userId': user.id,
-          'error': error.code,
-        },
+        metadata: <String, dynamic>{'userId': user.id, 'error': error.code},
       );
       rethrow;
     }
@@ -190,19 +201,13 @@ class AccountDeletionService {
         await _record(
           level: 'info',
           message: 'Local cleanup started',
-          metadata: <String, dynamic>{
-            'userId': user.id,
-            'attempt': attempt,
-          },
+          metadata: <String, dynamic>{'userId': user.id, 'attempt': attempt},
         );
         await appStateController.deleteLocalDataForUser(userId: user.id);
         await _record(
           level: 'info',
           message: 'Local cleanup completed',
-          metadata: <String, dynamic>{
-            'userId': user.id,
-            'attempt': attempt,
-          },
+          metadata: <String, dynamic>{'userId': user.id, 'attempt': attempt},
         );
         return;
       } catch (error, stackTrace) {

@@ -38,7 +38,7 @@ class AuthenticatedClient extends http.BaseClient {
   final http.Client _inner;
 
   AuthenticatedClient(this._getHeaders, {http.Client? inner})
-      : _inner = inner ?? http.Client();
+    : _inner = inner ?? http.Client();
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
@@ -48,7 +48,9 @@ class AuthenticatedClient extends http.BaseClient {
     // Dynamic If-Match injection from Zone variable
     final ifMatch = Zone.current[#ifMatch] as String?;
     if (ifMatch != null &&
-        (request.method == 'POST' || request.method == 'PATCH' || request.method == 'PUT')) {
+        (request.method == 'POST' ||
+            request.method == 'PATCH' ||
+            request.method == 'PUT')) {
       request.headers['If-Match'] = ifMatch;
     }
 
@@ -70,6 +72,7 @@ class GoogleDriveStorageProvider implements UserCloudStorageProvider {
   final GoogleSignIn? googleSignIn;
   final Future<bool> Function()? hasGrantedDriveScope;
   final Future<void> Function(bool granted)? setGrantedDriveScope;
+  final String namespacePrefix;
   final http.Client? _mockHttpClient;
 
   static const List<String> _driveScopes = <String>[
@@ -86,6 +89,7 @@ class GoogleDriveStorageProvider implements UserCloudStorageProvider {
     this.googleSignIn,
     this.hasGrantedDriveScope,
     this.setGrantedDriveScope,
+    this.namespacePrefix = '',
     http.Client? httpClient,
   }) : _mockHttpClient = httpClient;
 
@@ -95,7 +99,17 @@ class GoogleDriveStorageProvider implements UserCloudStorageProvider {
   @override
   Future<bool> isConnected() async {
     if (googleSignIn != null) {
-      final status = await resolveConnection(interactive: false, phase: 'is_connected');
+      if (hasGrantedDriveScope != null) {
+        try {
+          await hasGrantedDriveScope!();
+        } catch (_) {
+          // The local permission flag is advisory. Fall through to a silent probe.
+        }
+      }
+      final status = await resolveConnection(
+        interactive: false,
+        phase: 'is_connected',
+      );
       return status.connected;
     }
     return checkConnected();
@@ -104,7 +118,10 @@ class GoogleDriveStorageProvider implements UserCloudStorageProvider {
   @override
   Future<bool> connect() async {
     if (googleSignIn != null) {
-      final status = await resolveConnection(interactive: true, phase: 'connect');
+      final status = await resolveConnection(
+        interactive: true,
+        phase: 'connect',
+      );
       return status.connected;
     }
     return requestConnect();
@@ -114,7 +131,41 @@ class GoogleDriveStorageProvider implements UserCloudStorageProvider {
   Future<void> disconnect() => requestDisconnect();
 
   drive.DriveApi _getDriveApi() {
-    return drive.DriveApi(AuthenticatedClient(getAuthHeaders, inner: _mockHttpClient));
+    return drive.DriveApi(
+      AuthenticatedClient(getAuthHeaders, inner: _mockHttpClient),
+    );
+  }
+
+  String _scopePath(String path) {
+    final String cleanNamespace = namespacePrefix.trim();
+    final String cleanPath = path.trim();
+    if (cleanNamespace.isEmpty) {
+      return cleanPath;
+    }
+    if (cleanPath.isEmpty) {
+      return cleanNamespace;
+    }
+    if (cleanPath == cleanNamespace ||
+        cleanPath.startsWith('$cleanNamespace/')) {
+      return cleanPath;
+    }
+    return '$cleanNamespace/$cleanPath';
+  }
+
+  String _scopePrefix(String prefix) {
+    final String cleanNamespace = namespacePrefix.trim();
+    final String cleanPrefix = prefix.trim();
+    if (cleanNamespace.isEmpty) {
+      return cleanPrefix;
+    }
+    if (cleanPrefix.isEmpty) {
+      return '$cleanNamespace/';
+    }
+    if (cleanPrefix == cleanNamespace ||
+        cleanPrefix.startsWith('$cleanNamespace/')) {
+      return cleanPrefix;
+    }
+    return '$cleanNamespace/$cleanPrefix';
   }
 
   DriveConnectionStatus? get lastConnectionStatus => _lastConnectionStatus;
@@ -122,7 +173,8 @@ class GoogleDriveStorageProvider implements UserCloudStorageProvider {
 
   void _logAuth(String phase, {GoogleSignInAccount? account, Object? error}) {
     final String providerIds = _providerIds().join(',');
-    final String googleAccount = account?.email ?? googleSignIn?.currentUser?.email ?? 'null';
+    final String googleAccount =
+        account?.email ?? googleSignIn?.currentUser?.email ?? 'null';
     final String errMsg = error?.toString() ?? 'none';
     SyncDiagnosticsService.record(
       level: error != null ? 'error' : 'info',
@@ -172,10 +224,7 @@ class GoogleDriveStorageProvider implements UserCloudStorageProvider {
     try {
       final headers = await account.authHeaders;
       final api = drive.DriveApi(
-        AuthenticatedClient(
-          () async => headers,
-          inner: _mockHttpClient,
-        ),
+        AuthenticatedClient(() async => headers, inner: _mockHttpClient),
       );
       final list = await api.files.list(
         spaces: 'appDataFolder',
@@ -215,26 +264,6 @@ class GoogleDriveStorageProvider implements UserCloudStorageProvider {
     }
   }
 
-  Future<bool?> _canAccessDriveScope(GoogleSignInAccount account) async {
-    try {
-      final Map<String, String> headers = await account.authHeaders;
-      final String? authorization = headers['Authorization'];
-      final String? accessToken = authorization != null &&
-              authorization.toLowerCase().startsWith('bearer ')
-          ? authorization.substring('Bearer '.length)
-          : null;
-      final bool result = await googleSignIn!.canAccessScopes(
-        _driveScopes,
-        accessToken: accessToken,
-      );
-      _logAuth('can_access_scopes', account: account, error: 'result=$result');
-      return result;
-    } catch (error) {
-      _logAuth('can_access_scopes_error', account: account, error: error);
-      return null;
-    }
-  }
-
   DriveConnectionFailureReason _failureReasonFromDriveError(
     drive.DetailedApiRequestError error,
   ) {
@@ -248,7 +277,9 @@ class GoogleDriveStorageProvider implements UserCloudStorageProvider {
           raw.contains('api not used')) {
         return DriveConnectionFailureReason.driveApiDisabled;
       }
-      if (raw.contains('test user') || raw.contains('testing') || raw.contains('oauth consent')) {
+      if (raw.contains('test user') ||
+          raw.contains('testing') ||
+          raw.contains('oauth consent')) {
         return DriveConnectionFailureReason.oauthTestUserMissing;
       }
       return DriveConnectionFailureReason.permissionDenied;
@@ -261,7 +292,9 @@ class GoogleDriveStorageProvider implements UserCloudStorageProvider {
 
   DriveConnectionFailureReason _failureReasonFromGenericError(Object error) {
     final String raw = error.toString().toLowerCase();
-    if (raw.contains('cancel') || raw.contains('canceled') || raw.contains('cancelled')) {
+    if (raw.contains('cancel') ||
+        raw.contains('canceled') ||
+        raw.contains('cancelled')) {
       return DriveConnectionFailureReason.cancelled;
     }
     if (raw.contains('reversed_client_id') ||
@@ -286,7 +319,8 @@ class GoogleDriveStorageProvider implements UserCloudStorageProvider {
           raw.toLowerCase().contains('drive api has not been used')) {
         return 'Google Drive API is disabled or not configured for this project.';
       }
-      if (raw.toLowerCase().contains('test user') || raw.toLowerCase().contains('oauth consent')) {
+      if (raw.toLowerCase().contains('test user') ||
+          raw.toLowerCase().contains('oauth consent')) {
         return 'Google OAuth consent screen may need the account added as a test user.';
       }
       return 'Google Drive permission was denied.';
@@ -333,28 +367,7 @@ class GoogleDriveStorageProvider implements UserCloudStorageProvider {
     }
 
     if (!interactive) {
-      final bool? cachedGrant = hasGrantedDriveScope == null
-          ? null
-          : await hasGrantedDriveScope!();
-      final bool? scopeGrant = await _canAccessDriveScope(account);
-      if (scopeGrant == false ||
-          (cachedGrant == false && scopeGrant == false)) {
-        final status = DriveConnectionStatus(
-          connected: false,
-          failureReason: DriveConnectionFailureReason.permissionDenied,
-          message: 'Google Drive permission is required for cloud backup.',
-          accountEmail: account.email,
-        );
-        if (setGrantedDriveScope != null) {
-          await setGrantedDriveScope!(false);
-        }
-        _lastConnectionStatus = status;
-        return status;
-      }
-      final status = await _probeAppDataAccess(
-        phase: phase,
-        account: account,
-      );
+      final status = await _probeAppDataAccess(phase: phase, account: account);
       if (status.connected && setGrantedDriveScope != null) {
         await setGrantedDriveScope!(true);
       } else if (setGrantedDriveScope != null) {
@@ -371,10 +384,7 @@ class GoogleDriveStorageProvider implements UserCloudStorageProvider {
       error: requested ? null : 'denied',
     );
 
-    final status = await _probeAppDataAccess(
-      phase: phase,
-      account: account,
-    );
+    final status = await _probeAppDataAccess(phase: phase, account: account);
 
     if (!requested) {
       if (setGrantedDriveScope != null) {
@@ -424,17 +434,19 @@ class GoogleDriveStorageProvider implements UserCloudStorageProvider {
 
   @override
   Future<CloudManifest?> readManifest() async {
-    const path = 'manifest.json';
+    final String path = _scopePath('manifest.json');
     final api = _getDriveApi();
     final file = await _findFile(api, path);
     if (file == null || file.id == null) {
       return null;
     }
 
-    final drive.Media media = await api.files.get(
-      file.id!,
-      downloadOptions: drive.DownloadOptions.fullMedia,
-    ) as drive.Media;
+    final drive.Media media =
+        await api.files.get(
+              file.id!,
+              downloadOptions: drive.DownloadOptions.fullMedia,
+            )
+            as drive.Media;
 
     final bytesBuilder = BytesBuilder();
     await for (final chunk in media.stream) {
@@ -455,7 +467,7 @@ class GoogleDriveStorageProvider implements UserCloudStorageProvider {
     Map<String, dynamic> manifestData, {
     String? expectedRevision,
   }) async {
-    const path = 'manifest.json';
+    final String path = _scopePath('manifest.json');
     final api = _getDriveApi();
     final file = await _findFile(api, path);
 
@@ -488,7 +500,9 @@ class GoogleDriveStorageProvider implements UserCloudStorageProvider {
       }
     } on drive.DetailedApiRequestError catch (e) {
       if (e.status == 412) {
-        throw StateError('Revision mismatch (Google Drive ETag mismatch): ${e.message}');
+        throw StateError(
+          'Revision mismatch (Google Drive ETag mismatch): ${e.message}',
+        );
       }
       rethrow;
     }
@@ -497,15 +511,17 @@ class GoogleDriveStorageProvider implements UserCloudStorageProvider {
   @override
   Future<Uint8List?> readFile(String path) async {
     final api = _getDriveApi();
-    final file = await _findFile(api, path);
+    final file = await _findFile(api, _scopePath(path));
     if (file == null || file.id == null) {
       return null;
     }
 
-    final drive.Media media = await api.files.get(
-      file.id!,
-      downloadOptions: drive.DownloadOptions.fullMedia,
-    ) as drive.Media;
+    final drive.Media media =
+        await api.files.get(
+              file.id!,
+              downloadOptions: drive.DownloadOptions.fullMedia,
+            )
+            as drive.Media;
 
     final bytesBuilder = BytesBuilder();
     await for (final chunk in media.stream) {
@@ -521,7 +537,8 @@ class GoogleDriveStorageProvider implements UserCloudStorageProvider {
     String? expectedRevision,
   }) async {
     final api = _getDriveApi();
-    final file = await _findFile(api, path);
+    final String scopedPath = _scopePath(path);
+    final file = await _findFile(api, scopedPath);
 
     final media = drive.Media(Stream.value(bytes), bytes.length);
 
@@ -533,7 +550,7 @@ class GoogleDriveStorageProvider implements UserCloudStorageProvider {
           );
         }
         final driveFile = drive.File()
-          ..name = path
+          ..name = scopedPath
           ..parents = ['appDataFolder'];
         await api.files.create(driveFile, uploadMedia: media);
       } else {
@@ -551,7 +568,9 @@ class GoogleDriveStorageProvider implements UserCloudStorageProvider {
       }
     } on drive.DetailedApiRequestError catch (e) {
       if (e.status == 412) {
-        throw StateError('Revision mismatch (Google Drive ETag mismatch): ${e.message}');
+        throw StateError(
+          'Revision mismatch (Google Drive ETag mismatch): ${e.message}',
+        );
       }
       rethrow;
     }
@@ -560,6 +579,8 @@ class GoogleDriveStorageProvider implements UserCloudStorageProvider {
   @override
   Future<List<CloudFileInfo>> listFiles(String prefix) async {
     final api = _getDriveApi();
+    final String scopedPrefix = _scopePrefix(prefix);
+    final String cleanNamespace = namespacePrefix.trim();
     final list = await api.files.list(
       spaces: 'appDataFolder',
       q: "trashed = false",
@@ -571,12 +592,22 @@ class GoogleDriveStorageProvider implements UserCloudStorageProvider {
     }
 
     return list.files!
-        .where((file) => file.name != null && file.name!.startsWith(prefix))
+        .where(
+          (file) => file.name != null && file.name!.startsWith(scopedPrefix),
+        )
         .map((file) {
+          final String rawPath = file.name ?? '';
+          final String exposedPath =
+              cleanNamespace.isNotEmpty &&
+                  rawPath.startsWith('$cleanNamespace/')
+              ? rawPath.substring(cleanNamespace.length + 1)
+              : rawPath;
           final sizeString = file.size;
-          final sizeBytes = sizeString != null ? int.tryParse(sizeString) ?? 0 : 0;
+          final sizeBytes = sizeString != null
+              ? int.tryParse(sizeString) ?? 0
+              : 0;
           return CloudFileInfo(
-            path: file.name ?? '',
+            path: exposedPath,
             sizeBytes: sizeBytes,
             lastModified: file.modifiedTime ?? DateTime.now(),
             revision: file.headRevisionId ?? file.id,
@@ -588,7 +619,7 @@ class GoogleDriveStorageProvider implements UserCloudStorageProvider {
   @override
   Future<void> deleteFile(String path) async {
     final api = _getDriveApi();
-    final file = await _findFile(api, path);
+    final file = await _findFile(api, _scopePath(path));
     if (file != null && file.id != null) {
       await api.files.delete(file.id!);
     }

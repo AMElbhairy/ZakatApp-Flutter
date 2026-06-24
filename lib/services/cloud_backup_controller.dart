@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:cryptography/cryptography.dart' as crypto;
 import 'package:flutter/widgets.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -10,17 +11,27 @@ import 'package:uuid/uuid.dart';
 
 import '../models/backup_preview.dart';
 import '../data/local/app_database.dart';
+import '../data/local/daos/sync_metadata_dao.dart';
+import '../data/local/daos/sync_queue_dao.dart';
 import 'backup_key_manager.dart';
 import 'app_state_controller.dart';
 import 'auth_controller.dart';
+import 'backup_service.dart';
 import 'sync/cloud_sync_manager.dart';
 import 'sync/cloud_sync_manifest.dart';
+import 'sync/google_drive_operation_sync_manager.dart';
 import 'sync/google_drive_storage_provider.dart';
 import 'sync/snapshot_manager.dart';
 import 'sync/sync_encryption_service.dart';
 import 'sync/user_cloud_storage_provider.dart';
+import 'google_sign_in_factory.dart';
+import 'startup_restore_discovery.dart';
 
 typedef CloudSyncManagerBuilder = Future<CloudSyncManager?> Function();
+typedef GoogleDriveOperationSyncManagerBuilder =
+    Future<GoogleDriveOperationSyncManager?> Function();
+
+const bool enableGoogleDriveOperationSync = false;
 
 class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
   CloudBackupController({
@@ -29,23 +40,20 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
     BackupKeyManager? backupKeyManager,
     GoogleSignIn? googleSignIn,
     SnapshotManager? snapshotManager,
-    CloudSyncManagerBuilder? cloudSyncManagerBuilder,
+    this._cloudSyncManagerBuilder,
+    this._operationSyncManagerBuilder,
+    this.enableOperationSync = enableGoogleDriveOperationSync,
     this.debounceDuration = const Duration(seconds: 4),
     this.nowProvider = DateTime.now,
-  })  : _googleSignIn = googleSignIn ??
-            GoogleSignIn(
-              scopes: const <String>['profile', 'email'],
-            ),
-        _snapshotManager = snapshotManager ??
-            SnapshotManager(
-              encryptionService: SyncEncryptionService(),
-            ),
-        backupKeyManager =
-            backupKeyManager ??
-                BackupKeyManager(
-                  secureStorageService: appStateController.secureStorageService,
-                ),
-        _cloudSyncManagerBuilder = cloudSyncManagerBuilder {
+  }) : _googleSignIn = googleSignIn ?? createAppGoogleSignIn(),
+       _snapshotManager =
+           snapshotManager ??
+           SnapshotManager(encryptionService: SyncEncryptionService()),
+       backupKeyManager =
+           backupKeyManager ??
+           BackupKeyManager(
+             secureStorageService: appStateController.secureStorageService,
+           ) {
     appStateController.addListener(_onSourceChanged);
     authController.addListener(_onSourceChanged);
     WidgetsBinding.instance.addObserver(this);
@@ -58,39 +66,77 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
   final GoogleSignIn _googleSignIn;
   final SnapshotManager _snapshotManager;
   final CloudSyncManagerBuilder? _cloudSyncManagerBuilder;
+  final GoogleDriveOperationSyncManagerBuilder? _operationSyncManagerBuilder;
+  final bool enableOperationSync;
   final Duration debounceDuration;
   final DateTime Function() nowProvider;
 
-  bool _autoBackupEnabled = false;
-  int _minimumIntervalHours = 6;
+  bool _autoBackupEnabled = true;
+  int _minimumIntervalHours = 3;
   DateTime? _lastBackupAt;
   DateTime? _nextEligibleBackupAt;
   String _lastBackupStatus = '';
   String _lastBackupError = '';
   String? _backupPassphrase;
+  String? _backupPassphraseUserId;
   String? _lastObservedStateStamp;
+  String? _lastOperationSyncAt;
+  String _lastOperationSyncError = '';
   bool _isBackingUp = false;
   bool _isRestoring = false;
+  bool _isOperationSyncing = false;
   bool _pendingAutoBackup = false;
+  bool _suppressOperationSyncAfterRestore = false;
+  bool _startupRestoreDiscoveryActive = false;
+  bool _isDriveConnected = false;
   Timer? _debounceTimer;
   Timer? _eligibleTimer;
   Timer? _retryTimer;
+  Timer? _operationSyncTimer;
   int _retryCount = 0;
   SnapshotEntry? _latestSnapshot;
   BackupPreview? _latestPreview;
-  String _statusMessage = 'Not connected';
+  String _statusMessage = 'Refreshing backup status...';
 
-  static const List<int> _allowedIntervals = <int>[6, 12];
+  static const List<int> _allowedIntervals = <int>[3, 6, 12];
 
   bool get isChecking => false;
   bool get isBackingUp => _isBackingUp;
-  bool get isRestoring => _isRestoring || appStateController.isRestoringDatabase;
+  bool get isRestoring =>
+      _isRestoring || appStateController.isRestoringDatabase;
   bool get hasCloudBackup => _lastBackupAt != null || _latestSnapshot != null;
   bool get hasPendingAutoBackup => _pendingAutoBackup || _debounceTimer != null;
-  bool get shouldPromptRestore => false;
+  bool get shouldPromptRestore {
+    final bool hasRemoteBackup = _latestSnapshot != null;
+    if (!hasRemoteBackup) return false;
+    return !BackupService.hasData(appStateController.state.toJson());
+  }
+
   BackupPreview? get latestBackup => _latestPreview;
   bool get cloudBackupNewerThanLocal => false;
   bool get backupOwnershipMismatch => false;
+  bool get isOperationSyncEnabled => enableOperationSync;
+  bool get isOperationSyncing => _isOperationSyncing;
+  bool get isDriveConnected => _isDriveConnected;
+  String get operationSyncModeLabel => enableOperationSync ? 'On' : 'Off';
+  String get operationSyncStatusMessage {
+    if (!enableOperationSync) {
+      return 'Cloud Sync: Disabled';
+    }
+    if (_isOperationSyncing) return 'Cloud Sync: Syncing...';
+    if (_suppressOperationSyncAfterRestore) {
+      return 'Cloud Sync: Waiting for confirmation after restore';
+    }
+    return 'Cloud Sync: On';
+  }
+
+  String? get lastOperationSyncAt => _lastOperationSyncAt;
+  String get lastOperationSyncError => _lastOperationSyncError;
+  Future<int> pendingOperationCount() async {
+    final AppDatabase? db = appStateController.database;
+    if (db == null) return 0;
+    return SyncQueueDao(db).countQueued();
+  }
 
   bool get automaticBackupEnabled => _autoBackupEnabled;
   int get minimumIntervalHours => _minimumIntervalHours;
@@ -99,8 +145,11 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
   String get lastBackupStatus => _lastBackupStatus;
   String get lastBackupError => _lastBackupError;
   String get statusMessage => _statusMessage;
-  String get currentStatus =>
-      _statusMessage.isNotEmpty ? _statusMessage : 'Cloud Sync: Active';
+  String get currentStatus => _statusMessage.isNotEmpty
+      ? _statusMessage
+      : (_isDriveConnected
+            ? 'Cloud Sync: Active'
+            : 'Refreshing backup status...');
 
   Duration get autoBackupDelay => debounceDuration;
 
@@ -125,7 +174,7 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> setMinimumIntervalHours(int hours) async {
-    final int normalized = _allowedIntervals.contains(hours) ? hours : 6;
+    final int normalized = _allowedIntervals.contains(hours) ? hours : 3;
     _minimumIntervalHours = normalized;
     await _saveSettings();
     _recalculateNextEligibleTime();
@@ -134,36 +183,41 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
 
   void setBackupPassphrase(String passphrase) {
     _backupPassphrase = passphrase.trim();
+    _backupPassphraseUserId = _currentUserId();
   }
 
   Future<void> saveBackupPassphrase(String passphrase) async {
     setBackupPassphrase(passphrase);
     await appStateController.secureStorageService.saveBackupPassphrase(
       passphrase,
-      userId: appStateController.state.loadedUserId,
+      userId: _currentUserId(),
     );
   }
 
   Future<void> loadBackupPassphrase() async {
-    final String? saved = await appStateController.secureStorageService
-        .loadBackupPassphrase(userId: appStateController.state.loadedUserId);
-    if (saved != null && saved.isNotEmpty) {
-      _backupPassphrase = saved;
-      notifyListeners();
-      return;
+    final String currentUserId = _currentUserId();
+    if (_backupPassphraseUserId != currentUserId) {
+      _backupPassphrase = null;
+      _backupPassphraseUserId = null;
     }
 
     try {
-      await backupKeyManager.recoverKeyFromFirestore();
+      final String? repaired = await _loadPassphraseFromBackupKeyManager(
+        currentUserId: currentUserId,
+        preferRecovery: true,
+      );
+      if (repaired != null && repaired.isNotEmpty) {
+        _backupPassphrase = repaired;
+        _backupPassphraseUserId = currentUserId;
+        notifyListeners();
+        return;
+      }
     } on BackupKeyRecoveryException catch (error) {
       _setStatus('Backup key recovery failed', error: error.message);
     }
 
-    final Uint8List? key = await backupKeyManager.getExistingKey();
-    if (key != null && key.isNotEmpty) {
-      _backupPassphrase = base64UrlEncode(key);
-      notifyListeners();
-    }
+    _backupPassphrase = null;
+    _backupPassphraseUserId = null;
   }
 
   Future<bool> backupNow({
@@ -186,7 +240,9 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
 
     _isBackingUp = true;
     _lastBackupError = '';
-    _lastBackupStatus = automatic ? 'Backing up automatically...' : 'Backing up...';
+    _lastBackupStatus = automatic
+        ? 'Backing up automatically...'
+        : 'Backing up...';
     notifyListeners();
 
     final CloudSyncManager? manager = await _resolveSyncManager();
@@ -203,6 +259,7 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
       _setStatus('Google Drive is not connected', error: '');
       return false;
     }
+    _isDriveConnected = true;
 
     final String? passphrase = await _resolvePassphrase();
     if (passphrase == null || passphrase.isEmpty) {
@@ -223,18 +280,38 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
     }
 
     try {
-      final String localChecksum = await _snapshotManager.calculateDatabaseChecksum(
-        db: db,
-      );
+      final String localChecksum = await _snapshotManager
+          .calculateDatabaseChecksum(db: db);
 
       final SharedPreferences prefs = await SharedPreferences.getInstance();
-      final String userId = (appStateController.state.loadedUserId?.isNotEmpty ?? false)
+      final String userId =
+          (appStateController.state.loadedUserId?.isNotEmpty ?? false)
           ? appStateController.state.loadedUserId!
           : 'default';
 
-      // 1. database checksum has not changed locally since last successful backup
-      final String? cachedChecksum = prefs.getString(_prefsKey('last_successful_checksum', userId));
-      if (cachedChecksum != null && cachedChecksum == localChecksum) {
+      final CloudManifest? manifest = await provider.readManifest();
+      final Set<String> availableSnapshotPaths = manifest == null
+          ? <String>{}
+          : <String>{
+              for (final CloudFileInfo file in await provider.listFiles(
+                'snapshots/',
+              ))
+                file.path,
+            };
+      final String? cachedChecksum = prefs.getString(
+        _prefsKey('last_successful_checksum', userId),
+      );
+      final bool cachedBackupStillExists =
+          manifest != null &&
+          manifest.content['snapshots'] is List &&
+          CloudSyncManifest.fromJson(manifest.content).snapshots.any(
+            (s) =>
+                s.checksum == localChecksum &&
+                availableSnapshotPaths.contains(s.path),
+          );
+      if (cachedChecksum != null &&
+          cachedChecksum == localChecksum &&
+          cachedBackupStillExists) {
         _lastBackupAt = nowProvider().toUtc();
         _recalculateNextEligibleTime();
         _lastBackupError = '';
@@ -248,15 +325,21 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
         return true;
       }
 
-      final CloudManifest? manifest = await provider.readManifest();
       if (manifest != null) {
         final CloudSyncManifest cloudManifest = CloudSyncManifest.fromJson(
           manifest.content,
         );
         // 2. backup already exists with identical checksum in history
-        final bool existsInHistory = cloudManifest.snapshots.any((s) => s.checksum == localChecksum);
+        final bool existsInHistory = cloudManifest.snapshots.any(
+          (s) =>
+              s.checksum == localChecksum &&
+              availableSnapshotPaths.contains(s.path),
+        );
         if (existsInHistory) {
-          await prefs.setString(_prefsKey('last_successful_checksum', userId), localChecksum);
+          await prefs.setString(
+            _prefsKey('last_successful_checksum', userId),
+            localChecksum,
+          );
           _lastBackupAt = nowProvider().toUtc();
           _recalculateNextEligibleTime();
           _lastBackupError = '';
@@ -302,7 +385,10 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
         _retryTimer?.cancel();
         _retryTimer = null;
 
-        await prefs.setString(_prefsKey('last_successful_checksum', userId), localChecksum);
+        await prefs.setString(
+          _prefsKey('last_successful_checksum', userId),
+          localChecksum,
+        );
         _lastBackupAt = nowProvider().toUtc();
         _lastBackupStatus = 'Backup completed';
         _lastBackupError = '';
@@ -358,6 +444,251 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  Future<bool> syncOperationsNow({bool automatic = false}) async {
+    if (!enableOperationSync) {
+      _lastOperationSyncError = '';
+      return false;
+    }
+    if (_isOperationSyncing) {
+      return false;
+    }
+    if (isRestoring || appStateController.isRestoringDatabase) {
+      _lastOperationSyncError = 'Restore in progress';
+      await _saveSettings();
+      notifyListeners();
+      return false;
+    }
+
+    final GoogleDriveOperationSyncManager? manager =
+        await _resolveOperationSyncManager();
+    if (manager == null) {
+      _lastOperationSyncError = 'Google Drive is not connected';
+      await _saveSettings();
+      notifyListeners();
+      return false;
+    }
+
+    final String? passphrase = await _resolvePassphrase();
+    if (passphrase == null || passphrase.isEmpty) {
+      _lastOperationSyncError =
+          'Enter and save a cloud backup passphrase first.';
+      await _saveSettings();
+      notifyListeners();
+      return false;
+    }
+
+    _isOperationSyncing = true;
+    _lastOperationSyncError = '';
+    notifyListeners();
+    try {
+      OperationSyncResult result = await manager.syncNow(
+        passphrase: passphrase,
+      );
+      if (result.status == GoogleDriveOperationSyncStatus.error &&
+          _isMacAuthError(result.message)) {
+        final String? repaired = await _repairBackupPassphraseFromFirestore();
+        if (repaired != null && repaired.isNotEmpty && repaired != passphrase) {
+          result = await manager.syncNow(passphrase: repaired);
+        }
+      }
+      final bool succeeded =
+          result.status != GoogleDriveOperationSyncStatus.error;
+      if (succeeded) {
+        _lastOperationSyncAt = nowProvider().toUtc().toIso8601String();
+      }
+      _lastOperationSyncError = succeeded ? '' : result.message;
+      if (_suppressOperationSyncAfterRestore) {
+        _suppressOperationSyncAfterRestore = false;
+      }
+      await _saveSettings();
+      notifyListeners();
+      return result.status != GoogleDriveOperationSyncStatus.error;
+    } on crypto.SecretBoxAuthenticationError {
+      _invalidateOperationSyncPassphrase();
+      _lastOperationSyncError =
+          'Backup passphrase is out of date. Reconnect or restore again.';
+      await _saveSettings();
+      notifyListeners();
+      return false;
+    } catch (error) {
+      if (_isMacAuthError(error)) {
+        _invalidateOperationSyncPassphrase();
+        _lastOperationSyncError =
+            'Backup passphrase is out of date. Reconnect or restore again.';
+        await _saveSettings();
+        notifyListeners();
+        return false;
+      }
+      _lastOperationSyncError = error.toString();
+      await _saveSettings();
+      notifyListeners();
+      return false;
+    } finally {
+      _isOperationSyncing = false;
+      notifyListeners();
+    }
+  }
+
+  void beginStartupRestoreDiscovery() {
+    _startupRestoreDiscoveryActive = true;
+    _debounceTimer?.cancel();
+    _eligibleTimer?.cancel();
+    _retryTimer?.cancel();
+    _debounceTimer = null;
+    _eligibleTimer = null;
+    _retryTimer = null;
+    _pendingAutoBackup = false;
+  }
+
+  void completeStartupRestoreDiscovery() {
+    _startupRestoreDiscoveryActive = false;
+  }
+
+  Future<StartupRestoreDiscoveryResult> discoverStartupRestore({
+    required bool localHasData,
+  }) async {
+    if (localHasData) {
+      _latestSnapshot = null;
+      _latestPreview = null;
+      completeStartupRestoreDiscovery();
+      return const StartupRestoreDiscoveryResult(
+        status: StartupRestoreDiscoveryStatus.none,
+        message: 'Local data exists',
+      );
+    }
+
+    final String currentUserId = _currentUserId();
+    final String? dismissedUserId =
+        appStateController.state.restorePromptDismissedUserId;
+    if (dismissedUserId != null && dismissedUserId == currentUserId) {
+      _latestSnapshot = null;
+      _latestPreview = null;
+      completeStartupRestoreDiscovery();
+      return const StartupRestoreDiscoveryResult(
+        status: StartupRestoreDiscoveryStatus.dismissed,
+        message: 'Restore prompt dismissed',
+      );
+    }
+
+    beginStartupRestoreDiscovery();
+    try {
+      final CloudSyncManager? manager = await _resolveSyncManager();
+      if (manager == null) {
+        _latestSnapshot = null;
+        _latestPreview = null;
+        completeStartupRestoreDiscovery();
+        return const StartupRestoreDiscoveryResult(
+          status: StartupRestoreDiscoveryStatus.drivePermissionRequired,
+          message: 'A backup may exist. Connect Google Drive to check.',
+        );
+      }
+
+      final UserCloudStorageProvider provider = manager.provider;
+      if (!await provider.isConnected()) {
+        _latestSnapshot = null;
+        _latestPreview = null;
+        completeStartupRestoreDiscovery();
+        return const StartupRestoreDiscoveryResult(
+          status: StartupRestoreDiscoveryStatus.drivePermissionRequired,
+          message: 'A backup may exist. Connect Google Drive to check.',
+        );
+      }
+
+      final CloudManifest? manifestInfo = await provider.readManifest();
+      if (manifestInfo == null) {
+        _latestSnapshot = null;
+        _latestPreview = null;
+        completeStartupRestoreDiscovery();
+        return const StartupRestoreDiscoveryResult(
+          status: StartupRestoreDiscoveryStatus.none,
+          message: 'No cloud backup found',
+        );
+      }
+
+      final CloudSyncManifest cloudManifest = CloudSyncManifest.fromJson(
+        manifestInfo.content,
+      );
+      final SnapshotEntry? snapshot = await _latestAvailableSnapshot(
+        provider,
+        cloudManifest,
+      );
+      if (snapshot == null) {
+        _latestSnapshot = null;
+        _latestPreview = null;
+        completeStartupRestoreDiscovery();
+        return const StartupRestoreDiscoveryResult(
+          status: StartupRestoreDiscoveryStatus.none,
+          message: 'No available snapshots registered in manifest.',
+        );
+      }
+
+      final String? passphrase = await _loadPassphraseFromBackupKeyManager(
+        currentUserId: currentUserId,
+        preferRecovery: true,
+      );
+      if (passphrase == null || passphrase.isEmpty) {
+        _latestSnapshot = null;
+        _latestPreview = null;
+        completeStartupRestoreDiscovery();
+        return const StartupRestoreDiscoveryResult(
+          status: StartupRestoreDiscoveryStatus.keyRecoveryRequired,
+          message: BackupKeyRecoveryException.recoveryUnavailableMessage,
+          error: BackupKeyRecoveryException.recoveryUnavailableMessage,
+        );
+      }
+
+      _latestSnapshot = snapshot;
+      _latestPreview = BackupPreview(
+        exportedAt: snapshot.createdAt.toIso8601String(),
+        schemaOrVersion: 'schemaVersion=${snapshot.databaseSchemaVersion}',
+        isLegacy: false,
+        sourceType: 'cloud_drive',
+        transactionsCount: 0,
+        savingsCount: 0,
+        investmentsCount: 0,
+        recurringTransactionsCount: 0,
+        financialPlansCount: 0,
+        hasMarketData: false,
+        warnings: <String>[
+          'Cloud backup sequence #${snapshot.sequence} from ${snapshot.deviceName.isEmpty ? 'Unknown device' : snapshot.deviceName}.',
+        ],
+        unsupportedFields: const <String>[],
+        canRestore: true,
+        rawJson: '',
+        backupVersion: snapshot.databaseSchemaVersion,
+        backupUserId: snapshot.deviceId,
+        backupProvider: 'google_drive',
+        backupEmail: null,
+      );
+      _statusMessage = 'Cloud backup found';
+      notifyListeners();
+      return StartupRestoreDiscoveryResult(
+        status: StartupRestoreDiscoveryStatus.restorePrompt,
+        message: 'Cloud backup found. Restore your latest backup?',
+        preview: _latestPreview,
+      );
+    } on BackupKeyRecoveryException catch (error) {
+      _latestSnapshot = null;
+      _latestPreview = null;
+      completeStartupRestoreDiscovery();
+      _setStatus('Backup key recovery failed', error: error.message);
+      return StartupRestoreDiscoveryResult(
+        status: StartupRestoreDiscoveryStatus.keyRecoveryRequired,
+        message: error.message,
+        error: error.message,
+      );
+    } catch (error) {
+      _latestSnapshot = null;
+      _latestPreview = null;
+      completeStartupRestoreDiscovery();
+      return StartupRestoreDiscoveryResult(
+        status: StartupRestoreDiscoveryStatus.none,
+        message: error.toString(),
+        error: error.toString(),
+      );
+    }
+  }
+
   Future<BackupPreview?> previewLatestBackup() async {
     final CloudSyncManager? manager = await _resolveSyncManager();
     if (manager == null) {
@@ -385,9 +716,10 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
     final CloudSyncManifest cloudManifest = CloudSyncManifest.fromJson(
       manifest.content,
     );
-    final SnapshotEntry? snapshot = cloudManifest.snapshots.isNotEmpty
-        ? cloudManifest.snapshots.last
-        : null;
+    final SnapshotEntry? snapshot = await _latestAvailableSnapshot(
+      provider,
+      cloudManifest,
+    );
     _latestSnapshot = snapshot;
     _statusMessage = _lastBackupStatus.isNotEmpty
         ? _lastBackupStatus
@@ -459,14 +791,14 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
         localSchemaVersion: appStateController.database?.schemaVersion,
       );
       if (pullResult.status != CloudSyncStatus.success) {
-        _setStatus(
-          pullResult.message,
-          error: pullResult.message,
-        );
+        _setStatus(pullResult.message, error: pullResult.message);
         return false;
       }
 
-      await appStateController.replaceActiveDatabaseWithRestoredFile(targetPath);
+      await appStateController.replaceActiveDatabaseWithRestoredFile(
+        targetPath,
+      );
+      _suppressOperationSyncAfterRestore = true;
       final File restoredFile = File(targetPath);
       if (await restoredFile.exists()) {
         await restoredFile.delete();
@@ -474,6 +806,7 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
 
       _setStatus('Restore completed');
       await _refreshRemoteState(provider: provider);
+      completeStartupRestoreDiscovery();
       return true;
     } catch (e) {
       _setStatus('Restore failed', error: e.toString());
@@ -487,6 +820,29 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
         } catch (_) {}
       }
       notifyListeners();
+    }
+  }
+
+  Future<void> deleteCloudBackupData() async {
+    final CloudSyncManager? manager = await _resolveSyncManager();
+    if (manager == null) {
+      throw StateError('Google Drive is not connected');
+    }
+
+    final UserCloudStorageProvider provider = manager.provider;
+    if (!await provider.isConnected()) {
+      throw StateError('Google Drive is not connected');
+    }
+
+    final List<CloudFileInfo> files = await provider.listFiles('');
+    for (final CloudFileInfo file in files) {
+      final String path = file.path.trim();
+      if (path.isEmpty) continue;
+      try {
+        await provider.deleteFile(path);
+      } catch (_) {
+        // Best-effort cleanup continues so account deletion removes as much remote data as possible.
+      }
     }
   }
 
@@ -505,11 +861,20 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (! _autoBackupEnabled || isRestoring) {
+    if (!_autoBackupEnabled || isRestoring || _startupRestoreDiscoveryActive) {
+      if (!appStateController.isRestoringDatabase) {
+        if (state == AppLifecycleState.resumed) {
+          _maybeScheduleOperationSync(reason: 'resumed');
+        }
+      }
       return;
     }
     if (state == AppLifecycleState.resumed) {
       _maybeScheduleAutoBackup(reason: 'resumed', onlyIfOverdue: true);
+      if (!_suppressOperationSyncAfterRestore &&
+          !appStateController.isRestoringDatabase) {
+        _maybeScheduleOperationSync(reason: 'resumed');
+      }
     } else if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
@@ -525,9 +890,18 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
     _lastObservedStateStamp = currentStamp;
     if (authController.currentUser == null) {
       _cancelTimers();
-      _statusMessage = 'Not connected';
-    } else if (_autoBackupEnabled && !isRestoring) {
-      _maybeScheduleAutoBackup(reason: 'data_change');
+      _statusMessage = 'Refreshing backup status...';
+    } else {
+      if (_autoBackupEnabled &&
+          !isRestoring &&
+          !_startupRestoreDiscoveryActive) {
+        _maybeScheduleAutoBackup(reason: 'data_change');
+      }
+      if (!_suppressOperationSyncAfterRestore &&
+          !isRestoring &&
+          !appStateController.isRestoringDatabase) {
+        _maybeScheduleOperationSync(reason: 'data_change');
+      }
     }
     notifyListeners();
   }
@@ -541,7 +915,24 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
     required String reason,
     bool onlyIfOverdue = false,
   }) {
-    if (!_autoBackupEnabled || isRestoring || _isBackingUp) {
+    if (reason.isEmpty) {
+      return;
+    }
+    if (!_autoBackupEnabled ||
+        isRestoring ||
+        _isBackingUp ||
+        _startupRestoreDiscoveryActive) {
+      return;
+    }
+    final bool hasLocalData = BackupService.hasData(
+      appStateController.state.toJson(),
+    );
+    if (_isDriveConnected &&
+        _lastBackupAt == null &&
+        hasLocalData &&
+        !onlyIfOverdue) {
+      unawaited(backupNow(automatic: true));
+      notifyListeners();
       return;
     }
     _debounceTimer?.cancel();
@@ -590,6 +981,26 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
     return !now.isBefore(eligible);
   }
 
+  void _maybeScheduleOperationSync({required String reason}) {
+    if (reason.isEmpty) {
+      return;
+    }
+    if (!enableOperationSync) {
+      return;
+    }
+    if (_suppressOperationSyncAfterRestore ||
+        isRestoring ||
+        _isOperationSyncing) {
+      return;
+    }
+    _operationSyncTimer?.cancel();
+    _operationSyncTimer = Timer(debounceDuration, () async {
+      _operationSyncTimer = null;
+      await syncOperationsNow(automatic: true);
+    });
+    notifyListeners();
+  }
+
   Future<CloudSyncManager?> _resolveSyncManager() async {
     if (_cloudSyncManagerBuilder != null) {
       return _cloudSyncManagerBuilder();
@@ -603,8 +1014,8 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
     final String deviceName = Platform.isAndroid
         ? 'Android Device'
         : Platform.isIOS
-            ? 'iOS Device'
-            : 'Desktop Device';
+        ? 'iOS Device'
+        : 'Desktop Device';
 
     final UserCloudStorageProvider provider = GoogleDriveStorageProvider(
       googleSignIn: _googleSignIn,
@@ -618,10 +1029,7 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
           if (!signedIn) {
             await _googleSignIn.signInSilently();
           }
-          if (_googleSignIn.currentUser == null) {
-            return false;
-          }
-          return await _hasDrivePermissionGranted();
+          return _googleSignIn.currentUser != null;
         } catch (_) {
           return false;
         }
@@ -630,6 +1038,7 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
       requestDisconnect: () async {},
       hasGrantedDriveScope: _hasDrivePermissionGranted,
       setGrantedDriveScope: _setDrivePermissionGranted,
+      namespacePrefix: _currentUserId(),
     );
 
     final CloudSyncManager manager = CloudSyncManager(
@@ -640,6 +1049,49 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
       platform: Platform.operatingSystem,
     );
     return manager;
+  }
+
+  Future<GoogleDriveOperationSyncManager?>
+  _resolveOperationSyncManager() async {
+    if (!enableOperationSync) {
+      return null;
+    }
+    if (_operationSyncManagerBuilder != null) {
+      return _operationSyncManagerBuilder();
+    }
+
+    final AppDatabase? db = appStateController.database;
+    if (db == null) {
+      return null;
+    }
+
+    final CloudSyncManager? backupManager = await _resolveSyncManager();
+    final UserCloudStorageProvider? provider = backupManager?.provider;
+    if (provider == null) {
+      return null;
+    }
+
+    final String? deviceId = await _getOrCreateDeviceId();
+    if (deviceId == null) {
+      return null;
+    }
+
+    final String deviceName = Platform.isAndroid
+        ? 'Android Device'
+        : Platform.isIOS
+        ? 'iOS Device'
+        : 'Desktop Device';
+
+    return GoogleDriveOperationSyncManager(
+      provider: provider,
+      encryptionService: SyncEncryptionService(),
+      syncQueueDao: SyncQueueDao(db),
+      syncMetadataDao: SyncMetadataDao(db),
+      controller: appStateController,
+      deviceId: deviceId,
+      deviceName: deviceName,
+      appVersion: String.fromEnvironment('APP_VERSION', defaultValue: '1.0.0'),
+    );
   }
 
   Future<String?> _getOrCreateDeviceId() async {
@@ -654,13 +1106,14 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> _loadSettings() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
-    final String userId = (appStateController.state.loadedUserId?.isNotEmpty ?? false)
+    final String userId =
+        (appStateController.state.loadedUserId?.isNotEmpty ?? false)
         ? appStateController.state.loadedUserId!
         : 'default';
     _autoBackupEnabled =
-        prefs.getBool(_prefsKey('auto_enabled', userId)) ?? false;
+        prefs.getBool(_prefsKey('auto_enabled', userId)) ?? true;
     _minimumIntervalHours =
-        prefs.getInt(_prefsKey('interval_hours', userId)) ?? 6;
+        prefs.getInt(_prefsKey('interval_hours', userId)) ?? 3;
     final int? lastBackupMs = prefs.getInt(_prefsKey('last_backup_ms', userId));
     final int? nextBackupMs = prefs.getInt(_prefsKey('next_backup_ms', userId));
     _lastBackupAt = lastBackupMs == null
@@ -671,27 +1124,34 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
         : DateTime.fromMillisecondsSinceEpoch(nextBackupMs, isUtc: true);
     _lastBackupStatus = prefs.getString(_prefsKey('last_status', userId)) ?? '';
     _lastBackupError = prefs.getString(_prefsKey('last_error', userId)) ?? '';
+    _lastOperationSyncAt = prefs.getString(
+      _prefsKey('last_operation_sync_at', userId),
+    );
+    _lastOperationSyncError =
+        prefs.getString(_prefsKey('last_operation_sync_error', userId)) ?? '';
     _statusMessage = _lastBackupStatus.isNotEmpty
         ? _lastBackupStatus
-        : (authController.currentUser == null
-            ? 'Not connected'
-            : 'Cloud Sync: Active');
-    final String? savedPassphrase = prefs.getString(
-      _prefsKey('passphrase_hint', userId),
-    );
-    if (savedPassphrase != null && savedPassphrase.isNotEmpty) {
-      _backupPassphrase ??= savedPassphrase;
+        : (_isDriveConnected
+              ? 'Cloud Sync: Active'
+              : 'Refreshing backup status...');
+    if (_backupPassphraseUserId != null && _backupPassphraseUserId != userId) {
+      _backupPassphrase = null;
+      _backupPassphraseUserId = null;
     }
     _lastObservedStateStamp = _currentStateStamp();
   }
 
   Future<void> _saveSettings() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
-    final String userId = (appStateController.state.loadedUserId?.isNotEmpty ?? false)
+    final String userId =
+        (appStateController.state.loadedUserId?.isNotEmpty ?? false)
         ? appStateController.state.loadedUserId!
         : 'default';
     await prefs.setBool(_prefsKey('auto_enabled', userId), _autoBackupEnabled);
-    await prefs.setInt(_prefsKey('interval_hours', userId), _minimumIntervalHours);
+    await prefs.setInt(
+      _prefsKey('interval_hours', userId),
+      _minimumIntervalHours,
+    );
     if (_lastBackupAt != null) {
       await prefs.setInt(
         _prefsKey('last_backup_ms', userId),
@@ -710,6 +1170,22 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
     }
     await prefs.setString(_prefsKey('last_status', userId), _lastBackupStatus);
     await prefs.setString(_prefsKey('last_error', userId), _lastBackupError);
+    if (_lastOperationSyncAt != null) {
+      await prefs.setString(
+        _prefsKey('last_operation_sync_at', userId),
+        _lastOperationSyncAt!,
+      );
+    } else {
+      await prefs.remove(_prefsKey('last_operation_sync_at', userId));
+    }
+    if (_lastOperationSyncError.isNotEmpty) {
+      await prefs.setString(
+        _prefsKey('last_operation_sync_error', userId),
+        _lastOperationSyncError,
+      );
+    } else {
+      await prefs.remove(_prefsKey('last_operation_sync_error', userId));
+    }
   }
 
   String _prefsKey(String suffix, String userId) {
@@ -721,7 +1197,8 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   String _currentPermissionUserId() {
-    final String loadedUserId = appStateController.state.loadedUserId?.trim() ?? '';
+    final String loadedUserId =
+        appStateController.state.loadedUserId?.trim() ?? '';
     if (loadedUserId.isNotEmpty) return loadedUserId;
     final String authUserId = authController.currentUser?.id.trim() ?? '';
     if (authUserId.isNotEmpty) return authUserId;
@@ -730,7 +1207,8 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<bool> _hasDrivePermissionGranted() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_drivePermissionKey(_currentPermissionUserId())) ?? false;
+    return prefs.getBool(_drivePermissionKey(_currentPermissionUserId())) ??
+        false;
   }
 
   Future<void> _setDrivePermissionGranted(bool granted) async {
@@ -761,12 +1239,17 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<String?> _resolvePassphrase({bool createIfMissing = true}) async {
-    if (_backupPassphrase != null && _backupPassphrase!.isNotEmpty) {
+    final String currentUserId = _currentUserId();
+    if (_backupPassphrase != null &&
+        _backupPassphrase!.isNotEmpty &&
+        _backupPassphraseUserId == currentUserId) {
       return _backupPassphrase;
     }
     try {
       await loadBackupPassphrase();
-      if (_backupPassphrase != null && _backupPassphrase!.isNotEmpty) {
+      if (_backupPassphrase != null &&
+          _backupPassphrase!.isNotEmpty &&
+          _backupPassphraseUserId == currentUserId) {
         return _backupPassphrase;
       }
 
@@ -776,6 +1259,7 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
 
       final Uint8List key = await backupKeyManager.getOrCreateKey();
       _backupPassphrase = base64UrlEncode(key);
+      _backupPassphraseUserId = currentUserId;
       return _backupPassphrase;
     } on BackupKeyRecoveryException catch (error) {
       _setStatus('Backup key recovery failed', error: error.message);
@@ -783,18 +1267,27 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  String _currentUserId() {
+    final String loadedUserId =
+        appStateController.state.loadedUserId?.trim() ?? '';
+    if (loadedUserId.isNotEmpty) return loadedUserId;
+    final String authUserId = authController.currentUser?.id.trim() ?? '';
+    if (authUserId.isNotEmpty) return authUserId;
+    return 'default';
+  }
+
   void _cancelTimers() {
     _debounceTimer?.cancel();
     _eligibleTimer?.cancel();
     _retryTimer?.cancel();
+    _operationSyncTimer?.cancel();
     _debounceTimer = null;
     _eligibleTimer = null;
     _retryTimer = null;
+    _operationSyncTimer = null;
   }
 
-  Future<void> _refreshRemoteState({
-    UserCloudStorageProvider? provider,
-  }) async {
+  Future<bool> _refreshRemoteState({UserCloudStorageProvider? provider}) async {
     try {
       final CloudSyncManager? manager = provider == null
           ? await _resolveSyncManager()
@@ -802,15 +1295,17 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
       final UserCloudStorageProvider? activeProvider =
           provider ?? manager?.provider;
       if (activeProvider == null || !await activeProvider.isConnected()) {
+        _isDriveConnected = false;
         _latestSnapshot = null;
         _latestPreview = null;
         if (authController.currentUser == null) {
-          _statusMessage = 'Not connected';
+          _statusMessage = 'Refreshing backup status...';
         } else {
           _statusMessage = 'Google Drive is not connected';
         }
-        return;
+        return false;
       }
+      _isDriveConnected = true;
 
       final CloudManifest? manifest = await activeProvider.readManifest();
       if (manifest == null) {
@@ -819,15 +1314,16 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
         if (_lastBackupStatus.isEmpty) {
           _statusMessage = 'Cloud Sync: Active';
         }
-        return;
+        return true;
       }
 
       final CloudSyncManifest cloudManifest = CloudSyncManifest.fromJson(
         manifest.content,
       );
-      _latestSnapshot = cloudManifest.snapshots.isNotEmpty
-          ? cloudManifest.snapshots.last
-          : null;
+      _latestSnapshot = await _latestAvailableSnapshot(
+        activeProvider,
+        cloudManifest,
+      );
 
       if (_latestSnapshot != null) {
         _latestPreview = BackupPreview(
@@ -857,11 +1353,81 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
         _latestPreview = null;
       }
 
-      if (_lastBackupStatus.isEmpty || _lastBackupStatus == 'Cloud Sync: Active') {
+      if (_lastBackupStatus.isEmpty ||
+          _lastBackupStatus == 'Cloud Sync: Active') {
         _statusMessage = 'Cloud Sync: Active';
       }
+      return true;
     } catch (_) {
       // Best-effort refresh. Existing status is preserved on transient failures.
+      return _isDriveConnected;
     }
+  }
+
+  void _invalidateOperationSyncPassphrase() {
+    _backupPassphrase = null;
+    _backupPassphraseUserId = null;
+  }
+
+  Future<SnapshotEntry?> _latestAvailableSnapshot(
+    UserCloudStorageProvider provider,
+    CloudSyncManifest manifest,
+  ) async {
+    final Set<String> availableSnapshotPaths = <String>{
+      for (final CloudFileInfo file in await provider.listFiles('snapshots/'))
+        file.path,
+    };
+    for (final SnapshotEntry snapshot in manifest.snapshots.reversed) {
+      if (snapshot.path.trim().isEmpty) continue;
+      if (availableSnapshotPaths.contains(snapshot.path)) {
+        return snapshot;
+      }
+    }
+    return null;
+  }
+
+  Future<String?> _loadPassphraseFromBackupKeyManager({
+    required String currentUserId,
+    required bool preferRecovery,
+  }) async {
+    if (preferRecovery) {
+      try {
+        await backupKeyManager.recoverKeyFromFirestore();
+      } on BackupKeyRecoveryException {
+        // Fall through to existing local key or cached passphrase.
+      }
+    }
+
+    final Uint8List? key = await backupKeyManager.getExistingKey();
+    if (key == null || key.isEmpty) {
+      return null;
+    }
+    final String passphrase = base64UrlEncode(key);
+    _backupPassphrase = passphrase;
+    _backupPassphraseUserId = currentUserId;
+    await appStateController.secureStorageService.saveBackupPassphrase(
+      passphrase,
+      userId: currentUserId,
+    );
+    return passphrase;
+  }
+
+  Future<String?> _repairBackupPassphraseFromFirestore() async {
+    final String currentUserId = _currentUserId();
+    try {
+      return await _loadPassphraseFromBackupKeyManager(
+        currentUserId: currentUserId,
+        preferRecovery: true,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  bool _isMacAuthError(Object error) {
+    final String lower = error.toString().toLowerCase();
+    return lower.contains('secretboxauthenticationerror') ||
+        lower.contains('mac check failed') ||
+        lower.contains('wrong message authentication code');
   }
 }

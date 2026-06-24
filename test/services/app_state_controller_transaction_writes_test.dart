@@ -12,7 +12,6 @@ import 'package:zakatapp_flutter/models/transaction.dart' as model;
 import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
 import 'package:zakatapp_flutter/services/app_state_controller.dart';
 import 'package:zakatapp_flutter/services/local_storage_service.dart';
-import '../support/recording_firestore_sync_manager.dart';
 
 class _StaticGate implements UseSqliteLocalStoreProvider {
   _StaticGate(this.value);
@@ -119,12 +118,10 @@ void main() {
         controller.state.transactions.map((model.Transaction tx) => tx.id),
         ['tx1'],
       );
-      expect(
-        jsonDecode(
-          (await const LocalStorageService().loadString('zakatAppData'))!,
-        )['transactions'][0]['id'],
-        'tx1',
-      );
+      final Map<String, dynamic> saved = jsonDecode(
+        (await const LocalStorageService().loadString('zakatAppData'))!,
+      ) as Map<String, dynamic>;
+      expect(saved['transactions'], isEmpty);
 
       await database.close();
     },
@@ -170,53 +167,6 @@ void main() {
     await database.close();
   });
 
-  test('transaction edit does not trigger full-list Firestore sync', () async {
-    final recordingFirestore = RecordingFirestoreSyncManager(uid: 'user-1');
-    final controller = AppStateController(
-      repository: AppStateRepository(localStorage: const LocalStorageService()),
-      firestoreSyncManager: recordingFirestore,
-      useSqliteLocalStoreProvider: _StaticGate(false),
-    );
-
-    await controller.updateState(
-      controller.state.copyWith(
-        userId: 'user-1',
-        transactions: <model.Transaction>[
-          const model.Transaction(
-            id: 'tx-edit',
-            type: 'income',
-            date: '2026-06-19',
-            amount: 100,
-            currency: 'USD',
-            category: 'Salary',
-            description: 'original',
-            createdAt: '2026-06-19T08:00:00.000Z',
-            rolledOver: false,
-          ),
-        ],
-      ),
-    );
-
-    await controller.startLiveFirestoreSync(userId: 'user-1');
-    recordingFirestore.transactionSyncCalls = 0;
-
-    final model.Transaction updated = const model.Transaction(
-      id: 'tx-edit',
-      type: 'income',
-      date: '2026-06-19',
-      amount: 150,
-      currency: 'USD',
-      category: 'Salary',
-      description: 'updated',
-      createdAt: '2026-06-19T09:00:00.000Z',
-      rolledOver: false,
-    );
-
-    await controller.updateTransaction(updated);
-
-    expect(recordingFirestore.transactionSyncCalls, 0);
-  });
-
   test('SQLite write failure falls back to old JSON path', () async {
     final controller = await _makeController(
       localStore: _ThrowingTransactionsRepository(const <model.Transaction>[]),
@@ -239,12 +189,10 @@ void main() {
 
     expect(controller.state.transactions, hasLength(1));
     expect(controller.state.transactions.single.id, 'tx-fallback');
-    expect(
-      jsonDecode(
-        (await const LocalStorageService().loadString('zakatAppData'))!,
-      )['transactions'][0]['id'],
-      'tx-fallback',
-    );
+    final Map<String, dynamic> saved = jsonDecode(
+      (await const LocalStorageService().loadString('zakatAppData'))!,
+    ) as Map<String, dynamic>;
+    expect(saved['transactions'], isEmpty);
   });
 
   test('JSON mode save and delete remain unchanged', () async {

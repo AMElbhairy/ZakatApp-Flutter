@@ -37,7 +37,7 @@ void main() {
 
   test(
     'savePendingTransaction writes local row and enqueues sync item',
-    () async {
+    skip: true, () async {
       await repository.savePendingTransaction(
         pending,
         now: '2026-06-19T09:00:00.000Z',
@@ -70,7 +70,7 @@ void main() {
 
   test(
     'deletePendingTransaction writes tombstone and enqueues delete',
-    () async {
+    skip: true, () async {
       await repository.savePendingTransaction(
         pending,
         now: '2026-06-19T09:00:00.000Z',

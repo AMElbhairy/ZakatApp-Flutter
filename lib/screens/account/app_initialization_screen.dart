@@ -63,9 +63,7 @@ class _AppInitializationScreenState extends State<AppInitializationScreen> {
       // Step 2: Loading app state for the resolved user namespace
       setState(() => _loadingAssets = true);
       final int t2 = stopwatch.elapsedMilliseconds;
-      await appStateController.load(
-        userId: authController.currentUser?.id,
-      );
+      await appStateController.load(userId: authController.currentUser?.id);
       final int t3 = stopwatch.elapsedMilliseconds;
       debugPrint('[Profile] Load AppState took ${t3 - t2}ms');
       setState(() {
@@ -177,13 +175,10 @@ class _AppInitializationScreenState extends State<AppInitializationScreen> {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  const Text(
+                  Text(
                     'Zakah Wealth',
-                    style: TextStyle(
-                      fontFamily: 'Outfit',
+                    style: Theme.of(context).textTheme.displaySmall?.copyWith(
                       color: Colors.white,
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
                       letterSpacing: 0.5,
                     ),
                   ),

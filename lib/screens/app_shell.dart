@@ -22,14 +22,16 @@ import 'plans/plans_screen.dart';
 import '../services/smart_capture_alert_service.dart';
 
 class AppShell extends StatefulWidget {
-  const AppShell({super.key});
+  const AppShell({super.key, this.initialIndex = 2});
+
+  final int initialIndex;
 
   @override
   State<AppShell> createState() => _AppShellState();
 }
 
 class _AppShellState extends State<AppShell> {
-  int _index = 2;
+  late int _index;
   final GlobalKey<ActivityScreenState> _activityKey =
       GlobalKey<ActivityScreenState>();
   final List<ScrollController> _tabScrollControllers =
@@ -45,6 +47,7 @@ class _AppShellState extends State<AppShell> {
   @override
   void initState() {
     super.initState();
+    _index = widget.initialIndex;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       try {

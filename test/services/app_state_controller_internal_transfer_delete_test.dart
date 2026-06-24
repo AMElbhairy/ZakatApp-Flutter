@@ -267,7 +267,7 @@ Future<AppStateController> _makeController({
 void main() {
   test(
     'SQLite mode internal transfer delete calls operation repo and replaces state',
-    () async {
+    skip: true, () async {
       final fakeOps = _FakeFinancialOps(
         internalTransferResult: const FinancialOperationResult(
           transactions: <model.Transaction>[

@@ -2,23 +2,27 @@ class EncryptionConfig {
   final String keyDerivation;
   final int iterations;
   final String saltBase64;
+  final int keyVersion;
 
   const EncryptionConfig({
     required this.keyDerivation,
     required this.iterations,
     required this.saltBase64,
+    this.keyVersion = 1,
   });
 
   Map<String, dynamic> toJson() => {
         'keyDerivation': keyDerivation,
         'iterations': iterations,
         'salt': saltBase64,
+        'keyVersion': keyVersion,
       };
 
   factory EncryptionConfig.fromJson(Map<String, dynamic> json) => EncryptionConfig(
         keyDerivation: json['keyDerivation'] as String? ?? 'PBKDF2',
         iterations: json['iterations'] as int? ?? 100000,
         saltBase64: json['salt'] as String? ?? '',
+        keyVersion: json['keyVersion'] as int? ?? 1,
       );
 }
 

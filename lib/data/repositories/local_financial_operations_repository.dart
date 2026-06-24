@@ -881,7 +881,7 @@ class LocalFinancialOperationsRepository
     required String createdAt,
     required String availableAt,
     required String dedupeKey,
-  }) {
+  }) async {
     final SyncQueueEnqueue enqueue = _enqueueSync ?? _syncQueueDao.enqueue;
     return enqueue(
       collectionName: collectionName,
@@ -913,6 +913,9 @@ class LocalFinancialOperationsRepository
     });
   }
 
+
+
+  String _timestampNow() => DateTime.now().toUtc().toIso8601String();
   void _logQueueInsert({
     required String entityType,
     required String entityId,
@@ -939,7 +942,6 @@ class LocalFinancialOperationsRepository
     return null;
   }
 
-  String _timestampNow() => DateTime.now().toUtc().toIso8601String();
   String _parseSavingsExchangeAmountText(String description) {
     final Match? match = RegExp(
       r'Savings exchange:\s*([0-9.]+)\s',

@@ -1,9 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart' as crypto;
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -19,6 +17,7 @@ import '../../core/widgets/app_ui.dart';
 import '../../services/backup_key_manager.dart';
 import '../../services/app_state_controller.dart';
 import '../../services/cloud_backup_controller.dart';
+import '../../services/google_sign_in_factory.dart';
 import '../../services/sync/cloud_sync_manager.dart';
 import '../../services/sync/cloud_sync_manifest.dart';
 import '../../services/sync/google_drive_storage_provider.dart';
@@ -49,9 +48,6 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     'APP_VERSION',
     defaultValue: '1.0.0',
   );
-  static const List<String> _driveScopes = <String>[
-    'https://www.googleapis.com/auth/drive.appdata',
-  ];
 
   late final GoogleSignIn _googleSignIn;
 
@@ -59,7 +55,8 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
   String? _userEmail;
   bool _busy = false;
   bool _loadingBackups = false;
-  String _statusMessage = 'Not connected';
+  bool _isInitializing = true;
+  String _statusMessage = 'Refreshing backup status...';
 
   List<SnapshotEntry> _backups = [];
   Map<String, DeviceMetadata> _knownDevices = {};
@@ -75,6 +72,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
   bool _hasExistingPassphrase = false;
   bool _isChangingPassphrase = false;
   final SyncEncryptionService _encryptionService = SyncEncryptionService();
+  Set<String>? _availableSnapshotPaths;
 
   @override
   void initState() {
@@ -87,9 +85,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     try {
       return context.read<GoogleSignIn>();
     } catch (_) {
-    return GoogleSignIn(
-        scopes: const <String>['profile', 'email'],
-      );
+      return createAppGoogleSignIn();
     }
   }
 
@@ -103,6 +99,8 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
   Future<void> _initStatus() async {
     setState(() {
       _busy = true;
+      _isInitializing = true;
+      _statusMessage = 'Refreshing backup status...';
     });
     try {
       final bool connected = await _tryAuthorizeDrive(
@@ -118,7 +116,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
       setState(() {
         _isConnected = false;
         _userEmail = null;
-        _statusMessage = 'Not connected';
+        _statusMessage = 'Refreshing backup status...';
       });
       await _loadLocalChecksum();
       await _loadBackupPassphrase();
@@ -132,35 +130,17 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
       if (mounted) {
         setState(() {
           _busy = false;
+          _isInitializing = false;
         });
       }
     }
-  }
-
-  void _logDriveAuth(String phase, {GoogleSignInAccount? account, Object? error}) {
-    String firebaseUid = 'unavailable';
-    String firebaseProviders = 'unavailable';
-    try {
-      final User? firebaseUser = FirebaseAuth.instance.currentUser;
-      firebaseUid = firebaseUser?.uid ?? 'null';
-      firebaseProviders = firebaseUser?.providerData.map((p) => p.providerId).join(',') ?? '';
-    } catch (_) {
-      // Firebase may not be initialized in widget tests; keep logs best-effort.
-    }
-    debugPrint(
-      '[CloudBackupDriveAuth][$phase] '
-      'firebaseUid=$firebaseUid '
-      'firebaseProviders=$firebaseProviders '
-      'googleCurrentUser=${_googleSignIn.currentUser?.email ?? 'null'} '
-      'account=${account?.email ?? 'null'} '
-      'error=${error?.toString() ?? 'none'}',
-    );
   }
 
   Future<bool> _tryAuthorizeDrive({
     required bool interactive,
     required String phase,
   }) async {
+    final String namespace = _cloudNamespace();
     final provider = GoogleDriveStorageProvider(
       googleSignIn: _googleSignIn,
       getAuthHeaders: () async {
@@ -170,6 +150,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
       checkConnected: () async => _isConnected,
       requestConnect: () async => false,
       requestDisconnect: () async {},
+      namespacePrefix: namespace,
       httpClient: widget.driveHttpClient,
     );
     final status = await provider.resolveConnection(
@@ -182,33 +163,27 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
         _userEmail = status.accountEmail;
         _statusMessage = status.connected
             ? 'Connected'
-            : (status.message ?? 'Google Drive permission is required for cloud backup.');
+            : (status.message ??
+                  'Google Drive permission is required for cloud backup.');
       });
     }
     return status.connected;
   }
 
   Future<void> _loadBackupPassphrase() async {
-    final controller = context.read<AppStateController>();
-    final userId = controller.state.loadedUserId;
-    final String? saved = await controller.secureStorageService.loadBackupPassphrase(
-      userId: userId,
-    );
-    Uint8List? recoveredKey;
-    if (saved == null || saved.isEmpty) {
-      try {
-        await _backupKeyManager().recoverKeyFromFirestore();
-        recoveredKey = await _backupKeyManager().getExistingKey();
-      } catch (_) {
-        recoveredKey = null;
+    String? resolvedSecret;
+    try {
+      await _backupKeyManager().recoverKeyFromFirestore();
+      final Uint8List? recoveredKey = await _backupKeyManager()
+          .getExistingKey();
+      if (recoveredKey != null && recoveredKey.isNotEmpty) {
+        resolvedSecret = base64UrlEncode(recoveredKey);
       }
-    }
-    final String? resolvedSecret = (saved != null && saved.isNotEmpty)
-        ? saved
-        : (recoveredKey == null ? null : base64UrlEncode(recoveredKey));
+    } catch (_) {}
     if (!mounted) return;
     setState(() {
-      _hasExistingPassphrase = resolvedSecret != null && resolvedSecret.isNotEmpty;
+      _hasExistingPassphrase =
+          resolvedSecret != null && resolvedSecret.isNotEmpty;
       _isChangingPassphrase = false;
       if (_hasExistingPassphrase) {
         _passphraseController.text = resolvedSecret!;
@@ -222,13 +197,16 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
   BackupKeyManager _backupKeyManager() {
     return widget.backupKeyManager ??
         BackupKeyManager(
-          secureStorageService: context.read<AppStateController>().secureStorageService,
+          secureStorageService: context
+              .read<AppStateController>()
+              .secureStorageService,
         );
   }
 
   String _drivePermissionPrefsKey() {
     final controller = context.read<AppStateController>();
-    final String userId = (controller.state.loadedUserId?.trim().isNotEmpty ?? false)
+    final String userId =
+        (controller.state.loadedUserId?.trim().isNotEmpty ?? false)
         ? controller.state.loadedUserId!.trim()
         : 'default';
     return 'cloud_backup_drive_permission_granted_$userId';
@@ -248,15 +226,39 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     }
   }
 
-  Future<String?> _resolveOperationSecret({bool showDialogOnFailure = true}) async {
+  Future<String?> _resolveOperationSecret({
+    bool showDialogOnFailure = true,
+    bool allowKeyCreation = true,
+  }) async {
     final String manualSecret = _passphraseController.text.trim();
     if (manualSecret.isNotEmpty) {
       return manualSecret;
     }
 
     try {
-      final Uint8List key = await _backupKeyManager().getOrCreateKey();
-      final String encoded = base64UrlEncode(key);
+      await _backupKeyManager().recoverKeyFromFirestore();
+      final Uint8List? recoveredKey = await _backupKeyManager()
+          .getExistingKey();
+      if (recoveredKey != null && recoveredKey.isNotEmpty) {
+        final String encoded = base64UrlEncode(recoveredKey);
+        if (mounted) {
+          setState(() {
+            _passphraseController.text = encoded;
+            _hasExistingPassphrase = true;
+            _isChangingPassphrase = false;
+          });
+        }
+        return encoded;
+      }
+
+      if (!allowKeyCreation || _backups.isNotEmpty) {
+        throw const BackupKeyRecoveryException(
+          BackupKeyRecoveryException.recoveryUnavailableMessage,
+        );
+      }
+
+      final Uint8List generatedKey = await _backupKeyManager().getOrCreateKey();
+      final String encoded = base64UrlEncode(generatedKey);
       if (mounted) {
         setState(() {
           _passphraseController.text = encoded;
@@ -268,11 +270,11 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     } on BackupKeyRecoveryException catch (error) {
       if (mounted) {
         setState(() {
-          _statusMessage = 'Backup key recovery failed';
+          _statusMessage = 'Backup key recovery required';
         });
         if (showDialogOnFailure) {
           await _showBlockingDialog(
-            title: 'Backup Key Recovery Failed',
+            title: 'Backup Key Recovery Required',
             message: error.message,
             buttonLabel: 'OK',
           );
@@ -310,6 +312,13 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     return str.contains('etag') ||
         str.contains('revision mismatch') ||
         str.contains('conflict');
+  }
+
+  bool _isMissingSnapshotError(Object error) {
+    final str = error.toString().toLowerCase();
+    return str.contains('snapshot file') ||
+        str.contains('no snapshot files from the manifest') ||
+        str.contains('could not be retrieved');
   }
 
   String _shortChecksum(String checksum) {
@@ -368,7 +377,12 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
 
   Future<void> _saveBackupPassphrase(String passphrase) async {
     final controller = context.read<AppStateController>();
-    final userId = controller.state.loadedUserId;
+    final String userId =
+        (controller.state.loadedUserId?.trim().isNotEmpty ?? false)
+        ? controller.state.loadedUserId!.trim()
+        : (controller.state.userId?.trim().isNotEmpty ?? false)
+        ? controller.state.userId!.trim()
+        : 'default';
     await controller.secureStorageService.saveBackupPassphrase(
       passphrase,
       userId: userId,
@@ -377,8 +391,15 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
 
   Future<void> _deleteBackupPassphrase() async {
     final controller = context.read<AppStateController>();
-    final userId = controller.state.loadedUserId;
-    await controller.secureStorageService.deleteBackupPassphrase(userId: userId);
+    final String userId =
+        (controller.state.loadedUserId?.trim().isNotEmpty ?? false)
+        ? controller.state.loadedUserId!.trim()
+        : (controller.state.userId?.trim().isNotEmpty ?? false)
+        ? controller.state.userId!.trim()
+        : 'default';
+    await controller.secureStorageService.deleteBackupPassphrase(
+      userId: userId,
+    );
   }
 
   Future<void> _loadLocalChecksum() async {
@@ -439,6 +460,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
   }
 
   UserCloudStorageProvider _getProvider() {
+    final String namespace = _cloudNamespace();
     return GoogleDriveStorageProvider(
       googleSignIn: _googleSignIn,
       getAuthHeaders: () async {
@@ -453,8 +475,27 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
       requestDisconnect: () => _disconnect(),
       hasGrantedDriveScope: _hasDrivePermissionGranted,
       setGrantedDriveScope: _setDrivePermissionGranted,
+      namespacePrefix: namespace,
       httpClient: widget.driveHttpClient,
     );
+  }
+
+  String _cloudNamespace() {
+    final controller = context.read<AppStateController>();
+    final String loadedUserId =
+        controller.state.loadedUserId?.trim().isNotEmpty == true
+        ? controller.state.loadedUserId!.trim()
+        : '';
+    if (loadedUserId.isNotEmpty) {
+      return loadedUserId;
+    }
+    final String authUserId = controller.state.userId?.trim().isNotEmpty == true
+        ? controller.state.userId!.trim()
+        : '';
+    if (authUserId.isNotEmpty) {
+      return authUserId;
+    }
+    return 'default';
   }
 
   Future<String> _getOrCreateDeviceId() async {
@@ -478,7 +519,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     }
 
     final provider = _getProvider();
-    final snapshotManager = SnapshotManager(encryptionService: _encryptionService);
+    final snapshotManager = SnapshotManager(
+      encryptionService: _encryptionService,
+    );
     final deviceId = await _getOrCreateDeviceId();
     final deviceName = Platform.isAndroid
         ? 'Android Device'
@@ -512,12 +555,12 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
       );
       if (connected) {
         await _fetchBackups();
-      } else if (mounted && _statusMessage == 'Connecting...') {
-        setState(() {
-          _isConnected = false;
-          _statusMessage = 'Not connected';
-        });
-      }
+        } else if (mounted && _statusMessage == 'Connecting...') {
+          setState(() {
+            _isConnected = false;
+            _statusMessage = 'Refreshing backup status...';
+          });
+        }
     } catch (e) {
       setState(() {
         if (_isPermissionRevokedError(e)) {
@@ -541,13 +584,12 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
       _busy = true;
     });
     try {
-      await _googleSignIn.signOut();
       await _setDrivePermissionGranted(false);
       await _deleteBackupPassphrase();
       setState(() {
         _isConnected = false;
         _userEmail = null;
-        _statusMessage = 'Not connected';
+        _statusMessage = 'Refreshing backup status...';
         _backups = [];
         _knownDevices = {};
         _latestSnapshotChecksum = null;
@@ -575,6 +617,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     if (!mounted) return;
     setState(() {
       _loadingBackups = true;
+      _availableSnapshotPaths = null;
     });
     try {
       final syncManager = await _getSyncManager();
@@ -598,18 +641,39 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
 
       if (checkResult.manifest != null) {
         final manifest = checkResult.manifest!;
+        final remoteFiles = await syncManager.provider.listFiles('snapshots/');
+        final availableSnapshotPaths = <String>{
+          for (final CloudFileInfo file in remoteFiles) file.path,
+        };
         if (!mounted) return;
         setState(() {
           _backups = List<SnapshotEntry>.from(manifest.snapshots);
-          _knownDevices = Map<String, DeviceMetadata>.from(manifest.knownDevices);
+          _availableSnapshotPaths = availableSnapshotPaths;
+          _knownDevices = Map<String, DeviceMetadata>.from(
+            manifest.knownDevices,
+          );
           _latestGlobalSequence = manifest.latestGlobalSequence;
           _latestSnapshotChecksum =
-              manifest.snapshots.isNotEmpty ? manifest.snapshots.last.checksum : null;
+              manifest.snapshots
+                  .where(
+                    (snapshot) =>
+                        availableSnapshotPaths.contains(snapshot.path),
+                  )
+                  .isNotEmpty
+              ? manifest.snapshots
+                    .where(
+                      (snapshot) =>
+                          availableSnapshotPaths.contains(snapshot.path),
+                    )
+                    .last
+                    .checksum
+              : null;
           _currentDeviceId = syncManager.deviceId;
 
           if (_statusMessage != 'Backup completed' &&
               _statusMessage != 'Restore completed') {
-            if (_localChecksum != null && _localChecksum == _latestSnapshotChecksum) {
+            if (_localChecksum != null &&
+                _localChecksum == _latestSnapshotChecksum) {
               _statusMessage = 'Already backed up';
             } else {
               _statusMessage = 'Connected';
@@ -619,11 +683,12 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
       } else if (mounted) {
         setState(() {
           _backups = [];
+          _availableSnapshotPaths = <String>{};
           _latestGlobalSequence = 0;
           _latestSnapshotChecksum = null;
           if (_statusMessage != 'Backup completed' &&
               _statusMessage != 'Restore completed') {
-            _statusMessage = 'Connected';
+            _statusMessage = 'No cloud backup found';
           }
         });
       }
@@ -647,12 +712,14 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
   }
 
   Future<void> _createBackup() async {
-    final String? passphrase = await _resolveOperationSecret();
+    final controller = context.read<AppStateController>();
+    final String? passphrase = await _resolveOperationSecret(
+      allowKeyCreation: _backups.isEmpty,
+    );
     if (passphrase == null || passphrase.isEmpty) {
       return;
     }
 
-    final controller = context.read<AppStateController>();
     final backupController = _maybeBackupController();
     final wasChangingPassphrase = _isChangingPassphrase;
     setState(() {
@@ -686,14 +753,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
           _isChangingPassphrase = false;
           _confirmPassphraseController.clear();
         });
-        showTopSnackBar(
-          context,
-          'Backup completed successfully',
-          kind: AppToastKind.success,
-        );
+        _showToast('Backup completed successfully', kind: AppToastKind.success);
         if (wasChangingPassphrase) {
-          showTopSnackBar(
-            context,
+          _showToast(
             'Changing your passphrase affects future backups. Older backups may still require the passphrase used when they were created.',
             kind: AppToastKind.warning,
           );
@@ -712,8 +774,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
           }
           _statusMessage = _mapErrorToMessage(result.message);
         });
-        showTopSnackBar(
-          context,
+        _showToast(
           'Backup failed: ${result.message}',
           kind: AppToastKind.error,
         );
@@ -727,7 +788,99 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
         }
         _statusMessage = _mapErrorToMessage(e);
       });
-      showTopSnackBar(context, 'Backup failed: $e', kind: AppToastKind.error);
+      _showToast('Backup failed: $e', kind: AppToastKind.error);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _deleteAllCloudBackups() async {
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        final TextEditingController confirmController = TextEditingController();
+        bool canDelete = false;
+        return StatefulBuilder(
+          builder: (BuildContext context, void Function(void Function()) setS) {
+            return AlertDialog(
+              title: const Text('Delete All Cloud Backups'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'This permanently deletes every backup snapshot from Google Drive for this account.',
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: confirmController,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Type DELETE to confirm',
+                    ),
+                    onChanged: (String value) {
+                      setS(() {
+                        canDelete = value.trim().toUpperCase() == 'DELETE';
+                      });
+                    },
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: canDelete
+                      ? () => Navigator.of(dialogContext).pop(true)
+                      : null,
+                  child: const Text(
+                    'Delete',
+                    style: TextStyle(color: Colors.red),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    if (confirmed != true || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _busy = true;
+      _statusMessage = 'Deleting cloud backups...';
+    });
+
+    try {
+      final backupController = _maybeBackupController();
+      await backupController?.deleteCloudBackupData();
+      await _fetchBackups();
+      if (!mounted) return;
+      setState(() {
+        _statusMessage = 'Cloud backups deleted';
+        _backups = [];
+        _availableSnapshotPaths = <String>{};
+        _latestSnapshotChecksum = null;
+        _latestGlobalSequence = 0;
+      });
+      _showToast(
+        'Cloud backups deleted successfully',
+        kind: AppToastKind.success,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _statusMessage = _mapErrorToMessage(e);
+      });
+      _showToast('Failed to delete backups: $e', kind: AppToastKind.error);
     } finally {
       if (mounted) {
         setState(() {
@@ -748,7 +901,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
           elevation: 0,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
-            side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+            side: BorderSide(
+              color: Theme.of(context).colorScheme.outlineVariant,
+            ),
           ),
           child: Padding(
             padding: const EdgeInsets.all(16),
@@ -762,9 +917,8 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                     Expanded(
                       child: Text(
                         'Automatic Cloud Backup',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.bold),
                       ),
                     ),
                     if (controller.isBackingUp)
@@ -784,7 +938,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                       : (bool enabled) async {
                           await controller.setAutomaticBackupEnabled(enabled);
                           if (enabled) {
-                            await controller.refreshCloudState(evaluatePrompt: true);
+                            await controller.refreshCloudState(
+                              evaluatePrompt: true,
+                            );
                           }
                         },
                   title: const Text('Enable automatic backups'),
@@ -793,34 +949,61 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                Row(
+                ExpansionTile(
+                  key: const Key('advancedBackupSettingsTile'),
+                  tilePadding: EdgeInsets.zero,
+                  childrenPadding: const EdgeInsets.only(bottom: 8),
+                  title: const Text(
+                    'Advanced',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: const Text(
+                    'Adjust backup timing and other power-user options.',
+                  ),
                   children: [
-                    const Text(
-                      'Minimum interval',
-                      style: TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    const Spacer(),
-                    DropdownButton<int>(
-                      value: controller.minimumIntervalHours,
-                      items: const <DropdownMenuItem<int>>[
-                        DropdownMenuItem<int>(
-                          value: 6,
-                          child: Text('6 hours'),
+                    Row(
+                      children: [
+                        const Text(
+                          'Minimum interval',
+                          style: TextStyle(fontWeight: FontWeight.w600),
                         ),
-                        DropdownMenuItem<int>(
-                          value: 12,
-                          child: Text('12 hours'),
+                        const Spacer(),
+                        DropdownButton<int>(
+                          value: controller.minimumIntervalHours,
+                          items: const <DropdownMenuItem<int>>[
+                            DropdownMenuItem<int>(
+                              value: 3,
+                              child: Text('3 hours'),
+                            ),
+                            DropdownMenuItem<int>(
+                              value: 6,
+                              child: Text('6 hours'),
+                            ),
+                            DropdownMenuItem<int>(
+                              value: 12,
+                              child: Text('12 hours'),
+                            ),
+                          ],
+                          onChanged: _busy
+                              ? null
+                              : (int? value) {
+                                  if (value != null) {
+                                    controller.setMinimumIntervalHours(value);
+                                  }
+                                },
                         ),
                       ],
-                      onChanged: _busy
-                          ? null
-                          : (int? value) {
-                              if (value != null) {
-                                controller.setMinimumIntervalHours(value);
-                              }
-                            },
                     ),
                   ],
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: _busy ? null : _deleteAllCloudBackups,
+                  icon: const Icon(Icons.delete_outline, color: Colors.red),
+                  label: const Text(
+                    'Delete All Cloud Backups',
+                    style: TextStyle(color: Colors.red),
+                  ),
                 ),
                 const Divider(height: 24),
                 _detailRow(
@@ -856,6 +1039,116 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
               ],
             ),
           ),
+        );
+      },
+    );
+  }
+
+  Widget _buildOperationSyncPanel(
+    BuildContext context,
+    CloudBackupController controller,
+  ) {
+    if (!controller.isOperationSyncEnabled) {
+      return const SizedBox.shrink();
+    }
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (BuildContext context, Widget? _) {
+        return FutureBuilder<int>(
+          future: controller.pendingOperationCount(),
+          builder: (BuildContext context, AsyncSnapshot<int> snapshot) {
+            final int pending = snapshot.data ?? 0;
+            return Card(
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.sync, size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Cloud Operation Sync',
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        if (controller.isOperationSyncing)
+                          const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    _detailRow(
+                      context,
+                      icon: Icons.flag_outlined,
+                      label: 'Mode',
+                      value: controller.operationSyncModeLabel,
+                    ),
+                    const SizedBox(height: 8),
+                    _detailRow(
+                      context,
+                      icon: Icons.swap_horiz,
+                      label: 'Status',
+                      value: controller.operationSyncStatusMessage,
+                    ),
+                    const SizedBox(height: 8),
+                    _detailRow(
+                      context,
+                      icon: Icons.queue,
+                      label: 'Pending operations',
+                      value: pending.toString(),
+                    ),
+                    const SizedBox(height: 8),
+                    _detailRow(
+                      context,
+                      icon: Icons.schedule,
+                      label: 'Last sync',
+                      value: _formatMaybeDate(
+                        controller.lastOperationSyncAt == null
+                            ? null
+                            : DateTime.tryParse(
+                                controller.lastOperationSyncAt!,
+                              ),
+                      ),
+                    ),
+                    if (controller.lastOperationSyncError.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        controller.lastOperationSyncError,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    AppPrimaryButton(
+                      onPressed: _busy
+                          ? null
+                          : () async {
+                              await controller.syncOperationsNow();
+                            },
+                      label: 'Manual Sync Now',
+                      icon: Icons.sync,
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
         );
       },
     );
@@ -901,7 +1194,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
       final core = input.trim().split('+').first.split('-').first;
       return core
           .split('.')
-          .map((part) => int.tryParse(part.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0)
+          .map(
+            (part) => int.tryParse(part.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0,
+          )
           .toList();
     }
 
@@ -965,10 +1260,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     return false;
   }
 
-  String? _compatibilityErrorFor(
-    SnapshotEntry backup,
-    int localSchemaVersion,
-  ) {
+  String? _compatibilityErrorFor(SnapshotEntry backup, int localSchemaVersion) {
     if (backup.databaseSchemaVersion > localSchemaVersion) {
       return 'This backup requires database schema version ${backup.databaseSchemaVersion}, but this device only supports schema version $localSchemaVersion.';
     }
@@ -1000,6 +1292,11 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     );
   }
 
+  void _showToast(String message, {required AppToastKind kind}) {
+    if (!mounted) return;
+    showTopSnackBar(context, message, kind: kind);
+  }
+
   Future<bool> _confirmStaleRestore(SnapshotEntry snapshot) async {
     if (!_isLocalDatabaseNewerThan(snapshot)) {
       return true;
@@ -1029,14 +1326,18 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
   }
 
   Future<void> _confirmAndRestore(SnapshotEntry snapshot) async {
-    final String? passphrase = await _resolveOperationSecret();
+    final controller = context.read<AppStateController>();
+    final String? passphrase = await _resolveOperationSecret(
+      allowKeyCreation: false,
+    );
     if (passphrase == null || passphrase.isEmpty) {
       return;
     }
 
-    final controller = context.read<AppStateController>();
-    final compatibilityError =
-        _compatibilityErrorFor(snapshot, controller.database?.schemaVersion ?? 0);
+    final compatibilityError = _compatibilityErrorFor(
+      snapshot,
+      controller.database?.schemaVersion ?? 0,
+    );
     if (compatibilityError != null) {
       await _showBlockingDialog(
         title: 'Restore Blocked',
@@ -1132,13 +1433,23 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
           );
           return;
         }
+        if (_isMissingSnapshotError(pullResult.message)) {
+          await _showBlockingDialog(
+            title: 'Backup File Missing',
+            message:
+                'The selected backup file is no longer available in Google Drive. Refresh the list and choose another backup.',
+            buttonLabel: 'OK',
+          );
+          return;
+        }
         throw StateError(pullResult.message);
       }
 
       await controller.replaceActiveDatabaseWithRestoredFile(tempPath);
       if (activeDbPath != null && activeDbPath.isNotEmpty) {
-        _latestRestoreLocalBackupPath =
-            await _findLatestLocalRestoreBackupPath(activeDbPath);
+        _latestRestoreLocalBackupPath = await _findLatestLocalRestoreBackupPath(
+          activeDbPath,
+        );
       }
 
       final tempFile = File(tempPath);
@@ -1197,21 +1508,27 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
               ),
               TextButton(
                 onPressed: () => Navigator.of(context).pop(true),
-                child: const Text('Restore Safety Copy', style: TextStyle(fontWeight: FontWeight.bold)),
+                child: const Text(
+                  'Restore Safety Copy',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
               ),
             ],
           ),
         );
 
-        if (restoreSafety == true && mounted && _latestRestoreLocalBackupPath != null) {
+        if (restoreSafety == true &&
+            mounted &&
+            _latestRestoreLocalBackupPath != null) {
           setState(() {
             _busy = true;
             _statusMessage = 'Restoring safety copy...';
           });
           try {
-            await controller.replaceActiveDatabaseWithRestoredFile(_latestRestoreLocalBackupPath!);
-            showTopSnackBar(
-              context,
+            await controller.replaceActiveDatabaseWithRestoredFile(
+              _latestRestoreLocalBackupPath!,
+            );
+            _showToast(
               'Restore completed successfully.',
               kind: AppToastKind.success,
             );
@@ -1221,8 +1538,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
             await _loadLocalChecksum();
             await _fetchBackups();
           } catch (restoreErr) {
-            showTopSnackBar(
-              context,
+            _showToast(
               'Failed to restore safety copy: $restoreErr',
               kind: AppToastKind.error,
             );
@@ -1287,10 +1603,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     return Theme.of(context).colorScheme.outlineVariant;
   }
 
-  Widget _badge({
-    required String label,
-    required Color color,
-  }) {
+  Widget _badge({required String label, required Color color}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -1313,10 +1626,15 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     SnapshotEntry backup, {
     required bool isLatestCard,
   }) {
-    final isCurrent = _currentDeviceId != null && backup.deviceId == _currentDeviceId;
-    final isNewest = _latestGlobalSequence > 0 &&
+    final bool isAvailable =
+        _availableSnapshotPaths?.contains(backup.path) ?? true;
+    final isCurrent =
+        _currentDeviceId != null && backup.deviceId == _currentDeviceId;
+    final isNewest =
+        _latestGlobalSequence > 0 &&
         backup.globalSequence == _latestGlobalSequence;
-    final isOlder = _latestGlobalSequence > 0 &&
+    final isOlder =
+        _latestGlobalSequence > 0 &&
         backup.globalSequence < _latestGlobalSequence;
     final platform = _platformForBackup(backup);
     final borderColor = _cardBorderColor(
@@ -1336,6 +1654,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     }
     if (isOlder) {
       badges.add(_badge(label: 'Older Backup', color: Colors.orange.shade700));
+    }
+    if (!isAvailable) {
+      badges.add(_badge(label: 'Unavailable', color: Colors.grey.shade700));
     }
 
     return Card(
@@ -1363,10 +1684,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                     color: borderColor.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Icon(
-                    _platformIcon(platform),
-                    color: borderColor,
-                  ),
+                  child: Icon(_platformIcon(platform), color: borderColor),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -1384,12 +1702,25 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        backup.deviceName.isEmpty ? 'Unknown device' : backup.deviceName,
+                        backup.deviceName.isEmpty
+                            ? 'Unknown device'
+                            : backup.deviceName,
                         style: TextStyle(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                           fontSize: 13,
                         ),
                       ),
+                      if (!isAvailable) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          'Snapshot file missing from Drive',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 2),
                       Text(
                         '${_formatPlatformLabel(platform)} | $dateLabel',
@@ -1418,7 +1749,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                 _detailChip(
                   context,
                   icon: _platformIcon(platform),
-                  label: backup.deviceName.isEmpty ? 'Unknown device' : backup.deviceName,
+                  label: backup.deviceName.isEmpty
+                      ? 'Unknown device'
+                      : backup.deviceName,
                 ),
                 _detailChip(
                   context,
@@ -1428,7 +1761,8 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                 _detailChip(
                   context,
                   icon: Icons.apps,
-                  label: 'App ${backup.appVersion.isEmpty ? 'unknown' : backup.appVersion}',
+                  label:
+                      'App ${backup.appVersion.isEmpty ? 'unknown' : backup.appVersion}',
                 ),
                 _detailChip(
                   context,
@@ -1448,16 +1782,26 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
             const SizedBox(height: 12),
             Align(
               alignment: Alignment.centerRight,
-              child: isLatestCard
-                  ? ElevatedButton.icon(
-                      onPressed: _busy ? null : () => _confirmAndRestore(backup),
-                      icon: const Icon(Icons.restore),
-                      label: const Text('Restore'),
-                    )
+              child: isAvailable
+                  ? (isLatestCard
+                        ? ElevatedButton.icon(
+                            onPressed: _busy
+                                ? null
+                                : () => _confirmAndRestore(backup),
+                            icon: const Icon(Icons.restore),
+                            label: const Text('Restore'),
+                          )
+                        : OutlinedButton.icon(
+                            onPressed: _busy
+                                ? null
+                                : () => _confirmAndRestore(backup),
+                            icon: const Icon(Icons.restore),
+                            label: const Text('Restore'),
+                          ))
                   : OutlinedButton.icon(
-                      onPressed: _busy ? null : () => _confirmAndRestore(backup),
+                      onPressed: null,
                       icon: const Icon(Icons.restore),
-                      label: const Text('Restore'),
+                      label: const Text('Unavailable'),
                     ),
             ),
           ],
@@ -1474,7 +1818,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        color: Theme.of(
+          context,
+        ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
       ),
@@ -1483,10 +1829,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
         children: [
           Icon(icon, size: 14),
           const SizedBox(width: 6),
-          Text(
-            label,
-            style: const TextStyle(fontSize: 12),
-          ),
+          Text(label, style: const TextStyle(fontSize: 12)),
         ],
       ),
     );
@@ -1509,16 +1852,20 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     final backupController = _maybeBackupController();
     final sortedBackups = _sortedBackups;
     final latestBackup = sortedBackups.isNotEmpty ? sortedBackups.first : null;
-    final previousBackups =
-        sortedBackups.length > 1 ? sortedBackups.skip(1).toList() : <SnapshotEntry>[];
-    final lastBackupTime = backupController?.lastBackupAt ?? latestBackup?.createdAt;
+    final previousBackups = sortedBackups.length > 1
+        ? sortedBackups.skip(1).toList()
+        : <SnapshotEntry>[];
+    final lastBackupTime =
+        backupController?.lastBackupAt ?? latestBackup?.createdAt;
     final nextEligibleTime = backupController?.nextEligibleBackupAt;
     final autoBackupSummary = backupController == null
-      ? 'Not available'
-      : (backupController.automaticBackupEnabled ? 'Enabled' : 'Disabled');
-    final lastError = backupController == null || backupController.lastBackupError.trim().isEmpty
-      ? 'None'
-      : backupController.lastBackupError.trim();
+        ? 'Not available'
+        : (backupController.automaticBackupEnabled ? 'Enabled' : 'Disabled');
+    final lastError =
+        backupController == null ||
+            backupController.lastBackupError.trim().isEmpty
+        ? 'None'
+        : backupController.lastBackupError.trim();
 
     return Scaffold(
       appBar: AppBar(
@@ -1547,13 +1894,14 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
           children: [
             Card(
               elevation: 0,
-              color: Theme.of(context)
-                  .colorScheme
-                  .surfaceContainerHighest
-                  .withValues(alpha: 0.5),
+              color: Theme.of(
+                context,
+              ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
-                side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+                side: BorderSide(
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
               ),
               child: Padding(
                 padding: const EdgeInsets.all(16),
@@ -1574,7 +1922,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 16,
-                              color: _isConnected ? Colors.green : Colors.grey.shade600,
+                              color: _isConnected
+                                  ? Colors.green
+                                  : Colors.grey.shade600,
                             ),
                           ),
                           if (_isConnected && _userEmail != null) ...[
@@ -1583,7 +1933,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                               'Account: $_userEmail',
                               style: TextStyle(
                                 fontSize: 13,
-                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
                               ),
                             ),
                           ],
@@ -1615,16 +1967,17 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                             label: 'Last error',
                             value: lastError,
                           ),
-                           if (kDebugMode) ...[
-                             const SizedBox(height: 8),
-                             _detailRow(
-                               context,
-                               icon: Icons.inventory_2_outlined,
-                               label: 'Backup count',
-                               value: '${_backups.length}',
-                             ),
-                           ],
-                          if (_isConnected && _statusMessage == 'Network error') ...[
+                          if (kDebugMode) ...[
+                            const SizedBox(height: 8),
+                            _detailRow(
+                              context,
+                              icon: Icons.inventory_2_outlined,
+                              label: 'Backup count',
+                              value: '${_backups.length}',
+                            ),
+                          ],
+                          if (_isConnected &&
+                              _statusMessage == 'Network error') ...[
                             const SizedBox(height: 12),
                             Align(
                               alignment: Alignment.centerRight,
@@ -1642,81 +1995,117 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                 ),
               ),
             ),
-              const SizedBox(height: 20),
-              if (!_isConnected)
-                Card(
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+            const SizedBox(height: 20),
+            if (_isInitializing)
+              Card(
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(
+                    color: Theme.of(context).colorScheme.outlineVariant,
                   ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Connect Google Drive to enable cloud backups',
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
+                ),
+                child: const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Checking Google Drive connection...',
+                          style: TextStyle(fontWeight: FontWeight.w600),
                         ),
-                        const SizedBox(height: 12),
-                        const Text(
-                          'Google Drive appDataFolder is app-private. Backup files are not visible in your Drive files list.',
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Backups are encrypted automatically on this device before upload.',
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Your backup key is recovered securely when you sign in.',
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Firebase app login is separate from Google Drive access. Connecting Drive does not change your app login session.',
-                        ),
-                        const SizedBox(height: 16),
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: TextButton(
-                            onPressed: _busy
-                                ? null
-                                : () {
-                                    Navigator.of(context).maybePop();
-                                  },
-                            child: const Text('Skip'),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        AppPrimaryButton(
-                          onPressed: _busy ? null : _connect,
-                          label: 'Connect Google Drive',
-                          icon: Icons.login,
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                )
-              else ...[
-                if (backupController != null) ...[
-                  _buildAutomaticBackupPanel(context, backupController),
+                ),
+              )
+            else if (!_isConnected)
+              Card(
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Connect Google Drive to enable cloud backups',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Google Drive appDataFolder is app-private. Backup files are not visible in your Drive files list.',
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Backups are encrypted automatically on this device before upload.',
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Your backup key is recovered securely when you sign in.',
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Firebase app login is separate from Google Drive access. Connecting Drive does not change your app login session.',
+                      ),
+                      const SizedBox(height: 16),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton(
+                          onPressed: _busy
+                              ? null
+                              : () {
+                                  Navigator.of(context).maybePop();
+                                },
+                          child: const Text('Skip'),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      AppPrimaryButton(
+                        onPressed: _busy ? null : _connect,
+                        label: 'Connect Google Drive',
+                        icon: Icons.login,
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else ...[
+              if (backupController != null) ...[
+                _buildAutomaticBackupPanel(context, backupController),
+                const SizedBox(height: 24),
+                if (backupController.isOperationSyncEnabled) ...[
+                  _buildOperationSyncPanel(context, backupController),
                   const SizedBox(height: 24),
                 ],
+              ],
               const SizedBox(height: 24),
               Text(
                 'Cloud Backup',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
               Card(
                 elevation: 0,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+                  side: BorderSide(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
                 ),
                 child: Padding(
                   padding: const EdgeInsets.all(16),
@@ -1736,7 +2125,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                             color: Theme.of(context).colorScheme.outlineVariant,
                           ),
                         ),
-                      child: const Text(
+                        child: const Text(
                           'Backups are encrypted automatically on this device before upload to Google Drive. Your backup key is recovered securely upon sign in.',
                         ),
                       ),
@@ -1760,8 +2149,8 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                   Text(
                     'Backup History',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   if (_loadingBackups)
                     const SizedBox(
@@ -1770,9 +2159,10 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   else
-                    IconButton(
-                      icon: const Icon(Icons.refresh, size: 20),
+                    TextButton.icon(
                       onPressed: _busy ? null : _fetchBackups,
+                      icon: const Icon(Icons.refresh, size: 18),
+                      label: const Text('Refresh backups'),
                     ),
                 ],
               ),
@@ -1782,7 +2172,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                   elevation: 0,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+                    side: BorderSide(
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                    ),
                   ),
                   child: const Padding(
                     padding: EdgeInsets.all(24),
@@ -1796,19 +2188,15 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                 )
               else ...[
                 if (latestBackup != null) ...[
-                  _buildBackupCard(
-                    context,
-                    latestBackup,
-                    isLatestCard: true,
-                  ),
+                  _buildBackupCard(context, latestBackup, isLatestCard: true),
                 ],
                 if (previousBackups.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   Text(
                     'Previous Backups',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   ListView.builder(

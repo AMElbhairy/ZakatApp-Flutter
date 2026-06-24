@@ -16,7 +16,9 @@ class AppLocalizations {
       'brand_title': 'Zakah Wealth',
       'brand_tagline': 'Track Wealth. Calculate Zakat.',
       'brand_trust_message':
-          'Sign in to securely backup and restore your wealth data.',
+          'Sign in with Google to enable secure backup and sync with Google Drive.',
+      'google_sign_in_only_intro':
+          'Continue with Google to enable backup and sync.',
       'login_intro': 'Continue with your account',
       'create_account_title': 'Create your secure account',
       'continue_with_google': 'Continue with Google',
@@ -300,7 +302,8 @@ class AppLocalizations {
       'yearly_growth_rate': 'Yearly Growth Rate (%)',
       'repeat': 'Repeat',
       'total_installments_amount': 'Total Installments Amount',
-      'total_installments_amount_required': 'Total installments amount is required',
+      'total_installments_amount_required':
+          'Total installments amount is required',
       'plan_name': 'Plan Name',
       'starting_balance': 'Starting Balance',
       'starting_balance_non_negative': 'Starting balance must be >= 0',
@@ -427,7 +430,9 @@ class AppLocalizations {
       'brand_title': 'Zakah Wealth',
       'brand_tagline': 'تتبع الثروة. احسب الزكاة.',
       'brand_trust_message':
-          'سجّل الدخول لنسخ بيانات الثروة احتياطياً واستعادتها بأمان.',
+          'سجّل الدخول باستخدام Google لتمكين النسخ الاحتياطي والمزامنة الآمنة مع Google Drive.',
+      'google_sign_in_only_intro':
+          'تابع باستخدام Google لتمكين النسخ الاحتياطي والمزامنة.',
       'login_intro': 'تابع باستخدام حسابك الموثوق',
       'create_account_title': 'أنشئ حسابك الآمن',
       'continue_with_google': 'المتابعة باستخدام Google',

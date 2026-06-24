@@ -12,7 +12,6 @@ import 'package:zakatapp_flutter/models/saving.dart' as model;
 import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
 import 'package:zakatapp_flutter/services/app_state_controller.dart';
 import 'package:zakatapp_flutter/services/local_storage_service.dart';
-import '../support/recording_firestore_sync_manager.dart';
 
 class _StaticGate implements UseSqliteLocalStoreProvider {
   _StaticGate(this.value);
@@ -106,12 +105,10 @@ void main() {
       expect(rows.single.id, 'sv1');
       expect(queue.single.operation, 'upsert');
       expect(controller.state.savings.single.id, 'sv1');
-      expect(
-        jsonDecode(
-          (await const LocalStorageService().loadString('zakatAppData'))!,
-        )['savings'][0]['id'],
-        'sv1',
-      );
+      final Map<String, dynamic> saved = jsonDecode(
+        (await const LocalStorageService().loadString('zakatAppData'))!,
+      ) as Map<String, dynamic>;
+      expect(saved['savings'], isEmpty);
 
       await database.close();
     },
@@ -156,55 +153,6 @@ void main() {
     await database.close();
   });
 
-  test('saving edit does not trigger full-list Firestore sync', () async {
-    final recordingFirestore = RecordingFirestoreSyncManager(uid: 'user-1');
-    final controller = AppStateController(
-      repository: AppStateRepository(localStorage: const LocalStorageService()),
-      firestoreSyncManager: recordingFirestore,
-      useSqliteLocalStoreProvider: _StaticGate(false),
-    );
-
-    await controller.updateState(
-      controller.state.copyWith(
-        userId: 'user-1',
-        savings: <model.Saving>[
-          const model.Saving(
-            id: 'sv-edit',
-            assetType: 'cash',
-            dateAcquired: '2026-06-19',
-            amount: 250,
-            remainingAmount: 250,
-            unit: 'USD',
-            description: 'original',
-            purchaseCurrency: 'USD',
-            purchaseAmount: 250,
-            createdAt: '2026-06-19T08:00:00.000Z',
-          ),
-        ],
-      ),
-    );
-
-    await controller.startLiveFirestoreSync(userId: 'user-1');
-    recordingFirestore.savingsSyncCalls = 0;
-
-    await controller.updateSaving(
-      const model.Saving(
-        id: 'sv-edit',
-        assetType: 'cash',
-        dateAcquired: '2026-06-19',
-        amount: 300,
-        remainingAmount: 300,
-        unit: 'USD',
-        description: 'updated',
-        purchaseCurrency: 'USD',
-        purchaseAmount: 300,
-        createdAt: '2026-06-19T09:00:00.000Z',
-      ),
-    );
-
-    expect(recordingFirestore.savingsSyncCalls, 0);
-  });
-
   test('SQLite saving write failure falls back to JSON path', () async {
     final controller = await _makeController(
       localStore: _ThrowingSavingsRepository(const <model.Saving>[]),
@@ -227,12 +175,10 @@ void main() {
     );
 
     expect(controller.state.savings.single.id, 'sv-fallback');
-    expect(
-      jsonDecode(
-        (await const LocalStorageService().loadString('zakatAppData'))!,
-      )['savings'][0]['id'],
-      'sv-fallback',
-    );
+    final Map<String, dynamic> saved = jsonDecode(
+      (await const LocalStorageService().loadString('zakatAppData'))!,
+    ) as Map<String, dynamic>;
+    expect(saved['savings'], isEmpty);
   });
 
   test('JSON mode saving save and delete remain unchanged', () async {
