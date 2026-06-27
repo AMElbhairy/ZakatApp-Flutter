@@ -25,6 +25,7 @@ import '../models/merchant_confirmation.dart';
 import '../models/capture_analytics.dart';
 import '../models/correction_feedback.dart';
 import '../models/user_profile.dart';
+import '../core/utils/category_visuals.dart';
 import '../data/local/local_store_providers.dart'
     hide useSqliteLocalStoreProvider;
 import '../data/local/local_store_providers.dart' as store_providers;
@@ -3300,7 +3301,12 @@ class AppStateController extends ChangeNotifier {
     return '${local.year}-$month-$day';
   }
 
-  Future<void> addCategory({required String type, required String name}) async {
+  Future<void> addCategory({
+    required String type,
+    required String name,
+    String? iconKey,
+    int? colorValue,
+  }) async {
     final String clean = name.trim();
     if (clean.isEmpty) return;
     final bool income = type == 'income';
@@ -3310,9 +3316,21 @@ class AppStateController extends ChangeNotifier {
     if (source.any((String c) => c.toLowerCase() == clean.toLowerCase())) {
       return;
     }
+    final CategoryVisual? visual =
+        iconKey == null && colorValue == null
+        ? null
+        : CategoryVisual(iconKey: iconKey, colorValue: colorValue);
+    final Map<String, CategoryVisual> metadata = Map<String, CategoryVisual>.from(
+      income ? _state.categories.incomeMetadata : _state.categories.expenseMetadata,
+    );
+    if (visual != null) {
+      metadata[clean] = visual;
+    }
     final AppCategories nextCategories = AppCategories(
       income: income ? <String>[...source, clean] : _state.categories.income,
       expense: income ? _state.categories.expense : <String>[...source, clean],
+      incomeMetadata: income ? metadata : _state.categories.incomeMetadata,
+      expenseMetadata: income ? _state.categories.expenseMetadata : metadata,
     );
     await updateState(_state.copyWith(categories: nextCategories));
   }
@@ -3336,6 +3354,13 @@ class AppStateController extends ChangeNotifier {
     final List<String> updatedCategories = source
         .map((String c) => c == cleanFrom ? cleanTo : c)
         .toList(growable: false);
+    final Map<String, CategoryVisual> sourceMetadata = Map<String, CategoryVisual>.from(
+      income ? _state.categories.incomeMetadata : _state.categories.expenseMetadata,
+    );
+    final CategoryVisual? movedStyle = sourceMetadata.remove(cleanFrom);
+    if (movedStyle != null) {
+      sourceMetadata[cleanTo] = movedStyle;
+    }
     final List<Transaction> updatedTransactions = _state.transactions
         .map(
           (Transaction tx) => tx.category == cleanFrom
@@ -3354,6 +3379,12 @@ class AppStateController extends ChangeNotifier {
                   exchangePairId: tx.exchangePairId,
                   exchangeSourceIncomeId: tx.exchangeSourceIncomeId,
                   remainingAmount: tx.remainingAmount,
+                  activityType: tx.activityType,
+                  costBasis: tx.costBasis,
+                  saleValue: tx.saleValue,
+                  realizedGain: tx.realizedGain,
+                  realizedGainLossCurrency: tx.realizedGainLossCurrency,
+                  metalQuantity: tx.metalQuantity,
                 )
               : tx,
         )
@@ -3361,6 +3392,8 @@ class AppStateController extends ChangeNotifier {
     final AppCategories nextCategories = AppCategories(
       income: income ? updatedCategories : _state.categories.income,
       expense: income ? _state.categories.expense : updatedCategories,
+      incomeMetadata: income ? sourceMetadata : _state.categories.incomeMetadata,
+      expenseMetadata: income ? _state.categories.expenseMetadata : sourceMetadata,
     );
     await updateState(
       _state.copyWith(
@@ -3388,9 +3421,14 @@ class AppStateController extends ChangeNotifier {
     final List<String> updated = source
         .where((String c) => c != clean)
         .toList(growable: false);
+    final Map<String, CategoryVisual> metadata = Map<String, CategoryVisual>.from(
+      income ? _state.categories.incomeMetadata : _state.categories.expenseMetadata,
+    )..remove(clean);
     final AppCategories nextCategories = AppCategories(
       income: income ? updated : _state.categories.income,
       expense: income ? _state.categories.expense : updated,
+      incomeMetadata: income ? metadata : _state.categories.incomeMetadata,
+      expenseMetadata: income ? _state.categories.expenseMetadata : metadata,
     );
     await updateState(_state.copyWith(categories: nextCategories));
     return true;
@@ -3416,6 +3454,38 @@ class AppStateController extends ChangeNotifier {
     final AppCategories nextCategories = AppCategories(
       income: income ? source : _state.categories.income,
       expense: income ? _state.categories.expense : source,
+      incomeMetadata: income ? _state.categories.incomeMetadata : _state.categories.incomeMetadata,
+      expenseMetadata: income ? _state.categories.expenseMetadata : _state.categories.expenseMetadata,
+    );
+    await updateState(_state.copyWith(categories: nextCategories));
+  }
+
+  Future<void> updateCategoryMetadata({
+    required String type,
+    required String name,
+    String? iconKey,
+    int? colorValue,
+  }) async {
+    final String clean = name.trim();
+    if (clean.isEmpty) return;
+    final bool income = type == 'income';
+    final Map<String, CategoryVisual> source = Map<String, CategoryVisual>.from(
+      income ? _state.categories.incomeMetadata : _state.categories.expenseMetadata,
+    );
+    final CategoryVisual? visual =
+        iconKey == null && colorValue == null
+        ? null
+        : CategoryVisual(iconKey: iconKey, colorValue: colorValue);
+    if (visual == null) {
+      source.remove(clean);
+    } else {
+      source[clean] = visual;
+    }
+    final AppCategories nextCategories = AppCategories(
+      income: _state.categories.income,
+      expense: _state.categories.expense,
+      incomeMetadata: income ? source : _state.categories.incomeMetadata,
+      expenseMetadata: income ? _state.categories.expenseMetadata : source,
     );
     await updateState(_state.copyWith(categories: nextCategories));
   }
@@ -4265,6 +4335,52 @@ class AppStateController extends ChangeNotifier {
     );
     await updateState(
       _state.copyWith(merchantRules: nextRules, merchantAliases: nextAliases),
+    );
+  }
+
+  Future<void> deleteBuiltinMerchantRule(String merchantName) async {
+    final String key = merchantName.toLowerCase().trim();
+    final MerchantRule existingRule = _state.merchantRules[key] ??
+        _state.merchantRules.values.firstWhere(
+          (MerchantRule candidate) =>
+              candidate.merchantName.toLowerCase().trim() == key ||
+              candidate.builtinKey?.toLowerCase().trim() == key,
+          orElse: () => MerchantRule(
+            merchantName: merchantName,
+            categoryId: SmartCaptureParser.builtinMerchantCategoryMap[key] ??
+                'Uncategorized',
+            defaultType: 'expense',
+            autoApprove: true,
+            usageCount: 0,
+            confidence: 1.0,
+            source: 'custom',
+            aliases: const <String>[],
+            enabled: true,
+            isBuiltinOverride: true,
+            builtinKey: key,
+          ),
+        );
+    final MerchantRule disabledRule = existingRule.copyWith(
+      enabled: false,
+      source: 'custom',
+      isBuiltinOverride: true,
+      builtinKey: existingRule.builtinKey ?? key,
+      aliases: const <String>[],
+    );
+    final nextRules = Map<String, MerchantRule>.from(_state.merchantRules);
+    nextRules[disabledRule.builtinKey ?? key] = disabledRule;
+    final nextAliases = Map<String, String>.from(_state.merchantAliases)
+      ..removeWhere(
+        (String alias, String merchant) =>
+            merchant.toLowerCase().trim() == key ||
+            merchant.toLowerCase().trim() ==
+                disabledRule.merchantName.toLowerCase().trim(),
+      );
+    await updateState(
+      _state.copyWith(
+        merchantRules: nextRules,
+        merchantAliases: nextAliases,
+      ),
     );
   }
 

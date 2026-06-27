@@ -7,6 +7,7 @@ import '../../core/services/zakat_engine.dart';
 import '../../core/services/zakat_schedule_service.dart';
 import '../../core/theme/app_theme_extensions.dart';
 import '../../core/widgets/app_ui.dart';
+import '../../core/widgets/compact_dropdown.dart';
 import '../../models/investment_asset.dart';
 import '../../models/saving.dart';
 import '../../models/transaction.dart';
@@ -144,17 +145,12 @@ class _ObligationsListScreenState extends State<ObligationsListScreen> {
       context: context,
       builder: (BuildContext ctx) => AlertDialog(
         title: Text(context.l10n.tr('select_payment_category')),
-        content: DropdownButtonFormField<String>(
-          initialValue: selected,
-          items: categories
-              .map(
-                (String c) => DropdownMenuItem<String>(
-                  value: c,
-                  child: Text(ctx.l10n.translateCategory(c)),
-                ),
-              )
-              .toList(growable: false),
-          onChanged: (String? v) => selected = v ?? selected,
+        content: CompactDropdownFormField<String>(
+          value: selected,
+          labelText: context.l10n.tr('select_payment_category'),
+          items: categories,
+          itemLabel: ctx.l10n.translateCategory,
+          onChanged: (String v) => selected = v,
         ),
         actions: <Widget>[
           TextButton(

@@ -68,7 +68,7 @@ void main() {
       );
       expect(find.textContaining('EGP'), findsOneWidget);
 
-      await tester.tap(find.byType(DropdownButtonFormField<String>));
+      await tester.tap(find.byType(InkWell).first);
       await tester.pumpAndSettle();
       await tester.tap(find.textContaining('USD').last);
       await tester.pumpAndSettle();

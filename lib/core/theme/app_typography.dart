@@ -124,6 +124,304 @@ class AppTypography {
     );
   }
 
+  static TextStyle pageTitle({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return _base(
+      fontSize: 30,
+      height: 1.1,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 0.5,
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle displayMediumStyle({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return displayMedium(
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle sectionTitle({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return headlineLarge(
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle cardTitle({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return titleLarge(
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle cardSubtitle({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return bodyMedium(
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle body({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return bodyLarge(
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle caption({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return bodySmall(
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle label({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return labelMedium(
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle button({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return labelLarge(
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle chip({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return labelSmall(
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle badge({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return labelSmall(
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle navigationLabel({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return labelSmall(
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle navigationLabelCompact({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return _base(
+      fontSize: 10.5,
+      height: 1.2,
+      fontWeight: FontWeight.w500,
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle financialAmountXLStyle({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return financialValue(
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+      large: true,
+    );
+  }
+
+  static TextStyle financialAmountLargeStyle({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return financialValue(
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+      large: false,
+    );
+  }
+
+  static TextStyle financialAmountStyle({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return financialStat(
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle dialogTitle({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return titleLarge(
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle dialogBody({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return bodyLarge(
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle tableHeader({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return titleMedium(
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle tableCell({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+    bool bold = false,
+  }) {
+    return bodyMedium(
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    ).copyWith(fontWeight: bold ? FontWeight.w700 : FontWeight.w500);
+  }
+
+  static TextStyle emptyState({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return bodyLarge(
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle error({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return bodyMedium(
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle helper({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return bodySmall(
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
+  static TextStyle hint({
+    required Color color,
+    required String family,
+    required String fallbackFamily,
+  }) {
+    return bodyMedium(
+      color: color,
+      family: family,
+      fallbackFamily: fallbackFamily,
+    );
+  }
+
   static TextStyle displayMedium({
     required Color color,
     required String family,

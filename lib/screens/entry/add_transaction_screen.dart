@@ -9,6 +9,8 @@ import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart' as image_picker;
 
 import '../../core/i18n/app_localizations.dart';
+import '../../core/widgets/compact_dropdown.dart';
+import '../../core/utils/currency_presentation.dart';
 import '../../core/services/zakat_engine.dart';
 import '../../core/widgets/app_ui.dart';
 import '../../models/transaction.dart';
@@ -211,52 +213,31 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                   },
                 ),
                 const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
+                CompactDropdownFormField<String>(
                   key: const Key('currencyField'),
-                  initialValue: _currency,
-                  decoration: InputDecoration(
-                    labelText: context.l10n.tr('currency'),
-                    border: OutlineInputBorder(),
-                  ),
-                  items: ZakatEngineService.supportedCurrencies
-                      .map(
-                        (String currency) => DropdownMenuItem<String>(
-                          value: currency,
-                          child: Text(
-                            ZakatEngineService.getCurrencySymbol(
-                              currency,
-                              isArabic:
-                                  Localizations.localeOf(
-                                    context,
-                                  ).languageCode.toLowerCase() ==
-                                  'ar',
-                            ),
-                          ),
-                        ),
-                      )
-                      .toList(growable: false),
-                  onChanged: (String? value) {
-                    if (value == null) return;
+                  value: _currency,
+                  labelText: context.l10n.tr('currency'),
+                  items: ZakatEngineService.supportedCurrencies,
+                  itemLabel: (String currency) =>
+                      CurrencyPresentation.selectorLabel(
+                        currency,
+                        isRtl:
+                            Localizations.localeOf(
+                              context,
+                            ).languageCode.toLowerCase() == 'ar',
+                      ),
+                  onChanged: (String value) {
                     setState(() => _currency = value);
                   },
                 ),
                 const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
+                CompactDropdownFormField<String>(
                   key: const Key('categoryField'),
-                  initialValue: _category,
-                  decoration: InputDecoration(
-                    labelText: context.l10n.tr('category'),
-                    border: OutlineInputBorder(),
-                  ),
-                  items: categories
-                      .map(
-                        (String category) => DropdownMenuItem<String>(
-                          value: category,
-                          child: Text(context.l10n.translateCategory(category)),
-                        ),
-                      )
-                      .toList(growable: false),
-                  onChanged: (String? value) {
+                  value: _category,
+                  labelText: context.l10n.tr('category'),
+                  items: categories,
+                  itemLabel: context.l10n.translateCategory,
+                  onChanged: (String value) {
                     setState(() => _category = value);
                   },
                   validator: (String? value) {
@@ -934,23 +915,13 @@ class _ScannedTransactionsConfirmationDialogState
                         const SizedBox(width: 8),
                         Expanded(
                           flex: 1,
-                          child: DropdownButtonFormField<String>(
+                          child: CompactDropdownFormField<String>(
                             key: Key('scannedCurrency_$index'),
-                            initialValue: item['currency'] as String,
-                            decoration: InputDecoration(
-                              labelText: isArabic ? 'العملة' : 'Currency',
-                              border: OutlineInputBorder(),
-                            ),
-                            items: ZakatEngineService.supportedCurrencies
-                                .map(
-                                  (c) => DropdownMenuItem(
-                                    value: c,
-                                    child: Text(c),
-                                  ),
-                                )
-                                .toList(),
-                            onChanged: (val) {
-                              if (val == null) return;
+                            value: item['currency'] as String,
+                            labelText: isArabic ? 'العملة' : 'Currency',
+                            items: ZakatEngineService.supportedCurrencies,
+                            itemLabel: (String c) => c,
+                            onChanged: (String val) {
                               setState(() {
                                 item['currency'] = val;
                               });
@@ -960,23 +931,13 @@ class _ScannedTransactionsConfirmationDialogState
                       ],
                     ),
                     const SizedBox(height: 8),
-                    DropdownButtonFormField<String>(
+                    CompactDropdownFormField<String>(
                       key: Key('scannedCategory_$index'),
-                      initialValue: item['category'] as String,
-                      decoration: InputDecoration(
-                        labelText: isArabic ? 'التصنيف' : 'Category',
-                        border: const OutlineInputBorder(),
-                      ),
-                      items: widget.categories
-                          .map(
-                            (c) => DropdownMenuItem(
-                              value: c,
-                              child: Text(context.l10n.translateCategory(c)),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (val) {
-                        if (val == null) return;
+                      value: item['category'] as String,
+                      labelText: isArabic ? 'التصنيف' : 'Category',
+                      items: widget.categories,
+                      itemLabel: context.l10n.translateCategory,
+                      onChanged: (String val) {
                         setState(() {
                           item['category'] = val;
                         });

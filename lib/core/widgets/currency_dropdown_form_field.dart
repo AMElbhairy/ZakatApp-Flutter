@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../services/zakat_engine.dart';
+import 'compact_selection_dialog.dart';
+import '../utils/currency_presentation.dart';
 
 class CurrencyDropdownFormField extends StatelessWidget {
   const CurrencyDropdownFormField({
@@ -22,52 +23,54 @@ class CurrencyDropdownFormField extends StatelessWidget {
         Localizations.localeOf(context).languageCode.toLowerCase() == 'ar';
 
     String currencyLabel(String currency) {
-      final String symbol = ZakatEngineService.getCurrencySymbol(
-        currency,
-        isArabic: isArabic,
-      );
-      return symbol == currency ? currency : '$symbol  $currency';
+      return CurrencyPresentation.selectorLabel(currency, isRtl: isArabic);
     }
 
-    return DropdownButtonFormField<String>(
+    return FormField<String>(
       key: ValueKey<String>('currencyDropdown_${labelText}_$value'),
       initialValue: value,
-      isExpanded: true,
-      alignment: AlignmentDirectional.centerStart,
-      decoration: InputDecoration(
-        labelText: labelText,
-        floatingLabelBehavior: FloatingLabelBehavior.always,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 16,
-        ),
-      ),
-      selectedItemBuilder: (BuildContext context) => currencies
-          .map(
-            (String currency) => Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: Text(
-                currencyLabel(currency),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
+      builder: (FormFieldState<String> field) {
+        final String currentValue = field.value ?? value;
+        return InputDecorator(
+          decoration: InputDecoration(
+            labelText: labelText,
+            floatingLabelBehavior: FloatingLabelBehavior.always,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 16,
             ),
-          )
-          .toList(growable: false),
-      items: currencies
-          .map(
-            (String currency) => DropdownMenuItem<String>(
-              value: currency,
-              child: Text(
-                currencyLabel(currency),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
+            errorText: field.errorText,
+          ),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () async {
+              final String? selected = await showCompactSelectionDialog<String>(
+                context: context,
+                title: labelText,
+                options: currencies,
+                optionLabel: currencyLabel,
+                selectedValueLabel: currencyLabel(currentValue),
+              );
+              if (selected != null) {
+                field.didChange(selected);
+                onChanged(selected);
+              }
+            },
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    currencyLabel(currentValue),
+                    style: Theme.of(context).textTheme.bodyLarge,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const Icon(Icons.keyboard_arrow_down_rounded),
+              ],
             ),
-          )
-          .toList(growable: false),
-      onChanged: (String? currency) {
-        if (currency != null) onChanged(currency);
+          ),
+        );
       },
     );
   }

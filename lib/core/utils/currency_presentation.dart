@@ -24,6 +24,15 @@ class CurrencyPresentation {
     return '${flagEmoji(code)} $code';
   }
 
+  static String selectorLabel(
+    String currencyCode, {
+    required bool isRtl,
+  }) {
+    final String code = currencyCode.trim().toUpperCase();
+    final String flag = flagEmoji(code);
+    return isRtl ? '$code $flag' : '$flag $code';
+  }
+
   static String flagEmoji(String currencyCode) {
     switch (currencyCode.trim().toUpperCase()) {
       case 'EGP':

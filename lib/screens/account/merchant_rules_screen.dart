@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:provider/provider.dart';
+import '../../core/widgets/compact_dropdown.dart';
+import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/theme/app_theme_extensions.dart';
@@ -73,33 +75,26 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
                       style: TextStyle(color: tokens.colors.textSecondary),
                     ),
                     const SizedBox(height: 6),
-                    DropdownButtonFormField<String>(
-                      dropdownColor: tokens.colors.card,
-                      initialValue: selectedType,
-                      decoration: _fieldDecoration(context),
-                      style: TextStyle(color: tokens.colors.textPrimary),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'expense',
-                          child: Text('Expense'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'income',
-                          child: Text('Income'),
-                        ),
-                      ],
-                      onChanged: (val) {
-                        if (val != null) {
-                          setState(() {
-                            selectedType = val;
-                            final cats = val == 'expense'
-                                ? controller.state.categories.expense
-                                : controller.state.categories.income;
-                            if (!cats.contains(selectedCategory)) {
-                              selectedCategory = cats.first;
-                            }
-                          });
-                        }
+                    CompactDropdownFormField<String>(
+                      value: selectedType,
+                      labelText: 'Transaction Type',
+                      floatingLabelBehavior: FloatingLabelBehavior.never,
+                      items: const <String>['expense', 'income'],
+                      itemLabel: (String value) => switch (value) {
+                        'expense' => 'Expense',
+                        'income' => 'Income',
+                        _ => value,
+                      },
+                      onChanged: (String value) {
+                        setState(() {
+                          selectedType = value;
+                          final cats = value == 'expense'
+                              ? controller.state.categories.expense
+                              : controller.state.categories.income;
+                          if (!cats.contains(selectedCategory)) {
+                            selectedCategory = cats.first;
+                          }
+                        });
                       },
                     ),
                     const SizedBox(height: 16),
@@ -108,28 +103,18 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
                       style: TextStyle(color: tokens.colors.textSecondary),
                     ),
                     const SizedBox(height: 6),
-                    DropdownButtonFormField<String>(
-                      dropdownColor: tokens.colors.card,
-                      initialValue: selectedCategory,
-                      decoration: _fieldDecoration(context),
-                      style: TextStyle(color: tokens.colors.textPrimary),
-                      items:
-                          (selectedType == 'expense'
-                                  ? controller.state.categories.expense
-                                  : controller.state.categories.income)
-                              .map(
-                                (cat) => DropdownMenuItem(
-                                  value: cat,
-                                  child: Text(context.l10n.translateCategory(cat)),
-                                ),
-                              )
-                              .toList(),
-                      onChanged: (val) {
-                        if (val != null) {
-                          setState(() {
-                            selectedCategory = val;
-                          });
-                        }
+                    CompactDropdownFormField<String>(
+                      value: selectedCategory,
+                      labelText: 'Category',
+                      floatingLabelBehavior: FloatingLabelBehavior.never,
+                      items: selectedType == 'expense'
+                          ? controller.state.categories.expense
+                          : controller.state.categories.income,
+                      itemLabel: context.l10n.translateCategory,
+                      onChanged: (String value) {
+                        setState(() {
+                          selectedCategory = value;
+                        });
                       },
                     ),
                     const SizedBox(height: 16),
@@ -268,46 +253,29 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
-                    initialValue: selectedType,
-                    dropdownColor: tokens.colors.card,
-                    decoration: _fieldDecoration(
-                      context,
-                      labelText: 'Transaction Type',
-                    ),
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'expense',
-                        child: Text('Expense'),
-                      ),
-                      DropdownMenuItem(value: 'income', child: Text('Income')),
-                    ],
-                    onChanged: (String? value) {
-                      if (value != null) {
-                        setDialogState(() => selectedType = value);
-                      }
+                  CompactDropdownFormField<String>(
+                    value: selectedType,
+                    labelText: 'Transaction Type',
+                    floatingLabelBehavior: FloatingLabelBehavior.never,
+                    items: const <String>['expense', 'income'],
+                    itemLabel: (String value) => switch (value) {
+                      'expense' => 'Expense',
+                      'income' => 'Income',
+                      _ => value,
+                    },
+                    onChanged: (String value) {
+                      setDialogState(() => selectedType = value);
                     },
                   ),
                   const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
-                    initialValue: selectedCategory,
-                    dropdownColor: tokens.colors.card,
-                    decoration: _fieldDecoration(
-                      context,
-                      labelText: 'Category',
-                    ),
-                    items: categories
-                        .map(
-                          (String category) => DropdownMenuItem<String>(
-                            value: category,
-                            child: Text(context.l10n.translateCategory(category)),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (String? value) {
-                      if (value != null) {
-                        setDialogState(() => selectedCategory = value);
-                      }
+                  CompactDropdownFormField<String>(
+                    value: selectedCategory,
+                    labelText: 'Category',
+                    floatingLabelBehavior: FloatingLabelBehavior.never,
+                    items: categories,
+                    itemLabel: context.l10n.translateCategory,
+                    onChanged: (String value) {
+                      setDialogState(() => selectedCategory = value);
                     },
                   ),
                   const SizedBox(height: 16),
@@ -414,9 +382,15 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
     final List<MerchantRule> builtinRules = SmartCaptureParser
         .builtinMerchantCategoryMap
         .entries
-        .map((e) {
-          final key = e.key;
-          final override = state.merchantRules[key];
+        .where((MapEntry<String, String> entry) {
+          final MerchantRule? override = state.merchantRules[entry.key];
+          return override == null ||
+              override.enabled ||
+              !override.isBuiltinOverride;
+        })
+        .map((MapEntry<String, String> e) {
+          final String key = e.key;
+          final MerchantRule? override = state.merchantRules[key];
           return override?.copyWith(
                 isBuiltinOverride: true,
                 source: 'custom',
@@ -436,11 +410,11 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
         .toList();
 
     final List<MerchantRule> learnedRules = state.merchantRules.values
-        .where((r) => r.source == 'learned')
+        .where((r) => r.source == 'learned' && r.enabled)
         .toList();
 
     final List<MerchantRule> customRules = state.merchantRules.values
-        .where((r) => r.source == 'custom' && !r.isBuiltinOverride)
+        .where((r) => r.source == 'custom' && !r.isBuiltinOverride && r.enabled)
         .toList();
 
     List<MerchantRule> displayedRules = [];
@@ -470,16 +444,7 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
 
     return Scaffold(
       backgroundColor: tokens.colors.background,
-      appBar: AppBar(
-        title: const Text('Merchant Rules'),
-        actions: <Widget>[
-          IconButton(
-            tooltip: 'Add Rule',
-            onPressed: () => _showAddCustomRuleDialog(context, controller),
-            icon: Icon(Icons.add, color: tokens.colors.gold),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('Merchant Rules')),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showAddCustomRuleDialog(context, controller),
         elevation: 10,
@@ -503,10 +468,10 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
             builtinCount: builtinRules.length,
           ),
           const SizedBox(height: AppSpacing.lg),
-          if (displayedRules.isEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 72),
-              child: Center(
+            if (displayedRules.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 72),
+                child: Center(
                 child: Text(
                   'No rules in this section',
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
@@ -520,8 +485,8 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
               children: <Widget>[
                 _buildRuleGroup(
                   context,
-                  title: 'Built-in Rules',
-                  rules: builtinRules,
+                  title: 'Custom Rules',
+                  rules: customRules,
                   controller: controller,
                   showHeader: true,
                 ),
@@ -536,8 +501,8 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
                 const SizedBox(height: AppSpacing.lg),
                 _buildRuleGroup(
                   context,
-                  title: 'Custom Rules',
-                  rules: customRules,
+                  title: 'Built-in Rules',
+                  rules: builtinRules,
                   controller: controller,
                   showHeader: true,
                 ),
@@ -565,10 +530,10 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     final Color surfaceColor = dark
         ? tokens.colors.surface.withValues(alpha: 0.74)
-        : const Color(0xFFF9F7F0);
+        : AppColors.sharedContainer;
     final Color fieldColor = dark
         ? tokens.colors.card.withValues(alpha: 0.88)
-        : const Color(0xFFEBE7DD);
+        : AppColors.neutral40;
 
     return Container(
       padding: const EdgeInsets.all(AppSpacing.md),
@@ -576,7 +541,7 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
         color: surfaceColor,
         borderRadius: AppRadii.card,
         border: Border.all(
-          color: tokens.colors.divider.withValues(alpha: 0.65),
+          color: tokens.colors.divider.withValues(alpha: 0.72),
         ),
       ),
       child: Column(
@@ -606,7 +571,7 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
             child: Text(
               'Transactions matching rules with >=95% confidence are approved automatically.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: tokens.colors.textSecondary,
+                color: tokens.colors.textSecondary.withValues(alpha: 0.95),
                 height: 1.35,
               ),
             ),
@@ -624,9 +589,15 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
             ).textTheme.bodyMedium?.copyWith(color: tokens.colors.textPrimary),
             decoration: InputDecoration(
               hintText: 'Search merchants...',
+              hintStyle: TextStyle(
+                color: tokens.colors.textSecondary.withValues(alpha: 0.92),
+              ),
               filled: true,
               fillColor: fieldColor,
-              prefixIcon: Icon(Icons.search, color: tokens.colors.gold),
+              prefixIcon: Icon(
+                Icons.search,
+                color: tokens.colors.gold.withValues(alpha: 0.92),
+              ),
               suffixIcon: _searchQuery.isNotEmpty
                   ? IconButton(
                       icon: Icon(
@@ -648,7 +619,7 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
               enabledBorder: OutlineInputBorder(
                 borderRadius: AppRadii.card,
                 borderSide: BorderSide(
-                  color: tokens.colors.divider.withValues(alpha: 0.55),
+                  color: tokens.colors.divider.withValues(alpha: 0.61),
                 ),
               ),
               focusedBorder: OutlineInputBorder(
@@ -717,7 +688,7 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
                 height: 2,
                 width: 26,
                 decoration: BoxDecoration(
-                  color: selected ? tokens.colors.gold : Colors.transparent,
+                  color: selected ? tokens.colors.gold : AppColors.transparent,
                   borderRadius: BorderRadius.circular(99),
                 ),
               ),
@@ -739,7 +710,7 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     final Color groupColor = dark
         ? tokens.colors.surface.withValues(alpha: 0.78)
-        : const Color(0xFFFAF8F2);
+        : AppColors.sharedContainer;
     if (rules.isEmpty && !showHeader) {
       return Padding(
         padding: const EdgeInsets.only(top: 72),
@@ -758,7 +729,9 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
       decoration: BoxDecoration(
         color: groupColor,
         borderRadius: AppRadii.card,
-        border: Border.all(color: tokens.colors.divider.withValues(alpha: 0.5)),
+        border: Border.all(
+          color: tokens.colors.divider.withValues(alpha: 0.55),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -781,7 +754,7 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
             ),
             Divider(
               height: 1,
-              color: tokens.colors.divider.withValues(alpha: 0.5),
+              color: tokens.colors.divider.withValues(alpha: 0.55),
             ),
           ],
           if (rules.isEmpty)
@@ -803,7 +776,7 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
                       height: 1,
                       indent: 16,
                       endIndent: 16,
-                      color: tokens.colors.divider.withValues(alpha: 0.55),
+                      color: tokens.colors.divider.withValues(alpha: 0.61),
                     ),
                 ],
               ),
@@ -822,7 +795,7 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     final Color titleColor = dark
         ? tokens.colors.textPrimary
-        : const Color(0xFF042F2B);
+        : AppColors.backgroundHeroDark;
     final Color subdued = tokens.colors.textSecondary;
     final String sourceLabel = rule.source == 'builtin'
         ? 'Built-in'
@@ -861,10 +834,9 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
                   'Category: ${rule.categoryId} • Type: ${rule.defaultType.toUpperCase()}',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: subdued,
-                    height: 1.2,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: subdued, height: 1.2),
                 ),
                 const SizedBox(height: 4),
                 Wrap(
@@ -907,8 +879,10 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
     );
 
     final bool isCustom = rule.source == 'custom' && !rule.isBuiltinOverride;
+    final bool canDeleteBuiltin =
+        rule.isBuiltinOverride || rule.source == 'builtin';
 
-    if (isCustom) {
+    if (isCustom || canDeleteBuiltin) {
       return Slidable(
         key: Key('rule_${rule.merchantName}'),
         endActionPane: ActionPane(
@@ -917,14 +891,23 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
           children: <Widget>[
             CustomSlidableAction(
               onPressed: (BuildContext context) {
-                controller.deleteMerchantRule(rule.merchantName);
+                if (canDeleteBuiltin) {
+                  controller.deleteBuiltinMerchantRule(
+                    rule.builtinKey ?? rule.merchantName,
+                  );
+                } else {
+                  controller.deleteMerchantRule(rule.merchantName);
+                }
               },
               backgroundColor: tokens.colors.danger.withValues(alpha: 0.14),
               foregroundColor: tokens.colors.danger,
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: <Widget>[
-                  Icon(Icons.delete_outline_rounded, color: tokens.colors.danger),
+                  Icon(
+                    Icons.delete_outline_rounded,
+                    color: tokens.colors.danger,
+                  ),
                   const SizedBox(height: 4),
                   Text(
                     'Delete',
@@ -960,11 +943,12 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
     required Color color,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      constraints: const BoxConstraints(minHeight: 26),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.10),
         borderRadius: AppRadii.pill,
-        border: Border.all(color: color.withValues(alpha: 0.28)),
+        border: Border.all(color: color.withValues(alpha: 0.31), width: 1),
       ),
       child: Text(
         label,

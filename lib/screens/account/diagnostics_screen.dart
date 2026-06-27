@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
+import '../../core/theme/app_colors.dart';
 import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:path/path.dart' as p;
@@ -126,26 +128,6 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     await SyncDiagnosticsService.clear();
     await _refreshDiagnostics();
     _showMessage('Diagnostics logs cleared');
-  }
-
-  Future<void> _runAction(
-    Future<void> Function() action, {
-    required String successMessage,
-  }) async {
-    setState(() {
-      _busy = true;
-    });
-    try {
-      await action();
-      await _refreshDiagnostics();
-      _showMessage(successMessage);
-    } finally {
-      if (mounted) {
-        setState(() {
-          _busy = false;
-        });
-      }
-    }
   }
 
   void _showMessage(String message) {
@@ -907,7 +889,7 @@ class _GoogleDrivePoCCardState extends State<_GoogleDrivePoCCard> {
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Replace', style: TextStyle(color: Colors.red)),
+            child: const Text('Replace', style: TextStyle(color: AppColors.redStrong)),
           ),
         ],
       ),
@@ -934,7 +916,7 @@ class _GoogleDrivePoCCardState extends State<_GoogleDrivePoCCard> {
             onPressed: () => Navigator.of(context).pop(true),
             child: const Text(
               'Yes, Force Restore',
-              style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+              style: TextStyle(color: AppColors.redStrong, fontWeight: FontWeight.bold),
             ),
           ),
         ],
@@ -997,10 +979,10 @@ class _GoogleDrivePoCCardState extends State<_GoogleDrivePoCCard> {
   @override
   Widget build(BuildContext context) {
     return Card(
-      color: Colors.blueGrey.shade900.withOpacity(0.4),
+      color: AppColors.neutral900.withValues(alpha: 0.4),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: Colors.blueGrey.shade800, width: 1.5),
+        side: BorderSide(color: AppColors.neutral800, width: 1.5),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -1009,13 +991,13 @@ class _GoogleDrivePoCCardState extends State<_GoogleDrivePoCCard> {
           children: [
             Row(
               children: [
-                const Icon(Icons.cloud_queue, color: Colors.blue),
+                const Icon(Icons.cloud_queue, color: AppColors.blue),
                 const SizedBox(width: 8),
                 Text(
                   'Google Drive Sync Proof-of-Concept',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
-                    color: Colors.blue.shade100,
+                    color: AppColors.infoContainer,
                   ),
                 ),
               ],
@@ -1026,15 +1008,15 @@ class _GoogleDrivePoCCardState extends State<_GoogleDrivePoCCard> {
               style: TextStyle(
                 fontWeight: FontWeight.w600,
                 color: _isConnected
-                    ? Colors.green.shade300
-                    : Colors.orange.shade300,
+                    ? AppColors.emeraldSuccessLight
+                    : AppColors.orangeMuted,
               ),
             ),
             if (_userEmail != null) ...[
               const SizedBox(height: 4),
               Text(
                 'Linked Account: $_userEmail',
-                style: const TextStyle(color: Colors.grey),
+        style: const TextStyle(color: AppColors.gray),
               ),
             ],
             const SizedBox(height: 16),
@@ -1076,7 +1058,7 @@ class _GoogleDrivePoCCardState extends State<_GoogleDrivePoCCard> {
                     'Available Remote Snapshots',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
-                      color: Colors.blue.shade200,
+                      color: AppColors.blueBright,
                     ),
                   ),
                   IconButton(
@@ -1096,7 +1078,7 @@ class _GoogleDrivePoCCardState extends State<_GoogleDrivePoCCard> {
               else if (_remoteSnapshots.isEmpty)
                 const Text(
                   'No snapshots registered in cloud manifest.',
-                  style: TextStyle(color: Colors.grey, fontSize: 13),
+                  style: TextStyle(color: AppColors.gray, fontSize: 13),
                 )
               else
                 ListView.builder(
@@ -1114,7 +1096,7 @@ class _GoogleDrivePoCCardState extends State<_GoogleDrivePoCCard> {
                         ? snapshot.checksum.substring(0, 8)
                         : snapshot.checksum;
                     return Card(
-                      color: Colors.black26,
+                      color: AppColors.black26,
                       margin: const EdgeInsets.symmetric(vertical: 4),
                       child: ListTile(
                         dense: true,
@@ -1142,9 +1124,9 @@ class _GoogleDrivePoCCardState extends State<_GoogleDrivePoCCard> {
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.black38,
+                  color: AppColors.black38,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.grey.shade800),
+                  border: Border.all(color: AppColors.neutral800),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1153,14 +1135,14 @@ class _GoogleDrivePoCCardState extends State<_GoogleDrivePoCCard> {
                       'Last Decrypted Snapshot Data:',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
-                        color: Colors.green,
+                        color: AppColors.emeraldSuccess,
                       ),
                     ),
                     const SizedBox(height: 6),
                     SelectableText(
                       _lastDecryptedData!,
                       style: AppTypography.monospace(
-                        color: Colors.white,
+                        color: AppColors.white,
                         fontSize: 12,
                       ),
                     ),

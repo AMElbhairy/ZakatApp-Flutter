@@ -70,7 +70,7 @@ class AppComponentTokens {
     final tokens = context.premiumTokens;
     return FloatingActionButtonThemeData(
       backgroundColor: tokens.colors.hero,
-      foregroundColor: Colors.white,
+      foregroundColor: tokens.colors.onHero,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.all(Radius.circular(AppRadii.x2l)),
       ),

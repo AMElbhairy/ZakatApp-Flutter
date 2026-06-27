@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../motion/app_motion.dart';
+import '../theme/app_colors.dart';
 import '../theme/app_component_tokens.dart';
 import '../theme/app_radii.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_theme_extensions.dart';
+import '../theme/app_typography.dart';
 
 class PremiumCard extends StatelessWidget {
   const PremiumCard({
@@ -29,13 +32,15 @@ class PremiumCard extends StatelessWidget {
       child: Padding(padding: padding, child: child),
     );
 
+    final Widget tappable = onTap == null
+        ? content
+        : InkWell(onTap: onTap, borderRadius: borderRadius, child: content);
+
     return Material(
-      color: Colors.transparent,
+      color: AppColors.transparent,
       borderRadius: borderRadius,
       clipBehavior: Clip.antiAlias,
-      child: onTap == null
-          ? content
-          : InkWell(onTap: onTap, borderRadius: borderRadius, child: content),
+      child: PressScale(enabled: onTap != null, child: tappable),
     );
   }
 }
@@ -54,11 +59,20 @@ class SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final String family = AppTypography.familyFor(Localizations.localeOf(context));
     return Padding(
       padding: EdgeInsets.only(bottom: bottomSpacing),
       child: Row(
         children: <Widget>[
-          Text(title, style: Theme.of(context).textTheme.titleLarge),
+          Text(
+            title,
+            style: AppTypography.sectionTitle(
+              color: Theme.of(context).textTheme.titleLarge?.color ??
+                  Theme.of(context).colorScheme.onSurface,
+              family: family,
+              fallbackFamily: AppTypography.arabicFamily,
+            ),
+          ),
           if (trailing != null) ...<Widget>[const Spacer(), trailing!],
         ],
       ),
@@ -80,15 +94,28 @@ class MetricTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final String family = AppTypography.familyFor(Localizations.localeOf(context));
     return Row(
       children: <Widget>[
         Expanded(
-          child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
+          child: Text(
+            label,
+            style: AppTypography.tableCell(
+              color: Theme.of(context).textTheme.bodyMedium?.color ??
+                  Theme.of(context).colorScheme.onSurface,
+              family: family,
+              fallbackFamily: AppTypography.arabicFamily,
+            ),
+          ),
         ),
         Text(
           value,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            fontWeight: bold ? FontWeight.w700 : FontWeight.w500,
+          style: AppTypography.tableCell(
+            color: Theme.of(context).textTheme.bodyMedium?.color ??
+                Theme.of(context).colorScheme.onSurface,
+            family: AppTypography.familyFor(Localizations.localeOf(context)),
+            fallbackFamily: AppTypography.arabicFamily,
+            bold: bold,
           ),
         ),
       ],
@@ -124,9 +151,25 @@ class EmptyStateCard extends StatelessWidget {
             Icon(icon, size: 28, color: Theme.of(context).colorScheme.primary),
             const SizedBox(height: AppSpacing.xs),
           ],
-          Text(title, style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            title,
+            style: AppTypography.cardTitle(
+              color: Theme.of(context).textTheme.titleMedium?.color ??
+                  Theme.of(context).colorScheme.onSurface,
+              family: AppTypography.familyFor(Localizations.localeOf(context)),
+              fallbackFamily: AppTypography.arabicFamily,
+            ),
+          ),
           const SizedBox(height: AppSpacing.xs),
-          Text(message),
+          Text(
+            message,
+            style: AppTypography.body(
+              color: Theme.of(context).textTheme.bodyLarge?.color ??
+                  Theme.of(context).colorScheme.onSurface,
+              family: AppTypography.familyFor(Localizations.localeOf(context)),
+              fallbackFamily: AppTypography.arabicFamily,
+            ),
+          ),
           if (action != null) ...<Widget>[
             const SizedBox(height: AppSpacing.sm),
             action!,
@@ -152,18 +195,38 @@ class AppPrimaryButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (icon == null) {
-      return FilledButton(
-        onPressed: onPressed,
-        style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
-        child: Text(label),
+      return PressScale(
+        enabled: onPressed != null,
+        child: FilledButton(
+          onPressed: onPressed,
+          style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+          child: Text(
+            label,
+            style: AppTypography.button(
+              color: Theme.of(context).colorScheme.onPrimary,
+              family: AppTypography.familyFor(Localizations.localeOf(context)),
+              fallbackFamily: AppTypography.arabicFamily,
+            ),
+          ),
+        ),
       );
     }
 
-    return FilledButton.icon(
-      onPressed: onPressed,
-      style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
-      icon: Icon(icon),
-      label: Text(label),
+    return PressScale(
+      enabled: onPressed != null,
+      child: FilledButton.icon(
+        onPressed: onPressed,
+        style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+        icon: Icon(icon),
+        label: Text(
+          label,
+          style: AppTypography.button(
+            color: Theme.of(context).colorScheme.onPrimary,
+            family: AppTypography.familyFor(Localizations.localeOf(context)),
+            fallbackFamily: AppTypography.arabicFamily,
+          ),
+        ),
+      ),
     );
   }
 }
@@ -231,13 +294,13 @@ void showTopSnackBar(
       _activeDismissCallback!();
     }
   } else {
-    _showNextNotification(context);
+    _showNextNotification(Overlay.of(context, rootOverlay: true));
   }
 }
 
-void _showNextNotification(BuildContext context) {
+void _showNextNotification(OverlayState overlayState) {
   if (_isShowingNotification || _notificationQueue.isEmpty) return;
-  if (!context.mounted) {
+  if (!overlayState.mounted) {
     _notificationQueue.clear();
     _isShowingNotification = false;
     return;
@@ -245,7 +308,6 @@ void _showNextNotification(BuildContext context) {
   _isShowingNotification = true;
 
   final item = _notificationQueue.removeAt(0);
-  final OverlayState overlayState = Overlay.of(context, rootOverlay: true);
 
   late OverlayEntry entry;
   entry = OverlayEntry(
@@ -263,7 +325,9 @@ void _showNextNotification(BuildContext context) {
           } catch (_) {}
           _isShowingNotification = false;
           Future.delayed(const Duration(milliseconds: 150), () {
-            _showNextNotification(context);
+            if (overlayState.mounted) {
+              _showNextNotification(overlayState);
+            }
           });
         },
       );
@@ -306,18 +370,18 @@ class _TopToastWidgetState extends State<_TopToastWidget>
     _activeDismissCallback = _dismiss;
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 350),
+      duration: AppMotion.snackBarDuration,
     );
 
     _offsetAnimation = Tween<Offset>(
-      begin: const Offset(0, -1.5),
+      begin: const Offset(0, 0.14),
       end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutBack));
+    ).animate(CurvedAnimation(parent: _controller, curve: AppMotion.curve));
 
     _opacityAnimation = Tween<double>(
       begin: 0.0,
       end: 1.0,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+    ).animate(CurvedAnimation(parent: _controller, curve: AppMotion.curve));
 
     _controller.forward();
 
@@ -367,8 +431,8 @@ class _TopToastWidgetState extends State<_TopToastWidget>
             accent,
             0.12,
           )!.withValues(alpha: 0.98)
-         : Colors.white.withValues(alpha: 0.98);
-    final Color textColor = tokens.colors.textPrimary;
+        : AppColors.white.withValues(alpha: 0.98);
+    final Color textColor = tokens.colors.primaryText;
     final Color borderColor = accent.withValues(alpha: dark ? 0.35 : 0.24);
     final IconData icon = switch (widget.kind) {
       AppToastKind.success => Icons.check_circle_rounded,
@@ -393,7 +457,7 @@ class _TopToastWidgetState extends State<_TopToastWidget>
             },
             onTap: _dismiss,
             child: Material(
-              color: Colors.transparent,
+              color: AppColors.transparent,
               child: Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 14,
@@ -405,7 +469,7 @@ class _TopToastWidgetState extends State<_TopToastWidget>
                   border: Border.all(color: borderColor, width: 1.0),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: dark ? 0.34 : 0.08),
+                      color: AppColors.black.withValues(alpha: dark ? 0.34 : 0.08),
                       blurRadius: 16,
                       offset: const Offset(0, 4),
                     ),
@@ -428,10 +492,12 @@ class _TopToastWidgetState extends State<_TopToastWidget>
                         widget.message,
                         maxLines: 3,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
+                        style: AppTypography.body(
                           color: textColor,
+                          family: AppTypography.familyFor(
+                            Localizations.localeOf(context),
+                          ),
+                          fallbackFamily: AppTypography.arabicFamily,
                         ),
                       ),
                     ),

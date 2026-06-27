@@ -5,7 +5,9 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/i18n/app_localizations.dart';
-import '../../core/services/zakat_engine.dart';
+import '../../core/theme/app_colors.dart';
+import '../../core/widgets/compact_dropdown.dart';
+import '../../core/utils/currency_presentation.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_theme_extensions.dart';
@@ -129,23 +131,12 @@ class _RecurringTransactionsScreenState
                           ),
                         ),
                         const SizedBox(height: AppSpacing.sm),
-                        DropdownButtonFormField<String>(
-                          initialValue: type,
-                          decoration: InputDecoration(
-                            labelText: context.l10n.tr('type'),
-                          ),
-                          items: const <DropdownMenuItem<String>>[
-                            DropdownMenuItem<String>(
-                              value: 'income',
-                              child: Text('income'),
-                            ),
-                            DropdownMenuItem<String>(
-                              value: 'expense',
-                              child: Text('expense'),
-                            ),
-                          ],
-                          onChanged: (String? value) {
-                            if (value == null) return;
+                        CompactDropdownFormField<String>(
+                          value: type,
+                          labelText: context.l10n.tr('type'),
+                          items: const <String>['income', 'expense'],
+                          itemLabel: (String value) => value,
+                          onChanged: (String value) {
                             setDialogState(() {
                               type = value;
                               final List<String> nextCategories =
@@ -161,50 +152,30 @@ class _RecurringTransactionsScreenState
                           },
                         ),
                         const SizedBox(height: AppSpacing.sm),
-                        DropdownButtonFormField<String>(
-                          initialValue: currency.isEmpty ? 'EGP' : currency,
-                          decoration: InputDecoration(
-                            labelText: context.l10n.tr('currency'),
-                          ),
-                          items: _supportedCurrencies
-                              .map(
-                                (String code) => DropdownMenuItem<String>(
-                                  value: code,
-                                  child: Text(
-                                    ZakatEngineService.getCurrencySymbol(
-                                      code,
-                                      isArabic:
-                                          Localizations.localeOf(
-                                            context,
-                                          ).languageCode.toLowerCase() ==
-                                          'ar',
-                                    ),
-                                  ),
-                                ),
-                              )
-                              .toList(growable: false),
-                          onChanged: (String? value) {
-                            if (value == null) return;
+                        CompactDropdownFormField<String>(
+                          value: currency.isEmpty ? 'EGP' : currency,
+                          labelText: context.l10n.tr('currency'),
+                          items: _supportedCurrencies,
+                          itemLabel: (String code) =>
+                              CurrencyPresentation.selectorLabel(
+                                code,
+                                isRtl:
+                                    Localizations.localeOf(
+                                      context,
+                                    ).languageCode.toLowerCase() == 'ar',
+                              ),
+                          onChanged: (String value) {
                             setDialogState(() => currency = value);
                           },
                         ),
                         const SizedBox(height: AppSpacing.sm),
                         if (categoryOptions.isNotEmpty)
-                          DropdownButtonFormField<String>(
-                            initialValue: selectedCategory,
-                            decoration: InputDecoration(
-                              labelText: context.l10n.tr('category'),
-                            ),
-                            items: categoryOptions
-                                .map(
-                                  (String category) => DropdownMenuItem<String>(
-                                    value: category,
-                                    child: Text(category),
-                                  ),
-                                )
-                                .toList(growable: false),
-                            onChanged: (String? value) {
-                              if (value == null) return;
+                          CompactDropdownFormField<String>(
+                            value: selectedCategory,
+                            labelText: context.l10n.tr('category'),
+                            items: categoryOptions,
+                            itemLabel: context.l10n.translateCategory,
+                            onChanged: (String value) {
                               setDialogState(() => selectedCategory = value);
                             },
                           )
@@ -328,7 +299,7 @@ class _RecurringTransactionsScreenState
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     final Color bgColor = dark
         ? tokens.colors.background
-        : const Color(0xFFF0EBE0);
+        : AppColors.mutedContainer;
     final int activeCount = recurring
         .where((RecurringTransaction item) => item.enabled)
         .length;
@@ -337,7 +308,7 @@ class _RecurringTransactionsScreenState
     return Scaffold(
       backgroundColor: bgColor,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        backgroundColor: AppColors.transparent,
         elevation: 0,
         centerTitle: true,
         title: Text(
@@ -357,7 +328,7 @@ class _RecurringTransactionsScreenState
       ),
       floatingActionButton: FloatingActionButton(
         backgroundColor: tokens.colors.hero,
-        child: const Icon(Icons.add, color: Colors.white),
+        child: const Icon(Icons.add, color: AppColors.white),
         onPressed: () => _showRecurringDialog(),
       ),
       body: SafeArea(
@@ -408,15 +379,15 @@ class _RecurringTransactionsScreenState
                         SlidableAction(
                           onPressed: (_) =>
                               _showRecurringDialog(existing: item),
-                          backgroundColor: const Color(0xFF0F766E),
-                          foregroundColor: Colors.white,
+                          backgroundColor: AppColors.tealAccent,
+                          foregroundColor: AppColors.white,
                           icon: Icons.edit_outlined,
                           label: context.l10n.tr('edit'),
                         ),
                         SlidableAction(
                           onPressed: (_) => _deleteRecurring(item),
-                          backgroundColor: Colors.redAccent,
-                          foregroundColor: Colors.white,
+                          backgroundColor: AppColors.redAccent,
+                          foregroundColor: AppColors.white,
                           icon: Icons.delete_outline,
                           label: context.l10n.tr('delete'),
                         ),
@@ -482,7 +453,7 @@ class _RecurringTransactionsScreenState
                                 _statusLabel(context, item.enabled),
                                 style: TextStyle(
                                   color: item.enabled
-                                      ? const Color(0xFF0F766E)
+                                      ? AppColors.tealAccent
                                       : tokens.colors.textSecondary,
                                   fontSize: 12,
                                   fontWeight: FontWeight.w700,

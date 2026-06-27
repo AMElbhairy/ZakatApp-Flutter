@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/i18n/app_localizations.dart';
+import '../../core/widgets/compact_dropdown.dart';
+import '../../core/utils/currency_presentation.dart';
 import '../../core/services/zakat_engine.dart';
 import '../../core/widgets/app_ui.dart';
 import '../../models/investment_asset.dart';
@@ -198,33 +200,20 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    DropdownButtonFormField<String>(
+                    CompactDropdownFormField<String>(
                       value: selectedCurrency,
-                      decoration: const InputDecoration(
-                        labelText: 'Currency',
-                        border: OutlineInputBorder(),
-                      ),
-                      items: ZakatEngineService.supportedCurrencies
-                          .map(
-                            (String currency) => DropdownMenuItem<String>(
-                              value: currency,
-                              child: Text(
-                                ZakatEngineService.getCurrencySymbol(
-                                  currency,
-                                  isArabic:
-                                      Localizations.localeOf(
-                                        context,
-                                      ).languageCode.toLowerCase() ==
-                                      'ar',
-                                ),
-                              ),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (String? value) {
-                        if (value != null) {
-                          dialogSetState(() => selectedCurrency = value);
-                        }
+                      labelText: 'Currency',
+                      items: ZakatEngineService.supportedCurrencies,
+                      itemLabel: (String currency) =>
+                          CurrencyPresentation.selectorLabel(
+                            currency,
+                            isRtl:
+                                Localizations.localeOf(
+                                  context,
+                                ).languageCode.toLowerCase() == 'ar',
+                          ),
+                      onChanged: (String value) {
+                        dialogSetState(() => selectedCurrency = value);
                       },
                     ),
                     const SizedBox(height: 16),
@@ -335,25 +324,17 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                DropdownButtonFormField<String>(
+                CompactDropdownFormField<String>(
                   key: const Key('investmentTypeField'),
-                  initialValue: _assetType,
-                  decoration: InputDecoration(
-                    labelText: context.l10n.tr('asset_type'),
-                    border: OutlineInputBorder(),
-                  ),
-                  items: <DropdownMenuItem<String>>[
-                    DropdownMenuItem<String>(
-                      value: 'property',
-                      child: Text(context.l10n.tr('property')),
-                    ),
-                    DropdownMenuItem<String>(
-                      value: 'company_share',
-                      child: Text(context.l10n.tr('company_share')),
-                    ),
-                  ],
-                  onChanged: (String? value) {
-                    if (value == null) return;
+                  value: _assetType,
+                  labelText: context.l10n.tr('asset_type'),
+                  items: const <String>['property', 'company_share'],
+                  itemLabel: (String value) => switch (value) {
+                    'property' => context.l10n.tr('property'),
+                    'company_share' => context.l10n.tr('company_share'),
+                    _ => value,
+                  },
+                  onChanged: (String value) {
                     setState(() => _assetType = value);
                   },
                 ),
@@ -392,38 +373,26 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                   },
                 ),
                 const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
+                CompactDropdownFormField<String>(
                   key: const Key('investmentCurrencyField'),
-                  initialValue: _currency,
-                  decoration: InputDecoration(
-                    labelText: context.l10n.tr('currency'),
-                    border: const OutlineInputBorder(),
-                  ),
-                  items: ZakatEngineService.supportedCurrencies
-                      .map(
-                        (String currency) => DropdownMenuItem<String>(
-                          value: currency,
-                          child: Text(
-                            ZakatEngineService.getCurrencySymbol(
-                              currency,
-                              isArabic:
-                                  Localizations.localeOf(
-                                    context,
-                                  ).languageCode.toLowerCase() ==
-                                  'ar',
-                            ),
-                          ),
-                        ),
-                      )
-                      .toList(growable: false),
+                  value: _currency,
+                  labelText: context.l10n.tr('currency'),
+                  items: ZakatEngineService.supportedCurrencies,
+                  itemLabel: (String currency) =>
+                      CurrencyPresentation.selectorLabel(
+                        currency,
+                        isRtl:
+                            Localizations.localeOf(
+                              context,
+                            ).languageCode.toLowerCase() == 'ar',
+                      ),
                   validator: (String? value) {
                     if ((value ?? '').isEmpty) {
                       return context.l10n.tr('currency_required');
                     }
                     return null;
                   },
-                  onChanged: (String? value) {
-                    if (value == null) return;
+                  onChanged: (String value) {
                     setState(() => _currency = value);
                   },
                 ),
@@ -729,59 +698,35 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                       },
                     ),
                     const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
+                    CompactDropdownFormField<String>(
                       key: const Key('investmentAutoCurrencyField'),
                       value: _autoCurrency,
-                      decoration: const InputDecoration(
-                        labelText: 'Currency',
-                        border: OutlineInputBorder(),
-                      ),
-                      items: ZakatEngineService.supportedCurrencies
-                          .map(
-                            (String currency) => DropdownMenuItem<String>(
-                              value: currency,
-                              child: Text(
-                                ZakatEngineService.getCurrencySymbol(
-                                  currency,
-                                  isArabic:
-                                      Localizations.localeOf(
-                                        context,
-                                      ).languageCode.toLowerCase() ==
-                                      'ar',
-                                ),
-                              ),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (String? value) {
-                        if (value != null) {
-                          setState(() => _autoCurrency = value);
-                        }
+                      labelText: 'Currency',
+                      items: ZakatEngineService.supportedCurrencies,
+                      itemLabel: (String currency) =>
+                          CurrencyPresentation.selectorLabel(
+                            currency,
+                            isRtl:
+                                Localizations.localeOf(
+                                  context,
+                                ).languageCode.toLowerCase() == 'ar',
+                          ),
+                      onChanged: (String value) {
+                        setState(() => _autoCurrency = value);
                       },
                     ),
                     const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      initialValue: _autoFrequency,
-                      decoration: const InputDecoration(
-                        labelText: 'Installment Frequency',
-                        border: OutlineInputBorder(),
-                      ),
-                      items: const <DropdownMenuItem<String>>[
-                        DropdownMenuItem<String>(
-                          value: 'monthly',
-                          child: Text('Monthly'),
-                        ),
-                        DropdownMenuItem<String>(
-                          value: 'quarterly',
-                          child: Text('Quarterly'),
-                        ),
-                        DropdownMenuItem<String>(
-                          value: 'yearly',
-                          child: Text('Yearly'),
-                        ),
-                      ],
-                      onChanged: (String? value) {
-                        if (value == null) return;
+                    CompactDropdownFormField<String>(
+                      value: _autoFrequency,
+                      labelText: 'Installment Frequency',
+                      items: const <String>['monthly', 'quarterly', 'yearly'],
+                      itemLabel: (String value) => switch (value) {
+                        'monthly' => 'Monthly',
+                        'quarterly' => 'Quarterly',
+                        'yearly' => 'Yearly',
+                        _ => value,
+                      },
+                      onChanged: (String value) {
                         setState(() => _autoFrequency = value);
                       },
                     ),
@@ -888,34 +833,21 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
+                    CompactDropdownFormField<String>(
                       key: const Key('investmentOneByOneCurrencyField'),
                       value: _oneByOneCurrency,
-                      decoration: const InputDecoration(
-                        labelText: 'Currency',
-                        border: OutlineInputBorder(),
-                      ),
-                      items: ZakatEngineService.supportedCurrencies
-                          .map(
-                            (String currency) => DropdownMenuItem<String>(
-                              value: currency,
-                              child: Text(
-                                ZakatEngineService.getCurrencySymbol(
-                                  currency,
-                                  isArabic:
-                                      Localizations.localeOf(
-                                        context,
-                                      ).languageCode.toLowerCase() ==
-                                      'ar',
-                                ),
-                              ),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (String? value) {
-                        if (value != null) {
-                          setState(() => _oneByOneCurrency = value);
-                        }
+                      labelText: 'Currency',
+                      items: ZakatEngineService.supportedCurrencies,
+                      itemLabel: (String currency) =>
+                          CurrencyPresentation.selectorLabel(
+                            currency,
+                            isRtl:
+                                Localizations.localeOf(
+                                  context,
+                                ).languageCode.toLowerCase() == 'ar',
+                          ),
+                      onChanged: (String value) {
+                        setState(() => _oneByOneCurrency = value);
                       },
                     ),
                     const SizedBox(height: 12),

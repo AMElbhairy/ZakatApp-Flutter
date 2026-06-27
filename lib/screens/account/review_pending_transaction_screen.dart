@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/widgets/app_ui.dart';
+import '../../core/widgets/compact_dropdown.dart';
 import '../../core/theme/app_theme_extensions.dart';
 import '../../core/theme/app_radii.dart';
 import '../../models/app_state.dart';
@@ -346,34 +347,28 @@ class _ReviewPendingTransactionScreenState
                       style: TextStyle(color: tokens.colors.textSecondary),
                     ),
                     const SizedBox(height: 6),
-                    DropdownButtonFormField<String>(
-                      initialValue: selectedType,
-                      dropdownColor: tokens.colors.card,
-                      decoration: _fieldDecoration(context),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'expense',
-                          child: Text('Expense'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'income',
-                          child: Text('Income'),
-                        ),
-                      ],
-                      onChanged: (String? value) {
-                        if (value != null) {
-                          setDialogState(() {
-                            selectedType = value;
-                            final cats = value == 'expense'
-                                ? availableExpense
-                                : availableIncome;
-                            selectedCategory = cats.isNotEmpty
-                                ? cats.first
-                                : (value == 'expense'
-                                      ? 'Uncategorized'
-                                      : 'Income');
-                          });
-                        }
+                    CompactDropdownFormField<String>(
+                      value: selectedType,
+                      labelText: 'Type',
+                      floatingLabelBehavior: FloatingLabelBehavior.never,
+                      items: const <String>['expense', 'income'],
+                      itemLabel: (String value) => switch (value) {
+                        'expense' => 'Expense',
+                        'income' => 'Income',
+                        _ => value,
+                      },
+                      onChanged: (String value) {
+                        setDialogState(() {
+                          selectedType = value;
+                          final cats = value == 'expense'
+                              ? availableExpense
+                              : availableIncome;
+                          selectedCategory = cats.isNotEmpty
+                              ? cats.first
+                              : (value == 'expense'
+                                    ? 'Uncategorized'
+                                    : 'Income');
+                        });
                       },
                     ),
                     const SizedBox(height: 16),
@@ -382,22 +377,14 @@ class _ReviewPendingTransactionScreenState
                       style: TextStyle(color: tokens.colors.textSecondary),
                     ),
                     const SizedBox(height: 6),
-                    DropdownButtonFormField<String>(
-                      initialValue: selectedCategory,
-                      dropdownColor: tokens.colors.card,
-                      decoration: _fieldDecoration(context),
-                      items: availableCategories
-                          .map(
-                            (String category) => DropdownMenuItem<String>(
-                              value: category,
-                              child: Text(context.l10n.translateCategory(category)),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (String? value) {
-                        if (value != null) {
-                          setDialogState(() => selectedCategory = value);
-                        }
+                    CompactDropdownFormField<String>(
+                      value: selectedCategory,
+                      labelText: 'Category',
+                      floatingLabelBehavior: FloatingLabelBehavior.never,
+                      items: availableCategories,
+                      itemLabel: context.l10n.translateCategory,
+                      onChanged: (String value) {
+                        setDialogState(() => selectedCategory = value);
                       },
                     ),
                     const SizedBox(height: 16),
@@ -597,21 +584,14 @@ class _ReviewPendingTransactionScreenState
                 _buildDropdownField<String>(
                   label: 'Type',
                   value: _selectedType,
-                  items: _types
-                      .map(
-                        (t) => DropdownMenuItem<String>(
-                          value: t['value'],
-                          child: Text(t['label']!),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (val) {
-                    if (val != null) {
-                      setState(() {
-                        _selectedType = val;
-                        _initCategory();
-                      });
-                    }
+                  items: _types.map((t) => t['value']!).toList(),
+                  itemLabel: (String value) =>
+                      _types.firstWhere((t) => t['value'] == value)['label']!,
+                  onChanged: (String val) {
+                    setState(() {
+                      _selectedType = val;
+                      _initCategory();
+                    });
                   },
                 ),
                 const SizedBox(height: 16),
@@ -654,15 +634,9 @@ class _ReviewPendingTransactionScreenState
                   _buildDropdownField<String>(
                     label: 'Category',
                     value: _selectedCategory,
-                    items: availableCategories
-                        .map(
-                          (c) => DropdownMenuItem<String>(
-                            value: c,
-                            child: Text(context.l10n.translateCategory(c)),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (val) {
+                    items: availableCategories,
+                    itemLabel: context.l10n.translateCategory,
+                    onChanged: (String val) {
                       setState(() {
                         _selectedCategory = val;
                       });
@@ -718,7 +692,9 @@ class _ReviewPendingTransactionScreenState
                       Expanded(
                         child: OutlinedButton(
                           style: OutlinedButton.styleFrom(
-                            side: BorderSide(color: tokens.colors.textSecondary),
+                            side: BorderSide(
+                              color: tokens.colors.textSecondary,
+                            ),
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8),
@@ -882,22 +858,22 @@ class _ReviewPendingTransactionScreenState
   Widget _buildDropdownField<T>({
     required String label,
     required T? value,
-    required List<DropdownMenuItem<T>> items,
-    required ValueChanged<T?> onChanged,
+    required List<T> items,
+    required String Function(T value) itemLabel,
+    required ValueChanged<T> onChanged,
   }) {
-    final tokens = context.premiumTokens;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label, style: Theme.of(context).textTheme.bodyMedium),
         const SizedBox(height: 6),
-        DropdownButtonFormField<T>(
-          initialValue: value,
+        CompactDropdownFormField<T>(
+          value: value as T,
+          labelText: label,
+          floatingLabelBehavior: FloatingLabelBehavior.never,
           items: items,
+          itemLabel: itemLabel,
           onChanged: onChanged,
-          dropdownColor: tokens.colors.card,
-          style: Theme.of(context).textTheme.bodyLarge,
-          decoration: _fieldDecoration(context),
         ),
       ],
     );

@@ -1047,6 +1047,21 @@ void main() {
     );
 
     test(
+      'arabic transfer with currency suffix keeps the full amount and transfer type',
+      () {
+        final parsed = SmartCaptureParser.parse(
+          'تم تحويل مبلغ 2500EGP      من حساب رقم xxx7127      الى حساب رقم xxx0304      فى 25-JUN-2026',
+        );
+
+        expect(parsed.type, 'transfer');
+        expect(parsed.amount, 2500.0);
+        expect(parsed.currency, 'EGP');
+        expect(parsed.merchantName, isNull);
+        expect(parsed.description, 'Bank Transfer');
+      },
+    );
+
+    test(
       'built-in override takes precedence and reset restores default',
       () async {
         final controller = await makeController();

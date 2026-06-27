@@ -8,6 +8,7 @@ import 'merchant_rule.dart';
 import 'merchant_confirmation.dart';
 import 'capture_analytics.dart';
 import 'correction_feedback.dart';
+import '../core/utils/category_visuals.dart';
 
 class AppStateModel {
   const AppStateModel({
@@ -294,12 +295,25 @@ class AppStateModel {
 }
 
 class AppCategories {
-  const AppCategories({required this.income, required this.expense});
+  const AppCategories({
+    required this.income,
+    required this.expense,
+    this.incomeMetadata = const <String, CategoryVisual>{},
+    this.expenseMetadata = const <String, CategoryVisual>{},
+  });
 
   final List<String> income;
   final List<String> expense;
+  final Map<String, CategoryVisual> incomeMetadata;
+  final Map<String, CategoryVisual> expenseMetadata;
 
   factory AppCategories.fromJson(Map<String, dynamic> json) {
+    final Map<String, dynamic> incomeMetaJson = _asMap(
+      json['incomeMetadata'] ?? json['incomeStyles'] ?? json['income_meta'],
+    );
+    final Map<String, dynamic> expenseMetaJson = _asMap(
+      json['expenseMetadata'] ?? json['expenseStyles'] ?? json['expense_meta'],
+    );
     return AppCategories(
       income: (json['income'] as List<dynamic>? ?? const <dynamic>[])
           .map((dynamic e) => e.toString())
@@ -307,12 +321,73 @@ class AppCategories {
       expense: (json['expense'] as List<dynamic>? ?? const <dynamic>[])
           .map((dynamic e) => e.toString())
           .toList(growable: false),
+      incomeMetadata: incomeMetaJson.map(
+        (String key, dynamic value) =>
+            MapEntry<String, CategoryVisual>(
+              key,
+              CategoryVisual.fromJson(_asMap(value)),
+            ),
+      ),
+      expenseMetadata: expenseMetaJson.map(
+        (String key, dynamic value) =>
+            MapEntry<String, CategoryVisual>(
+              key,
+              CategoryVisual.fromJson(_asMap(value)),
+            ),
+      ),
     );
   }
 
   Map<String, dynamic> toJson() {
-    return <String, dynamic>{'income': income, 'expense': expense};
+    return <String, dynamic>{
+      'income': income,
+      'expense': expense,
+      'incomeMetadata': incomeMetadata.map(
+        (String key, CategoryVisual value) => MapEntry<String, dynamic>(
+          key,
+          value.toJson(),
+        ),
+      ),
+      'expenseMetadata': expenseMetadata.map(
+        (String key, CategoryVisual value) => MapEntry<String, dynamic>(
+          key,
+          value.toJson(),
+        ),
+      ),
+    };
   }
+
+  CategoryVisual? metadataFor({
+    required String type,
+    required String name,
+  }) {
+    final Map<String, CategoryVisual> map =
+        type.trim().toLowerCase() == 'income'
+        ? incomeMetadata
+        : expenseMetadata;
+    return map[name.trim()];
+  }
+
+  AppCategories copyWith({
+    List<String>? income,
+    List<String>? expense,
+    Map<String, CategoryVisual>? incomeMetadata,
+    Map<String, CategoryVisual>? expenseMetadata,
+  }) {
+    return AppCategories(
+      income: income ?? this.income,
+      expense: expense ?? this.expense,
+      incomeMetadata: incomeMetadata ?? this.incomeMetadata,
+      expenseMetadata: expenseMetadata ?? this.expenseMetadata,
+    );
+  }
+}
+
+Map<String, dynamic> _asMap(dynamic value) {
+  if (value is Map) {
+    return Map<String, dynamic>.from(value);
+  }
+  return <String, dynamic>{};
 }
 
 class SyncHealth {

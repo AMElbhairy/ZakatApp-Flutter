@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'dart:async';
 
+import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_typography.dart';
 import '../../services/app_state_controller.dart';
 import '../../services/auth_controller.dart';
 
@@ -113,9 +115,10 @@ class _AppInitializationScreenState extends State<AppInitializationScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final String family = AppTypography.familyFor(Localizations.localeOf(context));
     // Deep Green background matching brand palette
-    const deepGreen = Color(0xFF01332B);
-    const goldColor = Color(0xFFD4AF37);
+    const deepGreen = AppColors.backgroundHero;
+    const goldColor = AppColors.gold;
 
     return Scaffold(
       backgroundColor: deepGreen,
@@ -127,9 +130,9 @@ class _AppInitializationScreenState extends State<AppInitializationScreen> {
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: <Color>[
-                    const Color(0xFF073A31),
-                    const Color(0xFF021815),
+                    colors: <Color>[
+                    AppColors.brandTeal.withValues(alpha: 1),
+                    AppColors.backgroundHeroDark,
                     deepGreen,
                   ],
                 ),
@@ -159,7 +162,7 @@ class _AppInitializationScreenState extends State<AppInitializationScreen> {
                     height: 72,
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(16),
-                      color: Colors.transparent,
+                      color: AppColors.transparent,
                     ),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(16),
@@ -177,44 +180,52 @@ class _AppInitializationScreenState extends State<AppInitializationScreen> {
                   const SizedBox(height: 20),
                   Text(
                     'Zakah Wealth',
-                    style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                      color: Colors.white,
-                      letterSpacing: 0.5,
+                    style: AppTypography.pageTitle(
+                      color: AppColors.white,
+                      family: family,
+                      fallbackFamily: AppTypography.arabicFamily,
                     ),
                   ),
                   const SizedBox(height: 10),
-                  const Text(
+                  Text(
                     'Preparing your wealth dashboard...',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.white70, fontSize: 15),
+                    style: AppTypography.body(
+                      color: AppColors.white70,
+                      family: family,
+                      fallbackFamily: AppTypography.arabicFamily,
+                    ),
                   ),
                   const Spacer(),
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.04),
+                      color: AppColors.white.withValues(alpha: 0.04),
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.08),
+                        color: AppColors.white.withValues(alpha: 0.08),
                       ),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        _buildChecklistItem('Loading assets', _loadingAssets),
+                        _buildChecklistItem(family, 'Loading assets', _loadingAssets),
                         const SizedBox(height: 12),
                         _buildChecklistItem(
+                          family,
                           'Loading transactions',
                           _loadingTransactions,
                         ),
                         const SizedBox(height: 12),
                         _buildChecklistItem(
+                          family,
                           'Restoring session',
                           _restoringSession,
                         ),
                         const SizedBox(height: 12),
                         _buildChecklistItem(
+                          family,
                           'Preparing projections',
                           _preparingProjections,
                         ),
@@ -223,9 +234,13 @@ class _AppInitializationScreenState extends State<AppInitializationScreen> {
                   ),
                   const Spacer(),
                   if (_timeoutReached) ...[
-                    const Text(
+                    Text(
                       'Still preparing your data...',
-                      style: TextStyle(color: Colors.white70, fontSize: 14),
+                      style: AppTypography.caption(
+                        color: AppColors.white70,
+                        family: family,
+                        fallbackFamily: AppTypography.arabicFamily,
+                      ),
                     ),
                     const SizedBox(height: 12),
                     if (_localDataLoaded)
@@ -242,11 +257,12 @@ class _AppInitializationScreenState extends State<AppInitializationScreen> {
                               borderRadius: BorderRadius.circular(12),
                             ),
                           ),
-                          child: const Text(
+                          child: Text(
                             'Continue Offline',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
+                            style: AppTypography.button(
+                              color: deepGreen,
+                              family: family,
+                              fallbackFamily: AppTypography.arabicFamily,
                             ),
                           ),
                         ),
@@ -271,7 +287,7 @@ class _AppInitializationScreenState extends State<AppInitializationScreen> {
     );
   }
 
-  Widget _buildChecklistItem(String label, bool isActive) {
+  Widget _buildChecklistItem(String family, String label, bool isActive) {
     return Row(
       children: [
         isActive
@@ -279,22 +295,22 @@ class _AppInitializationScreenState extends State<AppInitializationScreen> {
                 width: 16,
                 height: 16,
                 child: CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFD4AF37)),
+                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.gold),
                   strokeWidth: 1.5,
                 ),
               )
             : const Icon(
                 Icons.check_circle_rounded,
-                color: Color(0xFFD4AF37),
+                color: AppColors.gold,
                 size: 18,
               ),
         const SizedBox(width: 12),
         Text(
           label,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
+          style: AppTypography.body(
+            color: AppColors.white,
+            family: family,
+            fallbackFamily: AppTypography.arabicFamily,
           ),
         ),
       ],

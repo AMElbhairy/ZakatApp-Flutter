@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/i18n/app_localizations.dart';
+import '../../core/services/zakat_engine.dart';
 import '../../core/utils/currency_presentation.dart';
 import '../../models/market_snapshot.dart';
 import '../../services/app_state_controller.dart';
@@ -12,9 +13,12 @@ class MarketSnapshotScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final MarketSnapshot snapshot = context
-        .watch<AppStateController>()
-        .currentMarketSnapshot;
+    final AppStateController controller = context.watch<AppStateController>();
+    final MarketSnapshot snapshot = controller.currentMarketSnapshot;
+    final MarketData marketData = MarketData.fromJson(controller.state.marketData);
+    final String displayCurrency = controller.state.mainCurrency.trim().isEmpty
+        ? 'EGP'
+        : controller.state.mainCurrency.trim();
     final bool isArabic =
         Localizations.localeOf(context).languageCode.toLowerCase() == 'ar';
 
@@ -35,11 +39,19 @@ class MarketSnapshotScreen extends StatelessWidget {
             children: <Widget>[
               _PriceRow(
                 label: isArabic ? 'ذهب 24K' : 'Gold 24K',
-                value: _pricePerGram(snapshot.gold24kPricePerGramEgp),
+                value: _pricePerGram(
+                  snapshot.gold24kPricePerGramEgp,
+                  currency: displayCurrency,
+                  marketData: marketData,
+                ),
               ),
               _PriceRow(
                 label: isArabic ? 'فضة' : 'Silver',
-                value: _pricePerGram(snapshot.silverPricePerGramEgp),
+                value: _pricePerGram(
+                  snapshot.silverPricePerGramEgp,
+                  currency: displayCurrency,
+                  marketData: marketData,
+                ),
               ),
             ],
           ),
@@ -49,63 +61,123 @@ class MarketSnapshotScreen extends StatelessWidget {
             children: <Widget>[
               _PriceRow(
                 label: CurrencyPresentation.label('EGP'),
-                value: _rate(1),
+                value: _rate(
+                  1,
+                  currency: displayCurrency,
+                  marketData: marketData,
+                ),
               ),
               _PriceRow(
                 label: CurrencyPresentation.label('SAR'),
-                value: _rate(snapshot.sarToEgp),
+                value: _rate(
+                  snapshot.sarToEgp,
+                  currency: displayCurrency,
+                  marketData: marketData,
+                ),
               ),
               _PriceRow(
                 label: CurrencyPresentation.label('USD'),
-                value: _rate(snapshot.usdToEgp),
+                value: _rate(
+                  snapshot.usdToEgp,
+                  currency: displayCurrency,
+                  marketData: marketData,
+                ),
               ),
               _PriceRow(
                 label: CurrencyPresentation.label('AED'),
-                value: _rate(snapshot.aedToEgp),
+                value: _rate(
+                  snapshot.aedToEgp,
+                  currency: displayCurrency,
+                  marketData: marketData,
+                ),
               ),
               _PriceRow(
                 label: CurrencyPresentation.label('KWD'),
-                value: _rate(snapshot.kwdToEgp),
+                value: _rate(
+                  snapshot.kwdToEgp,
+                  currency: displayCurrency,
+                  marketData: marketData,
+                ),
               ),
               _PriceRow(
                 label: CurrencyPresentation.label('QAR'),
-                value: _rate(snapshot.qarToEgp),
+                value: _rate(
+                  snapshot.qarToEgp,
+                  currency: displayCurrency,
+                  marketData: marketData,
+                ),
               ),
               _PriceRow(
                 label: CurrencyPresentation.label('EUR'),
-                value: _rate(snapshot.eurToEgp),
+                value: _rate(
+                  snapshot.eurToEgp,
+                  currency: displayCurrency,
+                  marketData: marketData,
+                ),
               ),
               _PriceRow(
                 label: CurrencyPresentation.label('GBP'),
-                value: _rate(snapshot.gbpToEgp),
+                value: _rate(
+                  snapshot.gbpToEgp,
+                  currency: displayCurrency,
+                  marketData: marketData,
+                ),
               ),
               _PriceRow(
                 label: CurrencyPresentation.label('BHD'),
-                value: _rate(snapshot.bhdToEgp),
+                value: _rate(
+                  snapshot.bhdToEgp,
+                  currency: displayCurrency,
+                  marketData: marketData,
+                ),
               ),
               _PriceRow(
                 label: CurrencyPresentation.label('OMR'),
-                value: _rate(snapshot.omrToEgp),
+                value: _rate(
+                  snapshot.omrToEgp,
+                  currency: displayCurrency,
+                  marketData: marketData,
+                ),
               ),
               _PriceRow(
                 label: CurrencyPresentation.label('JOD'),
-                value: _rate(snapshot.jodToEgp),
+                value: _rate(
+                  snapshot.jodToEgp,
+                  currency: displayCurrency,
+                  marketData: marketData,
+                ),
               ),
               _PriceRow(
                 label: CurrencyPresentation.label('TRY'),
-                value: _rate(snapshot.tryToEgp),
+                value: _rate(
+                  snapshot.tryToEgp,
+                  currency: displayCurrency,
+                  marketData: marketData,
+                ),
               ),
               _PriceRow(
                 label: CurrencyPresentation.label('MYR'),
-                value: _rate(snapshot.myrToEgp),
+                value: _rate(
+                  snapshot.myrToEgp,
+                  currency: displayCurrency,
+                  marketData: marketData,
+                ),
               ),
               _PriceRow(
                 label: CurrencyPresentation.label('PKR'),
-                value: _rate(snapshot.pkrToEgp),
+                value: _rate(
+                  snapshot.pkrToEgp,
+                  currency: displayCurrency,
+                  marketData: marketData,
+                ),
               ),
               _PriceRow(
                 label: CurrencyPresentation.label('IDR'),
-                value: _rate(snapshot.idrToEgp),
+                value: _rate(
+                  snapshot.idrToEgp,
+                  currency: displayCurrency,
+                  marketData: marketData,
+                ),
               ),
             ],
           ),
@@ -119,11 +191,35 @@ class MarketSnapshotScreen extends StatelessWidget {
     );
   }
 
-  String _pricePerGram(double value) =>
-      value <= 0 ? '-' : 'E£ ${value.toStringAsFixed(2)}/g';
+  String _pricePerGram(
+    double valueEgp, {
+    required String currency,
+    required MarketData marketData,
+  }) {
+    if (valueEgp <= 0) return '-';
+    final double converted = ZakatEngineService.convertFromEgp(
+      valueEgp,
+      currency,
+      marketData,
+    );
+    if (converted.isNaN) return '-';
+    return '${ZakatEngineService.formatCurrency(converted, currency)}/g';
+  }
 
-  String _rate(double value) =>
-      value <= 0 ? '-' : 'E£ ${value.toStringAsFixed(4)}';
+  String _rate(
+    double valueEgp, {
+    required String currency,
+    required MarketData marketData,
+  }) {
+    if (valueEgp <= 0) return '-';
+    final double converted = ZakatEngineService.convertFromEgp(
+      valueEgp,
+      currency,
+      marketData,
+    );
+    if (converted.isNaN) return '-';
+    return ZakatEngineService.formatCurrency(converted, currency);
+  }
 
   String _formatLastUpdated(String raw) {
     if (raw.trim().isEmpty) return '-';

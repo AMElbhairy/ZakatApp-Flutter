@@ -13,7 +13,9 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../core/theme/app_colors.dart';
 import '../../core/widgets/app_ui.dart';
+import '../../core/widgets/compact_dropdown.dart';
 import '../../services/backup_key_manager.dart';
 import '../../services/app_state_controller.dart';
 import '../../services/cloud_backup_controller.dart';
@@ -841,7 +843,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                       : null,
                   child: const Text(
                     'Delete',
-                    style: TextStyle(color: Colors.red),
+                    style: TextStyle(color: AppColors.redStrong),
                   ),
                 ),
               ],
@@ -968,29 +970,15 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                           style: TextStyle(fontWeight: FontWeight.w600),
                         ),
                         const Spacer(),
-                        DropdownButton<int>(
+                        CompactDropdownButton<int>(
                           value: controller.minimumIntervalHours,
-                          items: const <DropdownMenuItem<int>>[
-                            DropdownMenuItem<int>(
-                              value: 3,
-                              child: Text('3 hours'),
-                            ),
-                            DropdownMenuItem<int>(
-                              value: 6,
-                              child: Text('6 hours'),
-                            ),
-                            DropdownMenuItem<int>(
-                              value: 12,
-                              child: Text('12 hours'),
-                            ),
-                          ],
-                          onChanged: _busy
-                              ? null
-                              : (int? value) {
-                                  if (value != null) {
-                                    controller.setMinimumIntervalHours(value);
-                                  }
-                                },
+                          labelText: 'Minimum interval',
+                          items: const <int>[3, 6, 12],
+                          itemLabel: (int value) => '$value hours',
+                          onChanged: (int value) {
+                            if (_busy) return;
+                            controller.setMinimumIntervalHours(value);
+                          },
                         ),
                       ],
                     ),
@@ -999,10 +987,10 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                 const SizedBox(height: 8),
                 OutlinedButton.icon(
                   onPressed: _busy ? null : _deleteAllCloudBackups,
-                  icon: const Icon(Icons.delete_outline, color: Colors.red),
+                  icon: const Icon(Icons.delete_outline, color: AppColors.redStrong),
                   label: const Text(
                     'Delete All Cloud Backups',
-                    style: TextStyle(color: Colors.red),
+                    style: TextStyle(color: AppColors.redStrong),
                   ),
                 ),
                 const Divider(height: 24),
@@ -1372,7 +1360,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Replace', style: TextStyle(color: Colors.red)),
+            child: const Text('Replace', style: TextStyle(color: AppColors.redStrong)),
           ),
         ],
       ),
@@ -1396,7 +1384,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
             onPressed: () => Navigator.of(context).pop(true),
             child: const Text(
               'Yes, Force Restore',
-              style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+              style: TextStyle(color: AppColors.redStrong, fontWeight: FontWeight.bold),
             ),
           ),
         ],
@@ -1597,9 +1585,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     required bool isNewest,
     required bool isOlder,
   }) {
-    if (isCurrent) return Colors.green.shade400;
-    if (isNewest) return Colors.blue.shade400;
-    if (isOlder) return Colors.orange.shade400;
+    if (isCurrent) return AppColors.emeraldSuccessLight;
+    if (isNewest) return AppColors.blueBright;
+    if (isOlder) return AppColors.orangeMuted;
     return Theme.of(context).colorScheme.outlineVariant;
   }
 
@@ -1613,7 +1601,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
       child: Text(
         label,
         style: const TextStyle(
-          color: Colors.white,
+          color: AppColors.white,
           fontSize: 10,
           fontWeight: FontWeight.w700,
         ),
@@ -1647,16 +1635,16 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
 
     final badges = <Widget>[];
     if (isCurrent) {
-      badges.add(_badge(label: 'Current Device', color: Colors.green.shade700));
+      badges.add(_badge(label: 'Current Device', color: AppColors.emeraldSuccess));
     }
     if (isNewest) {
-      badges.add(_badge(label: 'Newest Backup', color: Colors.blue.shade700));
+      badges.add(_badge(label: 'Newest Backup', color: AppColors.blue));
     }
     if (isOlder) {
-      badges.add(_badge(label: 'Older Backup', color: Colors.orange.shade700));
+      badges.add(_badge(label: 'Older Backup', color: AppColors.orangeDeep));
     }
     if (!isAvailable) {
-      badges.add(_badge(label: 'Unavailable', color: Colors.grey.shade700));
+      badges.add(_badge(label: 'Unavailable', color: AppColors.slateDark));
     }
 
     return Card(
@@ -1909,7 +1897,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                   children: [
                     Icon(
                       _isConnected ? Icons.cloud_done : Icons.cloud_off,
-                      color: _isConnected ? Colors.green : Colors.grey,
+                      color: _isConnected ? AppColors.emeraldSuccess : AppColors.gray,
                       size: 28,
                     ),
                     const SizedBox(width: 16),
@@ -1923,8 +1911,8 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                               fontWeight: FontWeight.bold,
                               fontSize: 16,
                               color: _isConnected
-                                  ? Colors.green
-                                  : Colors.grey.shade600,
+                                  ? AppColors.emeraldSuccess
+                                  : AppColors.neutral600,
                             ),
                           ),
                           if (_isConnected && _userEmail != null) ...[
@@ -2181,7 +2169,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                     child: Center(
                       child: Text(
                         'No cloud backups found.',
-                        style: TextStyle(color: Colors.grey),
+                        style: TextStyle(color: AppColors.gray),
                       ),
                     ),
                   ),

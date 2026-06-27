@@ -6,6 +6,7 @@ import 'package:intl/intl.dart' hide TextDirection;
 import 'package:provider/provider.dart';
 
 import '../../core/i18n/app_localizations.dart';
+import '../../core/motion/app_motion.dart';
 import '../../core/services/zakat_engine.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/services/zakat_schedule_service.dart';
@@ -1031,9 +1032,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Smart Capture',
-                  style: TextStyle(
+                Text(
+                  context.l10n.tr('smart_capture'),
+                  style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.bold,
                     fontSize: 15,
@@ -1041,7 +1042,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '$count transactions need review',
+                  context.l10n.trf('transactions_need_review', <String, String>{
+                    'count': count.toString(),
+                  }),
                   style: TextStyle(color: Colors.grey[300], fontSize: 13),
                 ),
               ],
@@ -1357,10 +1360,10 @@ class _PremiumHeroCard extends StatelessWidget {
                                   end: gradientEnd,
                                   colors: <Color>[
                                     Colors.white.withValues(
-                                      alpha: isDark ? 0.20 : 0.38,
+                                      alpha: isDark ? 0.18 : 0.34,
                                     ),
                                     Colors.white.withValues(
-                                      alpha: isDark ? 0.01 : 0.05,
+                                      alpha: isDark ? 0.0 : 0.04,
                                     ),
                                   ],
                                   stops: const <double>[0.0, 1.0],
@@ -1488,7 +1491,7 @@ class _HeroArtwork extends StatelessWidget {
     return SizedBox(
       width: width,
       child: Opacity(
-        opacity: 0.94,
+        opacity: 0.67,
         child: Image.asset(
           'assets/images/hero_mosque_watermark.png',
           fit: BoxFit.contain,
@@ -1540,24 +1543,29 @@ class _AnimatedAmountText extends StatelessWidget {
         ).textTheme.titleLarge?.copyWith(color: Colors.white),
       );
     }
-    return FittedBox(
-      fit: BoxFit.scaleDown,
-      alignment: AlignmentDirectional.centerStart,
-      child: Text(
-        hidden
-            ? '••••••'
-            : _DashboardScreenState._formatCompactDisplay(
-                context,
-                displayValue,
-                currency,
-              ),
-        maxLines: 1,
-        style: Theme.of(context).textTheme.displayLarge?.copyWith(
-          fontWeight: FontWeight.w700,
-          color: Colors.white,
-          letterSpacing: hidden ? 0 : -0.5,
-        ),
-      ),
+    return AnimatedValue(
+      value: displayValue,
+      builder: (BuildContext context, double value, Widget? child) {
+        return FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: AlignmentDirectional.centerStart,
+          child: Text(
+            hidden
+                ? '••••••'
+                : _DashboardScreenState._formatCompactDisplay(
+                    context,
+                    value,
+                    currency,
+                  ),
+            maxLines: 1,
+            style: Theme.of(context).textTheme.displayLarge?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+              letterSpacing: hidden ? 0 : -0.5,
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -1596,7 +1604,7 @@ class _HeroSupportMetric extends StatelessWidget {
                     item.label,
                     maxLines: 1,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Colors.white.withValues(alpha: 0.6),
+                      color: Colors.white.withValues(alpha: 0.65),
                       fontWeight: FontWeight.w700,
                       fontSize: 9.0,
                       letterSpacing: 0,
@@ -1667,7 +1675,7 @@ class _HeroGrowthRow extends StatelessWidget {
                 TextSpan(
                   text: context.l10n.tr('this_year'),
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.76),
+                    color: Colors.white.withValues(alpha: 0.81),
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -2643,8 +2651,8 @@ class _NisabStatusCard extends StatelessWidget {
                             fontSize: 10.5,
                             fontWeight: FontWeight.w600,
                             color: dark
-                                ? const Color(0xFF9CA3BF)
-                                : const Color(0xFF4B5563),
+                                ? Colors.white.withValues(alpha: 0.72)
+                                : const Color(0xFF526173),
                           ),
                         ),
                       ),
@@ -3147,17 +3155,17 @@ class _DashboardActivityEntry {
       transferDescription:
           '$sourceCurrency ${_formatVal(sourceAmount)} → $targetCurrency ${_formatVal(targetAmount)}',
       transferKey: 'exchange_${source.exchangePairId ?? source.id}',
-      exchangeActivityId:
-          source.exchangePairId?.trim().isNotEmpty == true
+      exchangeActivityId: source.exchangePairId?.trim().isNotEmpty == true
           ? source.exchangePairId!.trim()
           : (targetSaving?.transferActivityId?.trim().isNotEmpty == true
                 ? targetSaving!.transferActivityId!.trim()
                 : null),
-      transferDate: (sourceTransaction?.createdAt.isNotEmpty == true
-              ? sourceTransaction!.createdAt
-              : (targetSaving?.createdAt ?? source.createdAt))
-          .split('T')
-          .first,
+      transferDate:
+          (sourceTransaction?.createdAt.isNotEmpty == true
+                  ? sourceTransaction!.createdAt
+                  : (targetSaving?.createdAt ?? source.createdAt))
+              .split('T')
+              .first,
       transferCreatedAt: sourceTransaction?.createdAt.isNotEmpty == true
           ? sourceTransaction!.createdAt
           : (targetSaving?.createdAt ?? source.createdAt),
@@ -3179,8 +3187,7 @@ class _DashboardActivityEntry {
       transferDescription:
           '$sourceCurrency ${_formatVal(sourceAmount)} → ${saving.unit} ${_formatVal(saving.amount)}',
       transferKey: 'legacy_exchange_${saving.id}',
-      exchangeActivityId:
-          saving.transferActivityId?.trim().isNotEmpty == true
+      exchangeActivityId: saving.transferActivityId?.trim().isNotEmpty == true
           ? saving.transferActivityId!.trim()
           : null,
       transferDate: saving.dateAcquired.trim().isNotEmpty
@@ -3200,8 +3207,7 @@ class _DashboardActivityEntry {
       transferDescription:
           '${_formatVal(saving.amount)}g $metal • ${saving.purchaseCurrency} ${_formatVal(saving.purchaseAmount)}',
       transferKey: 'metal_${saving.id}',
-      exchangeActivityId:
-          saving.transferActivityId?.trim().isNotEmpty == true
+      exchangeActivityId: saving.transferActivityId?.trim().isNotEmpty == true
           ? saving.transferActivityId!.trim()
           : null,
       transferDate: saving.dateAcquired.trim().isNotEmpty
@@ -3766,30 +3772,7 @@ class _TopExpenseCategoriesCard extends StatefulWidget {
       _TopExpenseCategoriesCardState();
 }
 
-class _TopExpenseCategoriesCardState extends State<_TopExpenseCategoriesCard>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _scaleAnimation;
-  bool _isPressed = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 130),
-    );
-    _scaleAnimation = Tween<double>(
-      begin: 1.0,
-      end: 0.98,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
+class _TopExpenseCategoriesCardState extends State<_TopExpenseCategoriesCard> {
 
   static DateTime _parseDate(String value) {
     try {
@@ -3863,10 +3846,6 @@ class _TopExpenseCategoriesCardState extends State<_TopExpenseCategoriesCard>
     }
 
     final bool isEmpty = currentMonthExpenses.isEmpty || totalExpensesEgp <= 0;
-
-    final Color pressedOverlay = dark
-        ? const Color(0xFF10B981).withValues(alpha: 0.08)
-        : const Color(0xFF10B981).withValues(alpha: 0.04);
 
     Widget cardContent;
 
@@ -3986,51 +3965,23 @@ class _TopExpenseCategoriesCardState extends State<_TopExpenseCategoriesCard>
       );
     }
 
-    return ScaleTransition(
-      scale: _scaleAnimation,
-      child: GestureDetector(
-        onTapDown: (_) {
-          _controller.forward();
-          setState(() {
-            _isPressed = true;
-          });
-        },
-        onTapUp: (_) {
-          _controller.reverse();
-          setState(() {
-            _isPressed = false;
-          });
-          showTopSnackBar(
-            context,
-            context.l10n.tr('expense_analysis_screen_coming_soon'),
-          );
-        },
-        onTapCancel: () {
-          _controller.reverse();
-          setState(() {
-            _isPressed = false;
-          });
-        },
-        behavior: HitTestBehavior.opaque,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
-          decoration: BoxDecoration(
-            color: _isPressed ? pressedOverlay : Colors.transparent,
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: _PremiumSection(
-            title: context.l10n.tr('top_expense_categories'),
-            trailing: Text(
-              context.l10n.tr('this_month'),
-              style: TextStyle(
-                fontSize: 12.0,
-                fontWeight: FontWeight.w600,
-                color: dark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-              ),
-            ),
-            child: cardContent,
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 120),
+      decoration: BoxDecoration(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: _PremiumSection(
+        title: context.l10n.tr('top_expense_categories'),
+        trailing: Text(
+          context.l10n.tr('this_month'),
+          style: TextStyle(
+            fontSize: 12.0,
+            fontWeight: FontWeight.w600,
+            color: dark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
           ),
         ),
+        child: cardContent,
       ),
     );
   }

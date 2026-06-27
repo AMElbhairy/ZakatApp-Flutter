@@ -177,6 +177,8 @@ void main() {
 
     await _openScheduleTab(tester);
 
+    expect(find.byKey(const Key('upcomingZakatSummaryCard')), findsOneWidget);
+    expect(find.byKey(const Key('zakatFilterRow')), findsOneWidget);
     expect(find.byKey(const Key('zakatScheduleList')), findsOneWidget);
     expect(find.byType(ExpansionTile), findsWidgets);
   });
@@ -207,6 +209,7 @@ void main() {
 
     await _openScheduleTab(tester);
 
+    expect(find.byKey(const Key('upcomingZakatSummaryCard')), findsOneWidget);
     expect(find.byKey(const Key('zakatScheduleList')), findsOneWidget);
     expect(find.byType(ExpansionTile), findsWidgets);
   });

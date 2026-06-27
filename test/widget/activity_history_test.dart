@@ -93,6 +93,7 @@ Future<void> _addTx(
   if (notes.isNotEmpty) {
     await tester.enterText(find.byKey(const Key('notesField')), notes);
   }
+  await tester.ensureVisible(find.byKey(const Key('saveTransactionButton')));
   await tester.tap(find.byKey(const Key('saveTransactionButton')));
   await tester.pumpAndSettle();
 }
@@ -118,6 +119,10 @@ void main() {
     await tester.tap(find.text('Activity').first);
     await tester.pumpAndSettle();
 
+    expect(find.byKey(const Key('activityTypeChips')), findsOneWidget);
+    expect(find.byKey(const Key('activityDateChips')), findsOneWidget);
+    expect(find.byKey(const Key('activityCategorySearchRow')), findsOneWidget);
+    expect(find.byKey(const Key('activitySummaryCard')), findsOneWidget);
     expect(find.byType(ListTile), findsNWidgets(2));
 
     await tester.tap(find.text('Income').first);
@@ -171,6 +176,7 @@ void main() {
       await tester.tap(find.text('Activity').first);
       await tester.pumpAndSettle();
 
+      expect(find.byKey(const Key('activitySummaryCard')), findsOneWidget);
       await tester.enterText(
         find.byKey(const Key('activitySearchField')),
         'LUNCH',

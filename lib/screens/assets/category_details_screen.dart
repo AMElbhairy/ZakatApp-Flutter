@@ -7,6 +7,7 @@ import '../../core/services/zakat_engine.dart';
 import '../../core/theme/app_theme_extensions.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/widgets/app_ui.dart';
+import '../../core/widgets/compact_dropdown.dart';
 import '../../models/investment_asset.dart';
 import '../../models/saving.dart';
 import '../../models/transaction.dart';
@@ -1532,20 +1533,23 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
     bool isArabic,
   ) {
     final double unpaidLiabilityEgp = asset.installmentPlan.isNotEmpty
-        ? asset.installmentPlan
-            .where((item) => item['isPaid'] != true)
-            .fold(0.0, (sum, item) {
-              final String itemCurrency = (item['currency']?.toString().isNotEmpty == true)
+        ? asset.installmentPlan.where((item) => item['isPaid'] != true).fold(
+            0.0,
+            (sum, item) {
+              final String itemCurrency =
+                  (item['currency']?.toString().isNotEmpty == true)
                   ? item['currency'].toString()
                   : asset.currency;
               final double amount = ((item['amount'] ?? 0) as num).toDouble();
-              return sum + ZakatEngineService.convertToEgp(
-                amount,
-                itemCurrency,
-                market,
-              );
-            })
-        : ZakatEngineService.convertToEgp(asset.loanBalance, asset.currency, market);
+              return sum +
+                  ZakatEngineService.convertToEgp(amount, itemCurrency, market);
+            },
+          )
+        : ZakatEngineService.convertToEgp(
+            asset.loanBalance,
+            asset.currency,
+            market,
+          );
     final double unpaidLiabilityMain = ZakatEngineService.convertFromEgp(
       unpaidLiabilityEgp,
       mainCurrency,
@@ -1650,8 +1654,11 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                         child: Material(
                           color: Colors.transparent,
                           child: InkWell(
-                            onTap: () =>
-                                _showInstallmentSchedule(context, asset, mainCurrency),
+                            onTap: () => _showInstallmentSchedule(
+                              context,
+                              asset,
+                              mainCurrency,
+                            ),
                             borderRadius: BorderRadius.circular(6),
                             child: Ink(
                               width: double.infinity,
@@ -1821,17 +1828,12 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
       context: context,
       builder: (BuildContext ctx) => AlertDialog(
         title: Text(context.l10n.tr('select_payment_category')),
-        content: DropdownButtonFormField<String>(
-          initialValue: selected,
-          items: categories
-              .map(
-                (String c) => DropdownMenuItem<String>(
-                  value: c,
-                  child: Text(ctx.l10n.translateCategory(c)),
-                ),
-              )
-              .toList(growable: false),
-          onChanged: (String? v) => selected = v ?? selected,
+        content: CompactDropdownFormField<String>(
+          value: selected,
+          labelText: context.l10n.tr('select_payment_category'),
+          items: categories,
+          itemLabel: ctx.l10n.translateCategory,
+          onChanged: (String v) => selected = v,
         ),
         actions: <Widget>[
           TextButton(
@@ -1847,7 +1849,11 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
     );
   }
 
-  void _showInstallmentSchedule(BuildContext context, InvestmentAsset asset, String mainCurrency) {
+  void _showInstallmentSchedule(
+    BuildContext context,
+    InvestmentAsset asset,
+    String mainCurrency,
+  ) {
     final tokens = context.premiumTokens;
     final bool isArabic =
         Localizations.localeOf(context).languageCode.toLowerCase() == 'ar';
@@ -1869,26 +1875,35 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
               orElse: () => asset,
             );
             final plan = latestAsset.installmentPlan;
-            final double unpaidLiabilityEgp = latestAsset.installmentPlan.isNotEmpty
+            final double unpaidLiabilityEgp =
+                latestAsset.installmentPlan.isNotEmpty
                 ? latestAsset.installmentPlan
-                    .where((item) => item['isPaid'] != true)
-                    .fold(0.0, (sum, item) {
-                      final String itemCurrency = (item['currency']?.toString().isNotEmpty == true)
-                          ? item['currency'].toString()
-                          : latestAsset.currency;
-                      final double amount = ((item['amount'] ?? 0) as num).toDouble();
-                      return sum + ZakatEngineService.convertToEgp(
-                        amount,
-                        itemCurrency,
-                        market,
-                      );
-                    })
-                : ZakatEngineService.convertToEgp(latestAsset.loanBalance, latestAsset.currency, market);
-            final double unpaidLiabilityMain = ZakatEngineService.convertFromEgp(
-              unpaidLiabilityEgp,
-              mainCurrency,
-              market,
-            );
+                      .where((item) => item['isPaid'] != true)
+                      .fold(0.0, (sum, item) {
+                        final String itemCurrency =
+                            (item['currency']?.toString().isNotEmpty == true)
+                            ? item['currency'].toString()
+                            : latestAsset.currency;
+                        final double amount = ((item['amount'] ?? 0) as num)
+                            .toDouble();
+                        return sum +
+                            ZakatEngineService.convertToEgp(
+                              amount,
+                              itemCurrency,
+                              market,
+                            );
+                      })
+                : ZakatEngineService.convertToEgp(
+                    latestAsset.loanBalance,
+                    latestAsset.currency,
+                    market,
+                  );
+            final double unpaidLiabilityMain =
+                ZakatEngineService.convertFromEgp(
+                  unpaidLiabilityEgp,
+                  mainCurrency,
+                  market,
+                );
 
             return DraggableScrollableSheet(
               expand: false,
@@ -2057,8 +2072,8 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                                                 noZakat: latestAsset.noZakat,
                                                 createdAt:
                                                     latestAsset.createdAt,
-                                                yearlyGrowthRate:
-                                                    latestAsset.yearlyGrowthRate,
+                                                yearlyGrowthRate: latestAsset
+                                                    .yearlyGrowthRate,
                                               );
                                               await controller.updateInvestment(
                                                 updatedAsset,
@@ -2240,7 +2255,9 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                                                       } on StateError catch (
                                                         error
                                                       ) {
-                                                        if (!context.mounted) return;
+                                                        if (!context.mounted) {
+                                                          return;
+                                                        }
                                                         showTopSnackBar(
                                                           context,
                                                           error.message,
@@ -2296,9 +2313,12 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
       );
     } else if (widget.categoryType == 'gold' ||
         widget.categoryType == 'silver') {
-      Navigator.of(
-        context,
-      ).push(MaterialPageRoute<void>(builder: (_) => const AddSavingScreen()));
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) =>
+              AddSavingScreen(initialAssetType: widget.categoryType),
+        ),
+      );
     } else if (widget.categoryType == 'investments' ||
         widget.categoryType == 'property') {
       Navigator.of(context).push(

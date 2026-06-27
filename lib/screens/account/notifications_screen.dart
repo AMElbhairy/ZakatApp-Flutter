@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/i18n/app_localizations.dart';
+import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/theme/app_theme_extensions.dart';
@@ -51,7 +53,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     super.initState();
     final AppStateController controller = context.read<AppStateController>();
     final int pendingCount = controller.state.pendingTransactions
-        .where((PendingTransaction t) => t.status == CaptureStatus.pendingReview)
+        .where(
+          (PendingTransaction t) => t.status == CaptureStatus.pendingReview,
+        )
         .length;
     if (pendingCount > 0) {
       _selectedStatus = _CaptureStatusFilter.pending;
@@ -218,11 +222,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         title: const Text('Clear Ignored Captures'),
         titleTextStyle: Theme.of(
           context,
-        ).textTheme.titleLarge?.copyWith(color: Colors.white),
+        ).textTheme.titleLarge?.copyWith(color: AppColors.white),
         content: Text(
           'Are you sure you want to permanently clear all ignored captures?',
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: Colors.white.withValues(alpha: 0.78),
+            color: AppColors.white.withValues(alpha: 0.78),
           ),
         ),
         actions: [
@@ -230,13 +234,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             onPressed: () => Navigator.pop(context),
             child: Text(
               'Cancel',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.78)),
+              style: TextStyle(color: AppColors.white.withValues(alpha: 0.78)),
             ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: tokens.colors.danger,
-              foregroundColor: Colors.white,
+              foregroundColor: AppColors.white,
             ),
             onPressed: () {
               Navigator.pop(context);
@@ -406,10 +410,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     final Color surfaceColor = dark
         ? tokens.colors.surface.withValues(alpha: 0.74)
-        : const Color(0xFFF9F7F0);
+        : AppColors.sharedContainer;
     final Color fieldColor = dark
         ? tokens.colors.card.withValues(alpha: 0.88)
-        : const Color(0xFFEBE7DD);
+        : AppColors.neutral40;
     final int resultsCount = _sortedNewestFirst(
       controller.state.pendingTransactions,
     ).where(_matchesDateFilter).where(_matchesStatusFilter).length;
@@ -436,7 +440,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             children: <Widget>[
               Expanded(
                 child: Text(
-                  'Smart Capture Log',
+                  context.l10n.tr('smart_capture_log'),
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     color: tokens.colors.textPrimary,
                     fontWeight: FontWeight.w800,
@@ -685,10 +689,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     final Color surfaceColor = dark
         ? tokens.colors.surface.withValues(alpha: 0.78)
-        : const Color(0xFFFAF8F2);
+        : AppColors.sharedContainer;
     final Color titleColor = dark
         ? tokens.colors.textPrimary
-        : const Color(0xFF042F2B);
+        : AppColors.backgroundHeroDark;
     final Color subtitleColor = tokens.colors.textSecondary;
     final String amount = item.suggestedAmount != null
         ? '${item.suggestedCurrency ?? 'EGP'} ${item.suggestedAmount!.toStringAsFixed(2)}'
@@ -705,10 +709,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       CaptureStatus.manuallyApproved => tokens.colors.emerald,
       CaptureStatus.ignored => tokens.colors.danger,
     };
-    final String displayCategory = _resolvedCaptureCategory(
-          controller.state,
-          item,
-        ) ??
+    final String displayCategory =
+        _resolvedCaptureCategory(controller.state, item) ??
         item.suggestedCategory ??
         'Other';
 
@@ -1002,7 +1004,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         decoration: BoxDecoration(
           border: Border(
             bottom: BorderSide(
-              color: selected ? tokens.colors.gold : Colors.transparent,
+              color: selected ? tokens.colors.gold : AppColors.transparent,
               width: 2.5,
             ),
           ),
@@ -1019,7 +1021,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               style: Theme.of(context).textTheme.titleSmall?.copyWith(
                 color: selected
                     ? tokens.colors.gold
-                    : (isDark ? Colors.white : tokens.colors.hero),
+                    : (isDark ? AppColors.white : tokens.colors.hero),
                 fontWeight: FontWeight.w700,
                 fontSize: 13.5,
               ),

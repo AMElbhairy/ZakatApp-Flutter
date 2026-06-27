@@ -606,7 +606,7 @@ class _JourneyHero extends StatelessWidget {
             width: 240,
             height: 240,
             child: Opacity(
-              opacity: 0.15,
+              opacity: 0.135,
               child: Transform.scale(
                 scale: 1.5,
                 child: Transform.flip(
@@ -670,7 +670,7 @@ class _JourneyHero extends StatelessWidget {
                       ? 'صافي الثروة المتوقع عند تاريخ الهدف'
                       : 'Projected net worth at goal date',
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.68),
+                    color: Colors.white.withValues(alpha: 0.73),
                     fontSize: 12,
                   ),
                 ),
@@ -1017,7 +1017,7 @@ class _ConfidenceCard extends StatelessWidget {
                 isArabic ? 'الانحراف المالي' : 'Financial Variance',
                 style: TextStyle(
                   color: Theme.of(context).brightness == Brightness.dark
-                      ? Colors.white60
+                      ? Colors.white.withValues(alpha: 0.65)
                       : _muted,
                   fontSize: 11,
                 ),
@@ -1196,7 +1196,7 @@ class _BreakdownCardState extends State<_BreakdownCard> {
                           style: TextStyle(
                             color:
                                 Theme.of(context).brightness == Brightness.dark
-                                ? Colors.white60
+                                ? Colors.white.withValues(alpha: 0.65)
                                 : _muted,
                             fontSize: 10,
                           ),
@@ -1340,7 +1340,7 @@ class _ZakatLifetimeCardState extends State<_ZakatLifetimeCard> {
                           : 'Year ${index + 1}',
                       style: TextStyle(
                         color: Theme.of(context).brightness == Brightness.dark
-                            ? Colors.white60
+                            ? Colors.white.withValues(alpha: 0.65)
                             : _muted,
                         fontSize: 12,
                       ),
@@ -1835,7 +1835,7 @@ class _MetricBlock extends StatelessWidget {
             label,
             maxLines: 2,
             style: TextStyle(
-              color: isDark ? Colors.white60 : _muted,
+              color: isDark ? Colors.white.withValues(alpha: 0.65) : _muted,
               fontSize: 10,
               height: 1.2,
             ),
@@ -2028,7 +2028,7 @@ class _DetailRow extends StatelessWidget {
             child: Text(
               label,
               style: TextStyle(
-                color: isDark ? Colors.white60 : _muted,
+                color: isDark ? Colors.white.withValues(alpha: 0.65) : _muted,
                 fontSize: 11,
               ),
             ),
@@ -2071,7 +2071,7 @@ class _Legend extends StatelessWidget {
           label,
           style: TextStyle(
             color: Theme.of(context).brightness == Brightness.dark
-                ? Colors.white60
+                ? Colors.white.withValues(alpha: 0.65)
                 : _muted,
             fontSize: 10,
           ),

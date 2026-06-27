@@ -408,10 +408,10 @@ class _AssetsScreenState extends State<AssetsScreen> {
                             end: gradientEnd,
                             colors: <Color>[
                               Colors.white.withValues(
-                                alpha: isDark ? 0.20 : 0.38,
+                                alpha: isDark ? 0.18 : 0.34,
                               ),
                               Colors.white.withValues(
-                                alpha: isDark ? 0.01 : 0.05,
+                                alpha: isDark ? 0.0 : 0.04,
                               ),
                             ],
                             stops: const <double>[0.0, 1.0],
@@ -470,8 +470,10 @@ class _AssetsScreenState extends State<AssetsScreen> {
                                     balancesHidden
                                         ? '≈ ••••••'
                                         : '≈ ${ZakatEngineService.formatCurrency(altCurrencyVal, altCurrency, isArabic: isArabic)}',
-                                    style: const TextStyle(
-                                      color: Colors.white70,
+                                    style: TextStyle(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.75,
+                                      ),
                                       fontSize: 13,
                                     ),
                                   ),
@@ -548,17 +550,21 @@ class _AssetsScreenState extends State<AssetsScreen> {
                                   ),
                                   Text(
                                     context.l10n.tr('this_year'),
-                                    style: const TextStyle(
-                                      color: Colors.white70,
+                                    style: TextStyle(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.75,
+                                      ),
                                       fontSize: 11,
                                     ),
                                   ),
                                   const SizedBox(height: 12),
                                   Row(
                                     children: <Widget>[
-                                      const Icon(
+                                      Icon(
                                         Icons.layers_outlined,
-                                        color: Colors.white70,
+                                        color: Colors.white.withValues(
+                                          alpha: 0.75,
+                                        ),
                                         size: 14,
                                       ),
                                       const SizedBox(width: 6),
@@ -574,9 +580,11 @@ class _AssetsScreenState extends State<AssetsScreen> {
                                   const SizedBox(height: 6),
                                   Row(
                                     children: <Widget>[
-                                      const Icon(
+                                      Icon(
                                         Icons.public_outlined,
-                                        color: Colors.white70,
+                                        color: Colors.white.withValues(
+                                          alpha: 0.75,
+                                        ),
                                         size: 14,
                                       ),
                                       const SizedBox(width: 6),

@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/i18n/app_localizations.dart';
+import '../../core/widgets/compact_dropdown.dart';
+import '../../core/utils/currency_presentation.dart';
 import '../../core/services/zakat_engine.dart';
 import '../../core/widgets/app_ui.dart';
 import '../../models/saving.dart';
@@ -143,29 +145,18 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                DropdownButtonFormField<String>(
+                CompactDropdownFormField<String>(
                   key: const Key('savingTypeField'),
-                  initialValue: _assetType,
-                  decoration: InputDecoration(
-                    labelText: context.l10n.tr('type'),
-                    border: OutlineInputBorder(),
-                  ),
-                  items: <DropdownMenuItem<String>>[
-                    DropdownMenuItem<String>(
-                      value: 'cash',
-                      child: Text(context.l10n.tr('cash')),
-                    ),
-                    DropdownMenuItem<String>(
-                      value: 'gold',
-                      child: Text(context.l10n.tr('gold')),
-                    ),
-                    DropdownMenuItem<String>(
-                      value: 'silver',
-                      child: Text(context.l10n.tr('silver')),
-                    ),
-                  ],
-                  onChanged: (String? value) {
-                    if (value == null) return;
+                  value: _assetType,
+                  labelText: context.l10n.tr('type'),
+                  items: const <String>['cash', 'gold', 'silver'],
+                  itemLabel: (String value) => switch (value) {
+                    'cash' => context.l10n.tr('cash'),
+                    'gold' => context.l10n.tr('gold'),
+                    'silver' => context.l10n.tr('silver'),
+                    _ => value,
+                  },
+                  onChanged: (String value) {
                     setState(() {
                       _assetType = value;
                       if (_assetType == 'cash') {
@@ -196,32 +187,20 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
                 ),
                 const SizedBox(height: 16),
                 if (_assetType == 'cash')
-                  DropdownButtonFormField<String>(
+                  CompactDropdownFormField<String>(
                     key: const Key('savingCurrencyField'),
-                    initialValue: _cashCurrency,
-                    decoration: InputDecoration(
-                      labelText: context.l10n.tr('currency'),
-                      border: OutlineInputBorder(),
-                    ),
-                    items: ZakatEngineService.supportedCurrencies
-                        .map(
-                          (String currency) => DropdownMenuItem<String>(
-                            value: currency,
-                            child: Text(
-                              ZakatEngineService.getCurrencySymbol(
-                                currency,
-                                isArabic:
-                                    Localizations.localeOf(
-                                      context,
-                                    ).languageCode.toLowerCase() ==
-                                    'ar',
-                              ),
-                            ),
-                          ),
-                        )
-                        .toList(growable: false),
-                    onChanged: (String? value) {
-                      if (value == null) return;
+                    value: _cashCurrency,
+                    labelText: context.l10n.tr('currency'),
+                    items: ZakatEngineService.supportedCurrencies,
+                    itemLabel: (String currency) =>
+                        CurrencyPresentation.selectorLabel(
+                          currency,
+                          isRtl:
+                              Localizations.localeOf(
+                                context,
+                              ).languageCode.toLowerCase() == 'ar',
+                        ),
+                    onChanged: (String value) {
                       setState(() => _cashCurrency = value);
                     },
                     validator: (String? value) {
@@ -232,19 +211,13 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
                     },
                   ),
                 if (_assetType == 'gold')
-                  DropdownButtonFormField<String>(
+                  CompactDropdownFormField<String>(
                     key: const Key('savingGoldPurityField'),
-                    initialValue: _goldPurity,
-                    decoration: InputDecoration(
-                      labelText: context.l10n.tr('gold_purity'),
-                      border: OutlineInputBorder(),
-                    ),
-                    items: const <DropdownMenuItem<String>>[
-                      DropdownMenuItem<String>(value: '24', child: Text('24K')),
-                      DropdownMenuItem<String>(value: '21', child: Text('21K')),
-                      DropdownMenuItem<String>(value: '18', child: Text('18K')),
-                    ],
-                    onChanged: (String? value) {
+                    value: _goldPurity,
+                    labelText: context.l10n.tr('gold_purity'),
+                    items: const <String>['24', '21', '18'],
+                    itemLabel: (String value) => '${value}K',
+                    onChanged: (String value) {
                       setState(() => _goldPurity = value);
                     },
                     validator: (String? value) {
@@ -261,23 +234,13 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
                   ),
                 if (_assetType != 'cash') ...<Widget>[
                   const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
+                  CompactDropdownFormField<String>(
                     key: const Key('savingPurchaseCurrencyField'),
-                    initialValue: _purchaseCurrency,
-                    decoration: const InputDecoration(
-                      labelText: 'Purchase currency',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: ZakatEngineService.supportedCurrencies
-                        .map(
-                          (String currency) => DropdownMenuItem<String>(
-                            value: currency,
-                            child: Text(currency),
-                          ),
-                        )
-                        .toList(growable: false),
-                    onChanged: (String? value) {
-                      if (value == null) return;
+                    value: _purchaseCurrency,
+                    labelText: 'Purchase currency',
+                    items: ZakatEngineService.supportedCurrencies,
+                    itemLabel: (String currency) => currency,
+                    onChanged: (String value) {
                       setState(() {
                         _purchaseCurrency = value;
                         _autoAllocateFunding();

@@ -3,14 +3,19 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
+import 'package:intl/intl.dart';
 
 import '../../core/i18n/app_localizations.dart';
+import '../../core/theme/app_colors.dart';
 import '../../core/services/zakat_engine.dart';
 import '../../core/services/zakat_schedule_service.dart';
 import '../../core/widgets/app_ui.dart';
 import '../../core/theme/app_theme_extensions.dart';
+import '../../core/theme/app_radii.dart';
+import '../../core/utils/category_visuals.dart';
 import '../../models/saving.dart';
 import '../../models/transaction.dart';
+import '../../models/app_state.dart';
 import '../../services/app_state_controller.dart';
 import '../entry/add_saving_screen.dart';
 import '../entry/add_transaction_screen.dart';
@@ -94,6 +99,10 @@ class ActivityScreenState extends State<ActivityScreen> {
     List<String> sortedCategories,
   ) {
     final tokens = context.premiumTokens;
+    final AppCategories categories = context
+        .read<AppStateController>()
+        .state
+        .categories;
 
     showModalBottomSheet<void>(
       context: context,
@@ -145,12 +154,36 @@ class ActivityScreenState extends State<ActivityScreen> {
                     if (category == 'All') {
                       label = context.l10n.tr('all_categories');
                     }
+                    final CategoryVisual visual = category == 'All'
+                        ? CategoryVisuals.neutralFallback
+                        : CategoryVisuals.resolveCategoryVisual(
+                            categories: categories,
+                            type: categories.income.contains(category)
+                                ? 'income'
+                                : 'expense',
+                            categoryName: category,
+                          );
+                    final Color accent = CategoryVisuals.colorFromValue(
+                      visual.colorValue,
+                    );
+                    final IconData iconData = CategoryVisuals.iconForKey(
+                      visual.iconKey,
+                    );
 
                     return ListTile(
                       dense: true,
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: 20,
                         vertical: 2,
+                      ),
+                      leading: Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: accent.withValues(alpha: 0.14),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(iconData, size: 16, color: accent),
                       ),
                       title: Text(
                         label,
@@ -192,7 +225,7 @@ class ActivityScreenState extends State<ActivityScreen> {
   @override
   Widget build(BuildContext context) {
     final double navSafeBottomPadding =
-        112 + MediaQuery.paddingOf(context).bottom;
+        40 + MediaQuery.paddingOf(context).bottom;
     final controller = context.watch<AppStateController>();
     final state = controller.state;
     final List<Transaction> transactions = state.transactions;
@@ -457,8 +490,7 @@ class ActivityScreenState extends State<ActivityScreen> {
     bool balancesHidden,
   ) {
     final double navSafeBottomPadding =
-        112 + MediaQuery.paddingOf(context).bottom;
-    final tokens = context.premiumTokens;
+        40 + MediaQuery.paddingOf(context).bottom;
     final controller = context.read<AppStateController>();
     final state = controller.state;
     final String mainCurrency = state.mainCurrency;
@@ -607,73 +639,938 @@ class ActivityScreenState extends State<ActivityScreen> {
       }
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return ListView(
+      padding: EdgeInsets.fromLTRB(0, 0, 0, navSafeBottomPadding),
       children: <Widget>[
-        // Compact pill chips for: All, Income, Expense, Transfer
-        Row(
-          children: _ActivityFilter.values.map((filterVal) {
-            final bool isSelected = _filter == filterVal;
-            String label = '';
-            switch (filterVal) {
-              case _ActivityFilter.all:
-                label = context.l10n.tr('all');
-                break;
-              case _ActivityFilter.income:
-                label = context.l10n.tr('income');
-                break;
-              case _ActivityFilter.expense:
-                label = context.l10n.tr('expense');
-                break;
-              case _ActivityFilter.transfer:
-                label = context.l10n.tr('transfer');
-                break;
-            }
-            return Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 3),
-                child: GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      _filter = filterVal;
-                      _selectedCategory = 'All';
-                    });
-                  },
-                  child: Container(
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? tokens.colors.gold
-                          : (Theme.of(context).brightness == Brightness.dark
-                                ? const Color(0xFF1E2725)
-                                : const Color(0xFFF0F4F3)),
+        KeyedSubtree(
+          key: const Key('activityTypeChips'),
+          child: _buildTypeChipRow(context),
+        ),
+        const SizedBox(height: 10),
+        KeyedSubtree(
+          key: const Key('activityDateChips'),
+          child: _buildDateFilterRow(context),
+        ),
+        const SizedBox(height: 10),
+        KeyedSubtree(
+          key: const Key('activityCategorySearchRow'),
+          child: _buildCategorySearchRow(
+            context,
+            sortedCategories,
+            catFilterLabel,
+          ),
+        ),
+        const SizedBox(height: 10),
+        KeyedSubtree(
+          key: const Key('activitySummaryCard'),
+          child: _buildActivitySummaryCard(
+            context,
+            activeFilter: _filter,
+            totalIncome: totalIncome,
+            totalExpenses: totalExpenses,
+            totalTransfers: totalTransfers,
+            mainCurrency: mainCurrency,
+            isArabic: isArabic,
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (filtered.isEmpty)
+          EmptyStateCard(
+            cardKey: const Key('activityEmptyState'),
+            icon: Icons.receipt_long_outlined,
+            title: context.l10n.tr('no_transactions_yet'),
+            message: context.l10n.tr('activity_empty_message'),
+          )
+        else
+          ...<Widget>[
+            for (final _ActivityEntry entry in filtered) ...<Widget>[
+              Slidable(
+                key: Key('dismiss_${entry.key}'),
+                endActionPane: ActionPane(
+                  motion: const ScrollMotion(),
+                  extentRatio: 0.28,
+                  children: [
+                    CustomSlidableAction(
+                      key: Key('delete_action_${entry.key}'),
+                      onPressed: (BuildContext context) async {
+                        final AppStateController controller =
+                            context.read<AppStateController>();
+                        final bool isTx = entry.transaction != null;
+                        final String titleKey = isTx
+                            ? 'delete_transaction'
+                            : 'delete_saving';
+                        final String messageKey = isTx
+                            ? 'delete_transaction_message'
+                            : 'delete_saving_message';
+                        final bool? confirmed = await showDialog<bool>(
+                          context: context,
+                          builder: (BuildContext context) {
+                            return AlertDialog(
+                              title: Text(context.l10n.tr(titleKey)),
+                              content: Text(context.l10n.tr(messageKey)),
+                              actions: <Widget>[
+                                TextButton(
+                                  onPressed: () =>
+                                      Navigator.of(context).pop(false),
+                                  child: Text(context.l10n.tr('cancel')),
+                                ),
+                                FilledButton(
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: const Color(0xFFC62828),
+                                    foregroundColor: AppColors.white,
+                                  ),
+                                  onPressed: () =>
+                                      Navigator.of(context).pop(true),
+                                  child: Text(context.l10n.tr('delete')),
+                                ),
+                              ],
+                            );
+                          },
+                        );
+                        if (confirmed == true) {
+                          final bool isCurrencyExchange =
+                              (entry.transferTitle ?? '').toLowerCase() ==
+                              'currency exchange';
+                          if (isCurrencyExchange &&
+                              entry.exchangeActivityId != null) {
+                            await controller.deleteCurrencyExchangeActivity(
+                              entry.exchangeActivityId!,
+                            );
+                          } else if (entry.transaction != null) {
+                            await controller.deleteTransaction(
+                              entry.transaction!.id,
+                            );
+                          } else if (entry.saving != null) {
+                            await controller.deleteSaving(entry.saving!.id);
+                          }
+                        }
+                      },
+                      backgroundColor: AppColors.redStrong,
+                      foregroundColor: AppColors.white,
                       borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Center(
-                      child: Text(
-                        label,
-                        maxLines: 1,
-                        softWrap: false,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: isSelected
-                              ? FontWeight.bold
-                              : FontWeight.w500,
-                          color: isSelected
-                              ? Colors.white
-                              : tokens.colors.textPrimary,
-                        ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.delete_outline_rounded,
+                            color: AppColors.white,
+                            size: 22,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            context.l10n.tr('delete'),
+                            style: const TextStyle(
+                              color: AppColors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
+                  ],
+                ),
+                child: _buildTransactionCard(
+                  context,
+                  entry: entry,
+                  balancesHidden: balancesHidden,
+                  mainCurrency: mainCurrency,
+                  market: market,
+                  isArabic: isArabic,
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
+          ],
+      ],
+    );
+  }
+
+  Widget _buildTypeChipRow(BuildContext context) {
+    final tokens = context.premiumTokens;
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+    final Color unselectedColor = dark
+        ? AppColors.surfaceInk
+        : AppColors.surfacePale;
+    return Row(
+      children: _ActivityFilter.values.map((filterVal) {
+        final bool isSelected = _filter == filterVal;
+        final String label = switch (filterVal) {
+          _ActivityFilter.all => context.l10n.tr('all'),
+          _ActivityFilter.income => context.l10n.tr('income'),
+          _ActivityFilter.expense => context.l10n.tr('expense'),
+          _ActivityFilter.transfer => context.l10n.tr('transfer'),
+        };
+        final Color selectedColor = filterVal == _ActivityFilter.all
+            ? tokens.colors.hero
+            : tokens.colors.gold;
+        return Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 3),
+            child: InkWell(
+              onTap: () {
+                setState(() {
+                  _filter = filterVal;
+                  _selectedCategory = 'All';
+                });
+              },
+              borderRadius: BorderRadius.circular(18),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                height: 36,
+                decoration: BoxDecoration(
+                  color: isSelected ? selectedColor : unselectedColor,
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  softWrap: false,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                    color: isSelected
+                        ? AppColors.white
+                        : tokens.colors.textPrimary,
                   ),
                 ),
               ),
-            );
-          }).toList(),
-        ),
-        const SizedBox(height: 10),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
 
-        // Date Filter Row
+  Widget _buildDateFilterRow(BuildContext context) {
+    final tokens = context.premiumTokens;
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minWidth: constraints.maxWidth),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.start,
+              children: <Widget>[
+                _buildFilterIconButton(
+                  context,
+                  icon: Icons.calendar_month_outlined,
+                  active: _selectedDateFilter == 'Custom',
+                  onTap: () => _selectCustomRange(context, isZakat: false),
+                ),
+                const SizedBox(width: 8),
+                ...<String>['All Time', '30D', '90D', 'YTD'].map((filter) {
+                  final bool isSelected = _selectedDateFilter == filter;
+                  final String label = filter == 'All Time'
+                      ? context.l10n.tr('all')
+                      : filter;
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 3),
+                    child: ChoiceChip(
+                      selected: isSelected,
+                      showCheckmark: false,
+                      label: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          if (isSelected)
+                            const Icon(Icons.check_rounded, size: 14),
+                          if (isSelected) const SizedBox(width: 4),
+                          Text(label),
+                        ],
+                      ),
+                      labelStyle: TextStyle(
+                        fontSize: 12,
+                        fontWeight: isSelected
+                            ? FontWeight.w700
+                            : FontWeight.w600,
+                        color: isSelected
+                            ? tokens.colors.hero
+                            : tokens.colors.textPrimary,
+                      ),
+                      backgroundColor: dark
+                          ? const Color(0xFF172422)
+                          : const Color(0xFFF4F2EA),
+                      selectedColor: const Color(0xFFF2E5BF),
+                      side: BorderSide(
+                        color: isSelected
+                            ? tokens.colors.gold.withValues(alpha: 0.35)
+                            : tokens.colors.divider,
+                      ),
+                      onSelected: (_) => setState(() {
+                        _selectedDateFilter = filter;
+                      }),
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCategorySearchRow(
+    BuildContext context,
+    List<String> sortedCategories,
+    String catFilterLabel,
+  ) {
+    final tokens = context.premiumTokens;
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+    final Color bg = dark ? const Color(0xFF172422) : const Color(0xFFF4F2EA);
+    return Row(
+      children: <Widget>[
+        GestureDetector(
+          onTap: () => _showCategoryPicker(context, sortedCategories),
+          child: Container(
+            height: 40,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: _selectedCategory != 'All'
+                  ? tokens.colors.gold.withValues(alpha: 0.14)
+                  : bg,
+              borderRadius: AppRadii.pill,
+              border: Border.all(
+                color: _selectedCategory != 'All'
+                    ? tokens.colors.gold.withValues(alpha: 0.28)
+                    : tokens.colors.divider,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Icon(
+                  Icons.filter_list_rounded,
+                  size: 14,
+                  color: _selectedCategory != 'All'
+                      ? tokens.colors.gold
+                      : tokens.colors.textSecondary,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  catFilterLabel,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: _selectedCategory != 'All'
+                        ? FontWeight.w700
+                        : FontWeight.w600,
+                    color: _selectedCategory != 'All'
+                        ? tokens.colors.hero
+                        : tokens.colors.textPrimary,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  size: 18,
+                  color: _selectedCategory != 'All'
+                      ? tokens.colors.gold
+                      : tokens.colors.textSecondary,
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: SizedBox(
+            height: 40,
+            child: TextField(
+              key: const Key('activitySearchField'),
+              controller: _searchController,
+              onChanged: (_) => setState(() {}),
+              textInputAction: TextInputAction.search,
+              style: const TextStyle(fontSize: 13),
+              decoration: InputDecoration(
+                hintText: context.l10n.tr('search_notes'),
+                prefixIcon: Icon(
+                  Icons.search_rounded,
+                  size: 18,
+                  color: tokens.colors.textSecondary,
+                ),
+                suffixIcon: _searchController.text.isEmpty
+                    ? null
+                    : IconButton(
+                        key: const Key('clearActivitySearch'),
+                        padding: EdgeInsets.zero,
+                        visualDensity: VisualDensity.compact,
+                        icon: Icon(
+                          Icons.close_rounded,
+                          size: 16,
+                          color: tokens.colors.textSecondary,
+                        ),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() {});
+                        },
+                      ),
+                filled: true,
+                fillColor: bg,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                border: OutlineInputBorder(
+                  borderRadius: AppRadii.pill,
+                  borderSide: BorderSide(color: tokens.colors.divider),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: AppRadii.pill,
+                  borderSide: BorderSide(color: tokens.colors.divider),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: AppRadii.pill,
+                  borderSide: BorderSide(
+                    color: tokens.colors.gold.withValues(alpha: 0.5),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildActivitySummaryCard(
+    BuildContext context, {
+    required _ActivityFilter activeFilter,
+    required double totalIncome,
+    required double totalExpenses,
+    required double totalTransfers,
+    required String mainCurrency,
+    required bool isArabic,
+  }) {
+    final tokens = context.premiumTokens;
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+    final Color expenseColor = dark
+        ? const Color(0xFFFF7A7A)
+        : tokens.colors.danger;
+    final bool showAll = activeFilter == _ActivityFilter.all;
+    final String activeLabel = switch (activeFilter) {
+      _ActivityFilter.all => context.l10n.tr('all'),
+      _ActivityFilter.income => context.l10n.tr('income'),
+      _ActivityFilter.expense => context.l10n.tr('expense'),
+      _ActivityFilter.transfer => context.l10n.tr('transfer'),
+    };
+    final double activeAmount = switch (activeFilter) {
+      _ActivityFilter.all => totalIncome + totalExpenses + totalTransfers,
+      _ActivityFilter.income => totalIncome,
+      _ActivityFilter.expense => totalExpenses,
+      _ActivityFilter.transfer => totalTransfers,
+    };
+    final Color activeColor = switch (activeFilter) {
+      _ActivityFilter.all => tokens.colors.gold,
+      _ActivityFilter.income => tokens.colors.success,
+      _ActivityFilter.expense => expenseColor,
+      _ActivityFilter.transfer => tokens.colors.gold,
+    };
+    return PremiumCard(
+      child: showAll
+          ? Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Expanded(
+                  child: _buildSummaryColumn(
+                    context,
+                    label: context.l10n.tr('income'),
+                    amount: totalIncome,
+                    color: tokens.colors.success,
+                    mainCurrency: mainCurrency,
+                    isArabic: isArabic,
+                  ),
+                ),
+                SizedBox(
+                  height: 48,
+                  child: VerticalDivider(
+                    color: tokens.colors.divider,
+                    width: 18,
+                  ),
+                ),
+                Expanded(
+                  child: _buildSummaryColumn(
+                    context,
+                    label: context.l10n.tr('expense'),
+                    amount: totalExpenses,
+                    color: expenseColor,
+                    mainCurrency: mainCurrency,
+                    isArabic: isArabic,
+                  ),
+                ),
+                SizedBox(
+                  height: 48,
+                  child: VerticalDivider(
+                    color: tokens.colors.divider,
+                    width: 18,
+                  ),
+                ),
+                Expanded(
+                  child: _buildSummaryColumn(
+                    context,
+                    label: context.l10n.tr('transfer'),
+                    amount: totalTransfers,
+                    color: tokens.colors.gold,
+                    mainCurrency: mainCurrency,
+                    isArabic: isArabic,
+                  ),
+                ),
+              ],
+            )
+          : _buildSummaryColumn(
+              context,
+              label: activeLabel,
+              amount: activeAmount,
+              color: activeColor,
+              mainCurrency: mainCurrency,
+              isArabic: isArabic,
+              compact: false,
+            ),
+    );
+  }
+
+  Widget _buildSummaryColumn(
+    BuildContext context, {
+    required String label,
+    required double amount,
+    required Color color,
+    required String mainCurrency,
+    required bool isArabic,
+    bool compact = true,
+  }) {
+    final tokens = context.premiumTokens;
+    final String formatted = ZakatEngineService.formatCurrency(
+      amount,
+      mainCurrency,
+      isArabic: isArabic,
+    );
+    final double valueFontSize = _summaryValueFontSize(
+      formatted,
+      compact: compact,
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: tokens.colors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 6),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              formatted,
+              style: TextStyle(
+                fontSize: valueFontSize,
+                fontWeight: FontWeight.w800,
+                color: color,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  double _summaryValueFontSize(String formatted, {required bool compact}) {
+    final int length = formatted.replaceAll(RegExp(r'\s+'), '').length;
+    final double base = compact ? 16 : 22;
+    if (length <= 8) return base + 2;
+    if (length <= 11) return base;
+    if (length <= 14) return base - 2;
+    return base - 4;
+  }
+
+  Widget _buildTransactionCard(
+    BuildContext context, {
+    required _ActivityEntry entry,
+    required bool balancesHidden,
+    required String mainCurrency,
+    required MarketData market,
+    required bool isArabic,
+  }) {
+    final controller = context.read<AppStateController>();
+    final tokens = context.premiumTokens;
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+    final Color expenseColor = dark
+        ? const Color(0xFFFF7A7A)
+        : tokens.colors.danger;
+    final AppStateModel state = controller.state;
+    final CategoryVisual visual = _resolveEntryVisual(state, entry);
+    final CategoryVisual fallbackVisual = CategoryVisuals.resolveTypeFallback(
+      entry.isTransfer ? 'transfer' : (entry.isIncome ? 'income' : 'expense'),
+    );
+    final Color resolvedColor = CategoryVisuals.colorFromValue(
+      visual.colorValue ?? fallbackVisual.colorValue,
+    );
+    final IconData resolvedIcon = CategoryVisuals.iconForKey(
+      visual.iconKey ?? fallbackVisual.iconKey,
+    );
+    final String typeLabel = entry.isTransfer
+        ? context.l10n.tr('transfer')
+        : (entry.isIncome
+              ? context.l10n.tr('income')
+              : context.l10n.tr('expense'));
+    final String dateText = _formatHumanDate(entry.date);
+    final String subtitleText = entry.isTransfer
+        ? _getTransferSubtitle(context, entry, mainCurrency, market, isArabic)
+        : [
+            if (entry.description.trim().isNotEmpty) entry.description.trim(),
+            if (dateText.isNotEmpty) dateText,
+          ].join(' • ');
+    return PremiumCard(
+      onTap: () => _openActivityEntry(context, entry),
+      child: ListTile(
+        key: Key('activityTile_${entry.key}'),
+        contentPadding: const EdgeInsets.symmetric(vertical: 2, horizontal: 6),
+        leading: Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: resolvedColor.withValues(alpha: 0.14),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(resolvedIcon, color: resolvedColor, size: 22),
+        ),
+        title: Text(
+          entry.isTransfer
+              ? (entry.transferTitle ?? entry.title(context))
+              : entry.title(context),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                subtitleText,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: tokens.colors.textSecondary,
+                  height: 1.25,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: <Widget>[
+                  _MetaPill(text: typeLabel),
+                  _MetaPill(text: _formatHumanDate(entry.date)),
+                ],
+              ),
+            ],
+          ),
+        ),
+        trailing: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: <Widget>[
+            Text(
+              balancesHidden
+                  ? '••••••'
+                  : ZakatEngineService.formatCurrency(
+                      entry.signedAmount,
+                      entry.currency,
+                      isArabic: isArabic,
+                      showSign: !entry.isTransfer,
+                    ),
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: entry.isTransfer
+                    ? tokens.colors.gold
+                    : (entry.isIncome ? tokens.colors.success : expenseColor),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Icon(
+              Icons.chevron_right_rounded,
+              color: tokens.colors.textSecondary.withValues(alpha: 0.5),
+              size: 20,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  CategoryVisual _resolveEntryVisual(
+    AppStateModel state,
+    _ActivityEntry entry,
+  ) {
+    if (entry.transaction != null) {
+      final Transaction tx = entry.transaction!;
+      final CategoryVisual? custom = state.categories.metadataFor(
+        type: tx.type == 'income' ? 'income' : 'expense',
+        name: tx.category,
+      );
+      final CategoryVisual resolved = CategoryVisuals.resolveCategoryVisual(
+        categories: state.categories,
+        type: tx.type,
+        categoryName: tx.category,
+      );
+      final bool knownCategory =
+          state.categories.income.contains(tx.category) ||
+          state.categories.expense.contains(tx.category);
+      if (custom != null || knownCategory) {
+        return resolved;
+      }
+      return CategoryVisuals.resolveTypeFallback(tx.type);
+    }
+    if (entry.saving != null) {
+      final String type = ZakatEngineService.normaliseAssetType(
+        entry.saving!.assetType,
+      );
+      return CategoryVisuals.resolveTypeFallback(
+        type == 'gold' || type == 'silver' ? 'transfer' : 'income',
+      );
+    }
+    return CategoryVisuals.neutralFallback;
+  }
+
+  String _formatHumanDate(String raw) {
+    final DateTime? parsed = DateTime.tryParse(raw);
+    if (parsed == null) {
+      final DateTime? fallback = _tryParseLooseDate(raw);
+      if (fallback == null) return raw;
+      return DateFormat('dd MMM yyyy').format(fallback);
+    }
+    return DateFormat('dd MMM yyyy').format(parsed.toLocal());
+  }
+
+  DateTime? _tryParseLooseDate(String raw) {
+    final String trimmed = raw.trim();
+    if (trimmed.isEmpty) return null;
+    final List<String> parts = trimmed.split('-');
+    if (parts.length != 3) return null;
+    final int? year = int.tryParse(parts[0]);
+    final int? month = int.tryParse(parts[1]);
+    final int? day = int.tryParse(parts[2]);
+    if (year == null || month == null || day == null) return null;
+    return DateTime(year, month, day);
+  }
+
+  void _openActivityEntry(BuildContext context, _ActivityEntry entry) {
+    final AppStateController controller = context.read<AppStateController>();
+    if (entry.isTransfer) {
+      final String titleStr = (entry.transferTitle ?? entry.title(context))
+          .toLowerCase();
+      if (titleStr.contains('gold sale') || titleStr.contains('silver sale')) {
+        if (entry.transaction != null) {
+          openSellMetalDialog(context, editTransaction: entry.transaction);
+        }
+      } else if (titleStr.contains('gold') || titleStr.contains('silver')) {
+        Saving? targetSaving;
+        if (entry.saving != null) {
+          targetSaving = entry.saving;
+        } else if (entry.transaction != null) {
+          final String? pairId = entry.transaction!.exchangePairId;
+          if (pairId != null && pairId.isNotEmpty) {
+            targetSaving = controller.state.savings
+                .where((Saving s) => s.id == pairId)
+                .firstOrNull;
+          }
+          if (targetSaving == null) {
+            final String targetType = titleStr.contains('gold')
+                ? 'gold'
+                : 'silver';
+            targetSaving = controller.state.savings
+                .where((Saving s) => s.assetType == targetType)
+                .firstOrNull;
+          }
+        }
+        if (targetSaving != null) {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => AddSavingScreen(initialSaving: targetSaving),
+            ),
+          );
+        }
+      } else if (titleStr.contains('exchange')) {
+        final dynamic item = entry.saving ?? entry.transaction;
+        if (item != null) {
+          openEditCurrencyExchangeDialog(
+            context,
+            item,
+            activityId: entry.exchangeActivityId,
+          );
+        }
+      } else if (entry.transaction != null) {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) =>
+                AddTransactionScreen(initialTransaction: entry.transaction),
+          ),
+        );
+      }
+    } else if (entry.transaction != null) {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) =>
+              AddTransactionScreen(initialTransaction: entry.transaction),
+        ),
+      );
+    } else if (entry.saving != null) {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => AddSavingScreen(initialSaving: entry.saving),
+        ),
+      );
+    }
+  }
+
+  Widget _buildFilterIconButton(
+    BuildContext context, {
+    required IconData icon,
+    required VoidCallback onTap,
+    bool active = false,
+  }) {
+    final tokens = context.premiumTokens;
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: active
+              ? tokens.colors.gold.withValues(alpha: dark ? 0.20 : 0.14)
+              : dark
+              ? const Color(0xFF172422)
+              : const Color(0xFFF4F2EA),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: active
+                ? tokens.colors.gold.withValues(alpha: 0.35)
+                : tokens.colors.divider,
+          ),
+        ),
+        child: Icon(
+          icon,
+          size: 18,
+          color: active ? tokens.colors.gold : tokens.colors.textSecondary,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUpcomingZakatCard(
+    BuildContext context, {
+    required Map<String, dynamic>? row,
+    required double totalDueThisYear,
+    required bool balancesHidden,
+  }) {
+    final tokens = context.premiumTokens;
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+    final String paymentDate = (row?['paymentDate'] ?? '').toString();
+    final double totalZakat = ((row?['totalZakat'] ?? 0) as num).toDouble();
+    final String nextDueLabel = paymentDate.isEmpty
+        ? context.l10n.tr('upcoming')
+        : _formatHumanDate(paymentDate);
+    return PremiumCard(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Container(
+            width: 4,
+            height: 92,
+            decoration: BoxDecoration(
+              color: tokens.colors.gold,
+              borderRadius: BorderRadius.circular(999),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: tokens.colors.gold.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(
+                        Icons.event_available_outlined,
+                        color: dark
+                            ? tokens.colors.textPrimary
+                            : tokens.colors.gold,
+                        size: 16,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      context.l10n.tr('upcoming_zakat'),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: _SummaryMetric(
+                        label: context.l10n.tr('next_due'),
+                        value: paymentDate.isEmpty
+                            ? _formatEgp(context, totalZakat)
+                            : _formatEgp(context, totalZakat),
+                        sublabel: nextDueLabel,
+                        accentColor: dark
+                            ? tokens.colors.textPrimary
+                            : tokens.colors.hero,
+                        showValue: !balancesHidden,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _SummaryMetric(
+                        label: context.l10n.tr('total_due_this_year'),
+                        value: _formatEgp(context, totalDueThisYear),
+                        sublabel: context.l10n.tr('upcoming_zakat'),
+                        accentColor: tokens.colors.gold,
+                        showValue: !balancesHidden,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildZakatFilterRow(BuildContext context) {
+    final tokens = context.premiumTokens;
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+    final Color chipBg = dark
+        ? const Color(0xFF172422)
+        : const Color(0xFFF4F2EA);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
         LayoutBuilder(
           builder: (BuildContext context, BoxConstraints constraints) {
             return SingleChildScrollView(
@@ -681,63 +1578,51 @@ class ActivityScreenState extends State<ActivityScreen> {
               child: ConstrainedBox(
                 constraints: BoxConstraints(minWidth: constraints.maxWidth),
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
                   children: <Widget>[
-                    Icon(
-                      Icons.calendar_month_outlined,
-                      size: 16,
-                      color: tokens.colors.textPrimary.withValues(alpha: 0.6),
+                    _buildFilterIconButton(
+                      context,
+                      icon: Icons.calendar_month_outlined,
+                      active: _zakatDateFilter == 'Custom',
+                      onTap: () => _selectCustomRange(context, isZakat: true),
                     ),
-                    const SizedBox(width: 6),
-                    ...<String>['All Time', '30D', '90D', 'YTD', 'Custom'].map((
-                      filter,
-                    ) {
-                      final bool isSelected = _selectedDateFilter == filter;
-                      String label = filter;
-                      if (filter == 'All Time') {
-                        label = context.l10n.tr('all');
-                      }
-                      if (filter == 'Custom' &&
-                          _customDateRange != null &&
-                          _selectedDateFilter == 'Custom') {
-                        final String startStr =
-                            '${_customDateRange!.start.day}/${_customDateRange!.start.month}';
-                        final String endStr =
-                            '${_customDateRange!.end.day}/${_customDateRange!.end.month}';
-                        label = '$startStr-$endStr';
-                      }
-
+                    const SizedBox(width: 8),
+                    ...<String>['All Time', '30D', '90D', 'YTD'].map((filter) {
+                      final bool isSelected = _zakatDateFilter == filter;
+                      final String label = filter == 'All Time'
+                          ? context.l10n.tr('all')
+                          : filter;
                       return Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 3),
                         child: ChoiceChip(
-                          labelPadding: EdgeInsets.zero,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 3,
+                          selected: isSelected,
+                          showCheckmark: false,
+                          label: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              if (isSelected)
+                                const Icon(Icons.check_rounded, size: 14),
+                              if (isSelected) const SizedBox(width: 4),
+                              Text(label),
+                            ],
                           ),
-                          visualDensity: const VisualDensity(
-                            horizontal: -3,
-                            vertical: -3,
-                          ),
-                          materialTapTargetSize:
-                              MaterialTapTargetSize.shrinkWrap,
                           labelStyle: TextStyle(
-                            fontSize: 11,
+                            fontSize: 12,
                             fontWeight: isSelected
                                 ? FontWeight.w700
-                                : FontWeight.w500,
+                                : FontWeight.w600,
+                            color: isSelected
+                                ? tokens.colors.hero
+                                : tokens.colors.textPrimary,
                           ),
-                          label: Text(label),
-                          selected: isSelected,
-                          onSelected: (bool selected) {
-                            if (filter == 'Custom') {
-                              _selectCustomRange(context, isZakat: false);
-                            } else {
-                              setState(() {
-                                _selectedDateFilter = filter;
-                              });
-                            }
-                          },
+                          backgroundColor: chipBg,
+                          selectedColor: const Color(0xFFF2E5BF),
+                          side: BorderSide(
+                            color: isSelected
+                                ? tokens.colors.gold.withValues(alpha: 0.35)
+                                : tokens.colors.divider,
+                          ),
+                          onSelected: (_) =>
+                              setState(() => _zakatDateFilter = filter),
                         ),
                       );
                     }),
@@ -748,514 +1633,287 @@ class ActivityScreenState extends State<ActivityScreen> {
           },
         ),
         const SizedBox(height: 10),
-
-        // Merged Category + Search Row
         Row(
           children: <Widget>[
-            GestureDetector(
-              onTap: () => _showCategoryPicker(context, sortedCategories),
-              child: Container(
-                height: 28,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
+            _buildFilterIconButton(
+              context,
+              icon: Icons.filter_list_rounded,
+              onTap: () => setState(() => _showUnpaidOnly = !_showUnpaidOnly),
+            ),
+            const SizedBox(width: 8),
+            ChoiceChip(
+              selected: _showUnpaidOnly,
+              showCheckmark: false,
+              label: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  if (_showUnpaidOnly)
+                    const Icon(Icons.check_rounded, size: 14),
+                  if (_showUnpaidOnly) const SizedBox(width: 4),
+                  Text(context.l10n.tr('not_paid')),
+                ],
+              ),
+              labelStyle: TextStyle(
+                fontSize: 12,
+                fontWeight: _showUnpaidOnly ? FontWeight.w700 : FontWeight.w600,
+                color: _showUnpaidOnly
+                    ? tokens.colors.hero
+                    : tokens.colors.textPrimary,
+              ),
+              backgroundColor: chipBg,
+              selectedColor: const Color(0xFFF2E5BF),
+              side: BorderSide(
+                color: _showUnpaidOnly
+                    ? tokens.colors.gold.withValues(alpha: 0.35)
+                    : tokens.colors.divider,
+              ),
+              onSelected: (bool selected) {
+                setState(() => _showUnpaidOnly = selected);
+              },
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildScheduleCard(
+    BuildContext context, {
+    required Map<String, dynamic> row,
+    required bool isPast,
+    required bool isCurrent,
+    required List<dynamic> entries,
+    required double totalZakat,
+    required bool isPaid,
+    required bool balancesHidden,
+  }) {
+    final tokens = context.premiumTokens;
+    final String monthKey = (row['monthKey'] ?? '').toString();
+    final String paymentDate = (row['paymentDate'] ?? '').toString();
+    final String monthTitle = _monthTitleFromKey(monthKey, paymentDate);
+    final String dueLabel = paymentDate.isEmpty
+        ? ''
+        : 'Due on ${_formatHumanDate(paymentDate)}';
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+    final String status = isCurrent
+        ? context.l10n.tr('due_now')
+        : (isPast ? context.l10n.tr('past') : context.l10n.tr('upcoming'));
+    final Color badgeColor = isCurrent
+        ? tokens.colors.gold
+        : (isPast ? tokens.colors.textSecondary : tokens.colors.gold);
+    return PremiumCard(
+      padding: const EdgeInsets.all(14),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          key: Key('scheduleRow_$monthKey'),
+          tilePadding: EdgeInsets.zero,
+          childrenPadding: EdgeInsets.zero,
+          title: Row(
+            children: <Widget>[
+              Container(
+                width: 46,
+                height: 46,
                 decoration: BoxDecoration(
-                  color: _selectedCategory != 'All'
-                      ? tokens.colors.gold.withValues(alpha: 0.15)
-                      : (Theme.of(context).brightness == Brightness.dark
-                            ? const Color(0xFF1E2725)
-                            : const Color(0xFFF0F4F3)),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: _selectedCategory != 'All'
-                        ? tokens.colors.gold.withValues(alpha: 0.3)
-                        : Colors.transparent,
-                  ),
+                  color: tokens.colors.gold.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.filter_list_rounded,
-                      size: 13,
-                      color: _selectedCategory != 'All'
-                          ? tokens.colors.gold
-                          : tokens.colors.textPrimary.withValues(alpha: 0.6),
-                    ),
-                    const SizedBox(width: 4),
+                child: Icon(
+                  Icons.calendar_month_outlined,
+                  color: dark ? tokens.colors.textPrimary : tokens.colors.hero,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
                     Text(
-                      catFilterLabel,
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: _selectedCategory != 'All'
-                            ? FontWeight.bold
-                            : FontWeight.w500,
-                        color: _selectedCategory != 'All'
-                            ? tokens.colors.gold
-                            : tokens.colors.textPrimary,
+                      monthTitle,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
-                    const SizedBox(width: 2),
-                    Icon(
-                      Icons.arrow_drop_down_rounded,
-                      size: 13,
-                      color: _selectedCategory != 'All'
-                          ? tokens.colors.gold
-                          : tokens.colors.textPrimary.withValues(alpha: 0.6),
+                    const SizedBox(height: 3),
+                    Text(
+                      dueLabel.isEmpty
+                          ? '${entries.length} scheduled entries'
+                          : '$dueLabel • ${entries.length} scheduled entries',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: tokens.colors.textSecondary,
+                      ),
                     ),
                   ],
                 ),
               ),
-            ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: SizedBox(
-                height: 28,
-                child: TextField(
-                  key: const Key('activitySearchField'),
-                  controller: _searchController,
-                  onChanged: (_) => setState(() {}),
-                  textInputAction: TextInputAction.search,
-                  style: const TextStyle(fontSize: 11),
-                  decoration: InputDecoration(
-                    hintText: context.l10n.tr('search_notes'),
-                    hintStyle: TextStyle(
-                      fontSize: 10,
-                      color: tokens.colors.textSecondary,
-                    ),
-                    prefixIcon: Icon(
-                      Icons.search_rounded,
-                      size: 13,
-                      color: tokens.colors.textPrimary.withValues(alpha: 0.6),
-                    ),
-                    prefixIconConstraints: const BoxConstraints(minWidth: 26),
-                    suffixIcon: _searchController.text.isEmpty
-                        ? null
-                        : IconButton(
-                            key: const Key('clearActivitySearch'),
-                            padding: EdgeInsets.zero,
-                            visualDensity: VisualDensity.compact,
-                            icon: Icon(
-                              Icons.close_rounded,
-                              size: 13,
-                              color: tokens.colors.textSecondary,
-                            ),
-                            onPressed: () {
-                              _searchController.clear();
-                              setState(() {});
-                            },
-                          ),
-                    suffixIconConstraints: const BoxConstraints(minWidth: 26),
-                    filled: true,
-                    fillColor: Theme.of(context)
-                        .colorScheme
-                        .surfaceContainerHighest
-                        .withValues(alpha: 0.3),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 0,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(
-                        color: tokens.colors.gold.withValues(alpha: 0.15),
-                      ),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(
-                        color: tokens.colors.gold.withValues(alpha: 0.15),
-                      ),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(
-                        color: tokens.colors.gold.withValues(alpha: 0.5),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-
-        // Summary Strip Card
-        Container(
-          margin: const EdgeInsets.only(top: 10),
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: Theme.of(
-              context,
-            ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.2),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: Theme.of(context).dividerColor.withValues(alpha: 0.5),
-            ),
-          ),
-          child: Row(
-            children: [
-              if (_filter == _ActivityFilter.all ||
-                  _filter == _ActivityFilter.income)
-                Expanded(
-                  child: _buildSummaryItem(
-                    context,
-                    title: _filter == _ActivityFilter.all
-                        ? context.l10n.tr('income')
-                        : (isArabic ? 'إجمالي الدخل' : 'Income Total'),
-                    amount: totalIncome,
-                    color: const Color(0xFF2E7D32),
-                    mainCurrency: mainCurrency,
-                    isArabic: isArabic,
-                  ),
-                ),
-              if (_filter == _ActivityFilter.all)
-                Container(
-                  height: 20,
-                  width: 1,
-                  color: Theme.of(context).dividerColor.withValues(alpha: 0.5),
-                ),
-              if (_filter == _ActivityFilter.all ||
-                  _filter == _ActivityFilter.expense)
-                Expanded(
-                  child: _buildSummaryItem(
-                    context,
-                    title: _filter == _ActivityFilter.all
-                        ? context.l10n.tr('expense')
-                        : (isArabic ? 'إجمالي المصروفات' : 'Expense Total'),
-                    amount: totalExpenses,
-                    color: const Color(0xFFC62828),
-                    mainCurrency: mainCurrency,
-                    isArabic: isArabic,
-                  ),
-                ),
-              if (_filter == _ActivityFilter.all)
-                Container(
-                  height: 20,
-                  width: 1,
-                  color: Theme.of(context).dividerColor.withValues(alpha: 0.5),
-                ),
-              if (_filter == _ActivityFilter.all ||
-                  _filter == _ActivityFilter.transfer)
-                Expanded(
-                  child: _buildSummaryItem(
-                    context,
-                    title: _filter == _ActivityFilter.all
-                        ? context.l10n.tr('transfer')
-                        : (isArabic ? 'إجمالي التحويلات' : 'Transfer Total'),
-                    amount: totalTransfers,
-                    color: tokens.colors.gold,
-                    mainCurrency: mainCurrency,
-                    isArabic: isArabic,
-                  ),
-                ),
+              const SizedBox(width: 8),
+              _StatusBadge(label: status, color: badgeColor),
             ],
           ),
-        ),
-        const SizedBox(height: 10),
-
-        Expanded(
-          child: filtered.isEmpty
-              ? Center(
-                  child: EmptyStateCard(
-                    cardKey: const Key('activityEmptyState'),
-                    icon: Icons.receipt_long_outlined,
-                    title: context.l10n.tr('no_transactions_yet'),
-                    message: context.l10n.tr('activity_empty_message'),
-                  ),
-                )
-              : ListView.separated(
-                  padding: EdgeInsets.only(bottom: navSafeBottomPadding),
-                  itemCount: filtered.length,
-                  separatorBuilder: (_, index) => const SizedBox(height: 10),
-                  itemBuilder: (BuildContext context, int index) {
-                    final _ActivityEntry entry = filtered[index];
-
-                    return Slidable(
-                      key: Key('dismiss_${entry.key}'),
-                      endActionPane: ActionPane(
-                        motion: const ScrollMotion(),
-                        extentRatio: 0.28,
-                        children: [
-                          CustomSlidableAction(
-                            key: Key('delete_action_${entry.key}'),
-                            onPressed: (BuildContext context) async {
-                              final AppStateController controller = context
-                                  .read<AppStateController>();
-                              final bool isTx = entry.transaction != null;
-                              final String titleKey = isTx
-                                  ? 'delete_transaction'
-                                  : 'delete_saving';
-                              final String messageKey = isTx
-                                  ? 'delete_transaction_message'
-                                  : 'delete_saving_message';
-                              final bool? confirmed = await showDialog<bool>(
-                                context: context,
-                                builder: (BuildContext context) {
-                                  return AlertDialog(
-                                    title: Text(context.l10n.tr(titleKey)),
-                                    content: Text(context.l10n.tr(messageKey)),
-                                    actions: <Widget>[
-                                      TextButton(
-                                        onPressed: () =>
-                                            Navigator.of(context).pop(false),
-                                        child: Text(context.l10n.tr('cancel')),
-                                      ),
-                                      FilledButton(
-                                        style: FilledButton.styleFrom(
-                                          backgroundColor: const Color(
-                                            0xFFC62828,
-                                          ),
-                                          foregroundColor: Colors.white,
-                                        ),
-                                        onPressed: () =>
-                                            Navigator.of(context).pop(true),
-                                        child: Text(context.l10n.tr('delete')),
-                                      ),
-                                    ],
-                                  );
-                                },
-                              );
-                              if (confirmed == true) {
-                                final bool isCurrencyExchange =
-                                    (entry.transferTitle ?? '').toLowerCase() ==
-                                    'currency exchange';
-                                if (kDebugMode) {
-                                  print(
-                                    '[Activity][Delete] title=${entry.transferTitle ?? entry.transaction?.category ?? entry.saving?.description ?? entry.key} '
-                                    'isExchange=$isCurrencyExchange '
-                                    'activityId=${entry.exchangeActivityId} '
-                                    'txId=${entry.transaction?.id} '
-                                    'txPair=${entry.transaction?.exchangePairId} '
-                                    'savingId=${entry.saving?.id} '
-                                    'savingActivity=${entry.saving?.transferActivityId} '
-                                    'key=${entry.key}',
-                                  );
-                                }
-                                if (isCurrencyExchange &&
-                                    entry.exchangeActivityId != null) {
-                                  await controller
-                                      .deleteCurrencyExchangeActivity(
-                                        entry.exchangeActivityId!,
-                                      );
-                                } else if (entry.transaction != null) {
-                                  await controller.deleteTransaction(
-                                    entry.transaction!.id,
-                                  );
-                                } else if (entry.saving != null) {
-                                  await controller.deleteSaving(
-                                    entry.saving!.id,
-                                  );
-                                }
+          trailing: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: <Widget>[
+              Text(
+                balancesHidden ? '••••••' : _formatEgp(context, totalZakat),
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13,
+                  height: 1.0,
+                  color: dark ? tokens.colors.textPrimary : tokens.colors.hero,
+                ),
+              ),
+              Text(
+                context.l10n.tr('total_due'),
+                style: TextStyle(
+                  fontSize: 9,
+                  height: 1.0,
+                  color: tokens.colors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+          children: <Widget>[
+            const SizedBox(height: 12),
+            Container(
+              decoration: BoxDecoration(
+                color: tokens.colors.background.withValues(alpha: 0.45),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: tokens.colors.divider),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: <Widget>[
+                    Row(
+                      children: <Widget>[
+                        Icon(
+                          isPaid
+                              ? Icons.check_circle_rounded
+                              : Icons.radio_button_unchecked_rounded,
+                          color: isPaid
+                              ? const Color(0xFF2E7D32)
+                              : tokens.colors.textSecondary,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          isPaid
+                              ? context.l10n.tr('paid')
+                              : context.l10n.tr('not_paid'),
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: isPaid
+                                ? const Color(0xFF2E7D32)
+                                : tokens.colors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (isPaid)
+                      TextButton(
+                        key: Key('toggleZakatPaid_$monthKey'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: tokens.colors.gold,
+                        ),
+                        onPressed: () =>
+                            context.read<AppStateController>().toggleZakatPaid(
+                              monthKey: monthKey,
+                              zakatAmountMainCurrency: totalZakat,
+                              paymentDate: paymentDate,
+                            ),
+                        child: Text(context.l10n.tr('undo_paid')),
+                      )
+                    else
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: <Widget>[
+                          TextButton(
+                            key: Key('markZakatPaid_$monthKey'),
+                            style: TextButton.styleFrom(
+                              foregroundColor: tokens.colors.emerald,
+                            ),
+                            onPressed: () => context
+                                .read<AppStateController>()
+                                .markZakatPaid(monthKey: monthKey),
+                            child: Text(context.l10n.tr('mark_as_paid')),
+                          ),
+                          TextButton(
+                            key: Key('toggleZakatPaid_$monthKey'),
+                            style: TextButton.styleFrom(
+                              foregroundColor: tokens.colors.gold,
+                            ),
+                            onPressed: () async {
+                              try {
+                                await context
+                                    .read<AppStateController>()
+                                    .payZakat(
+                                      monthKey: monthKey,
+                                      zakatAmountMainCurrency: totalZakat,
+                                      paymentDate: paymentDate,
+                                    );
+                              } on StateError catch (error) {
+                                if (!context.mounted) return;
+                                showTopSnackBar(context, error.message);
                               }
                             },
-                            backgroundColor: const Color(0xFFC62828),
-                            foregroundColor: Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Icon(
-                                  Icons.delete_outline_rounded,
-                                  color: Colors.white,
-                                  size: 22,
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  context.l10n.tr('delete'),
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
+                            child: Text(context.l10n.tr('pay')),
                           ),
                         ],
                       ),
-                      child: PremiumCard(
-                        child: ListTile(
-                          key: Key('activityTile_${entry.key}'),
-                          onTap: () {
-                            final AppStateController controller = context
-                                .read<AppStateController>();
-                            if (entry.isTransfer) {
-                              final String titleStr =
-                                  (entry.transferTitle ?? entry.title(context))
-                                      .toLowerCase();
-                              if (titleStr.contains('gold sale') ||
-                                  titleStr.contains('silver sale')) {
-                                if (entry.transaction != null) {
-                                  openSellMetalDialog(
-                                    context,
-                                    editTransaction: entry.transaction,
-                                  );
-                                }
-                              } else if (titleStr.contains('gold') ||
-                                  titleStr.contains('silver')) {
-                                Saving? targetSaving;
-                                if (entry.saving != null) {
-                                  targetSaving = entry.saving;
-                                } else if (entry.transaction != null) {
-                                  final String? pairId =
-                                      entry.transaction!.exchangePairId;
-                                  if (pairId != null && pairId.isNotEmpty) {
-                                    targetSaving = controller.state.savings
-                                        .where((Saving s) => s.id == pairId)
-                                        .firstOrNull;
-                                  }
-                                  if (targetSaving == null) {
-                                    final String targetType =
-                                        titleStr.contains('gold')
-                                        ? 'gold'
-                                        : 'silver';
-                                    targetSaving = controller.state.savings
-                                        .where(
-                                          (Saving s) =>
-                                              s.assetType == targetType,
-                                        )
-                                        .firstOrNull;
-                                  }
-                                }
-                                if (targetSaving != null) {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute<void>(
-                                      builder: (_) => AddSavingScreen(
-                                        initialSaving: targetSaving,
-                                      ),
-                                    ),
-                                  );
-                                }
-                              } else if (titleStr.contains('exchange')) {
-                                final dynamic item =
-                                    entry.saving ?? entry.transaction;
-                                if (kDebugMode) {
-                                  print(
-                                    '[Activity][Edit] title=$titleStr '
-                                    'using=${item.runtimeType} '
-                                    'activityId=${entry.exchangeActivityId} '
-                                    'txId=${entry.transaction?.id} '
-                                    'txPair=${entry.transaction?.exchangePairId} '
-                                    'savingId=${entry.saving?.id} '
-                                    'savingActivity=${entry.saving?.transferActivityId}',
-                                  );
-                                }
-                                if (item != null) {
-                                  openEditCurrencyExchangeDialog(
-                                    context,
-                                    item,
-                                    activityId: entry.exchangeActivityId,
-                                  );
-                                }
-                              } else {
-                                if (entry.transaction != null) {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute<void>(
-                                      builder: (_) => AddTransactionScreen(
-                                        initialTransaction: entry.transaction,
-                                      ),
-                                    ),
-                                  );
-                                }
-                              }
-                            } else if (entry.transaction != null) {
-                              Navigator.of(context).push(
-                                MaterialPageRoute<void>(
-                                  builder: (_) => AddTransactionScreen(
-                                    initialTransaction: entry.transaction,
-                                  ),
-                                ),
-                              );
-                            } else if (entry.saving != null) {
-                              Navigator.of(context).push(
-                                MaterialPageRoute<void>(
-                                  builder: (_) => AddSavingScreen(
-                                    initialSaving: entry.saving,
-                                  ),
-                                ),
-                              );
-                            }
-                          },
-                          contentPadding: const EdgeInsets.symmetric(
-                            vertical: 2,
-                            horizontal: 6,
-                          ),
-                          leading: _buildActivityIcon(context, entry),
-                          title: Row(
-                            children: <Widget>[
-                              Expanded(
-                                child: Text(
-                                  entry.isTransfer
-                                      ? (entry.transferTitle ??
-                                            entry.title(context))
-                                      : entry.title(context),
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          subtitle: Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text(
-                              entry.isTransfer
-                                  ? _getTransferSubtitle(
-                                      context,
-                                      entry,
-                                      mainCurrency,
-                                      market,
-                                      isArabic,
-                                    )
-                                  : '${entry.date} • ${entry.description.isNotEmpty ? entry.description : entry.title(context)}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: tokens.colors.textSecondary,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: <Widget>[
-                              Text(
-                                balancesHidden
-                                    ? '••••••'
-                                    : ZakatEngineService.formatCurrency(
-                                        entry.signedAmount,
-                                        entry.currency,
-                                        isArabic: isArabic,
-                                        showSign: !entry.isTransfer,
-                                      ),
-                                style: TextStyle(
-                                  color: entry.isTransfer
-                                      ? tokens.colors.textPrimary
-                                      : (entry.isIncome
-                                            ? const Color(0xFF2E7D32)
-                                            : tokens.colors.danger),
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 15,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              Icon(
-                                Icons.chevron_right_rounded,
-                                color: tokens.colors.textSecondary.withValues(
-                                  alpha: 0.5,
-                                ),
-                                size: 20,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  },
+                  ],
                 ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            ...entries.map((dynamic raw) {
+              final Map<String, dynamic> entry = Map<String, dynamic>.from(
+                raw as Map,
+              );
+              final String type = (entry['type'] ?? 'entry').toString();
+              final double amount = ((entry['zakatAmount'] ?? 0) as num)
+                  .toDouble();
+              return ListTile(
+                dense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                title: Text(
+                  type.toUpperCase(),
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                subtitle: Text(
+                  _formatHumanDate((entry['dueDateRaw'] ?? '').toString()),
+                  style: TextStyle(color: tokens.colors.textSecondary),
+                ),
+                trailing: Text(
+                  balancesHidden ? '••••••' : _formatEgp(context, amount),
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              );
+            }),
+          ],
         ),
-      ],
+      ),
     );
+  }
+
+  String _monthTitleFromKey(String monthKey, String paymentDate) {
+    if (monthKey.length >= 7) {
+      final String raw = '${monthKey.substring(0, 7)}-01';
+      final DateTime? parsed = DateTime.tryParse(raw);
+      if (parsed != null) {
+        return DateFormat('MMMM yyyy').format(parsed.toLocal());
+      }
+    }
+    final DateTime? parsed = DateTime.tryParse(paymentDate);
+    if (parsed != null) {
+      return DateFormat('MMMM yyyy').format(parsed.toLocal());
+    }
+    return monthKey.isNotEmpty ? monthKey : paymentDate;
   }
 
   Widget _buildScheduleView(
@@ -1265,8 +1923,6 @@ class ActivityScreenState extends State<ActivityScreen> {
     required bool balancesHidden,
     required double navSafeBottomPadding,
   }) {
-    final tokens = context.premiumTokens;
-
     if (schedule.isEmpty) {
       return Center(
         child: EmptyStateCard(
@@ -1316,382 +1972,77 @@ class ActivityScreenState extends State<ActivityScreen> {
       return true;
     }).toList();
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    final Map<String, dynamic>? nextDue = filtered.isEmpty
+        ? null
+        : filtered.firstWhere(
+            (Map<String, dynamic> row) => row['isPast'] != true,
+            orElse: () => filtered.first,
+          );
+    final int currentYear = DateTime.now().year;
+    final double totalDueThisYear = sorted.fold<double>(0, (
+      double sum,
+      Map<String, dynamic> row,
+    ) {
+      final DateTime paymentDate = _parseDate(
+        (row['paymentDate'] ?? '').toString(),
+      );
+      if (paymentDate.year != currentYear) return sum;
+      return sum + ((row['totalZakat'] ?? 0) as num).toDouble();
+    });
+
+    return ListView(
+      key: const Key('zakatScheduleList'),
+      padding: EdgeInsets.fromLTRB(0, 0, 0, navSafeBottomPadding),
       children: <Widget>[
-        // Date Filter Row
-        LayoutBuilder(
-          builder: (BuildContext context, BoxConstraints constraints) {
-            return SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minWidth: constraints.maxWidth),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: <Widget>[
-                    Icon(
-                      Icons.calendar_month_outlined,
-                      size: 18,
-                      color: tokens.colors.textPrimary.withValues(alpha: 0.6),
-                    ),
-                    const SizedBox(width: 8),
-
-                    // Date Range chips for Zakat Schedule
-                    ...<String>['All Time', '30D', '90D', 'YTD', 'Custom'].map((
-                      filter,
-                    ) {
-                      final bool isSelected = _zakatDateFilter == filter;
-                      String label = filter;
-                      if (filter == 'All Time') {
-                        label = context.l10n.tr('all');
-                      }
-                      if (filter == 'Custom' &&
-                          _zakatCustomDateRange != null &&
-                          _zakatDateFilter == 'Custom') {
-                        final String startStr =
-                            '${_zakatCustomDateRange!.start.day}/${_zakatCustomDateRange!.start.month}';
-                        final String endStr =
-                            '${_zakatCustomDateRange!.end.day}/${_zakatCustomDateRange!.end.month}';
-                        label = '$startStr-$endStr';
-                      }
-
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 3),
-                        child: ChoiceChip(
-                          labelPadding: EdgeInsets.zero,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 4,
-                          ),
-                          visualDensity: const VisualDensity(
-                            horizontal: -2,
-                            vertical: -3,
-                          ),
-                          materialTapTargetSize:
-                              MaterialTapTargetSize.shrinkWrap,
-                          labelStyle: TextStyle(
-                            fontSize: 12,
-                            fontWeight: isSelected
-                                ? FontWeight.w700
-                                : FontWeight.w500,
-                          ),
-                          label: Text(label),
-                          selected: isSelected,
-                          onSelected: (bool selected) {
-                            if (filter == 'Custom') {
-                              _selectCustomRange(context, isZakat: true);
-                            } else {
-                              setState(() {
-                                _zakatDateFilter = filter;
-                              });
-                            }
-                          },
-                        ),
-                      );
-                    }),
-                  ],
+        KeyedSubtree(
+          key: const Key('upcomingZakatSummaryCard'),
+          child: _buildUpcomingZakatCard(
+            context,
+            row: nextDue,
+            totalDueThisYear: totalDueThisYear,
+            balancesHidden: balancesHidden,
+          ),
+        ),
+        const SizedBox(height: 12),
+        KeyedSubtree(
+          key: const Key('zakatFilterRow'),
+          child: _buildZakatFilterRow(context),
+        ),
+        const SizedBox(height: 12),
+        if (filtered.isEmpty)
+          EmptyStateCard(
+            cardKey: const Key('zakatScheduleFilteredEmptyState'),
+            icon: Icons.event_note_outlined,
+            title: context.l10n.tr('zakat_schedule'),
+            message: context.l10n.tr('schedule_empty_message'),
+          )
+        else
+          ...filtered.map((Map<String, dynamic> row) {
+            final String monthKey = (row['monthKey'] ?? '').toString();
+            final bool isPast = row['isPast'] == true;
+            final bool isCurrent = row['isCurrentMonth'] == true;
+            final List<dynamic> entries =
+                (row['entries'] as List<dynamic>? ?? const []);
+            final double totalZakat = ((row['totalZakat'] ?? 0) as num)
+                .toDouble();
+            final bool isPaid = paidMonths.contains(monthKey);
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: KeyedSubtree(
+                key: Key('scheduleCard_$monthKey'),
+                child: _buildScheduleCard(
+                  context,
+                  row: row,
+                  isPast: isPast,
+                  isCurrent: isCurrent,
+                  entries: entries,
+                  totalZakat: totalZakat,
+                  isPaid: isPaid,
+                  balancesHidden: balancesHidden,
                 ),
               ),
             );
-          },
-        ),
-        const SizedBox(height: 10),
-
-        // Unpaid Toggle Row (Separate Row underneath, matching Transactions Categories layout)
-        Row(
-          children: <Widget>[
-            Icon(
-              Icons.filter_list_rounded,
-              size: 18,
-              color: tokens.colors.textPrimary.withValues(alpha: 0.6),
-            ),
-            const SizedBox(width: 8),
-            ChoiceChip(
-              visualDensity: const VisualDensity(horizontal: -2, vertical: -3),
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              labelStyle: TextStyle(
-                fontSize: 12,
-                fontWeight: _showUnpaidOnly ? FontWeight.w700 : FontWeight.w500,
-              ),
-              label: Text(context.l10n.tr('not_paid')),
-              selected: _showUnpaidOnly,
-              onSelected: (bool selected) {
-                setState(() {
-                  _showUnpaidOnly = selected;
-                });
-              },
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-
-        Expanded(
-          child: filtered.isEmpty
-              ? Center(
-                  child: EmptyStateCard(
-                    cardKey: const Key('zakatScheduleFilteredEmptyState'),
-                    icon: Icons.event_note_outlined,
-                    title: context.l10n.tr('zakat_schedule'),
-                    message: context.l10n.tr('schedule_empty_message'),
-                  ),
-                )
-              : ListView.separated(
-                  key: const Key('zakatScheduleList'),
-                  padding: EdgeInsets.only(bottom: navSafeBottomPadding),
-                  itemCount: filtered.length,
-                  separatorBuilder: (BuildContext context, int index) =>
-                      const SizedBox(height: 10),
-                  itemBuilder: (_, int index) {
-                    final Map<String, dynamic> row = filtered[index];
-                    final bool isPast = row['isPast'] == true;
-                    final bool isCurrent = row['isCurrentMonth'] == true;
-                    final List<dynamic> entries =
-                        (row['entries'] as List<dynamic>? ?? const []);
-                    final String status = isCurrent
-                        ? context.l10n.tr('due_now')
-                        : (isPast
-                              ? context.l10n.tr('past')
-                              : context.l10n.tr('upcoming'));
-                    final String monthKey = (row['monthKey'] ?? '').toString();
-                    final String paymentDate = (row['paymentDate'] ?? '')
-                        .toString();
-                    final String hijriDate = (row['hijriDate'] ?? '')
-                        .toString();
-                    final String titleText = hijriDate.isEmpty
-                        ? '$monthKey • $paymentDate'
-                        : '$paymentDate • $hijriDate AH';
-                    final double totalZakat = ((row['totalZakat'] ?? 0) as num)
-                        .toDouble();
-                    final bool isPaid = paidMonths.contains(monthKey);
-
-                    return PremiumCard(
-                      child: Theme(
-                        data: Theme.of(
-                          context,
-                        ).copyWith(dividerColor: Colors.transparent),
-                        child: ExpansionTile(
-                          key: Key('scheduleRow_$monthKey'),
-                          tilePadding: EdgeInsets.zero,
-                          title: Text(
-                            titleText,
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          subtitle: Text(
-                            '${context.l10n.tr('entries')}: ${entries.length}',
-                            style: TextStyle(
-                              color: tokens.colors.textSecondary,
-                            ),
-                          ),
-                          trailing: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: <Widget>[
-                              Text(
-                                balancesHidden
-                                    ? '••••••'
-                                    : _formatEgp(context, totalZakat),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 14,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: isCurrent
-                                      ? tokens.colors.gold.withValues(
-                                          alpha: 0.15,
-                                        )
-                                      : (isPast
-                                            ? tokens.colors.textSecondary
-                                                  .withValues(alpha: 0.1)
-                                            : tokens.colors.gold.withValues(
-                                                alpha: 0.05,
-                                              )),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  status,
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                    color: isCurrent
-                                        ? tokens.colors.textPrimary
-                                        : tokens.colors.textSecondary,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          children: <Widget>[
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
-                              child: Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: <Widget>[
-                                  Row(
-                                    children: [
-                                      Icon(
-                                        isPaid
-                                            ? Icons.check_circle_rounded
-                                            : Icons
-                                                  .radio_button_unchecked_rounded,
-                                        color: isPaid
-                                            ? const Color(0xFF2E7D32)
-                                            : tokens.colors.textSecondary,
-                                        size: 18,
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        isPaid
-                                            ? context.l10n.tr('paid')
-                                            : context.l10n.tr('not_paid'),
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                          color: isPaid
-                                              ? const Color(0xFF2E7D32)
-                                              : tokens.colors.textSecondary,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  if (isPaid)
-                                    TextButton(
-                                      key: Key('toggleZakatPaid_$monthKey'),
-                                      style: TextButton.styleFrom(
-                                        foregroundColor: tokens.colors.gold,
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                        ),
-                                      ),
-                                      onPressed: () => context
-                                          .read<AppStateController>()
-                                          .toggleZakatPaid(
-                                            monthKey: monthKey,
-                                            zakatAmountMainCurrency: totalZakat,
-                                            paymentDate: paymentDate,
-                                          ),
-                                      child: Text(
-                                        context.l10n.tr('undo_paid'),
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    )
-                                  else
-                                    Wrap(
-                                      spacing: 6,
-                                      runSpacing: 4,
-                                      alignment: WrapAlignment.end,
-                                      children: <Widget>[
-                                        TextButton(
-                                          key: Key('markZakatPaid_$monthKey'),
-                                          style: TextButton.styleFrom(
-                                            foregroundColor:
-                                                tokens.colors.emerald,
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 12,
-                                            ),
-                                          ),
-                                          onPressed: () => context
-                                              .read<AppStateController>()
-                                              .markZakatPaid(
-                                                monthKey: monthKey,
-                                              ),
-                                          child: Text(
-                                            context.l10n.tr('mark_as_paid'),
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ),
-                                        TextButton(
-                                          key: Key('toggleZakatPaid_$monthKey'),
-                                          style: TextButton.styleFrom(
-                                            foregroundColor: tokens.colors.gold,
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 12,
-                                            ),
-                                          ),
-                                          onPressed: () async {
-                                            try {
-                                              await context
-                                                  .read<AppStateController>()
-                                                  .payZakat(
-                                                    monthKey: monthKey,
-                                                    zakatAmountMainCurrency:
-                                                        totalZakat,
-                                                    paymentDate: paymentDate,
-                                                  );
-                                            } on StateError catch (error) {
-                                              if (!context.mounted) return;
-                                              showTopSnackBar(
-                                                context,
-                                                error.message,
-                                              );
-                                            }
-                                          },
-                                          child: Text(
-                                            context.l10n.tr('pay'),
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                ],
-                              ),
-                            ),
-                            const Divider(height: 1),
-                            ...entries.map((dynamic raw) {
-                              final Map<String, dynamic> entry =
-                                  Map<String, dynamic>.from(raw as Map);
-                              final String type = (entry['type'] ?? 'entry')
-                                  .toString();
-                              final double amount =
-                                  ((entry['zakatAmount'] ?? 0) as num)
-                                      .toDouble();
-                              return ListTile(
-                                dense: true,
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                ),
-                                title: Text(
-                                  type.toUpperCase(),
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                subtitle: Text(
-                                  (entry['dueDateRaw'] ?? '').toString(),
-                                  style: TextStyle(
-                                    color: tokens.colors.textSecondary,
-                                  ),
-                                ),
-                                trailing: Text(
-                                  balancesHidden
-                                      ? '••••••'
-                                      : _formatEgp(context, amount),
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              );
-                            }),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-        ),
+          }),
       ],
     );
   }
@@ -1874,6 +2225,8 @@ class ActivityScreenState extends State<ActivityScreen> {
     return entry.description;
   }
 
+  // Kept for compatibility with earlier Activity card layouts.
+  // ignore: unused_element
   Widget _buildActivityIcon(BuildContext context, _ActivityEntry entry) {
     final String titleLower = (entry.transferTitle ?? entry.title(context))
         .toLowerCase();
@@ -1918,6 +2271,8 @@ class ActivityScreenState extends State<ActivityScreen> {
     );
   }
 
+  // Kept for compatibility with earlier Activity summary layouts.
+  // ignore: unused_element
   Widget _buildSummaryItem(
     BuildContext context, {
     required String title,
@@ -1978,6 +2333,114 @@ class ActivityScreenState extends State<ActivityScreen> {
       currencyCode,
       isArabic:
           Localizations.localeOf(context).languageCode.toLowerCase() == 'ar',
+    );
+  }
+}
+
+class _MetaPill extends StatelessWidget {
+  const _MetaPill({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.premiumTokens;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: tokens.colors.background.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: tokens.colors.divider),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: tokens.colors.textSecondary,
+        ),
+      ),
+    );
+  }
+}
+
+class _StatusBadge extends StatelessWidget {
+  const _StatusBadge({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+          color: color,
+        ),
+      ),
+    );
+  }
+}
+
+class _SummaryMetric extends StatelessWidget {
+  const _SummaryMetric({
+    required this.label,
+    required this.value,
+    required this.sublabel,
+    required this.accentColor,
+    required this.showValue,
+  });
+
+  final String label;
+  final String value;
+  final String sublabel;
+  final Color accentColor;
+  final bool showValue;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.premiumTokens;
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+    final Color resolvedValueColor =
+        dark && accentColor.toARGB32() == tokens.colors.hero.toARGB32()
+        ? tokens.colors.textPrimary
+        : accentColor;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: tokens.colors.textSecondary,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          showValue ? value : '••••••',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w800,
+            color: resolvedValueColor,
+          ),
+        ),
+        if (sublabel.isNotEmpty) ...<Widget>[
+          const SizedBox(height: 3),
+          Text(
+            sublabel,
+            style: TextStyle(fontSize: 11, color: tokens.colors.textSecondary),
+          ),
+        ],
+      ],
     );
   }
 }

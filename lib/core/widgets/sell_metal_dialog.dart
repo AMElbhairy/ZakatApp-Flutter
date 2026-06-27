@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../i18n/app_localizations.dart';
+import '../theme/app_colors.dart';
 import '../services/zakat_engine.dart';
 import '../utils/amount_parser.dart';
 import '../../models/transaction.dart';
@@ -277,8 +278,8 @@ Future<void> openSellMetalDialog(
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 color: gainLoss >= 0
-                                    ? Colors.green
-                                    : Colors.red,
+                  ? AppColors.emeraldStrong
+                  : AppColors.redStrong,
                               ),
                             ),
                           ],

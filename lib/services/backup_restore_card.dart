@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../core/theme/app_colors.dart';
 import '../core/widgets/app_ui.dart';
 import '../models/backup_preview.dart';
 import 'app_state_controller.dart';
@@ -97,7 +98,7 @@ class BackupRestoreCard extends StatelessWidget {
                 const Text(
                   'This file is not a valid backup and cannot be restored.',
                   style: TextStyle(
-                    color: Colors.red,
+                    color: AppColors.redStrong,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -105,7 +106,7 @@ class BackupRestoreCard extends StatelessWidget {
                 const Text(
                   'Legacy backup detected. Migration will be applied before restore.',
                   style: TextStyle(
-                    color: Colors.orange,
+                    color: AppColors.orange,
                     fontWeight: FontWeight.bold,
                   ),
                 ),

@@ -133,13 +133,7 @@ void main() {
   Future<void> openAccountTab(WidgetTester tester) async {
     final Finder navBar = find.byKey(const Key('premiumBottomNav'));
     expect(navBar, findsOneWidget);
-    final Finder accountLabel = find.descendant(
-      of: navBar,
-      matching: find.byWidgetPredicate(
-        (Widget w) => w is Text && (w.data == 'Account' || w.data == 'الحساب'),
-      ),
-    );
-    await tester.tap(accountLabel.last);
+    await tester.tap(find.byKey(const Key('bottomNavTab_4')));
     await tester.pumpAndSettle();
   }
 
@@ -204,7 +198,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(SingleChildScrollView), findsWidgets);
-    expect(find.text('بيانات السوق'), findsOneWidget);
+    expect(find.text('أسعار السوق'), findsOneWidget);
     expect(find.text('المظهر'), findsOneWidget);
     expect(find.text('Backup & Sync'), findsNothing);
   });
@@ -223,7 +217,7 @@ void main() {
     await tester.tap(find.byKey(const Key('addEntryFab')));
     await tester.pumpAndSettle();
 
-    expect(find.text('إضافة قيد'), findsWidgets);
+    expect(find.text('إضافة عملية'), findsWidgets);
     expect(find.text('إضافة دخل'), findsOneWidget);
     expect(find.text('إضافة مصروف'), findsOneWidget);
     expect(find.text('إضافة مدخرات'), findsOneWidget);
@@ -262,7 +256,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('حذف').first);
     await tester.pumpAndSettle();
-    expect(find.text('هل تريد حذف المعاملة؟'), findsOneWidget);
+    expect(find.text('حذف العملية؟'), findsOneWidget);
     expect(find.text('إلغاء'), findsOneWidget);
     expect(find.text('حذف'), findsWidgets);
   });

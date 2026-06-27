@@ -13,6 +13,7 @@ import 'package:provider/provider.dart';
 import 'package:provider/single_child_widget.dart';
 
 import 'core/i18n/app_localizations.dart';
+import 'core/theme/app_colors.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/auth_brand_ui.dart';
 import 'features/auth/email_verification_screen.dart';
@@ -357,7 +358,7 @@ class _OfflineStatusBannerOverlay extends StatelessWidget {
                 border: Border.all(color: accent.withValues(alpha: 0.35)),
                 boxShadow: const <BoxShadow>[
                   BoxShadow(
-                    color: Color(0x22000000),
+                    color: AppColors.black12,
                     blurRadius: 18,
                     offset: Offset(0, 8),
                   ),
@@ -446,6 +447,14 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
   bool _sessionExpiryHandlingInProgress = false;
   bool _initialBootstrapComplete = false;
 
+  T? _maybeRead<T>() {
+    try {
+      return context.read<T>();
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -512,8 +521,8 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
     _initialBootstrapComplete = false;
     final AppStateController appStateController = context
         .read<AppStateController>();
-    final CloudBackupController cloudBackupController = context
-        .read<CloudBackupController>();
+    final CloudBackupController? cloudBackupController =
+        _maybeRead<CloudBackupController>();
 
     setState(() {
       _phase = _BootstrapPhase.loading;
@@ -541,7 +550,8 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
     final bool localHasData = BackupService.hasData(
       appStateController.state.toJson(),
     );
-    final StartupRestoreDiscoveryResult discovery = localHasData
+    final StartupRestoreDiscoveryResult discovery = localHasData ||
+            cloudBackupController == null
         ? const StartupRestoreDiscoveryResult(
             status: StartupRestoreDiscoveryStatus.none,
             message: 'Local data exists',
@@ -571,14 +581,18 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
       return;
     }
 
-    unawaited(() async {
-      try {
-        await cloudBackupController.refreshCloudState(evaluatePrompt: false);
-      } catch (error, stackTrace) {
-        debugPrint('Cloud backup bootstrap refresh failed: $error');
-        debugPrintStack(stackTrace: stackTrace);
-      }
-    }());
+    if (cloudBackupController != null) {
+      unawaited(() async {
+        try {
+          await cloudBackupController.refreshCloudState(
+            evaluatePrompt: false,
+          );
+        } catch (error, stackTrace) {
+          debugPrint('Cloud backup bootstrap refresh failed: $error');
+          debugPrintStack(stackTrace: stackTrace);
+        }
+      }());
+    }
 
     if (!appStateController.enableBackgroundSync &&
         !appStateController.enableMarketAutoRefresh) {
@@ -617,8 +631,12 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
   Future<void> _autoRestoreStartupBackup(
     StartupRestoreDiscoveryResult discovery,
   ) async {
-    final CloudBackupController cloudBackupController = context
-        .read<CloudBackupController>();
+    final CloudBackupController? cloudBackupController =
+        _maybeRead<CloudBackupController>();
+    if (cloudBackupController == null) {
+      await _enterShellAfterRestore();
+      return;
+    }
     setState(() {
       _phase = _BootstrapPhase.loading;
       _loadingEntries = false;
@@ -652,13 +670,15 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
     required UserProfile user,
     required AppStateController appStateController,
   }) async {
-    final CloudBackupController cloudBackupController = context
-        .read<CloudBackupController>();
-    cloudBackupController.completeStartupRestoreDiscovery();
+    final CloudBackupController? cloudBackupController =
+        _maybeRead<CloudBackupController>();
+    cloudBackupController?.completeStartupRestoreDiscovery();
 
     if (appStateController.enableBackgroundSync) {
       try {
-        unawaited(cloudBackupController.refreshCloudState());
+        if (cloudBackupController != null) {
+          unawaited(cloudBackupController.refreshCloudState());
+        }
       } catch (error, stackTrace) {
         debugPrint('Cloud backup bootstrap refresh failed: $error');
         debugPrintStack(stackTrace: stackTrace);
@@ -773,7 +793,7 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
 
   Future<void> _routeToSignedOut() async {
     if (!mounted) return;
-    context.read<CloudBackupController>().completeStartupRestoreDiscovery();
+    _maybeRead<CloudBackupController>()?.completeStartupRestoreDiscovery();
     await context.read<AppStateController>().resetForSignedOutUser();
     if (!mounted) return;
     setState(() {
@@ -796,7 +816,7 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
 
   Future<void> _routeToEmailVerification(UserProfile user) async {
     if (!mounted) return;
-    context.read<CloudBackupController>().completeStartupRestoreDiscovery();
+    _maybeRead<CloudBackupController>()?.completeStartupRestoreDiscovery();
     await context.read<AppStateController>().resetForSignedOutUser();
     if (!mounted) return;
     setState(() {
@@ -817,14 +837,14 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
 
   Future<void> _showSessionExpiredIntervention() async {
     if (!mounted) return;
-    const Color deepEmerald = Color(0xFF042F2B);
-    const Color surface = Color(0xFFF7F5EF);
+    const Color deepEmerald = AppColors.brandForest;
+    const Color surface = AppColors.sharedContainer;
 
     await showModalBottomSheet<void>(
       context: context,
       isDismissible: false,
       enableDrag: false,
-      backgroundColor: Colors.transparent,
+        backgroundColor: AppColors.transparent,
       builder: (BuildContext bottomSheetContext) {
         final ThemeData theme = Theme.of(bottomSheetContext);
         return SafeArea(
@@ -835,13 +855,13 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
             decoration: BoxDecoration(
               color: surface,
               borderRadius: BorderRadius.circular(24),
-              boxShadow: const <BoxShadow>[
-                BoxShadow(
-                  color: Color(0x22000000),
-                  blurRadius: 20,
-                  offset: Offset(0, 8),
-                ),
-              ],
+                boxShadow: const <BoxShadow>[
+                  BoxShadow(
+                    color: AppColors.black12,
+                    blurRadius: 20,
+                    offset: Offset(0, 8),
+                  ),
+                ],
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -851,7 +871,7 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
                   height: 4,
                   width: 42,
                   decoration: BoxDecoration(
-                    color: const Color(0x33042F2B),
+                    color: AppColors.brandForest.withValues(alpha: 0.20),
                     borderRadius: BorderRadius.circular(99),
                   ),
                 ),
@@ -996,15 +1016,17 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
     if (!mounted) return;
     final AppStateController appStateController = context
         .read<AppStateController>();
-    final CloudBackupController cloudBackupController = context
-        .read<CloudBackupController>();
+    final CloudBackupController? cloudBackupController =
+        _maybeRead<CloudBackupController>();
     final UserProfile? user = context.read<AuthController>().currentUser;
     if (user == null) {
       setState(() => _phase = _BootstrapPhase.signedOut);
       return;
     }
-    cloudBackupController.completeStartupRestoreDiscovery();
-    await cloudBackupController.refreshCloudState(evaluatePrompt: false);
+    cloudBackupController?.completeStartupRestoreDiscovery();
+    if (cloudBackupController != null) {
+      await cloudBackupController.refreshCloudState(evaluatePrompt: false);
+    }
     if (!mounted) return;
     if (appStateController.state.biometricLockEnabled) {
       setState(() {
@@ -1029,8 +1051,12 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
   }
 
   Future<void> _restoreBackup() async {
-    final CloudBackupController cloudBackupController = context
-        .read<CloudBackupController>();
+    final CloudBackupController? cloudBackupController =
+        _maybeRead<CloudBackupController>();
+    if (cloudBackupController == null) {
+      await _enterShellAfterRestore();
+      return;
+    }
     setState(() {
       _phase = _BootstrapPhase.loading;
       _loadingEntries = false;
@@ -1056,15 +1082,15 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
     final AppStateController appStateController = context
         .read<AppStateController>();
     final AuthController authController = context.read<AuthController>();
-    final CloudBackupController cloudBackupController = context
-        .read<CloudBackupController>();
+    final CloudBackupController? cloudBackupController =
+        _maybeRead<CloudBackupController>();
     final UserProfile? user = authController.currentUser;
     if (user == null) {
       setState(() => _phase = _BootstrapPhase.signedOut);
       return;
     }
     final bool shouldLock = appStateController.state.biometricLockEnabled;
-    cloudBackupController.completeStartupRestoreDiscovery();
+    cloudBackupController?.completeStartupRestoreDiscovery();
     await appStateController.markRestorePromptDismissedForCurrentUser(
       userId: user.id,
     );
@@ -1082,21 +1108,23 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
       _shellInitialIndex = 2;
       _restoreGateDiscovery = null;
     });
-    unawaited(cloudBackupController.refreshCloudState(evaluatePrompt: false));
+    if (cloudBackupController != null) {
+      unawaited(cloudBackupController.refreshCloudState(evaluatePrompt: false));
+    }
   }
 
   Future<void> _openBackupSync() async {
     final AppStateController appStateController = context
         .read<AppStateController>();
     final AuthController authController = context.read<AuthController>();
-    final CloudBackupController cloudBackupController = context
-        .read<CloudBackupController>();
+    final CloudBackupController? cloudBackupController =
+        _maybeRead<CloudBackupController>();
     final UserProfile? user = authController.currentUser;
     if (user == null) {
       setState(() => _phase = _BootstrapPhase.signedOut);
       return;
     }
-    cloudBackupController.completeStartupRestoreDiscovery();
+    cloudBackupController?.completeStartupRestoreDiscovery();
     setState(() {
       _loadingMarketData = false;
       _shellInitialIndex = 4;
@@ -1105,7 +1133,9 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
           : _BootstrapPhase.ready;
       _restoreGateDiscovery = null;
     });
-    unawaited(cloudBackupController.refreshCloudState(evaluatePrompt: false));
+    if (cloudBackupController != null) {
+      unawaited(cloudBackupController.refreshCloudState(evaluatePrompt: false));
+    }
     if (!appStateController.state.biometricLockEnabled) {
       await appStateController.startMarketAutoRefresh();
     }
@@ -1145,18 +1175,22 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
         isLoadingPlans: _loadingPlans,
         statusMessage: _loadingMessage,
       ),
-      _BootstrapPhase.restoreGate => RestoreGateScreen(
-        cloudBackupController: context.watch<CloudBackupController>(),
-        discovery:
-            _restoreGateDiscovery ??
-            const StartupRestoreDiscoveryResult(
-              status: StartupRestoreDiscoveryStatus.none,
-              message: 'No cloud backup found',
+      _BootstrapPhase.restoreGate => _maybeRead<CloudBackupController>() ==
+              null
+          ? const SizedBox.shrink()
+          : RestoreGateScreen(
+              cloudBackupController:
+                  _maybeRead<CloudBackupController>()!,
+              discovery:
+                  _restoreGateDiscovery ??
+                  const StartupRestoreDiscoveryResult(
+                    status: StartupRestoreDiscoveryStatus.none,
+                    message: 'No cloud backup found',
+                  ),
+              onRestore: _restoreBackup,
+              onStartFresh: _startFresh,
+              onOpenBackupSync: _openBackupSync,
             ),
-        onRestore: _restoreBackup,
-        onStartFresh: _startFresh,
-        onOpenBackupSync: _openBackupSync,
-      ),
       _BootstrapPhase.locked => SecurityLockScreen(onUnlock: _handleUnlock),
       _BootstrapPhase.ready => AppShell(initialIndex: _shellInitialIndex),
     };

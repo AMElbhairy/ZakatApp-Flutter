@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/i18n/app_localizations.dart';
 import '../../core/widgets/app_ui.dart';
 import '../../core/theme/app_theme_extensions.dart';
 import '../../core/theme/app_radii.dart';
@@ -41,7 +42,7 @@ class _AddSmartCaptureMessageScreenState
       if (mounted) {
         showTopSnackBar(
           context,
-          'Message parsed successfully into Pending Transactions',
+          context.l10n.tr('message_parsed_successfully'),
           kind: AppToastKind.success,
         );
         Navigator.pop(context);
@@ -50,7 +51,7 @@ class _AddSmartCaptureMessageScreenState
       if (mounted) {
         showTopSnackBar(
           context,
-          'Error: ${e.toString()}',
+          '${context.l10n.tr('error_prefix')}: ${e.toString()}',
           kind: AppToastKind.error,
         );
       }
@@ -63,7 +64,7 @@ class _AddSmartCaptureMessageScreenState
 
     return Scaffold(
       backgroundColor: tokens.colors.background,
-      appBar: AppBar(title: const Text('Smart Capture Paste')),
+      appBar: AppBar(title: Text(context.l10n.tr('smart_capture_paste'))),
       body: SafeArea(
         child: Form(
           key: _formKey,
@@ -73,12 +74,12 @@ class _AddSmartCaptureMessageScreenState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Paste Bank Message',
+                  context.l10n.tr('paste_bank_message'),
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Paste the notification SMS, email content, or raw bank details text. The system will automatically parse type, amount, and currency for review.',
+                  context.l10n.tr('paste_bank_message_desc'),
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
                 const SizedBox(height: 20),
@@ -87,8 +88,7 @@ class _AddSmartCaptureMessageScreenState
                   maxLines: 8,
                   style: Theme.of(context).textTheme.bodyLarge,
                   decoration: InputDecoration(
-                    hintText:
-                        'Paste bank message here...\ne.g. Salary of SAR 8000 deposited',
+                    hintText: context.l10n.tr('paste_bank_message_hint'),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: AppRadii.card,
                       borderSide: BorderSide(color: tokens.colors.gold),
@@ -97,7 +97,7 @@ class _AddSmartCaptureMessageScreenState
                   ),
                   validator: (value) {
                     if (value == null || value.trim().isEmpty) {
-                      return 'Please paste a bank message to parse';
+                      return context.l10n.tr('paste_bank_message_required');
                     }
                     return null;
                   },
@@ -116,7 +116,7 @@ class _AddSmartCaptureMessageScreenState
                         ),
                         onPressed: () => Navigator.pop(context),
                         child: Text(
-                          'Cancel',
+                          context.l10n.tr('cancel'),
                           style: TextStyle(
                             color: tokens.colors.textSecondary,
                             fontSize: 16,
@@ -136,9 +136,10 @@ class _AddSmartCaptureMessageScreenState
                           ),
                         ),
                         onPressed: _submit,
-                        child: const Text(
-                          'Create Pending',
+                        child: Text(
+                          context.l10n.tr('create_pending'),
                           style: TextStyle(
+                            color: tokens.colors.hero,
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
                           ),

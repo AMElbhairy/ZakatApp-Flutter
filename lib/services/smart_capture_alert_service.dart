@@ -68,7 +68,7 @@ class PlatformSmartCaptureAlertService extends SmartCaptureAlertService {
 
   static const AndroidNotificationChannel _channel = AndroidNotificationChannel(
     'smart_capture_pending_review',
-    'Smart Capture review',
+    'Capture Review',
     description: 'Alerts when a captured transaction needs approval.',
     importance: Importance.high,
   );
@@ -158,7 +158,9 @@ class PlatformSmartCaptureAlertService extends SmartCaptureAlertService {
   }) async {
     await initialize();
 
-    final String rawType = pendingTransaction.suggestedType.trim().toLowerCase();
+    final String rawType = pendingTransaction.suggestedType
+        .trim()
+        .toLowerCase();
     final String title = switch (rawType) {
       'income' => 'Pending Income',
       'expense' => 'Pending Expense',
@@ -170,7 +172,8 @@ class PlatformSmartCaptureAlertService extends SmartCaptureAlertService {
         ? '${pendingTransaction.suggestedCurrency ?? 'EGP'} ${pendingTransaction.suggestedAmount!.toStringAsFixed(2)}'
         : 'Amount not captured';
 
-    final String body = pendingTransaction.merchantName?.trim().isNotEmpty == true
+    final String body =
+        pendingTransaction.merchantName?.trim().isNotEmpty == true
         ? '${pendingTransaction.merchantName!.trim()}: $amountStr'
         : amountStr;
 

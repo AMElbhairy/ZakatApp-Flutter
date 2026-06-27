@@ -4,9 +4,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/i18n/app_localizations.dart';
+import '../core/motion/app_motion.dart';
 import '../core/theme/app_icons.dart';
 import '../core/theme/app_radii.dart';
+import '../core/theme/app_colors.dart';
 import '../core/theme/app_theme_extensions.dart';
+import '../core/theme/app_typography.dart';
 import '../core/widgets/app_ui.dart';
 
 import 'account/account_screen.dart';
@@ -134,6 +137,7 @@ class _AppShellState extends State<AppShell> {
 
     final double navTouchBlockHeight = 90 + bottomInset;
     final bool allowEdgeSwipe = defaultTargetPlatform == TargetPlatform.iOS;
+    final String family = AppTypography.familyFor(Localizations.localeOf(context));
     return PopScope<void>(
       canPop: _index == 2,
       onPopInvokedWithResult: (bool didPop, void _) {
@@ -150,7 +154,16 @@ class _AppShellState extends State<AppShell> {
           children: <Widget>[
             SafeArea(
               bottom: false,
-              child: IndexedStack(index: _index, children: tabs),
+              child: Stack(
+                fit: StackFit.expand,
+                children: <Widget>[
+                  for (int index = 0; index < tabs.length; index++)
+                    _AnimatedShellPage(
+                      selected: _index == index,
+                      child: tabs[index],
+                    ),
+                ],
+              ),
             ),
             if (allowEdgeSwipe && _index != 2)
               PositionedDirectional(
@@ -256,28 +269,26 @@ class _AppShellState extends State<AppShell> {
                               horizontal: 8,
                               vertical: 4,
                             ),
-                            decoration: BoxDecoration(
-                              borderRadius: AppRadii.pill,
-                              color: const Color(0xFF02201A),
-                              border: Border.all(
-                                color: const Color(
-                                  0xFFC5A059,
-                                ).withValues(alpha: 0.30),
+                          decoration: BoxDecoration(
+                            borderRadius: AppRadii.pill,
+                            color: AppColors.emeraldCore,
+                            border: Border.all(
+                              color: AppColors.goldMuted.withValues(
+                                alpha: 0.30,
                               ),
-                              boxShadow: <BoxShadow>[
-                                BoxShadow(
-                                  color: const Color(
-                                    0xFFD4AF37,
-                                  ).withValues(alpha: 0.12),
-                                  blurRadius: 10,
-                                  spreadRadius: 0.5,
-                                  offset: const Offset(0, 1),
-                                ),
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.12),
-                                  blurRadius: 12,
-                                  offset: const Offset(0, 4),
-                                ),
+                            ),
+                            boxShadow: <BoxShadow>[
+                              BoxShadow(
+                                color: AppColors.gold.withValues(alpha: 0.12),
+                                blurRadius: 10,
+                                spreadRadius: 0.5,
+                                offset: const Offset(0, 1),
+                              ),
+                              BoxShadow(
+                                color: AppColors.black.withValues(alpha: 0.12),
+                                blurRadius: 12,
+                                offset: const Offset(0, 4),
+                              ),
                               ],
                             ),
                             child: Row(
@@ -309,10 +320,9 @@ class _AppShellState extends State<AppShell> {
                                                               BoxShape.circle,
                                                           boxShadow: <BoxShadow>[
                                                             BoxShadow(
-                                                              color:
-                                                                  const Color(
-                                                                    0xFFD4AF37,
-                                                                  ).withValues(
+                                                              color: AppColors
+                                                                  .gold
+                                                                  .withValues(
                                                                     alpha: 0.18,
                                                                   ),
                                                               blurRadius: 8,
@@ -325,12 +335,8 @@ class _AppShellState extends State<AppShell> {
                                                     item.icon,
                                                     size: 18,
                                                     color: selected
-                                                        ? const Color(
-                                                            0xFFD4AF37,
-                                                          )
-                                                        : const Color(
-                                                            0xFFA3B8B5,
-                                                          ),
+                                                        ? AppColors.gold
+                                                        : AppColors.slateMuted,
                                                   ),
                                                 ),
                                                 const SizedBox(height: 2),
@@ -339,31 +345,28 @@ class _AppShellState extends State<AppShell> {
                                                   maxLines: 1,
                                                   overflow:
                                                       TextOverflow.ellipsis,
-                                                  style: Theme.of(context)
-                                                      .textTheme
-                                                      .labelSmall
-                                                      ?.copyWith(
-                                                        fontSize: 10.5,
-                                                        fontWeight: selected
-                                                            ? FontWeight.w700
-                                                            : FontWeight.w500,
+                                                  style: AppTypography
+                                                      .navigationLabelCompact(
                                                         color: selected
-                                                            ? const Color(
-                                                                0xFFD4AF37,
-                                                              )
-                                                            : const Color(
-                                                                0xFFA3B8B5,
-                                                              ),
+                                                            ? AppColors.gold
+                                                            : AppColors
+                                                                .slateMuted,
+                                                        family:
+                                                            family,
+                                                        fallbackFamily:
+                                                            AppTypography
+                                                                .arabicFamily,
+                                                      ).copyWith(
                                                         shadows: selected
                                                             ? <Shadow>[
                                                                 Shadow(
                                                                   color:
-                                                                      const Color(
-                                                                        0xFFD4AF37,
-                                                                      ).withValues(
-                                                                        alpha:
-                                                                            0.28,
-                                                                      ),
+                                                                      AppColors
+                                                                          .gold
+                                                                          .withValues(
+                                                                            alpha:
+                                                                                0.28,
+                                                                          ),
                                                                   blurRadius: 8,
                                                                 ),
                                                               ]
@@ -410,12 +413,12 @@ class _AppShellState extends State<AppShell> {
                   child: FloatingActionButton(
                     key: const Key('addEntryFab'),
                     onPressed: () => _showAddActions(context),
-                    backgroundColor: const Color(0xFF012E26),
-                    foregroundColor: const Color(0xFFD4AF37),
+                    backgroundColor: AppColors.deepEmerald,
+                    foregroundColor: AppColors.gold,
                     elevation: 0,
                     shape: CircleBorder(
                       side: BorderSide(
-                        color: const Color(0xFFC5A059).withValues(alpha: 0.45),
+                        color: AppColors.goldMuted.withValues(alpha: 0.45),
                         width: 1.2,
                       ),
                     ),
@@ -424,7 +427,7 @@ class _AppShellState extends State<AppShell> {
                         shape: BoxShape.circle,
                         boxShadow: <BoxShadow>[
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.22),
+                            color: AppColors.black.withValues(alpha: 0.22),
                             blurRadius: 10,
                             offset: const Offset(0, 4),
                           ),
@@ -448,28 +451,29 @@ class _AppShellState extends State<AppShell> {
     required double width,
     required double height,
   }) {
+    final String family = AppTypography.familyFor(Localizations.localeOf(context));
     return Container(
       width: width,
       height: height,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(23),
-        color: const Color(0xFF012E26),
+        color: AppColors.deepEmerald,
         border: Border.all(
           color: selected
-              ? const Color(0xFFC5A059)
-              : const Color(0xFF0B4A43).withValues(alpha: 0.85),
+              ? AppColors.goldMuted
+              : AppColors.deepTeal.withValues(alpha: 0.85),
           width: 1.0,
         ),
         boxShadow: <BoxShadow>[
           if (selected)
             BoxShadow(
-              color: const Color(0xFFD4AF37).withValues(alpha: 0.22),
+              color: AppColors.gold.withValues(alpha: 0.22),
               blurRadius: 12,
               spreadRadius: 1.0,
               offset: const Offset(0, 1),
             ),
           BoxShadow(
-            color: Colors.black.withValues(alpha: selected ? 0.25 : 0.12),
+            color: AppColors.black.withValues(alpha: selected ? 0.25 : 0.12),
             blurRadius: selected ? 8 : 6,
             offset: const Offset(0, 3),
           ),
@@ -484,7 +488,7 @@ class _AppShellState extends State<AppShell> {
                     shape: BoxShape.circle,
                     boxShadow: <BoxShadow>[
                       BoxShadow(
-                        color: const Color(0xFFD4AF37).withValues(alpha: 0.12),
+                        color: AppColors.gold.withValues(alpha: 0.12),
                         blurRadius: 6,
                         spreadRadius: 0.15,
                       ),
@@ -494,8 +498,8 @@ class _AppShellState extends State<AppShell> {
             child: Icon(
               item.icon,
               color: selected
-                  ? const Color(0xFFD4AF37)
-                  : const Color(0xFFA3B8B5),
+                  ? AppColors.gold
+                  : AppColors.slateMuted,
               size: 23,
             ),
           ),
@@ -504,16 +508,15 @@ class _AppShellState extends State<AppShell> {
             item.label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              fontSize: 10.5,
-              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-              color: selected
-                  ? const Color(0xFFD4AF37)
-                  : const Color(0xFFA3B8B5),
+            style: AppTypography.navigationLabelCompact(
+              color: selected ? AppColors.gold : AppColors.slateMuted,
+              family: family,
+              fallbackFamily: AppTypography.arabicFamily,
+            ).copyWith(
               shadows: selected
                   ? <Shadow>[
                       Shadow(
-                        color: const Color(0xFFD4AF37).withValues(alpha: 0.18),
+                        color: AppColors.gold.withValues(alpha: 0.18),
                         blurRadius: 5,
                       ),
                     ]
@@ -704,6 +707,41 @@ class _AppShellState extends State<AppShell> {
           ),
         );
       },
+    );
+  }
+}
+
+class _AnimatedShellPage extends StatelessWidget {
+  const _AnimatedShellPage({required this.selected, required this.child});
+
+  final bool selected;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (AppMotion.reduceMotion(context)) {
+      return Offstage(
+        offstage: !selected,
+        child: IgnorePointer(ignoring: !selected, child: child),
+      );
+    }
+
+    return Offstage(
+      offstage: !selected,
+      child: IgnorePointer(
+        ignoring: !selected,
+        child: AnimatedOpacity(
+          opacity: selected ? 1 : 0,
+          duration: AppMotion.pageDuration,
+          curve: AppMotion.curve,
+          child: AnimatedSlide(
+            offset: selected ? Offset.zero : const Offset(0.03, 0),
+            duration: AppMotion.pageDuration,
+            curve: AppMotion.curve,
+            child: child,
+          ),
+        ),
+      ),
     );
   }
 }

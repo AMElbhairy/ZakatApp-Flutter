@@ -196,12 +196,15 @@ void main() {
     await _setDropdownString(
       tester,
       fieldKey: const Key('settingsMainCurrencyField'),
-      value: CurrencyPresentation.label('SAR'),
+      value: CurrencyPresentation.selectorLabel('SAR', isRtl: false),
     );
 
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
-    expect(find.text(CurrencyPresentation.label('SAR')), findsWidgets);
+    expect(
+      find.text(CurrencyPresentation.selectorLabel('SAR', isRtl: false)),
+      findsWidgets,
+    );
   });
 
   testWidgets('update default entry currency persists', (
@@ -214,12 +217,15 @@ void main() {
     await _setDropdownString(
       tester,
       fieldKey: const Key('settingsDefaultEntryCurrencyField'),
-      value: CurrencyPresentation.label('USD'),
+      value: CurrencyPresentation.selectorLabel('USD', isRtl: false),
     );
 
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
-    expect(find.text(CurrencyPresentation.label('USD')), findsWidgets);
+    expect(
+      find.text(CurrencyPresentation.selectorLabel('USD', isRtl: false)),
+      findsWidgets,
+    );
   });
 
   testWidgets('update theme mode persists', (WidgetTester tester) async {
@@ -311,12 +317,12 @@ void main() {
     await _setDropdownString(
       tester,
       fieldKey: const Key('settingsMainCurrencyField'),
-      value: CurrencyPresentation.label('QAR'),
+      value: CurrencyPresentation.selectorLabel('QAR', isRtl: false),
     );
     await _setDropdownString(
       tester,
       fieldKey: const Key('settingsDefaultEntryCurrencyField'),
-      value: CurrencyPresentation.label('AED'),
+      value: CurrencyPresentation.selectorLabel('AED', isRtl: false),
     );
     await _setDropdownString(
       tester,
@@ -350,7 +356,7 @@ void main() {
     await tester.tap(find.byKey(const Key('viewAllMarketSnapshotButton')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Market Data'), findsOneWidget);
+    expect(find.text('Market Snapshot'), findsOneWidget);
     expect(find.text('Read only'), findsOneWidget);
   });
 
