@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:io' show Platform;
 import 'package:intl/intl.dart';
 
 import '../../models/investment_asset.dart';
@@ -167,7 +168,7 @@ class ZakatEngineService {
       case 'USD':
         return r'$';
       case 'SAR':
-        return '⃁';
+        return Platform.isAndroid ? 'SAR' : '⃁';
       case 'EUR':
         return '€';
       case 'GBP':

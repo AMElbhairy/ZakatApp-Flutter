@@ -2156,126 +2156,226 @@ class _SettingsProfileHeader extends StatelessWidget {
     final String displayName = (name ?? '').trim().isEmpty
         ? 'Zakah Wealth'
         : name!.trim();
+    final String emailValue = (email ?? '').trim();
     final String initial = displayName.characters.first.toUpperCase();
 
-    return Container(
-      key: const Key('settingsProfileHeader'),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: <Color>[AppColors.emeraldSoft, AppColors.backgroundHeroDark],
-        ),
-        boxShadow: <BoxShadow>[
-          BoxShadow(
-            color: AppColors.emeraldSoft.withValues(alpha: 0.22),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Row(
-        children: <Widget>[
-          CircleAvatar(
-            radius: 32,
-            backgroundColor: AppColors.gold,
-            backgroundImage: (photoUrl != null && photoUrl!.trim().isNotEmpty)
-                ? NetworkImage(photoUrl!)
-                : null,
-            child: (photoUrl != null && photoUrl!.trim().isNotEmpty)
-                ? null
-                : Text(
-                    initial,
-                    style: const TextStyle(
-                      color: AppColors.emeraldSoft,
-                      fontSize: 24,
-                      fontWeight: FontWeight.w900,
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool compact = constraints.maxWidth < 420;
+        final Widget actionButton = SizedBox(
+          width: compact ? double.infinity : null,
+          height: 36,
+          child: connected
+              ? OutlinedButton.icon(
+                  key: const Key('googleSignOutButton'),
+                  onPressed: isLoading ? null : onSignOut,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.white,
+                    side: BorderSide(
+                      color: AppColors.white.withValues(alpha: 0.24),
                     ),
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
                   ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: <Widget>[
-                Text(
-                  displayName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppColors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
+                  icon: const Icon(Icons.logout_rounded, size: 16),
+                  label: const Text('Sign Out'),
+                )
+              : FilledButton.icon(
+                  key: const Key('googleSignInButton'),
+                  onPressed: isLoading ? null : onSignIn,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.gold,
+                    foregroundColor: AppColors.emeraldSoft,
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
                   ),
+                  icon: const Icon(Icons.login_rounded, size: 16),
+                  label: const Text('Sign in with Google'),
                 ),
-                if ((email ?? '').trim().isNotEmpty) ...<Widget>[
-                  const SizedBox(height: 2),
-                  Text(
-                    email!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: AppColors.white.withValues(alpha: 0.70),
-                      fontSize: 11.5,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: <Widget>[
-                    _ProfileChip(
-                      icon: connected ? Icons.check_circle_outline : Icons.link,
-                      label: 'Google Connected',
-                      active: connected,
-                    ),
-                    _ProfileChip(
-                      icon: backupEnabled
-                          ? Icons.cloud_done_outlined
-                          : Icons.cloud_off_outlined,
-                      label: 'Backup Enabled',
-                      active: backupEnabled,
-                    ),
-                  ],
-                ),
+        );
+
+        return Container(
+          key: const Key('settingsProfileHeader'),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(24),
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: <Color>[
+                AppColors.emeraldSoft,
+                AppColors.backgroundHeroDark,
               ],
             ),
+            boxShadow: <BoxShadow>[
+              BoxShadow(
+                color: AppColors.emeraldSoft.withValues(alpha: 0.22),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+            ],
           ),
-          const SizedBox(width: 10),
-          SizedBox(
-            height: 36,
-            child: connected
-                ? OutlinedButton.icon(
-                    key: const Key('googleSignOutButton'),
-                    onPressed: isLoading ? null : onSignOut,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.white,
-                      side: BorderSide(
-                        color: AppColors.white.withValues(alpha: 0.24),
-                      ),
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: compact
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: <Widget>[
+                        CircleAvatar(
+                          radius: 28,
+                          backgroundColor: AppColors.gold,
+                          backgroundImage:
+                              (photoUrl != null && photoUrl!.trim().isNotEmpty)
+                              ? NetworkImage(photoUrl!)
+                              : null,
+                          child:
+                              (photoUrl != null && photoUrl!.trim().isNotEmpty)
+                              ? null
+                              : Text(
+                                  initial,
+                                  style: const TextStyle(
+                                    color: AppColors.emeraldSoft,
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Text(
+                                displayName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: AppColors.white,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              if (emailValue.isNotEmpty) ...<Widget>[
+                                const SizedBox(height: 2),
+                                Text(
+                                  emailValue,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: AppColors.white.withValues(
+                                      alpha: 0.70,
+                                    ),
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
-                    icon: const Icon(Icons.logout_rounded, size: 16),
-                    label: const Text('Sign Out'),
-                  )
-                : FilledButton.icon(
-                    key: const Key('googleSignInButton'),
-                    onPressed: isLoading ? null : onSignIn,
-                    style: FilledButton.styleFrom(
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: <Widget>[
+                        _ProfileChip(
+                          icon: connected
+                              ? Icons.check_circle_outline
+                              : Icons.link,
+                          label: 'Google Connected',
+                          active: connected,
+                        ),
+                        _ProfileChip(
+                          icon: backupEnabled
+                              ? Icons.cloud_done_outlined
+                              : Icons.cloud_off_outlined,
+                          label: 'Backup Enabled',
+                          active: backupEnabled,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    actionButton,
+                  ],
+                )
+              : Row(
+                  children: <Widget>[
+                    CircleAvatar(
+                      radius: 32,
                       backgroundColor: AppColors.gold,
-                      foregroundColor: AppColors.emeraldSoft,
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      backgroundImage:
+                          (photoUrl != null && photoUrl!.trim().isNotEmpty)
+                          ? NetworkImage(photoUrl!)
+                          : null,
+                      child: (photoUrl != null && photoUrl!.trim().isNotEmpty)
+                          ? null
+                          : Text(
+                              initial,
+                              style: const TextStyle(
+                                color: AppColors.emeraldSoft,
+                                fontSize: 24,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
                     ),
-                    icon: const Icon(Icons.login_rounded, size: 16),
-                    label: const Text('Sign in with Google'),
-                  ),
-          ),
-        ],
-      ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: <Widget>[
+                          Text(
+                            displayName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppColors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          if (emailValue.isNotEmpty) ...<Widget>[
+                            const SizedBox(height: 2),
+                            Text(
+                              emailValue,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: AppColors.white.withValues(alpha: 0.70),
+                                fontSize: 11.5,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: <Widget>[
+                              _ProfileChip(
+                                icon: connected
+                                    ? Icons.check_circle_outline
+                                    : Icons.link,
+                                label: 'Google Connected',
+                                active: connected,
+                              ),
+                              _ProfileChip(
+                                icon: backupEnabled
+                                    ? Icons.cloud_done_outlined
+                                    : Icons.cloud_off_outlined,
+                                label: 'Backup Enabled',
+                                active: backupEnabled,
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    actionButton,
+                  ],
+                ),
+        );
+      },
     );
   }
 }

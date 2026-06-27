@@ -984,7 +984,6 @@ class _AssetsHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final tokens = context.premiumTokens;
     final textTheme = Theme.of(context).textTheme;
-
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: <Widget>[

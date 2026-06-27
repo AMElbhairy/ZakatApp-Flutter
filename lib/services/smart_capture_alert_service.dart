@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_app_badger/flutter_app_badger.dart';
 import 'package:provider/provider.dart';
@@ -64,6 +65,7 @@ class PlatformSmartCaptureAlertService extends SmartCaptureAlertService {
   final FlutterLocalNotificationsPlugin _notifications;
   GlobalKey<NavigatorState>? _navigatorKey;
   bool _initialized = false;
+  bool _notificationsAvailable = false;
   String? _queuedPendingTransactionId;
 
   static const AndroidNotificationChannel _channel = AndroidNotificationChannel(
@@ -82,41 +84,52 @@ class PlatformSmartCaptureAlertService extends SmartCaptureAlertService {
   Future<void> initialize() async {
     if (_initialized) return;
 
-    const AndroidInitializationSettings android = AndroidInitializationSettings(
-      'launcher_icon',
-    );
-    const DarwinInitializationSettings darwin = DarwinInitializationSettings(
-      requestAlertPermission: false,
-      requestBadgePermission: false,
-      requestSoundPermission: false,
-    );
-    const InitializationSettings settings = InitializationSettings(
-      android: android,
-      iOS: darwin,
-      macOS: darwin,
-    );
+    try {
+      const AndroidInitializationSettings android =
+          AndroidInitializationSettings('app_icon');
+      const DarwinInitializationSettings darwin = DarwinInitializationSettings(
+        requestAlertPermission: false,
+        requestBadgePermission: false,
+        requestSoundPermission: false,
+      );
+      const InitializationSettings settings = InitializationSettings(
+        android: android,
+        iOS: darwin,
+        macOS: darwin,
+      );
 
-    await _notifications.initialize(
-      settings: settings,
-      onDidReceiveNotificationResponse: handleNotificationResponse,
-    );
-    final AndroidFlutterLocalNotificationsPlugin? androidPlugin = _notifications
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >();
-    await androidPlugin?.createNotificationChannel(_channel);
-    _initialized = true;
+      await _notifications.initialize(
+        settings: settings,
+        onDidReceiveNotificationResponse: handleNotificationResponse,
+      );
+      final AndroidFlutterLocalNotificationsPlugin? androidPlugin =
+          _notifications.resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
+      await androidPlugin?.createNotificationChannel(_channel);
+      _notificationsAvailable = true;
 
-    final NotificationAppLaunchDetails? launchDetails = await _notifications
-        .getNotificationAppLaunchDetails();
-    if (launchDetails?.didNotificationLaunchApp == true) {
-      final NotificationResponse? response =
-          launchDetails?.notificationResponse;
-      if (response != null) {
-        await handleNotificationResponse(response);
+      final NotificationAppLaunchDetails? launchDetails = await _notifications
+          .getNotificationAppLaunchDetails();
+      if (launchDetails?.didNotificationLaunchApp == true) {
+        final NotificationResponse? response =
+            launchDetails?.notificationResponse;
+        if (response != null) {
+          await handleNotificationResponse(response);
+        }
       }
+      await flushPendingNotificationLaunch();
+    } on PlatformException catch (error, stackTrace) {
+      debugPrint('SmartCaptureAlertService initialize failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      _notificationsAvailable = false;
+    } catch (error, stackTrace) {
+      debugPrint('SmartCaptureAlertService initialize failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      _notificationsAvailable = false;
+    } finally {
+      _initialized = true;
     }
-    await flushPendingNotificationLaunch();
   }
 
   @override
@@ -157,6 +170,7 @@ class PlatformSmartCaptureAlertService extends SmartCaptureAlertService {
     required int pendingReviewCount,
   }) async {
     await initialize();
+    if (!_notificationsAvailable) return;
 
     final String rawType = pendingTransaction.suggestedType
         .trim()
@@ -185,7 +199,7 @@ class PlatformSmartCaptureAlertService extends SmartCaptureAlertService {
         importance: Importance.high,
         priority: Priority.high,
         category: AndroidNotificationCategory.reminder,
-        icon: 'launcher_icon',
+        icon: 'app_icon',
       ),
       iOS: const DarwinNotificationDetails(
         presentAlert: true,

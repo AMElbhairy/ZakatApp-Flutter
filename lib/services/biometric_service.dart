@@ -29,7 +29,9 @@ class BiometricService {
     try {
       final bool canCheck = await _auth.canCheckBiometrics;
       final bool isSupported = await _auth.isDeviceSupported();
-      return canCheck || isSupported;
+      final List<BiometricType> availableBiometrics = await _auth
+          .getAvailableBiometrics();
+      return availableBiometrics.isNotEmpty || (canCheck && isSupported);
     } catch (_) {
       return false;
     }
@@ -47,7 +49,9 @@ class BiometricService {
         }
         return 'Face ID / Touch ID';
       } else {
-        if (types.contains(BiometricType.fingerprint) || types.contains(BiometricType.weak) || types.contains(BiometricType.strong)) {
+        if (types.contains(BiometricType.fingerprint) ||
+            types.contains(BiometricType.weak) ||
+            types.contains(BiometricType.strong)) {
           return 'Fingerprint';
         } else if (types.contains(BiometricType.face)) {
           return 'Face Unlock';

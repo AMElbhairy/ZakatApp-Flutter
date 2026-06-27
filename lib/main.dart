@@ -77,7 +77,12 @@ Future<void> main() async {
       ? const NoopSmartCaptureAlertService()
       : PlatformSmartCaptureAlertService();
   smartCaptureAlertService.attachNavigatorKey(navigatorKey);
-  await smartCaptureAlertService.initialize();
+  try {
+    await smartCaptureAlertService.initialize();
+  } catch (error, stackTrace) {
+    debugPrint('Smart capture alert init skipped: $error');
+    debugPrintStack(stackTrace: stackTrace);
+  }
   final localDatabase = localDatabaseProvider();
   final AppStateRepository repository = AppStateRepository(
     localStorage: localStorage,
