@@ -305,19 +305,19 @@ class CategoryVisuals {
 
   static const Map<String, CategoryVisual> _defaultExpenseVisuals =
       <String, CategoryVisual>{
-        'food & dining': CategoryVisual(iconKey: 'food', colorValue: 0xFFEA580C),
+        'food & dining': CategoryVisual(iconKey: 'food', colorValue: 0xFF0F766E),
         'groceries': CategoryVisual(iconKey: 'groceries', colorValue: 0xFF16A34A),
         'housing & rent': CategoryVisual(iconKey: 'rent', colorValue: 0xFF0EA5E9),
         'utilities': CategoryVisual(iconKey: 'utilities', colorValue: 0xFF2563EB),
         'internet & phone': CategoryVisual(iconKey: 'phone', colorValue: 0xFF7C3AED),
         'transportation': CategoryVisual(iconKey: 'car', colorValue: 0xFF0F766E),
-        'fuel & parking': CategoryVisual(iconKey: 'fuel', colorValue: 0xFFEA580C),
-        'healthcare': CategoryVisual(iconKey: 'health', colorValue: 0xFFDC2626),
+        'fuel & parking': CategoryVisual(iconKey: 'fuel', colorValue: 0xFFF59E0B),
+        'healthcare': CategoryVisual(iconKey: 'health', colorValue: 0xFF8E6A4B),
         'education': CategoryVisual(iconKey: 'education', colorValue: 0xFF2563EB),
         'clothing & apparel': CategoryVisual(iconKey: 'clothing', colorValue: 0xFF7C3AED),
         'entertainment': CategoryVisual(iconKey: 'entertainment', colorValue: 0xFFF97316),
         'travel': CategoryVisual(iconKey: 'travel', colorValue: 0xFF0EA5E9),
-        'shopping': CategoryVisual(iconKey: 'shopping', colorValue: 0xFFDC2626),
+        'shopping': CategoryVisual(iconKey: 'shopping', colorValue: 0xFFF97316),
         'home maintenance': CategoryVisual(iconKey: 'home', colorValue: 0xFF64748B),
         'insurance': CategoryVisual(iconKey: 'insurance', colorValue: 0xFF0F766E),
         'charitable giving': CategoryVisual(iconKey: 'charity', colorValue: 0xFFC8A75B),
@@ -327,9 +327,29 @@ class CategoryVisuals {
           iconKey: 'subscription',
           colorValue: 0xFF7C3AED,
         ),
-        'loan payment': CategoryVisual(iconKey: 'bank', colorValue: 0xFF64748B),
+        'subscription': CategoryVisual(
+          iconKey: 'subscription',
+          colorValue: 0xFF7C3AED,
+        ),
+        'loan payment': CategoryVisual(iconKey: 'bank', colorValue: 0xFF2563EB),
+        'loan': CategoryVisual(iconKey: 'bank', colorValue: 0xFF2563EB),
+        'investment': CategoryVisual(iconKey: 'investment', colorValue: 0xFFDC2626),
         'other': CategoryVisual(iconKey: 'wallet', colorValue: 0xFF94A3B8),
       };
+
+  static const List<CategoryVisual> _expenseFallbackVisuals =
+      <CategoryVisual>[
+        CategoryVisual(iconKey: 'expense', colorValue: 0xFF0F766E),
+        CategoryVisual(iconKey: 'expense', colorValue: 0xFFF97316),
+        CategoryVisual(iconKey: 'expense', colorValue: 0xFF2563EB),
+        CategoryVisual(iconKey: 'expense', colorValue: 0xFF7C3AED),
+        CategoryVisual(iconKey: 'expense', colorValue: 0xFFC8A75B),
+        CategoryVisual(iconKey: 'expense', colorValue: 0xFF0EA5E9),
+        CategoryVisual(iconKey: 'expense', colorValue: 0xFF64748B),
+        CategoryVisual(iconKey: 'expense', colorValue: 0xFFF59E0B),
+        CategoryVisual(iconKey: 'expense', colorValue: 0xFF22C55E),
+        CategoryVisual(iconKey: 'expense', colorValue: 0xFF06B6D4),
+      ];
 
   static IconData iconForKey(String? key) {
     final String clean = key?.trim().toLowerCase() ?? '';
@@ -359,13 +379,10 @@ class CategoryVisuals {
         ? neutralFallback
         : (income
               ? const CategoryVisual(
-              iconKey: 'income',
-              colorValue: 0xFF047857,
+                  iconKey: 'income',
+                  colorValue: 0xFF047857,
                 )
-              : const CategoryVisual(
-                  iconKey: 'expense',
-                  colorValue: 0xFFDC2626,
-                ));
+              : _fallbackExpenseVisual(cleanName));
     return CategoryVisual(
       iconKey: custom?.iconKey ?? defaults?.iconKey ?? fallback.iconKey,
       colorValue: custom?.colorValue ?? defaults?.colorValue ?? fallback.colorValue,
@@ -391,6 +408,17 @@ class CategoryVisuals {
     required Color color,
   }) {
     return CategoryVisual(iconKey: iconKey, colorValue: color.toARGB32());
+  }
+
+  static CategoryVisual _fallbackExpenseVisual(String name) {
+    if (name.trim().isEmpty) {
+      return const CategoryVisual(iconKey: 'expense', colorValue: 0xFF64748B);
+    }
+    final int index = name.runes.fold<int>(
+      0,
+      (int hash, int codePoint) => (hash * 31 + codePoint) & 0x7fffffff,
+    );
+    return _expenseFallbackVisuals[index % _expenseFallbackVisuals.length];
   }
 }
 

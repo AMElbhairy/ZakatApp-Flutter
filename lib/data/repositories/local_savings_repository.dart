@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 
 abstract class SavingsLocalStore {
   Future<List<Saving>> getActiveSavings();
+  Future<int> countActiveSavings();
   Stream<List<Saving>> watchActiveSavings();
   Future<void> replaceAllForLocalMirror(Iterable<Saving> savings);
   Future<void> saveSaving(
@@ -45,6 +46,11 @@ class LocalSavingsRepository implements SavingsLocalStore {
   @override
   Future<List<Saving>> getActiveSavings() {
     return _savingsDao.getActiveSavings();
+  }
+
+  @override
+  Future<int> countActiveSavings() {
+    return _savingsDao.countActiveSavings();
   }
 
   @override

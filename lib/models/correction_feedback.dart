@@ -1,3 +1,5 @@
+import '../core/utils/amount_parser.dart';
+
 class CorrectionFeedback {
   const CorrectionFeedback({
     required this.id,
@@ -19,7 +21,7 @@ class CorrectionFeedback {
       fieldName: (json['fieldName'] ?? '').toString(),
       originalValue: (json['originalValue'] ?? '').toString(),
       correctedValue: (json['correctedValue'] ?? '').toString(),
-      createdAt: (json['createdAt'] ?? '').toString(),
+      createdAt: normalizeTimestampText(json['createdAt']?.toString()),
     );
   }
 

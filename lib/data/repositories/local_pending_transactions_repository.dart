@@ -31,6 +31,10 @@ class LocalPendingTransactionsRepository {
     return _pendingTransactionsDao.getActivePendingTransactions();
   }
 
+  Future<int> countActivePendingTransactions() {
+    return _pendingTransactionsDao.countActivePendingTransactions();
+  }
+
   Future<void> savePendingTransaction(
     PendingTransaction pending, {
     String? now,

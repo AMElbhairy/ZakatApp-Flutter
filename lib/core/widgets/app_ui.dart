@@ -59,7 +59,9 @@ class SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String family = AppTypography.familyFor(Localizations.localeOf(context));
+    final String family = AppTypography.familyFor(
+      Localizations.localeOf(context),
+    );
     return Padding(
       padding: EdgeInsets.only(bottom: bottomSpacing),
       child: Row(
@@ -67,10 +69,11 @@ class SectionHeader extends StatelessWidget {
           Text(
             title,
             style: AppTypography.sectionTitle(
-              color: Theme.of(context).textTheme.titleLarge?.color ??
+              color:
+                  Theme.of(context).textTheme.titleLarge?.color ??
                   Theme.of(context).colorScheme.onSurface,
               family: family,
-              fallbackFamily: AppTypography.arabicFamily,
+              fallbackFamily: AppTypography.englishFamily,
             ),
           ),
           if (trailing != null) ...<Widget>[const Spacer(), trailing!],
@@ -94,27 +97,31 @@ class MetricTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String family = AppTypography.familyFor(Localizations.localeOf(context));
+    final String family = AppTypography.familyFor(
+      Localizations.localeOf(context),
+    );
     return Row(
       children: <Widget>[
         Expanded(
           child: Text(
             label,
             style: AppTypography.tableCell(
-              color: Theme.of(context).textTheme.bodyMedium?.color ??
+              color:
+                  Theme.of(context).textTheme.bodyMedium?.color ??
                   Theme.of(context).colorScheme.onSurface,
               family: family,
-              fallbackFamily: AppTypography.arabicFamily,
+              fallbackFamily: AppTypography.englishFamily,
             ),
           ),
         ),
         Text(
           value,
           style: AppTypography.tableCell(
-            color: Theme.of(context).textTheme.bodyMedium?.color ??
+            color:
+                Theme.of(context).textTheme.bodyMedium?.color ??
                 Theme.of(context).colorScheme.onSurface,
             family: AppTypography.familyFor(Localizations.localeOf(context)),
-            fallbackFamily: AppTypography.arabicFamily,
+            fallbackFamily: AppTypography.englishFamily,
             bold: bold,
           ),
         ),
@@ -154,20 +161,22 @@ class EmptyStateCard extends StatelessWidget {
           Text(
             title,
             style: AppTypography.cardTitle(
-              color: Theme.of(context).textTheme.titleMedium?.color ??
+              color:
+                  Theme.of(context).textTheme.titleMedium?.color ??
                   Theme.of(context).colorScheme.onSurface,
               family: AppTypography.familyFor(Localizations.localeOf(context)),
-              fallbackFamily: AppTypography.arabicFamily,
+              fallbackFamily: AppTypography.englishFamily,
             ),
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
             message,
             style: AppTypography.body(
-              color: Theme.of(context).textTheme.bodyLarge?.color ??
+              color:
+                  Theme.of(context).textTheme.bodyLarge?.color ??
                   Theme.of(context).colorScheme.onSurface,
               family: AppTypography.familyFor(Localizations.localeOf(context)),
-              fallbackFamily: AppTypography.arabicFamily,
+              fallbackFamily: AppTypography.englishFamily,
             ),
           ),
           if (action != null) ...<Widget>[
@@ -199,13 +208,13 @@ class AppPrimaryButton extends StatelessWidget {
         enabled: onPressed != null,
         child: FilledButton(
           onPressed: onPressed,
-          style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+          style: FilledButton.styleFrom(minimumSize: const Size(0, 52)),
           child: Text(
             label,
             style: AppTypography.button(
               color: Theme.of(context).colorScheme.onPrimary,
               family: AppTypography.familyFor(Localizations.localeOf(context)),
-              fallbackFamily: AppTypography.arabicFamily,
+              fallbackFamily: AppTypography.englishFamily,
             ),
           ),
         ),
@@ -223,7 +232,7 @@ class AppPrimaryButton extends StatelessWidget {
           style: AppTypography.button(
             color: Theme.of(context).colorScheme.onPrimary,
             family: AppTypography.familyFor(Localizations.localeOf(context)),
-            fallbackFamily: AppTypography.arabicFamily,
+            fallbackFamily: AppTypography.englishFamily,
           ),
         ),
       ),
@@ -469,7 +478,9 @@ class _TopToastWidgetState extends State<_TopToastWidget>
                   border: Border.all(color: borderColor, width: 1.0),
                   boxShadow: [
                     BoxShadow(
-                      color: AppColors.black.withValues(alpha: dark ? 0.34 : 0.08),
+                      color: AppColors.black.withValues(
+                        alpha: dark ? 0.34 : 0.08,
+                      ),
                       blurRadius: 16,
                       offset: const Offset(0, 4),
                     ),
@@ -497,7 +508,7 @@ class _TopToastWidgetState extends State<_TopToastWidget>
                           family: AppTypography.familyFor(
                             Localizations.localeOf(context),
                           ),
-                          fallbackFamily: AppTypography.arabicFamily,
+                          fallbackFamily: AppTypography.englishFamily,
                         ),
                       ),
                     ),

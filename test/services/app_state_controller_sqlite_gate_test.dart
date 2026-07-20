@@ -75,6 +75,11 @@ class _FakeTransactionsLocalStore implements TransactionsLocalStore {
     deleteCalls += 1;
     transactions.removeWhere((model.Transaction tx) => tx.id == id);
   }
+
+  @override
+  Future<int> countActiveTransactions() async {
+    return transactions.length;
+  }
 }
 
 void main() {

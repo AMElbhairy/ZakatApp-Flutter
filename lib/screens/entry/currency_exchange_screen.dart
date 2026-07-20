@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../widgets/sensitive_content_scope.dart';
 
 import '../../core/i18n/app_localizations.dart';
 import '../../core/services/zakat_engine.dart';
@@ -99,7 +100,8 @@ class _CurrencyExchangeScreenState extends State<CurrencyExchangeScreen> {
         ? _editRequest!.sourceAmount
         : 0.0);
 
-    return Scaffold(
+    return SensitiveContentScope(
+      child: Scaffold(
       appBar: AppBar(
         title: Text(
           widget.isEditMode
@@ -292,7 +294,7 @@ class _CurrencyExchangeScreenState extends State<CurrencyExchangeScreen> {
           ),
         ),
       ),
-    );
+    ));
   }
 
   static String _dateIso(DateTime date) {

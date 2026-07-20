@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart';
 
+import '../../../core/utils/amount_parser.dart';
 import '../../../models/pending_transaction.dart' as model;
 import '../app_database.dart' as db;
 
@@ -72,7 +73,7 @@ class PendingTransactionsMapper {
 
   double? _nullableDouble(String? value) {
     if (value == null || value.isEmpty) return null;
-    return double.tryParse(value);
+    return tryParseAmount(value);
   }
 
   model.CaptureStatus _parseStatus(String value) {

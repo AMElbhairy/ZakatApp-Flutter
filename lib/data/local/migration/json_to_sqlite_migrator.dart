@@ -205,7 +205,8 @@ class JsonToSqliteMigrator {
       'biometric_restore_enabled': state.biometricRestoreEnabled,
       'biometric_auto_lock_delay': state.biometricAutoLockDelay,
       'smart_capture_enabled': state.smartCaptureEnabled,
-      'smart_capture_auto_approve_enabled': state.smartCaptureAutoApproveEnabled,
+      'smart_capture_auto_approve_enabled':
+          state.smartCaptureAutoApproveEnabled,
       'categories': state.categories.toJson(),
       'last_rollover': state.lastRollover,
       'merchant_aliases': state.merchantAliases,
@@ -220,7 +221,9 @@ class JsonToSqliteMigrator {
     };
   }
 
-  Map<String, dynamic> _sanitizeAiSettingsForSync(Map<String, dynamic> aiSettings) {
+  Map<String, dynamic> _sanitizeAiSettingsForSync(
+    Map<String, dynamic> aiSettings,
+  ) {
     final Map<String, dynamic> copy = Map<String, dynamic>.from(aiSettings);
     copy.remove('keys');
     return copy;

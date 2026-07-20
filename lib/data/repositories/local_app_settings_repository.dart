@@ -18,6 +18,8 @@ class LocalAppSettingsRepository {
   Future<Map<String, dynamic>> getAllSettings() =>
       _appSettingsDao.getAllSettings();
 
+  Future<int> countSettings() => _appSettingsDao.countSettings();
+
   Future<void> importSettings(Map<String, dynamic> values) =>
       _appSettingsDao.importSettings(values);
 }

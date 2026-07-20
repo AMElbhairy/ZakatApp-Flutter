@@ -1,3 +1,5 @@
+import '../core/utils/amount_parser.dart';
+
 class RecurringTransaction {
   const RecurringTransaction({
     required this.id,
@@ -40,10 +42,12 @@ class RecurringTransaction {
       description: (json['description'] ?? '').toString(),
       dayOfMonth: _asInt(json['dayOfMonth']),
       frequency: (json['frequency'] ?? '').toString(),
-      lastProcessed: json['lastProcessed']?.toString(),
+      lastProcessed: normalizeNullableDateText(
+        json['lastProcessed']?.toString(),
+      ),
       enabled: json['enabled'] == null ? true : _asBool(json['enabled']),
       skipMonth: (json['skipMonth'] ?? '').toString(),
-      createdAt: (json['createdAt'] ?? '').toString(),
+      createdAt: normalizeTimestampText(json['createdAt']?.toString()),
     );
   }
 
@@ -99,13 +103,13 @@ class RecurringTransaction {
 
   static double _asDouble(dynamic value) {
     if (value is num) return value.toDouble();
-    return double.tryParse(value?.toString() ?? '') ?? 0;
+    return tryParseAmount(value?.toString()) ?? 0;
   }
 
   static int _asInt(dynamic value) {
     if (value is int) return value;
     if (value is num) return value.toInt();
-    return int.tryParse(value?.toString() ?? '') ?? 0;
+    return int.tryParse(normalizeAmountText(value?.toString())) ?? 0;
   }
 
   static bool _asBool(dynamic value) {

@@ -6,11 +6,13 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../../core/i18n/app_localizations.dart';
+import '../../core/privacy/app_privacy.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/motion/app_motion.dart';
 import '../../core/widgets/app_ui.dart';
 import '../../core/widgets/compact_dropdown.dart';
 import '../../core/widgets/compact_selection_dialog.dart';
+import '../../core/widgets/responsive_layout.dart';
 import '../../models/market_snapshot.dart';
 import '../../core/utils/currency_presentation.dart';
 import 'categories_screen.dart';
@@ -27,9 +29,12 @@ import '../../services/account_deletion_service.dart';
 import '../../services/account_reauthentication_service.dart';
 import '../../services/auth_controller.dart';
 import '../../services/cloud_backup_controller.dart';
+import '../../services/android_sms_capture_service.dart';
+import '../../features/onboarding/android_smart_capture_setup_screen.dart';
 import '../../features/auth/auth_service.dart';
 import '../../services/biometric_service.dart';
 import '../../services/diagnostics_flags.dart';
+import '../../services/backup_restore_card.dart';
 
 class AccountScreen extends StatefulWidget {
   const AccountScreen({super.key});
@@ -75,15 +80,19 @@ class _AccountScreenState extends State<AccountScreen> {
     final String defaultEntryCurrency = state.defaultEntryCurrency.isEmpty
         ? 'EGP'
         : state.defaultEntryCurrency;
+    final String financialMonthCycle = state.financialMonthCycle == 'custom'
+        ? 'custom'
+        : 'calendar';
+    final int financialMonthStartDay = state.financialMonthStartDay.clamp(
+      1,
+      28,
+    );
     final String zakatMethod = state.zakatMethod == 'annual'
         ? 'annual'
         : 'hawl';
     final String zakatNisabBasis = ZakatEngineService.normalizeZakatNisabBasis(
       state.zakatNisabBasis,
     );
-    final String languagePreference = state.languagePreference == 'ar'
-        ? 'ar'
-        : 'en';
     final String themeMode = switch (state.themeMode) {
       'light' => 'light',
       'dark' => 'dark',
@@ -104,7 +113,12 @@ class _AccountScreenState extends State<AccountScreen> {
         SingleChildScrollView(
           controller:
               PrimaryScrollController.maybeOf(context) ?? _scrollController,
-          padding: EdgeInsets.fromLTRB(20, 16, 20, navSafeBottomPadding),
+          padding: EdgeInsets.fromLTRB(
+            ResponsiveLayout.compactHorizontalPadding(context, wide: 20),
+            16,
+            ResponsiveLayout.compactHorizontalPadding(context, wide: 20),
+            navSafeBottomPadding,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
@@ -132,12 +146,15 @@ class _AccountScreenState extends State<AccountScreen> {
                             await authController.signOut();
                             return;
                           }
-                          if (appStateController.state.biometricExportEnabled &&
+                          if ((appStateController.state.biometricLockEnabled ||
+                                  appStateController
+                                      .state
+                                      .biometricExportEnabled) &&
                               await BiometricService.canAuthenticate()) {
                             final bool
                             auth = await BiometricService.authenticate(
                               reason:
-                                  'Confirm identity to back up before signing out',
+                                  'Confirm identity to sign out and clear local data',
                               isSensitiveAction: true,
                             );
                             if (!auth) return;
@@ -164,6 +181,9 @@ class _AccountScreenState extends State<AccountScreen> {
                   onViewAll: () {
                     Navigator.of(context).push(
                       MaterialPageRoute<void>(
+                        settings: const AppPrivacyRouteSettings(
+                          privacy: ScreenPrivacyClassification.sensitive,
+                        ),
                         builder: (_) => const MarketSnapshotScreen(),
                       ),
                     );
@@ -179,6 +199,9 @@ class _AccountScreenState extends State<AccountScreen> {
                   onOpenDetails: () {
                     Navigator.of(context).push(
                       MaterialPageRoute<void>(
+                        settings: const AppPrivacyRouteSettings(
+                          privacy: ScreenPrivacyClassification.sensitive,
+                        ),
                         builder: (_) => const CloudBackupScreen(),
                       ),
                     );
@@ -192,6 +215,8 @@ class _AccountScreenState extends State<AccountScreen> {
                   supportedCurrencies: CurrencyPresentation.marketCurrencyCodes,
                   mainCurrency: mainCurrency,
                   defaultCurrency: defaultEntryCurrency,
+                  financialMonthCycle: financialMonthCycle,
+                  financialMonthStartDay: financialMonthStartDay,
                   zakatMethod: zakatMethod,
                   nisabBasis: zakatNisabBasis,
                   annualDate: annualDate,
@@ -204,6 +229,16 @@ class _AccountScreenState extends State<AccountScreen> {
                     context
                         .read<AppStateController>()
                         .updateDefaultEntryCurrency(value);
+                  },
+                  onFinancialMonthCycleChanged: (String value) {
+                    context
+                        .read<AppStateController>()
+                        .updateFinancialMonthCycle(value);
+                  },
+                  onFinancialMonthStartDayChanged: (int value) {
+                    context
+                        .read<AppStateController>()
+                        .updateFinancialMonthStartDay(value);
                   },
                   onZakatMethodChanged: (String value) {
                     context.read<AppStateController>().updateZakatMethod(value);
@@ -230,38 +265,34 @@ class _AccountScreenState extends State<AccountScreen> {
                       key: const Key('settingsLanguageTile'),
                       icon: Icons.language_outlined,
                       title: context.l10n.tr('language'),
-                      subtitle: languagePreference == 'ar'
-                          ? 'العربية'
-                          : 'English',
+                      subtitle: isArabic ? 'العربية' : 'English',
                       onTap: () async {
-                        final String? selected = await showDialog<String>(
-                          context: context,
-                          builder: (BuildContext ctx) => SimpleDialog(
-                            title: Text(context.l10n.tr('language_label')),
-                            children: <Widget>[
-                              SimpleDialogOption(
-                                onPressed: () => Navigator.pop(ctx, 'en'),
-                                child: Text(context.l10n.tr('english')),
-                              ),
-                              SimpleDialogOption(
-                                onPressed: () => Navigator.pop(ctx, 'ar'),
-                                child: Text(context.l10n.tr('arabic')),
-                              ),
-                            ],
-                          ),
-                        );
-                        if (selected != null && context.mounted) {
-                          context
-                              .read<AppStateController>()
-                              .updateLanguagePreference(selected);
-                        }
+                        final String? selected =
+                            await showCompactSelectionDialog<String>(
+                              context: context,
+                              title: context.l10n.tr('language'),
+                              options: const <String>['en', 'ar'],
+                              selectedValueLabel:
+                                  state.languagePreference == 'ar'
+                                  ? 'ar'
+                                  : 'en',
+                              optionLabel: (String value) => value == 'ar'
+                                  ? context.l10n.tr('arabic')
+                                  : context.l10n.tr('english'),
+                            );
+                        if (selected == null || !context.mounted) return;
+                        await context
+                            .read<AppStateController>()
+                            .updateLanguagePreference(selected);
                       },
                     ),
                     _ActionSettingTile(
                       key: const Key('settingsCategoriesTile'),
                       icon: Icons.folder_outlined,
                       title: context.l10n.tr('categories_section'),
-                      subtitle: 'Language, Currency, Categories and more',
+                      subtitle: isArabic
+                          ? 'اللغة، العملة، الفئات والمزيد'
+                          : 'Language, Currency, Categories and more',
                       onTap: () {
                         Navigator.of(context).push(CategoriesScreen.route());
                       },
@@ -270,10 +301,15 @@ class _AccountScreenState extends State<AccountScreen> {
                       key: const Key('settingsMerchantRulesTile'),
                       icon: Icons.rule_folder_outlined,
                       title: context.l10n.tr('merchant_rules_section'),
-                      subtitle: 'Manage auto-categorization rules',
+                      subtitle: isArabic
+                          ? 'إدارة قواعد التصنيف التلقائي'
+                          : 'Manage auto-categorization rules',
                       onTap: () {
                         Navigator.of(context).push(
                           MaterialPageRoute<void>(
+                            settings: const AppPrivacyRouteSettings(
+                              privacy: ScreenPrivacyClassification.sensitive,
+                            ),
                             builder: (_) => const MerchantRulesScreen(),
                           ),
                         );
@@ -283,13 +319,53 @@ class _AccountScreenState extends State<AccountScreen> {
                       key: const Key('settingsRecurringTile'),
                       icon: Icons.event_repeat_outlined,
                       title: context.l10n.tr('recurring_section'),
-                      subtitle: 'Manage recurring transactions',
+                      subtitle: isArabic
+                          ? 'إدارة العمليات المتكررة'
+                          : 'Manage recurring transactions',
                       onTap: () {
                         Navigator.of(
                           context,
                         ).push(RecurringTransactionsScreen.route());
                       },
                     ),
+                    if (defaultTargetPlatform == TargetPlatform.android)
+                      _ToggleSettingTile(
+                        key: const Key('settingsSmsCaptureToggle'),
+                        icon: Icons.sms_outlined,
+                        title: isArabic
+                            ? 'الالتقاط التلقائي لرسائل البنوك'
+                            : 'Automatic Bank SMS Capture',
+                        subtitle: isArabic
+                            ? 'فحص رسائل البنوك محليًا على أندرويد'
+                            : 'Scan incoming bank SMS locally on Android',
+                        value: state.androidSmsAutoCaptureEnabled,
+                        onChanged: (bool enabled) async {
+                          if (enabled) {
+                            final bool smsGranted =
+                                await AndroidSmsCaptureService.hasSmsPermission();
+                            final bool batteryIgnored =
+                                await AndroidSmsCaptureService.isBatteryOptimizationIgnored();
+                            if (!smsGranted || !batteryIgnored) {
+                              if (!context.mounted) return;
+                              final bool? completed =
+                                  await Navigator.of(context).push<bool>(
+                                    MaterialPageRoute<bool>(
+                                      builder: (_) =>
+                                          const AndroidSmartCaptureSetupScreen(),
+                                    ),
+                                  );
+                              if (completed != true || !context.mounted) {
+                                return;
+                              }
+                              return;
+                            }
+                          }
+                          if (!context.mounted) return;
+                          await context
+                              .read<AppStateController>()
+                              .setAndroidSmsAutoCaptureEnabled(enabled);
+                        },
+                      ),
                   ],
                 ),
               ),
@@ -383,7 +459,7 @@ class _AccountScreenState extends State<AccountScreen> {
     final l10n = context.l10n;
     final UserProfile? user = authController?.currentUser;
     if (user == null) return;
-    if (state.biometricExportEnabled &&
+    if ((state.biometricLockEnabled || state.biometricExportEnabled) &&
         await BiometricService.canAuthenticate()) {
       final auth = await BiometricService.authenticate(
         reason: 'Confirm identity to delete this account',
@@ -822,8 +898,23 @@ String _formatCountdownLabel(DateTime? value, {required bool isArabic}) {
   return isArabic ? 'بعد $mins د' : 'In ${mins}m';
 }
 
-String _formatEveryHoursLabel(int hours, {required bool isArabic}) {
-  return isArabic ? 'كل $hours ساعات' : 'Every $hours hours';
+String _formatEveryIntervalLabel(Duration interval, {required bool isArabic}) {
+  final int minutes = interval.inMinutes;
+  if (minutes < 60) {
+    return isArabic ? 'كل $minutes دقيقة' : 'Every $minutes min';
+  }
+  final int hours = interval.inHours;
+  final int mins = minutes.remainder(60);
+  if (mins == 0) {
+    if (hours == 1) {
+      return isArabic ? 'كل ساعة' : 'Every 1 hour';
+    }
+    return isArabic ? 'كل $hours ساعات' : 'Every $hours hours';
+  }
+  if (hours == 1) {
+    return isArabic ? 'كل ساعة و$mins دقيقة' : 'Every 1 hour $mins min';
+  }
+  return isArabic ? 'كل $hours س $mins د' : 'Every ${hours}h ${mins}m';
 }
 
 Future<T?> _showChoiceDialog<T>({
@@ -864,41 +955,98 @@ class _MarketSnapshotCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
+    final bool compact = ResponsiveLayout.isCompact(context);
+
     return PremiumCard(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+      padding: EdgeInsets.fromLTRB(
+        compact ? 12 : 16,
+        14,
+        compact ? 12 : 16,
+        16,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Row(
-            children: <Widget>[
-              Icon(Icons.show_chart_rounded, size: 20, color: colors.primary),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  title,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+          if (compact) ...<Widget>[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Icon(Icons.show_chart_rounded, size: 20, color: colors.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                 ),
-              ),
-              TextButton(
-                key: const Key('viewAllMarketSnapshotButton'),
-                onPressed: onViewAll,
-                child: Text(context.l10n.tr('view_all')),
-              ),
-              IconButton(
-                key: const Key('refreshMarketDataOverviewButton'),
-                onPressed: onRefresh,
-                icon: refreshing
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.refresh_rounded),
-              ),
-            ],
-          ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: <Widget>[
+                TextButton(
+                  key: const Key('viewAllMarketSnapshotButton'),
+                  onPressed: onViewAll,
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                  ),
+                  child: Text(
+                    context.l10n.tr('view_all'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                IconButton(
+                  key: const Key('refreshMarketDataOverviewButton'),
+                  onPressed: onRefresh,
+                  visualDensity: VisualDensity.compact,
+                  icon: refreshing
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.refresh_rounded),
+                ),
+              ],
+            ),
+          ] else ...<Widget>[
+            Row(
+              children: <Widget>[
+                Icon(Icons.show_chart_rounded, size: 20, color: colors.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  key: const Key('viewAllMarketSnapshotButton'),
+                  onPressed: onViewAll,
+                  child: Text(context.l10n.tr('view_all')),
+                ),
+                IconButton(
+                  key: const Key('refreshMarketDataOverviewButton'),
+                  onPressed: onRefresh,
+                  icon: refreshing
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.refresh_rounded),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 10),
           Row(
             children: <Widget>[
@@ -958,6 +1106,7 @@ class _StatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
+    final bool compact = ResponsiveLayout.isCompact(context);
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -974,17 +1123,25 @@ class _StatCard extends StatelessWidget {
           const SizedBox(height: 10),
           Text(
             label,
+            maxLines: compact ? 2 : 1,
+            overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: colors.onSurfaceVariant.withValues(alpha: 0.95),
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 4),
-          Text(
-            value,
-            style: Theme.of(
-              context,
-            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: AlignmentDirectional.centerStart,
+            child: Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+            ),
           ),
         ],
       ),
@@ -1006,62 +1163,132 @@ class _BackupOverviewCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
+    final bool compact = ResponsiveLayout.isCompact(context);
     final bool connected = controller?.isDriveConnected == true;
     final String backupStatus = connected
         ? (isArabic ? 'متصل' : 'Connected')
         : (isArabic ? 'غير متصل' : 'Disconnected');
     final DateTime? lastBackupAt = controller?.lastBackupAt;
     final DateTime? nextCheckAt = controller?.nextEligibleBackupAt;
-    final int intervalHours = controller?.minimumIntervalHours ?? 3;
+    final Duration interval =
+        controller?.minimumInterval ?? const Duration(hours: 3);
 
     return PremiumCard(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+      padding: EdgeInsets.fromLTRB(
+        compact ? 12 : 16,
+        14,
+        compact ? 12 : 16,
+        16,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Row(
-            children: <Widget>[
-              Icon(Icons.cloud_outlined, size: 20, color: colors.primary),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  isArabic ? 'نسخ Google Drive' : 'Google Drive Backup',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
-                ),
-              ),
-              Container(
-                constraints: const BoxConstraints(minHeight: 26),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 5,
-                ),
-                decoration: BoxDecoration(
-                  color: connected
-                      ? colors.primary.withValues(alpha: 0.12)
-                      : colors.errorContainer.withValues(alpha: 0.55),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                    color: colors.outlineVariant.withValues(alpha: 0.85),
-                    width: 1,
+          if (compact) ...<Widget>[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Icon(Icons.cloud_outlined, size: 20, color: colors.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    isArabic ? 'نسخ Google Drive' : 'Google Drive Backup',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
-                child: Text(
-                  backupStatus,
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: connected ? colors.primary : colors.error,
-                    fontWeight: FontWeight.w700,
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: Container(
+                      constraints: const BoxConstraints(minHeight: 26),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: connected
+                            ? colors.primary.withValues(alpha: 0.12)
+                            : colors.errorContainer.withValues(alpha: 0.55),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: colors.outlineVariant.withValues(alpha: 0.85),
+                          width: 1,
+                        ),
+                      ),
+                      child: Text(
+                        backupStatus,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelMedium
+                            ?.copyWith(
+                              color: connected ? colors.primary : colors.error,
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 6),
-              IconButton(
-                onPressed: onOpenDetails,
-                icon: const Icon(Icons.arrow_forward_ios_rounded, size: 18),
-              ),
-            ],
-          ),
+                const SizedBox(width: 6),
+                IconButton(
+                  onPressed: onOpenDetails,
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.arrow_forward_ios_rounded, size: 18),
+                ),
+              ],
+            ),
+          ] else ...<Widget>[
+            Row(
+              children: <Widget>[
+                Icon(Icons.cloud_outlined, size: 20, color: colors.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    isArabic ? 'نسخ Google Drive' : 'Google Drive Backup',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                Container(
+                  constraints: const BoxConstraints(minHeight: 26),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: connected
+                        ? colors.primary.withValues(alpha: 0.12)
+                        : colors.errorContainer.withValues(alpha: 0.55),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: colors.outlineVariant.withValues(alpha: 0.85),
+                      width: 1,
+                    ),
+                  ),
+                  child: Text(
+                    backupStatus,
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: connected ? colors.primary : colors.error,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                IconButton(
+                  onPressed: onOpenDetails,
+                  icon: const Icon(Icons.arrow_forward_ios_rounded, size: 18),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 12),
           Row(
             children: <Widget>[
@@ -1074,8 +1301,8 @@ class _BackupOverviewCard extends StatelessWidget {
               Expanded(
                 child: _InfoColumn(
                   label: isArabic ? 'النسخ التلقائي' : 'Automatic Backup',
-                  value: _formatEveryHoursLabel(
-                    intervalHours,
+                  value: _formatEveryIntervalLabel(
+                    interval,
                     isArabic: isArabic,
                   ),
                 ),
@@ -1099,6 +1326,17 @@ class _BackupOverviewCard extends StatelessWidget {
               ).textTheme.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
             ),
           ],
+          const SizedBox(height: 16),
+          const Divider(),
+          const SizedBox(height: 12),
+          Text(
+            isArabic ? 'النسخ الاحتياطي المحلي (JSON)' : 'Local JSON Backup',
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          BackupRestoreCard(controller: context.read<AppStateController>()),
         ],
       ),
     );
@@ -1114,6 +1352,7 @@ class _InfoColumn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
+    final bool compact = ResponsiveLayout.isCompact(context);
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: Column(
@@ -1121,17 +1360,25 @@ class _InfoColumn extends StatelessWidget {
         children: <Widget>[
           Text(
             label,
+            maxLines: compact ? 2 : 1,
+            overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: colors.onSurfaceVariant.withValues(alpha: 0.95),
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 4),
-          Text(
-            value,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: AlignmentDirectional.centerStart,
+            child: Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+            ),
           ),
         ],
       ),
@@ -1144,11 +1391,15 @@ class _WealthZakatCard extends StatelessWidget {
     required this.supportedCurrencies,
     required this.mainCurrency,
     required this.defaultCurrency,
+    required this.financialMonthCycle,
+    required this.financialMonthStartDay,
     required this.zakatMethod,
     required this.nisabBasis,
     required this.annualDate,
     required this.onMainCurrencyChanged,
     required this.onDefaultCurrencyChanged,
+    required this.onFinancialMonthCycleChanged,
+    required this.onFinancialMonthStartDayChanged,
     required this.onZakatMethodChanged,
     required this.onNisabBasisChanged,
     required this.onAnnualDateChanged,
@@ -1158,11 +1409,15 @@ class _WealthZakatCard extends StatelessWidget {
   final List<String> supportedCurrencies;
   final String mainCurrency;
   final String defaultCurrency;
+  final String financialMonthCycle;
+  final int financialMonthStartDay;
   final String zakatMethod;
   final String nisabBasis;
   final _AnnualDate annualDate;
   final ValueChanged<String> onMainCurrencyChanged;
   final ValueChanged<String> onDefaultCurrencyChanged;
+  final ValueChanged<String> onFinancialMonthCycleChanged;
+  final ValueChanged<int> onFinancialMonthStartDayChanged;
   final ValueChanged<String> onZakatMethodChanged;
   final ValueChanged<String> onNisabBasisChanged;
   final Future<void> Function(int month, int day) onAnnualDateChanged;
@@ -1172,8 +1427,14 @@ class _WealthZakatCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool isRtl =
         Localizations.localeOf(context).languageCode.toLowerCase() == 'ar';
+    final bool compact = ResponsiveLayout.isCompact(context);
     return PremiumCard(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      padding: EdgeInsets.fromLTRB(
+        compact ? 12 : 16,
+        14,
+        compact ? 12 : 16,
+        14,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -1228,6 +1489,37 @@ class _WealthZakatCard extends StatelessWidget {
                     CurrencyPresentation.selectorLabel(value, isRtl: isRtl),
               );
               if (selected != null) onDefaultCurrencyChanged(selected);
+            },
+          ),
+          _ActionSettingTile(
+            key: const Key('settingsMonthlyCycleField'),
+            icon: Icons.date_range_outlined,
+            title: isArabic ? 'دورة الشهر' : 'Monthly Cycle',
+            subtitle: financialMonthCycle == 'custom'
+                ? '${isArabic ? 'يبدأ في اليوم' : 'Starts on day'} $financialMonthStartDay'
+                : (isArabic ? 'الشهر الميلادي' : 'Calendar month'),
+            onTap: () async {
+              final String? selected = await _showChoiceDialog<String>(
+                context: context,
+                title: isArabic ? 'دورة الشهر' : 'Monthly Cycle',
+                options: const <String>['calendar', 'custom'],
+                optionLabel: (String value) => value == 'custom'
+                    ? (isArabic ? 'مخصص' : 'Custom start day')
+                    : (isArabic ? 'الشهر الميلادي' : 'Calendar month'),
+              );
+              if (selected == null) return;
+              onFinancialMonthCycleChanged(selected);
+              if (selected == 'custom') {
+                final int? picked = await _showChoiceDialog<int>(
+                  context: context,
+                  title: isArabic ? 'يوم البداية' : 'Start Day',
+                  options: List<int>.generate(28, (int index) => index + 1),
+                  optionLabel: (int value) => value.toString(),
+                );
+                if (picked != null) {
+                  onFinancialMonthStartDayChanged(picked);
+                }
+              }
             },
           ),
           _ActionSettingTile(
@@ -1343,24 +1635,40 @@ class _CompactSectionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
+    final bool compact = ResponsiveLayout.isCompact(context);
     return PremiumCard(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+      padding: EdgeInsets.fromLTRB(
+        compact ? 12 : 16,
+        14,
+        compact ? 12 : 16,
+        12,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Icon(icon, size: 20, color: colors.primary),
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Icon(icon, size: 20, color: colors.primary),
+              ),
               const SizedBox(width: 8),
-              Text(
-                title,
-                style: Theme.of(
-                  context,
-                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    fontSize: compact ? 18 : null,
+                    height: compact ? 1.05 : null,
+                  ),
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 6),
+          SizedBox(height: compact ? 4 : 6),
           ...children,
         ],
       ),
@@ -1385,11 +1693,12 @@ class _ActionSettingTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
+    final bool compact = ResponsiveLayout.isCompact(context);
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 9),
+        padding: EdgeInsets.symmetric(vertical: compact ? 7 : 9),
         child: Row(
           children: <Widget>[
             Container(
@@ -1401,20 +1710,27 @@ class _ActionSettingTile extends StatelessWidget {
               ),
               child: Icon(icon, size: 20, color: colors.primary),
             ),
-            const SizedBox(width: 12),
+            SizedBox(width: compact ? 10 : 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
                   Text(
                     title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                       fontWeight: FontWeight.w700,
+                      fontSize: ResponsiveLayout.isCompact(context)
+                          ? 13.5
+                          : null,
                     ),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: colors.onSurfaceVariant,
                     ),
@@ -1433,6 +1749,7 @@ class _ActionSettingTile extends StatelessWidget {
 
 class _ToggleSettingTile extends StatelessWidget {
   const _ToggleSettingTile({
+    super.key,
     required this.icon,
     required this.title,
     required this.subtitle,
@@ -1450,8 +1767,9 @@ class _ToggleSettingTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
     final Color iconColor = colors.primary;
+    final bool compact = ResponsiveLayout.isCompact(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 9),
+      padding: EdgeInsets.symmetric(vertical: compact ? 7 : 9),
       child: Row(
         children: <Widget>[
           Container(
@@ -1463,7 +1781,7 @@ class _ToggleSettingTile extends StatelessWidget {
             ),
             child: Icon(icon, size: 20, color: iconColor),
           ),
-          const SizedBox(width: 12),
+          SizedBox(width: compact ? 10 : 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1513,8 +1831,9 @@ class _DropdownSettingTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
+    final bool compact = ResponsiveLayout.isCompact(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 9),
+      padding: EdgeInsets.symmetric(vertical: compact ? 7 : 9),
       child: Row(
         children: <Widget>[
           Container(
@@ -1526,13 +1845,15 @@ class _DropdownSettingTile extends StatelessWidget {
             ),
             child: Icon(icon, size: 20, color: colors.primary),
           ),
-          const SizedBox(width: 12),
+          SizedBox(width: compact ? 10 : 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Text(
                   title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: Theme.of(
                     context,
                   ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w700),
@@ -1540,6 +1861,8 @@ class _DropdownSettingTile extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: colors.onSurfaceVariant,
                   ),
@@ -1547,12 +1870,14 @@ class _DropdownSettingTile extends StatelessWidget {
               ],
             ),
           ),
-          CompactDropdownButton<String>(
-            value: value,
-            labelText: title,
-            items: items,
-            itemLabel: itemLabel,
-            onChanged: (String next) => onChanged(next),
+          Flexible(
+            child: CompactDropdownButton<String>(
+              value: value,
+              labelText: title,
+              items: items,
+              itemLabel: itemLabel,
+              onChanged: (String next) => onChanged(next),
+            ),
           ),
         ],
       ),
@@ -1581,8 +1906,16 @@ class _SecurityPrivacyCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
+    final bool compact = ResponsiveLayout.isCompact(context);
+    final bool isArabic =
+        Localizations.localeOf(context).languageCode.toLowerCase() == 'ar';
     return PremiumCard(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      padding: EdgeInsets.fromLTRB(
+        compact ? 12 : 16,
+        14,
+        compact ? 12 : 16,
+        14,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -1592,6 +1925,8 @@ class _SecurityPrivacyCard extends StatelessWidget {
               const SizedBox(width: 8),
               Text(
                 context.l10n.tr('security_section'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: Theme.of(
                   context,
                 ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
@@ -1601,8 +1936,10 @@ class _SecurityPrivacyCard extends StatelessWidget {
           const SizedBox(height: 4),
           _ToggleSettingTile(
             icon: Icons.fingerprint_outlined,
-            title: 'Biometric Lock',
-            subtitle: 'Use Face ID or fingerprint',
+            title: isArabic ? 'القفل البيومتري' : 'Biometric Lock',
+            subtitle: isArabic
+                ? 'استخدم Face ID أو بصمة الإصبع'
+                : 'Use Face ID or fingerprint',
             value: biometricLockEnabled,
             onChanged: (bool val) async {
               final bool canAuth = await BiometricService.canAuthenticate();
@@ -1629,8 +1966,10 @@ class _SecurityPrivacyCard extends StatelessWidget {
           ),
           _DropdownSettingTile(
             icon: Icons.timer_outlined,
-            title: 'Auto Lock Delay',
-            subtitle: 'Delay before the app locks itself',
+            title: isArabic ? 'مهلة القفل التلقائي' : 'Auto Lock Delay',
+            subtitle: isArabic
+                ? 'الوقت قبل أن يقفل التطبيق نفسه'
+                : 'Delay before the app locks itself',
             value: biometricAutoLockDelay,
             items: const <String>[
               'immediate',
@@ -1639,10 +1978,10 @@ class _SecurityPrivacyCard extends StatelessWidget {
               '5_minutes',
             ],
             itemLabel: (String value) => switch (value) {
-              'immediate' => 'Immediately',
-              '30_seconds' => '30 Seconds',
-              '1_minute' => '1 Minute',
-              '5_minutes' => '5 Minutes',
+              'immediate' => isArabic ? 'فورًا' : 'Immediately',
+              '30_seconds' => isArabic ? '30 ثانية' : '30 Seconds',
+              '1_minute' => isArabic ? 'دقيقة واحدة' : '1 Minute',
+              '5_minutes' => isArabic ? '5 دقائق' : '5 Minutes',
               _ => value,
             },
             onChanged: (String? val) {
@@ -1655,8 +1994,10 @@ class _SecurityPrivacyCard extends StatelessWidget {
           ),
           _ToggleSettingTile(
             icon: Icons.visibility_off_outlined,
-            title: 'Hide Wealth Values',
-            subtitle: 'Hide balances throughout the app',
+            title: isArabic ? 'إخفاء قيم الثروة' : 'Hide Wealth Values',
+            subtitle: isArabic
+                ? 'إخفاء الأرصدة في التطبيق بالكامل'
+                : 'Hide balances throughout the app',
             value: biometricHideWealthEnabled,
             onChanged: (bool val) {
               context
@@ -1666,7 +2007,7 @@ class _SecurityPrivacyCard extends StatelessWidget {
           ),
           const SizedBox(height: 2),
           Text(
-            'Data Protection',
+            isArabic ? 'حماية البيانات' : 'Data Protection',
             style: Theme.of(
               context,
             ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
@@ -1674,8 +2015,12 @@ class _SecurityPrivacyCard extends StatelessWidget {
           const SizedBox(height: 4),
           _ToggleSettingTile(
             icon: Icons.lock_outline_rounded,
-            title: 'Protect Exports & Delete',
-            subtitle: 'Require approval before exporting or deleting data',
+            title: isArabic
+                ? 'حماية التصدير والحذف'
+                : 'Protect Exports & Delete',
+            subtitle: isArabic
+                ? 'يُطلب التأكيد قبل التصدير أو حذف البيانات'
+                : 'Require approval before exporting or deleting data',
             value: biometricExportEnabled,
             onChanged: (bool val) {
               context.read<AppStateController>().updateBiometricExportEnabled(
@@ -1685,8 +2030,12 @@ class _SecurityPrivacyCard extends StatelessWidget {
           ),
           _ToggleSettingTile(
             icon: Icons.restore_outlined,
-            title: 'Protect Restore & Import',
-            subtitle: 'Require approval before restore or import actions',
+            title: isArabic
+                ? 'حماية الاستعادة والاستيراد'
+                : 'Protect Restore & Import',
+            subtitle: isArabic
+                ? 'يُطلب التأكيد قبل الاستعادة أو الاستيراد'
+                : 'Require approval before restore or import actions',
             value: biometricRestoreEnabled,
             onChanged: (bool val) {
               context.read<AppStateController>().updateBiometricRestoreEnabled(
@@ -1783,6 +2132,7 @@ class _AppearanceAiRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
+    final bool compact = ResponsiveLayout.isCompact(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -1807,8 +2157,8 @@ class _AppearanceAiRow extends StatelessWidget {
               child: _MiniSummaryCard(
                 icon: Icons.auto_awesome_outlined,
                 title: isArabic ? 'المساعد الذكي' : 'AI Assistant',
-                subtitle: 'Gemini',
-                value: isTestingConnection ? '...' : 'Enabled',
+                subtitle: isArabic ? 'جيميني' : 'Gemini',
+                value: isTestingConnection ? '...' : context.l10n.tr('enabled'),
                 onTap: onAiTap,
                 trailing: Icon(
                   aiExpanded
@@ -1828,7 +2178,12 @@ class _AppearanceAiRow extends StatelessWidget {
                   children: <Widget>[
                     const SizedBox(height: 12),
                     PremiumCard(
-                      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                      padding: EdgeInsets.fromLTRB(
+                        ResponsiveLayout.isCompact(context) ? 12 : 16,
+                        14,
+                        ResponsiveLayout.isCompact(context) ? 12 : 16,
+                        14,
+                      ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: <Widget>[
@@ -1841,20 +2196,24 @@ class _AppearanceAiRow extends StatelessWidget {
                           TextFormField(
                             controller: aiKey1Controller,
                             obscureText: true,
-                            decoration: const InputDecoration(
-                              labelText: 'Gemini Key 1',
-                              border: OutlineInputBorder(),
-                              prefixIcon: Icon(Icons.vpn_key),
+                            decoration: InputDecoration(
+                              labelText: isArabic
+                                  ? 'مفتاح جيميني 1'
+                                  : 'Gemini Key 1',
+                              border: const OutlineInputBorder(),
+                              prefixIcon: const Icon(Icons.vpn_key),
                             ),
                           ),
                           const SizedBox(height: 12),
                           TextFormField(
                             controller: aiKey2Controller,
                             obscureText: true,
-                            decoration: const InputDecoration(
-                              labelText: 'Gemini Key 2',
-                              border: OutlineInputBorder(),
-                              prefixIcon: Icon(Icons.vpn_key),
+                            decoration: InputDecoration(
+                              labelText: isArabic
+                                  ? 'مفتاح جيميني 2'
+                                  : 'Gemini Key 2',
+                              border: const OutlineInputBorder(),
+                              prefixIcon: const Icon(Icons.vpn_key),
                             ),
                           ),
                           const SizedBox(height: 12),
@@ -1868,32 +2227,74 @@ class _AppearanceAiRow extends StatelessWidget {
                                 onSelectedAiKeyChanged(value),
                           ),
                           const SizedBox(height: 14),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: <Widget>[
-                              OutlinedButton.icon(
-                                onPressed: isTestingConnection
-                                    ? null
-                                    : onTestAiConnection,
-                                icon: isTestingConnection
-                                    ? const SizedBox(
-                                        width: 16,
-                                        height: 16,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                        ),
-                                      )
-                                    : const Icon(Icons.wifi),
-                                label: const Text('Test Connection'),
-                              ),
-                              const SizedBox(width: 12),
-                              FilledButton.icon(
-                                onPressed: onSaveAiKeys,
-                                icon: const Icon(Icons.save),
-                                label: const Text('Save AI Keys'),
-                              ),
-                            ],
-                          ),
+                          compact
+                              ? Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: <Widget>[
+                                    OutlinedButton.icon(
+                                      onPressed: isTestingConnection
+                                          ? null
+                                          : onTestAiConnection,
+                                      icon: isTestingConnection
+                                          ? const SizedBox(
+                                              width: 16,
+                                              height: 16,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                              ),
+                                            )
+                                          : const Icon(Icons.wifi),
+                                      label: const Text(
+                                        'Test Connection',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    FilledButton.icon(
+                                      onPressed: onSaveAiKeys,
+                                      icon: const Icon(Icons.save),
+                                      label: Text(
+                                        isArabic
+                                            ? 'حفظ مفاتيح الذكاء الاصطناعي'
+                                            : 'Save AI Keys',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              : Row(
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  children: <Widget>[
+                                    OutlinedButton.icon(
+                                      onPressed: isTestingConnection
+                                          ? null
+                                          : onTestAiConnection,
+                                      icon: isTestingConnection
+                                          ? const SizedBox(
+                                              width: 16,
+                                              height: 16,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                              ),
+                                            )
+                                          : const Icon(Icons.wifi),
+                                      label: const Text('Test Connection'),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    FilledButton.icon(
+                                      onPressed: onSaveAiKeys,
+                                      icon: const Icon(Icons.save),
+                                      label: Text(
+                                        isArabic
+                                            ? 'حفظ مفاتيح الذكاء الاصطناعي'
+                                            : 'Save AI Keys',
+                                      ),
+                                    ),
+                                  ],
+                                ),
                         ],
                       ),
                     ),
@@ -1927,11 +2328,12 @@ class _MiniSummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
+    final bool compact = ResponsiveLayout.isCompact(context);
     return PremiumCard(
       onTap: onTap,
       padding: const EdgeInsets.all(14),
       child: SizedBox(
-        height: 110,
+        height: compact ? 122 : 110,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1948,6 +2350,8 @@ class _MiniSummaryCard extends StatelessWidget {
               children: <Widget>[
                 Text(
                   title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w800,
                   ),
@@ -1955,17 +2359,25 @@ class _MiniSummaryCard extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: colors.onSurfaceVariant,
                   ),
                 ),
               ],
             ),
-            Text(
-              value,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w700),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: AlignmentDirectional.centerStart,
+              child: Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w700),
+              ),
             ),
           ],
         ),
@@ -1996,39 +2408,83 @@ class _AboutCard extends StatelessWidget {
       children: <Widget>[
         _ActionSettingTile(
           icon: Icons.account_balance_wallet_outlined,
-          title: isArabic ? 'About Zakah Wealth' : 'About Zakah Wealth',
-          subtitle: 'A premium zakah and wealth companion',
+          title: context.l10n.tr('about_zakah_wealth'),
+          subtitle: isArabic
+              ? 'رفيق متميز للزكاة وإدارة الثروة'
+              : 'A premium zakah and wealth companion',
           onTap: () {},
         ),
         _ActionSettingTile(
           icon: Icons.info_outline,
-          title: 'Version',
+          title: isArabic ? 'الإصدار' : 'Version',
           subtitle: version,
           onTap: () {},
         ),
         _ActionSettingTile(
           icon: Icons.build_outlined,
-          title: 'Build',
+          title: isArabic ? 'البناء' : 'Build',
           subtitle: buildNumber,
           onTap: () {},
         ),
         _ActionSettingTile(
           icon: Icons.privacy_tip_outlined,
-          title: 'Privacy Policy',
-          subtitle: 'Read how your data is handled',
-          onTap: () {},
+          title: isArabic ? 'سياسة الخصوصية' : 'Privacy Policy',
+          subtitle: isArabic
+              ? 'اقرأ كيف تتم معالجة بياناتك'
+              : 'Read how your data is handled',
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => _PolicyDetailScreen(
+                  title: isArabic ? 'سياسة الخصوصية' : 'Privacy Policy',
+                  content: isArabic ? _privacyPolicyAr : _privacyPolicyEn,
+                ),
+              ),
+            );
+          },
         ),
         _ActionSettingTile(
           icon: Icons.description_outlined,
-          title: 'Terms of Service',
-          subtitle: 'Review the usage terms',
-          onTap: () {},
+          title: isArabic ? 'شروط الخدمة' : 'Terms of Service',
+          subtitle: isArabic ? 'راجع شروط الاستخدام' : 'Review the usage terms',
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => _PolicyDetailScreen(
+                  title: isArabic ? 'شروط الخدمة' : 'Terms of Service',
+                  content: isArabic ? _termsOfServiceAr : _termsOfServiceEn,
+                ),
+              ),
+            );
+          },
         ),
         _ActionSettingTile(
           icon: Icons.support_agent_outlined,
-          title: 'Support & Feedback',
-          subtitle: 'Send feedback or get help',
-          onTap: () {},
+          title: isArabic ? 'الدعم والملاحظات' : 'Support & Feedback',
+          subtitle: isArabic
+              ? 'أرسل ملاحظاتك أو احصل على المساعدة'
+              : 'Send feedback or get help',
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => _PolicyDetailScreen(
+                  title: isArabic ? 'الدعم والملاحظات' : 'Support & Feedback',
+                  content: isArabic ? _supportFeedbackAr : _supportFeedbackEn,
+                ),
+              ),
+            );
+          },
+        ),
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Text(
+            isArabic
+                ? 'ملاحظة الخصوصية: يظل الالتقاط التلقائي لرسائل البنوك على الجهاز، ويتجاهل رسائل OTP، ويمكن تعطيله في أي وقت.'
+                : 'Privacy note: Automatic Bank SMS Capture stays on-device, ignores OTP messages, and can be disabled anytime.',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
+          ),
         ),
       ],
     );
@@ -2158,10 +2614,13 @@ class _SettingsProfileHeader extends StatelessWidget {
         : name!.trim();
     final String emailValue = (email ?? '').trim();
     final String initial = displayName.characters.first.toUpperCase();
+    final bool isArabic = Localizations.localeOf(context).languageCode == 'ar';
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        final bool compact = constraints.maxWidth < 420;
+        final bool compact = constraints.maxWidth < 430;
+        final bool veryCompact = constraints.maxWidth < 360;
+        final double chipGap = veryCompact ? 6 : 8;
         final Widget actionButton = SizedBox(
           width: compact ? double.infinity : null,
           height: 36,
@@ -2174,10 +2633,16 @@ class _SettingsProfileHeader extends StatelessWidget {
                     side: BorderSide(
                       color: AppColors.white.withValues(alpha: 0.24),
                     ),
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: compact ? 12 : 14,
+                    ),
                   ),
                   icon: const Icon(Icons.logout_rounded, size: 16),
-                  label: const Text('Sign Out'),
+                  label: Text(
+                    isArabic ? 'تسجيل الخروج' : 'Sign Out',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 )
               : FilledButton.icon(
                   key: const Key('googleSignInButton'),
@@ -2185,10 +2650,16 @@ class _SettingsProfileHeader extends StatelessWidget {
                   style: FilledButton.styleFrom(
                     backgroundColor: AppColors.gold,
                     foregroundColor: AppColors.emeraldSoft,
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: compact ? 12 : 14,
+                    ),
                   ),
                   icon: const Icon(Icons.login_rounded, size: 16),
-                  label: const Text('Sign in with Google'),
+                  label: Text(
+                    context.l10n.tr('sign_in_google'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
         );
 
@@ -2246,7 +2717,7 @@ class _SettingsProfileHeader extends StatelessWidget {
                             children: <Widget>[
                               Text(
                                 displayName,
-                                maxLines: 1,
+                                maxLines: compact ? 2 : 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
                                   color: AppColors.white,
@@ -2275,21 +2746,21 @@ class _SettingsProfileHeader extends StatelessWidget {
                     ),
                     const SizedBox(height: 12),
                     Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
+                      spacing: chipGap,
+                      runSpacing: chipGap,
                       children: <Widget>[
                         _ProfileChip(
                           icon: connected
                               ? Icons.check_circle_outline
                               : Icons.link,
-                          label: 'Google Connected',
+                          label: isArabic ? 'Google متصل' : 'Google Connected',
                           active: connected,
                         ),
                         _ProfileChip(
                           icon: backupEnabled
                               ? Icons.cloud_done_outlined
                               : Icons.cloud_off_outlined,
-                          label: 'Backup Enabled',
+                          label: isArabic ? 'النسخ مفعّل' : 'Backup Enabled',
                           active: backupEnabled,
                         ),
                       ],
@@ -2355,14 +2826,18 @@ class _SettingsProfileHeader extends StatelessWidget {
                                 icon: connected
                                     ? Icons.check_circle_outline
                                     : Icons.link,
-                                label: 'Google Connected',
+                                label: isArabic
+                                    ? 'Google متصل'
+                                    : 'Google Connected',
                                 active: connected,
                               ),
                               _ProfileChip(
                                 icon: backupEnabled
                                     ? Icons.cloud_done_outlined
                                     : Icons.cloud_off_outlined,
-                                label: 'Backup Enabled',
+                                label: isArabic
+                                    ? 'النسخ مفعّل'
+                                    : 'Backup Enabled',
                                 active: backupEnabled,
                               ),
                             ],
@@ -2393,9 +2868,16 @@ class _ProfileChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bool compact = ResponsiveLayout.isCompact(context);
     return Container(
       constraints: const BoxConstraints(minHeight: 26),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      padding: ResponsiveLayout.chipPadding(
+        context,
+        wideHorizontal: 10,
+        compactHorizontal: 8,
+        veryCompactHorizontal: 6,
+        vertical: 5,
+      ),
       decoration: BoxDecoration(
         color: AppColors.white.withValues(alpha: active ? 0.12 : 0.06),
         borderRadius: BorderRadius.circular(999),
@@ -2411,9 +2893,11 @@ class _ProfileChip extends StatelessWidget {
           const SizedBox(width: 6),
           Text(
             label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: AppColors.white.withValues(alpha: 0.92),
-              fontSize: 11,
+              fontSize: compact ? 10.5 : 11,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -2422,3 +2906,124 @@ class _ProfileChip extends StatelessWidget {
     );
   }
 }
+
+class _PolicyDetailScreen extends StatelessWidget {
+  const _PolicyDetailScreen({required this.title, required this.content});
+
+  final String title;
+  final String content;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(title)),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16.0),
+          child: Text(
+            content,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(height: 1.5),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+const String _privacyPolicyEn = '''
+Privacy Policy for Zakah Wealth
+
+Zakah Wealth ("we", "us", "our") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, and safeguard your information.
+
+1. Information Collection and Use
+- SMS Data Capture: Zakah Wealth features an optional automatic SMS capture function. This is designed to read bank transaction SMS messages locally on your device to help you track your wealth and Zakat obligations.
+- On-Device Processing: All SMS parsing and data storage happen entirely locally on your device. We do not upload, transmit, or share your bank SMS messages or transactions with external servers or third parties.
+- Personal and OTP Messages: The app explicitly ignores any personal messages, OTPs, or non-financial codes.
+
+2. Permissions
+- RECEIVE_SMS: This permission is requested exclusively to monitor bank transaction alerts. You can disable this feature at any time in the app settings.
+
+3. Data Security
+- Your Zakat data is stored securely in a local database and can be optionally backed up to your personal Google Drive in an encrypted format.
+
+Contact Support: support@zakahwealth.com
+''';
+
+const String _privacyPolicyAr = '''
+سياسة الخصوصية لـ Zakah Wealth
+
+تلتزم Zakah Wealth ("نحن"، "نا") بحماية خصوصيتك. توضح سياسة الخصوصية هذه كيفية جمع معلوماتك واستخدامها وحمايتها.
+
+1. جمع المعلومات واستخدامها
+- التقاط بيانات الرسائل النصية القصيرة: تتميز Zakah Wealth بوظيفة اختيارية للالتقاط التلقائي للرسائل النصية. تم تصميم هذا لقراءة رسائل المعاملات البنكية محليًا على جهازك لمساعدتك في تتبع ثروتك والتزامات الزكاة.
+- المعالجة على الجهاز: تتم جميع عمليات معالجة الرسائل وتخزين البيانات محليًا بالكامل على جهازك. نحن لا نقوم برفع أو نقل أو مشاركة رسائل المعاملات البنكية الخاصة بك مع خوادم خارجية أو أطراف ثالثة.
+- الرسائل الشخصية ورسائل OTP: يتجاهل التطبيق تمامًا أي رسائل شخصية أو رموز التحقق (OTP) أو الرموز غير المالية.
+
+2. الأذونات
+- RECEIVE_SMS: يُطلب هذا الإذن حصريًا لمراقبة تنبيهات المعاملات البنكية. يمكنك تعطيل هذه الميزة في أي وقت من إعدادات التطبيق.
+
+3. أمن البيانات
+- يتم تخزين بيانات الزكاة الخاصة بك بشكل آمن في قاعدة بيانات محلية، ويمكن نسخها احتياطيًا اختياريًا إلى حساب Google Drive الشخصي الخاص بك بتنسيق مشفر.
+
+للتواصل مع الدعم: support@zakahwealth.com
+''';
+
+const String _termsOfServiceEn = '''
+Terms of Service for Zakah Wealth
+
+By using Zakah Wealth, you agree to these terms:
+
+1. Scope of Service
+Zakah Wealth provides local financial tracking and Zakat calculations. The calculations provided are for informational and planning purposes only and do not constitute formal religious or financial advice.
+
+2. Privacy and Data
+Your data is processed and stored locally. You are responsible for maintaining the security of your device and your personal Google Drive backups.
+
+3. Limitation of Liability
+Zakah Wealth is provided "as is" without warranties. We are not liable for any financial decisions or inaccuracies in calculations.
+''';
+
+const String _termsOfServiceAr = '''
+شروط الخدمة لـ Zakah Wealth
+
+باستخدام Zakah Wealth، فإنك توافق على هذه الشروط:
+
+1. نطاق الخدمة
+توفر Zakah Wealth تتبعًا ماليًا محليًا وحسابات الزكاة. الحسابات المقدمة هي لأغراض إعلامية وتخطيطية فقط ولا تشكل مشورة دينية أو مالية رسمية.
+
+2. الخصوصية والبيانات
+يتم معالجة بياناتك وتخزينها محليًا. أنت مسؤول عن الحفاظ على أمان جهازك ونسخك الاحتياطية الشخصية على Google Drive.
+
+3. حدود المسؤولية
+يتم تقديم Zakah Wealth "كما هي" دون أي ضمانات. نحن لسنا مسؤولين عن أي قرارات مالية أو عدم دقة في الحسابات.
+''';
+
+const String _supportFeedbackEn = '''
+Support & Feedback
+
+We are here to help you. If you have any questions, feedback, or need assistance, please feel free to reach out to us.
+
+Contact Email:
+support@zakahwealth.com
+
+Frequently Asked Questions:
+- All calculations and data stay secure on your device.
+- You can turn automatic SMS capturing on or off in the Account screen.
+- You can sync your data securely via Google Drive backups.
+''';
+
+const String _supportFeedbackAr = '''
+الدعم والملاحظات
+
+نحن هنا لمساعدتك. إذا كان لديك أي أسئلة أو ملاحظات أو تحتاج إلى مساعدة، فلا تتردد في التواصل معنا.
+
+البريد الإلكتروني للتواصل:
+support@zakahwealth.com
+
+الأسئلة الشائعة:
+- تظل جميع الحسابات والبيانات آمنة على جهازك.
+- يمكنك تشغيل أو إيقاف الالتقاط التلقائي للرسائل النصية في شاشة الحساب.
+- يمكنك مزامنة بياناتك بشكل آمن عبر النسخ الاحتياطي على Google Drive.
+''';

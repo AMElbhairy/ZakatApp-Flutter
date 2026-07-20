@@ -79,9 +79,11 @@ Widget _buildApp() {
         ),
       ),
     ],
-    child: const ZakatApp(),
+    child: ZakatApp(preferences: _sharedPrefs),
   );
 }
+
+late SharedPreferences _sharedPrefs;
 
 Map<String, dynamic> _baseState() {
   return <String, dynamic>{
@@ -108,7 +110,6 @@ Map<String, dynamic> _baseState() {
       'SILVER_PRICE_EGP': 40,
       'USD_TO_EGP': 50,
       'SAR_TO_EGP': 13.5,
-      'RATES_TO_EGP': <String, dynamic>{'EGP': 1, 'USD': 50, 'SAR': 13.5},
     },
     'marketHistory': <dynamic>[],
     'syncHealth': <String, dynamic>{
@@ -117,12 +118,7 @@ Map<String, dynamic> _baseState() {
       'lastError': '',
       'pendingWrites': 0,
     },
-    'aiSettings': <String, dynamic>{
-      'keys': <String>['', ''],
-      'defaultKeyIndex': 0,
-    },
-    'cloudHydrated': false,
-    'hasUnsyncedAuthChanges': false,
+    'languagePreference': 'en',
   };
 }
 
@@ -140,6 +136,10 @@ Future<void> _openScheduleTab(WidgetTester tester) async {
 }
 
 void main() {
+  setUp(() async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    _sharedPrefs = await SharedPreferences.getInstance();
+  });
   testWidgets('schedule tab appears', (WidgetTester tester) async {
     await _seedState(_baseState());
     await tester.pumpWidget(_buildApp());

@@ -49,6 +49,14 @@ class AppSettingsDao extends DatabaseAccessor<AppDatabase> {
     return values;
   }
 
+  Future<int> countSettings() async {
+    final QueryRow row = await customSelect(
+      'SELECT COUNT(*) AS c FROM app_settings',
+      readsFrom: <TableInfo<Object?, Object?>>{attachedDatabase.appSettings},
+    ).getSingle();
+    return row.read<int>('c');
+  }
+
   Future<void> importSettings(Map<String, dynamic> values) async {
     if (values.isEmpty) return;
     await batch((Batch batch) {

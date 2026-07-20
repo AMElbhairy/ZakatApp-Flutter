@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zakatapp_flutter/models/merchant_rule.dart';
 import 'package:zakatapp_flutter/services/smart_capture_parser.dart';
 
 void main() {
@@ -22,6 +23,25 @@ void main() {
       expect(parsed.balance, 19584.33);
       expect(parsed.remainingAmount, isNull);
       _expectDateTime(parsed.capturedAt, 2026, 6, 26, 10, 2);
+    });
+
+    test('arabic Apple Pay purchase keeps merchant clean and ignores date line', () {
+      final parsed = SmartCaptureParser.parse(
+        'شراء 33.00 SAR POS - Apple Pay\n'
+        'بطاقة ائتمانية *0973\n'
+        'من tashkilat juha - SA\n'
+        'في 20:02 26-07-15\n'
+        'الرصيد 18,334.39',
+      );
+
+      expect(parsed.type, 'expense');
+      expect(parsed.amount, 33.0);
+      expect(parsed.currency, 'SAR');
+      expect(parsed.merchantName, 'Tashkilat Juha');
+      expect(parsed.paymentMethod, 'Apple Pay');
+      expect(parsed.cardReference, '*0973');
+      expect(parsed.balance, 18334.39);
+      _expectDateTime(parsed.capturedAt, 2015, 7, 26, 20, 2);
     });
 
     test('english credit card payment maps to explicit merchant intent', () {
@@ -85,26 +105,29 @@ void main() {
       _expectDateTime(parsed.capturedAt, 2026, 6, 24, 22, 13);
     });
 
-    test('debit transfer intl uses recipient as payee and sender as metadata', () {
-      final parsed = SmartCaptureParser.parse(
-        'Debit Transfer Intl\n'
-        'Amount: 3413.176306 SAR\n'
-        'Sender: AHMED ELBHAIRY\n'
-        'To: Niura agriculture\n'
-        '6/25/2026 at 10:13:59 AM',
-        currentUserName: 'AHMED ELBHAIRY',
-      );
+    test(
+      'debit transfer intl uses recipient as payee and sender as metadata',
+      () {
+        final parsed = SmartCaptureParser.parse(
+          'Debit Transfer Intl\n'
+          'Amount: 3413.176306 SAR\n'
+          'Sender: AHMED ELBHAIRY\n'
+          'To: Niura agriculture\n'
+          '6/25/2026 at 10:13:59 AM',
+          currentUserName: 'AHMED ELBHAIRY',
+        );
 
-      expect(parsed.type, 'expense');
-      expect(parsed.direction, 'out');
-      expect(parsed.amount, 3413.176306);
-      expect(parsed.currency, 'SAR');
-      expect(parsed.merchantName, 'Niura agriculture');
-      expect(parsed.senderName, 'AHMED ELBHAIRY');
-      expect(parsed.recipientName, 'Niura agriculture');
-      expect(parsed.paymentMethod, isNull);
-      _expectDateTime(parsed.capturedAt, 2026, 6, 25, 10, 13, 59);
-    });
+        expect(parsed.type, 'expense');
+        expect(parsed.direction, 'out');
+        expect(parsed.amount, 3413.176306);
+        expect(parsed.currency, 'SAR');
+        expect(parsed.merchantName, 'Niura agriculture');
+        expect(parsed.senderName, 'AHMED ELBHAIRY');
+        expect(parsed.recipientName, 'Niura agriculture');
+        expect(parsed.paymentMethod, isNull);
+        _expectDateTime(parsed.capturedAt, 2026, 6, 25, 10, 13, 59);
+      },
+    );
 
     test('credit transfer uses sender as source and income direction', () {
       final parsed = SmartCaptureParser.parse(
@@ -256,6 +279,87 @@ void main() {
       expect(parsed.cardReference, '*0973');
     });
 
+    test(
+      'wallet top up phrases stay transfer even when Apple Pay and apple.com appear',
+      () {
+        final cases = <Map<String, Object>>[
+          <String, Object>{
+            'message':
+                'Wallet top up via Apple Pay\n'
+                'Amount: SAR 2,490\n'
+                'Date: 2026-07-08 11:01\n'
+                'apple.com',
+            'amount': 2490.0,
+          },
+          <String, Object>{
+            'message':
+                'Top up wallet with Apple Pay\n'
+                'Amount: 2,490 SAR\n'
+                'Date: 2026-07-08 11:01',
+            'amount': 2490.0,
+          },
+          <String, Object>{
+            'message':
+                'Load wallet using Apple Pay\n'
+                'Amount: SAR 2490\n'
+                'Date: 2026-07-08 11:01',
+            'amount': 2490.0,
+          },
+          <String, Object>{
+            'message':
+                'شحن المحفظة عبر Apple Pay\n'
+                'المبلغ: 2,490 SAR\n'
+                'التاريخ: 2026-07-08 11:01',
+            'amount': 2490.0,
+          },
+          <String, Object>{
+            'message':
+                'إعادة شحن المحفظة عبر Apple Pay\n'
+                'المبلغ: SAR 2490\n'
+                'التاريخ: 2026-07-08 11:01',
+            'amount': 2490.0,
+          },
+        ];
+
+        for (final caseData in cases) {
+          final parsed = SmartCaptureParser.parse(
+            caseData['message']! as String,
+          );
+
+          expect(parsed.type, 'transfer');
+          expect(parsed.direction, 'out');
+          expect(parsed.amount, caseData['amount'] as double);
+          expect(parsed.currency, 'SAR');
+          expect(parsed.merchantName, isNull);
+          expect(parsed.paymentMethod, 'Apple Pay');
+          expect(parsed.description, 'Wallet Top Up');
+        }
+      },
+    );
+
+    test(
+      'account funding via Apple Pay is treated like wallet funding and not as apple.com',
+      () {
+        final parsed = SmartCaptureParser.parse(
+          'Account Funding via Apple Pay\n'
+          'Amount: SAR 58.50\n'
+          'Card: *6011 - mada\n'
+          'To: *8190\n'
+          'On: 08/07/2026 11:32:35',
+        );
+
+        expect(parsed.type, 'transfer');
+        expect(parsed.direction, 'out');
+        expect(parsed.amount, 58.5);
+        expect(parsed.currency, 'SAR');
+        expect(parsed.merchantName, isNull);
+        expect(parsed.paymentMethod, 'Apple Pay');
+        expect(parsed.cardReference, '*6011 - mada');
+        expect(parsed.recipientName, '*8190');
+        expect(parsed.description, 'Wallet Top Up');
+      },
+    );
+
     test('Visa 1200 is captured as card and payment method not merchant', () {
       final parsed = SmartCaptureParser.parse(
         'Credit Card:Payment\n'
@@ -301,6 +405,75 @@ void main() {
       expect(parsed.balance, 2000.0);
       _expectDateTime(parsed.capturedAt, 2026, 4, 19, 10, 48, 3);
     });
+
+    test('bank sms captures the charged amount and merchant inline', () {
+      final parsed = SmartCaptureParser.parse(
+        'شكرًا لاستخدامك بطاقة بنك مصر ****8799، تم الآن خصم EGP 105.06 عند MY FAWRY يوم 30/06 ، الرصيد المتاح EGP 1614.88 لمزيد من المعلومات عن الحساب، تفضل بزيارة الرابط التالي https://bnkmsr.com/online.',
+      );
+
+      expect(parsed.type, 'expense');
+      expect(parsed.amount, 105.06);
+      expect(parsed.currency, 'EGP');
+      expect(parsed.merchantName, 'MY FAWRY');
+    });
+
+    test('bank sms captures merchant even when the label is glued to amount', () {
+      final parsed = SmartCaptureParser.parse(
+        'شكرًا لاستخدامك بطاقة بنك مصر ****8799، تم الآن خصم EGP 105.06عند  MY FAWRY يوم 30/06 ، الرصيد المتاح EGP 1614.88 لمزيد من المعلومات عن الحساب، تفضل بزيارة الرابط التالي https://bnkmsr.com/online.',
+      );
+
+      expect(parsed.type, 'expense');
+      expect(parsed.amount, 105.06);
+      expect(parsed.currency, 'EGP');
+      expect(parsed.merchantName, 'MY FAWRY');
+    });
+
+    test(
+      'merchant rules stay type-specific when the captured type differs',
+      () {
+        final parsed = SmartCaptureParser.parse(
+          'Amazon refund processed\n'
+          'Amount: EGP 99.00\n'
+          'Refund to card',
+          merchantRules: <String, MerchantRule>{
+            'amazon': MerchantRule(
+              merchantName: 'Amazon',
+              categoryId: 'Shopping',
+              defaultType: 'expense',
+              autoApprove: true,
+              usageCount: 1,
+              confidence: 1.0,
+              source: 'custom',
+              aliases: const <String>['amazon'],
+              enabled: true,
+            ),
+          },
+        );
+
+        expect(parsed.type, 'income');
+        expect(parsed.merchantName, 'Amazon');
+        expect(parsed.suggestedCategory, isNull);
+        expect(parsed.merchantRuleSource, isNull);
+      },
+    );
+
+    test(
+      'does not extract Atheer card name as Heer, and handles ampersand in merchant name',
+      () {
+        final parsed = SmartCaptureParser.parse(
+          'Local POS Purchase\n'
+          'Amount: SAR 6.00\n'
+          'Card: *1551 - mada (Atheer)\n'
+          'At: Thamara & Resha Establish\n'
+          'On: 2026-07-05 19:17',
+        );
+
+        expect(parsed.type, 'expense');
+        expect(parsed.amount, 6.0);
+        expect(parsed.currency, 'SAR');
+        expect(parsed.merchantName, 'Thamara & Resha Establish');
+      },
+    );
   });
 }
 
@@ -310,9 +483,9 @@ void _expectDateTime(
   int month,
   int day,
   int hour,
-  int minute,
-  [int second = 0]
-) {
+  int minute, [
+  int second = 0,
+]) {
   expect(actual, isNotNull);
   expect(actual!.year, year);
   expect(actual.month, month);

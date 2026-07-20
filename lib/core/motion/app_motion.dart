@@ -72,42 +72,70 @@ class AnimatedSection extends StatefulWidget {
   State<AnimatedSection> createState() => _AnimatedSectionState();
 }
 
-class _AnimatedSectionState extends State<AnimatedSection> {
-  bool _visible = false;
+class _AnimatedSectionState extends State<AnimatedSection>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (widget.delay == Duration.zero) {
-        setState(() => _visible = true);
-      } else {
-        Future.delayed(widget.delay, () {
-          if (mounted) setState(() => _visible = true);
-        });
+    _controller = AnimationController(
+      vsync: this,
+      duration: widget.delay + widget.duration,
+    )..forward();
+  }
+
+  @override
+  void didUpdateWidget(covariant AnimatedSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final Duration nextDuration = widget.delay + widget.duration;
+    if (_controller.duration != nextDuration) {
+      _controller.duration = nextDuration;
+      if (!_controller.isAnimating) {
+        _controller.forward(from: 0);
       }
-    });
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     if (AppMotion.reduceMotion(context)) return widget.child;
 
-    final double offset = _visible ? 0 : widget.offsetY;
-    return AnimatedOpacity(
-      opacity: _visible ? 1 : 0,
-      duration: widget.duration,
-      curve: AppMotion.curve,
-      child: TweenAnimationBuilder<double>(
-        tween: Tween<double>(begin: offset, end: 0),
-        duration: widget.duration,
-        curve: AppMotion.curve,
-        builder: (BuildContext context, double value, Widget? child) {
-          return Transform.translate(offset: Offset(0, value), child: child);
-        },
-        child: widget.child,
-      ),
+    final double totalMicros =
+        (widget.delay.inMicroseconds + widget.duration.inMicroseconds)
+            .toDouble();
+    final double delayFraction = totalMicros <= 0
+        ? 0
+        : widget.delay.inMicroseconds / totalMicros;
+    final Curve curve = AppMotion.curve;
+
+    return AnimatedBuilder(
+      animation: _controller,
+      child: widget.child,
+      builder: (BuildContext context, Widget? child) {
+        final double t = delayFraction >= 1
+            ? (_controller.value >= 1 ? 1 : 0)
+            : _controller.value <= delayFraction
+            ? 0
+            : ((_controller.value - delayFraction) / (1 - delayFraction)).clamp(
+                0.0,
+                1.0,
+              );
+        final double eased = curve.transform(t);
+        return Opacity(
+          opacity: eased,
+          child: Transform.translate(
+            offset: Offset(0, widget.offsetY * (1 - eased)),
+            child: child,
+          ),
+        );
+      },
     );
   }
 }
@@ -161,10 +189,12 @@ class AnimatedValue extends StatefulWidget {
     required this.value,
     required this.builder,
     this.duration = AppMotion.valueDuration,
+    this.animateFromZero = false,
   });
 
   final double value;
   final Duration duration;
+  final bool animateFromZero;
   final Widget Function(BuildContext context, double value, Widget? child)
   builder;
 
@@ -178,7 +208,7 @@ class _AnimatedValueState extends State<AnimatedValue> {
   @override
   void initState() {
     super.initState();
-    _previousValue = widget.value;
+    _previousValue = widget.animateFromZero ? 0 : widget.value;
   }
 
   @override

@@ -62,6 +62,11 @@ class _MutableTransactionsStore implements TransactionsLocalStore {
   Stream<List<model.Transaction>> watchActiveTransactions() async* {
     yield List<model.Transaction>.from(transactions);
   }
+
+  @override
+  Future<int> countActiveTransactions() async {
+    return transactions.length;
+  }
 }
 
 class _MutableSavingsStore implements SavingsLocalStore {
@@ -104,6 +109,11 @@ class _MutableSavingsStore implements SavingsLocalStore {
   @override
   Stream<List<model.Saving>> watchActiveSavings() async* {
     yield List<model.Saving>.from(savings);
+  }
+
+  @override
+  Future<int> countActiveSavings() async {
+    return savings.length;
   }
 }
 

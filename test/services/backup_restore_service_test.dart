@@ -22,6 +22,17 @@ void main() {
     service = BackupRestoreService(controller: controller);
   });
 
+  Map<String, dynamic> _stableSnapshot(Map<String, dynamic> json) {
+    final Map<String, dynamic> copy = Map<String, dynamic>.from(json);
+    copy.remove('lastModifiedAt');
+    copy.remove('languagePreference');
+    copy.remove('cloudHydrated');
+    copy.remove('hasUnsyncedAuthChanges');
+    copy.remove('_loadedUserId');
+    copy.remove('_restorePromptDismissedUserId');
+    return copy;
+  }
+
   test('replace restore persists state', () async {
     final String raw = '''
 {"appName":"ZakatApp","schemaVersion":1,"exportedAt":"2026-01-01T00:00:00Z","counts":{},"appState":{"transactions":[{"id":"tx1","date":"2026-01-01"}],"savings":[],"investments":[],"recurringTransactions":[],"financialPlans":[]}}
@@ -51,6 +62,38 @@ void main() {
       'new',
     );
   });
+
+  test(
+    'restoreReplace normalizes language preference so Arabic and English backups persist the same data',
+    () async {
+      const String englishRaw = '''
+{"appName":"ZakatApp","schemaVersion":3,"appState":{"transactions":[{"id":"tx1","date":"2026-01-01","amount":100,"currency":"USD","category":"Salary","description":"salary","createdAt":"2026-01-01T00:00:00.000Z","rolledOver":false}],"savings":[{"id":"sav1","assetType":"cash","dateAcquired":"2026-01-01","amount":50,"remainingAmount":50,"unit":"USD","description":"saving","purchaseCurrency":"USD","purchaseAmount":50,"createdAt":"2026-01-01T00:00:00.000Z"}],"recurringTransactions":[],"investments":[],"financialPlans":[],"pendingTransactions":[],"lastRollover":"","categories":{"income":["Salary"],"expense":[]},"zakatPaidMonths":["2026-01"],"processedExpenseIds":["tx1"],"mainCurrency":"USD","defaultEntryCurrency":"USD","financialMonthCycle":"calendar","financialMonthStartDay":1,"zakatExpenseIds":{"2026-01":"tx1"},"zakatMethod":"hawl","zakatAnnualDate":"","zakatNisabBasis":"gold85","zakatScheduleFilter":"unpaid","marketData":{},"marketHistory":[],"syncHealth":{"lastSuccessAt":"","lastFailureAt":"","lastError":"","pendingWrites":0},"lastModifiedAt":"2026-01-01T00:00:00.000Z","languagePreference":"en","themeMode":"system","aiSettings":{"defaultKeyIndex":0},"biometricLockEnabled":false,"biometricHideWealthEnabled":false,"biometricExportEnabled":false,"biometricRestoreEnabled":false,"biometricAutoLockDelay":"1_minute","merchantRules":{},"merchantAliases":{},"captureAnalytics":{"parsedMessages":0,"autoApprovedMessages":0,"duplicateMessages":0,"ignoredMessages":0,"correctedMessages":0,"learnedRules":0,"autoApprovedRules":0,"capturedFromAppleShortcuts":0,"capturedFromAppleShortcutsAutoApproved":0,"capturedFromAppleShortcutsIgnored":0},"correctionFeedback":[],"merchantConfirmations":[],"smartCaptureEnabled":true,"smartCaptureAutoApproveEnabled":false}}''';
+      const String arabicRaw = '''
+{"appName":"ZakatApp","schemaVersion":3,"appState":{"transactions":[{"id":"tx1","date":"2026-01-01","amount":100,"currency":"USD","category":"Salary","description":"salary","createdAt":"2026-01-01T00:00:00.000Z","rolledOver":false}],"savings":[{"id":"sav1","assetType":"cash","dateAcquired":"2026-01-01","amount":50,"remainingAmount":50,"unit":"USD","description":"saving","purchaseCurrency":"USD","purchaseAmount":50,"createdAt":"2026-01-01T00:00:00.000Z"}],"recurringTransactions":[],"investments":[],"financialPlans":[],"pendingTransactions":[],"lastRollover":"","categories":{"income":["Salary"],"expense":[]},"zakatPaidMonths":["2026-01"],"processedExpenseIds":["tx1"],"mainCurrency":"USD","defaultEntryCurrency":"USD","financialMonthCycle":"calendar","financialMonthStartDay":1,"zakatExpenseIds":{"2026-01":"tx1"},"zakatMethod":"hawl","zakatAnnualDate":"","zakatNisabBasis":"gold85","zakatScheduleFilter":"unpaid","marketData":{},"marketHistory":[],"syncHealth":{"lastSuccessAt":"","lastFailureAt":"","lastError":"","pendingWrites":0},"lastModifiedAt":"2026-01-01T00:00:00.000Z","languagePreference":"ar","themeMode":"system","aiSettings":{"defaultKeyIndex":0},"biometricLockEnabled":false,"biometricHideWealthEnabled":false,"biometricExportEnabled":false,"biometricRestoreEnabled":false,"biometricAutoLockDelay":"1_minute","merchantRules":{},"merchantAliases":{},"captureAnalytics":{"parsedMessages":0,"autoApprovedMessages":0,"duplicateMessages":0,"ignoredMessages":0,"correctedMessages":0,"learnedRules":0,"autoApprovedRules":0,"capturedFromAppleShortcuts":0,"capturedFromAppleShortcutsAutoApproved":0,"capturedFromAppleShortcutsIgnored":0},"correctionFeedback":[],"merchantConfirmations":[],"smartCaptureEnabled":true,"smartCaptureAutoApproveEnabled":false}}''';
+
+      await service.restoreReplace(
+        englishRaw,
+        allowWhenLocalDataExists: true,
+      );
+      final Map<String, dynamic> englishSnapshot = _stableSnapshot(
+        controller.state.toJson(),
+      );
+
+      controller = AppStateController(repository: repository);
+      await controller.load();
+      service = BackupRestoreService(controller: controller);
+      await service.restoreReplace(
+        arabicRaw,
+        allowWhenLocalDataExists: true,
+      );
+      final Map<String, dynamic> arabicSnapshot = _stableSnapshot(
+        controller.state.toJson(),
+      );
+
+      expect(englishSnapshot, arabicSnapshot);
+      expect(controller.state.languagePreference, 'en');
+    },
+  );
 
   test('local conflict requires explicit action', () async {
     await service.restoreReplace(

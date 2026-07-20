@@ -1,4 +1,6 @@
 // ignore_for_file: avoid_print
+import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -13,6 +15,7 @@ import '../../core/widgets/app_ui.dart';
 import '../../core/theme/app_theme_extensions.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/utils/category_visuals.dart';
+import '../../core/utils/currency_presentation.dart';
 import '../../models/saving.dart';
 import '../../models/transaction.dart';
 import '../../models/app_state.dart';
@@ -23,6 +26,7 @@ import '../../core/widgets/currency_exchange_dialog.dart';
 import '../../core/widgets/sell_metal_dialog.dart';
 import '../account/notifications_screen.dart';
 import '../../models/pending_transaction.dart';
+import '../../services/financial_metrics_service.dart';
 
 enum _ActivityFilter { all, income, expense, transfer }
 
@@ -39,6 +43,16 @@ class ActivityScreenState extends State<ActivityScreen> {
   _ActivityFilter _filter = _ActivityFilter.all;
   _ActivitySection _section = _ActivitySection.transactions;
   final TextEditingController _searchController = TextEditingController();
+  final GlobalKey _incomeSummaryKey = GlobalKey(
+    debugLabel: 'activityIncomeSummaryCell',
+  );
+  final GlobalKey _expenseSummaryKey = GlobalKey(
+    debugLabel: 'activityExpenseSummaryCell',
+  );
+  final GlobalKey _transferSummaryKey = GlobalKey(
+    debugLabel: 'activityTransferSummaryCell',
+  );
+  OverlayEntry? _currencyBreakdownOverlay;
 
   // Filter States for Transactions
   String _selectedDateFilter = 'All Time';
@@ -52,6 +66,7 @@ class ActivityScreenState extends State<ActivityScreen> {
 
   @override
   void dispose() {
+    _hideCurrencyBreakdownOverlay();
     _searchController.dispose();
     super.dispose();
   }
@@ -150,10 +165,9 @@ class ActivityScreenState extends State<ActivityScreen> {
                   itemBuilder: (BuildContext context, int index) {
                     final String category = sortedCategories[index];
                     final bool isSelected = _selectedCategory == category;
-                    String label = category;
-                    if (category == 'All') {
-                      label = context.l10n.tr('all_categories');
-                    }
+                    final String label = category == 'All'
+                        ? context.l10n.tr('all_categories')
+                        : context.l10n.translateCategory(category);
                     final CategoryVisual visual = category == 'All'
                         ? CategoryVisuals.neutralFallback
                         : CategoryVisuals.resolveCategoryVisual(
@@ -500,7 +514,7 @@ class ActivityScreenState extends State<ActivityScreen> {
 
     String catFilterLabel = _selectedCategory == 'All'
         ? context.l10n.tr('all_categories')
-        : _selectedCategory;
+        : context.l10n.translateCategory(_selectedCategory);
 
     // Filtered by type and date only for Summary Strip calculations
     final List<Transaction> transactions = state.transactions;
@@ -615,29 +629,86 @@ class ActivityScreenState extends State<ActivityScreen> {
         })
         .toList(growable: false);
 
-    double totalIncome = 0.0;
-    double totalExpenses = 0.0;
-    double totalTransfers = 0.0;
+    final String searchQuery = _searchController.text.trim().toLowerCase();
+    final List<_ActivityEntry> filteredForSummary = filteredByTypeAndDate
+        .where((_ActivityEntry entry) {
+          if (_selectedCategory == 'All') return true;
+          final String catName = entry.isCashSaving
+              ? context.l10n.tr('cash_in')
+              : entry.transaction!.category;
+          return catName == _selectedCategory;
+        })
+        .where((_ActivityEntry entry) {
+          if (searchQuery.isEmpty) return true;
+          return entry.description.toLowerCase().contains(searchQuery);
+        })
+        .toList();
 
-    for (final entry in filteredByTypeAndDate) {
-      final double amtEgp = ZakatEngineService.convertToEgp(
-        entry.amount,
-        entry.currency,
-        market,
-      );
-      final double amtMain = ZakatEngineService.convertFromEgp(
-        amtEgp,
-        mainCurrency,
-        market,
-      );
-      if (entry.isTransfer) {
-        totalTransfers += amtMain;
-      } else if (entry.isIncome) {
-        totalIncome += amtMain;
-      } else if (entry.isExpense) {
-        totalExpenses += amtMain;
-      }
-    }
+    final List<FinancialMetricsRecord<_ActivityEntry>> summaryRecords =
+        filteredForSummary
+            .map(
+              (_ActivityEntry entry) => FinancialMetricsRecord<_ActivityEntry>(
+                source: entry,
+                type: entry.isTransfer
+                    ? FinancialRecordType.transfer
+                    : (entry.isIncome
+                          ? FinancialRecordType.income
+                          : FinancialRecordType.expense),
+                date: _parseDate(entry.date),
+                createdAt: _parseDate(entry.createdAt),
+                amountEgp: ZakatEngineService.convertToEgp(
+                  entry.amount,
+                  entry.currency,
+                  market,
+                ),
+                category: entry.isCashSaving
+                    ? context.l10n.tr('cash_in')
+                    : context.l10n.translateCategory(
+                        entry.transaction?.category ?? '',
+                      ),
+                label: entry.description.trim(),
+                description: entry.description.trim(),
+                currencyCode: entry.currency,
+              ),
+            )
+            .toList(growable: false);
+
+    final FinancialMetricsResult<_ActivityEntry> summaryMetrics =
+        FinancialMetricsService.calculate<_ActivityEntry>(
+          records: summaryRecords,
+          selectedPeriod: _selectedDateFilter == 'All Time'
+              ? 'All'
+              : _selectedDateFilter,
+          customRange: _customDateRange,
+          now: DateTime.now(),
+          locale: Localizations.localeOf(context).toString(),
+        );
+
+    final double totalIncome = summaryMetrics.incomeCurrent;
+    final double totalExpenses = summaryMetrics.expenseCurrent;
+    final double totalTransfers = summaryMetrics.transferCurrent;
+
+    final Map<_ActivityFilter, List<CurrencyBreakdownItem>> breakdowns =
+        <_ActivityFilter, List<CurrencyBreakdownItem>>{
+          _ActivityFilter.income: _buildActivityCurrencyBreakdown(
+            entries: filteredForSummary,
+            type: _ActivityFilter.income,
+            mainCurrency: state.mainCurrency,
+            market: market,
+          ),
+          _ActivityFilter.expense: _buildActivityCurrencyBreakdown(
+            entries: filteredForSummary,
+            type: _ActivityFilter.expense,
+            mainCurrency: state.mainCurrency,
+            market: market,
+          ),
+          _ActivityFilter.transfer: _buildActivityCurrencyBreakdown(
+            entries: filteredForSummary,
+            type: _ActivityFilter.transfer,
+            mainCurrency: state.mainCurrency,
+            market: market,
+          ),
+        };
 
     return ListView(
       padding: EdgeInsets.fromLTRB(0, 0, 0, navSafeBottomPadding),
@@ -671,6 +742,8 @@ class ActivityScreenState extends State<ActivityScreen> {
             totalTransfers: totalTransfers,
             mainCurrency: mainCurrency,
             isArabic: isArabic,
+            balancesHidden: balancesHidden,
+            breakdowns: breakdowns,
           ),
         ),
         const SizedBox(height: 12),
@@ -681,107 +754,106 @@ class ActivityScreenState extends State<ActivityScreen> {
             title: context.l10n.tr('no_transactions_yet'),
             message: context.l10n.tr('activity_empty_message'),
           )
-        else
-          ...<Widget>[
-            for (final _ActivityEntry entry in filtered) ...<Widget>[
-              Slidable(
-                key: Key('dismiss_${entry.key}'),
-                endActionPane: ActionPane(
-                  motion: const ScrollMotion(),
-                  extentRatio: 0.28,
-                  children: [
-                    CustomSlidableAction(
-                      key: Key('delete_action_${entry.key}'),
-                      onPressed: (BuildContext context) async {
-                        final AppStateController controller =
-                            context.read<AppStateController>();
-                        final bool isTx = entry.transaction != null;
-                        final String titleKey = isTx
-                            ? 'delete_transaction'
-                            : 'delete_saving';
-                        final String messageKey = isTx
-                            ? 'delete_transaction_message'
-                            : 'delete_saving_message';
-                        final bool? confirmed = await showDialog<bool>(
-                          context: context,
-                          builder: (BuildContext context) {
-                            return AlertDialog(
-                              title: Text(context.l10n.tr(titleKey)),
-                              content: Text(context.l10n.tr(messageKey)),
-                              actions: <Widget>[
-                                TextButton(
-                                  onPressed: () =>
-                                      Navigator.of(context).pop(false),
-                                  child: Text(context.l10n.tr('cancel')),
+        else ...<Widget>[
+          for (final _ActivityEntry entry in filtered) ...<Widget>[
+            Slidable(
+              key: Key('dismiss_${entry.key}'),
+              endActionPane: ActionPane(
+                motion: const ScrollMotion(),
+                extentRatio: 0.28,
+                children: [
+                  CustomSlidableAction(
+                    key: Key('delete_action_${entry.key}'),
+                    onPressed: (BuildContext context) async {
+                      final AppStateController controller = context
+                          .read<AppStateController>();
+                      final bool isTx = entry.transaction != null;
+                      final String titleKey = isTx
+                          ? 'delete_transaction'
+                          : 'delete_saving';
+                      final String messageKey = isTx
+                          ? 'delete_transaction_message'
+                          : 'delete_saving_message';
+                      final bool? confirmed = await showDialog<bool>(
+                        context: context,
+                        builder: (BuildContext context) {
+                          return AlertDialog(
+                            title: Text(context.l10n.tr(titleKey)),
+                            content: Text(context.l10n.tr(messageKey)),
+                            actions: <Widget>[
+                              TextButton(
+                                onPressed: () =>
+                                    Navigator.of(context).pop(false),
+                                child: Text(context.l10n.tr('cancel')),
+                              ),
+                              FilledButton(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: const Color(0xFFC62828),
+                                  foregroundColor: AppColors.white,
                                 ),
-                                FilledButton(
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: const Color(0xFFC62828),
-                                    foregroundColor: AppColors.white,
-                                  ),
-                                  onPressed: () =>
-                                      Navigator.of(context).pop(true),
-                                  child: Text(context.l10n.tr('delete')),
-                                ),
-                              ],
-                            );
-                          },
-                        );
-                        if (confirmed == true) {
-                          final bool isCurrencyExchange =
-                              (entry.transferTitle ?? '').toLowerCase() ==
-                              'currency exchange';
-                          if (isCurrencyExchange &&
-                              entry.exchangeActivityId != null) {
-                            await controller.deleteCurrencyExchangeActivity(
-                              entry.exchangeActivityId!,
-                            );
-                          } else if (entry.transaction != null) {
-                            await controller.deleteTransaction(
-                              entry.transaction!.id,
-                            );
-                          } else if (entry.saving != null) {
-                            await controller.deleteSaving(entry.saving!.id);
-                          }
+                                onPressed: () =>
+                                    Navigator.of(context).pop(true),
+                                child: Text(context.l10n.tr('delete')),
+                              ),
+                            ],
+                          );
+                        },
+                      );
+                      if (confirmed == true) {
+                        final bool isCurrencyExchange =
+                            (entry.transferTitle ?? '').toLowerCase() ==
+                            'currency exchange';
+                        if (isCurrencyExchange &&
+                            entry.exchangeActivityId != null) {
+                          await controller.deleteCurrencyExchangeActivity(
+                            entry.exchangeActivityId!,
+                          );
+                        } else if (entry.transaction != null) {
+                          await controller.deleteTransaction(
+                            entry.transaction!.id,
+                          );
+                        } else if (entry.saving != null) {
+                          await controller.deleteSaving(entry.saving!.id);
                         }
-                      },
-                      backgroundColor: AppColors.redStrong,
-                      foregroundColor: AppColors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(
-                            Icons.delete_outline_rounded,
+                      }
+                    },
+                    backgroundColor: AppColors.redStrong,
+                    foregroundColor: AppColors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(
+                          Icons.delete_outline_rounded,
+                          color: AppColors.white,
+                          size: 22,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          context.l10n.tr('delete'),
+                          style: const TextStyle(
                             color: AppColors.white,
-                            size: 22,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            context.l10n.tr('delete'),
-                            style: const TextStyle(
-                              color: AppColors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                child: _buildTransactionCard(
-                  context,
-                  entry: entry,
-                  balancesHidden: balancesHidden,
-                  mainCurrency: mainCurrency,
-                  market: market,
-                  isArabic: isArabic,
-                ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 10),
-            ],
+              child: _buildTransactionCard(
+                context,
+                entry: entry,
+                balancesHidden: balancesHidden,
+                mainCurrency: mainCurrency,
+                market: market,
+                isArabic: isArabic,
+              ),
+            ),
+            const SizedBox(height: 10),
           ],
+        ],
       ],
     );
   }
@@ -958,7 +1030,7 @@ class ActivityScreenState extends State<ActivityScreen> {
                         ? FontWeight.w700
                         : FontWeight.w600,
                     color: _selectedCategory != 'All'
-                        ? tokens.colors.hero
+                        ? (dark ? tokens.colors.gold : tokens.colors.hero)
                         : tokens.colors.textPrimary,
                   ),
                 ),
@@ -1040,6 +1112,8 @@ class ActivityScreenState extends State<ActivityScreen> {
     required double totalTransfers,
     required String mainCurrency,
     required bool isArabic,
+    required bool balancesHidden,
+    required Map<_ActivityFilter, List<CurrencyBreakdownItem>> breakdowns,
   }) {
     final tokens = context.premiumTokens;
     final bool dark = Theme.of(context).brightness == Brightness.dark;
@@ -1073,11 +1147,17 @@ class ActivityScreenState extends State<ActivityScreen> {
                 Expanded(
                   child: _buildSummaryColumn(
                     context,
+                    key: _incomeSummaryKey,
                     label: context.l10n.tr('income'),
                     amount: totalIncome,
                     color: tokens.colors.success,
                     mainCurrency: mainCurrency,
                     isArabic: isArabic,
+                    showValue: !balancesHidden,
+                    breakdownType: _ActivityFilter.income,
+                    breakdownItems:
+                        breakdowns[_ActivityFilter.income] ??
+                        const <CurrencyBreakdownItem>[],
                   ),
                 ),
                 SizedBox(
@@ -1090,11 +1170,17 @@ class ActivityScreenState extends State<ActivityScreen> {
                 Expanded(
                   child: _buildSummaryColumn(
                     context,
+                    key: _expenseSummaryKey,
                     label: context.l10n.tr('expense'),
                     amount: totalExpenses,
                     color: expenseColor,
                     mainCurrency: mainCurrency,
                     isArabic: isArabic,
+                    showValue: !balancesHidden,
+                    breakdownType: _ActivityFilter.expense,
+                    breakdownItems:
+                        breakdowns[_ActivityFilter.expense] ??
+                        const <CurrencyBreakdownItem>[],
                   ),
                 ),
                 SizedBox(
@@ -1107,34 +1193,54 @@ class ActivityScreenState extends State<ActivityScreen> {
                 Expanded(
                   child: _buildSummaryColumn(
                     context,
+                    key: _transferSummaryKey,
                     label: context.l10n.tr('transfer'),
                     amount: totalTransfers,
                     color: tokens.colors.gold,
                     mainCurrency: mainCurrency,
                     isArabic: isArabic,
+                    showValue: !balancesHidden,
+                    breakdownType: _ActivityFilter.transfer,
+                    breakdownItems:
+                        breakdowns[_ActivityFilter.transfer] ??
+                        const <CurrencyBreakdownItem>[],
                   ),
                 ),
               ],
             )
           : _buildSummaryColumn(
               context,
+              key: switch (activeFilter) {
+                _ActivityFilter.income => _incomeSummaryKey,
+                _ActivityFilter.expense => _expenseSummaryKey,
+                _ActivityFilter.transfer => _transferSummaryKey,
+                _ActivityFilter.all => _incomeSummaryKey,
+              },
               label: activeLabel,
               amount: activeAmount,
               color: activeColor,
               mainCurrency: mainCurrency,
               isArabic: isArabic,
+              showValue: !balancesHidden,
               compact: false,
+              breakdownType: activeFilter,
+              breakdownItems:
+                  breakdowns[activeFilter] ?? const <CurrencyBreakdownItem>[],
             ),
     );
   }
 
   Widget _buildSummaryColumn(
     BuildContext context, {
+    required GlobalKey key,
     required String label,
     required double amount,
     required Color color,
     required String mainCurrency,
     required bool isArabic,
+    required bool showValue,
+    required _ActivityFilter breakdownType,
+    required List<CurrencyBreakdownItem> breakdownItems,
     bool compact = true,
   }) {
     final tokens = context.premiumTokens;
@@ -1147,34 +1253,57 @@ class ActivityScreenState extends State<ActivityScreen> {
       formatted,
       compact: compact,
     );
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: tokens.colors.textSecondary,
+    return KeyedSubtree(
+      key: key,
+      child: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerUp: (_) => _hideCurrencyBreakdownOverlay(),
+        onPointerCancel: (_) => _hideCurrencyBreakdownOverlay(),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onLongPressStart: (LongPressStartDetails details) {
+            _showCurrencyBreakdownOverlay(
+              context: context,
+              anchorKey: key,
+              breakdownType: breakdownType,
+              items: breakdownItems,
+              title: _breakdownTitle(context, breakdownType),
+              mainCurrency: mainCurrency,
+            );
+          },
+          onLongPressEnd: (_) => _hideCurrencyBreakdownOverlay(),
+          onLongPressCancel: _hideCurrencyBreakdownOverlay,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: tokens.colors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    showValue ? formatted : '••••••',
+                    style: TextStyle(
+                      fontSize: valueFontSize,
+                      fontWeight: FontWeight.w800,
+                      color: color,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 6),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              formatted,
-              style: TextStyle(
-                fontSize: valueFontSize,
-                fontWeight: FontWeight.w800,
-                color: color,
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -1186,6 +1315,117 @@ class ActivityScreenState extends State<ActivityScreen> {
     if (length <= 11) return base;
     if (length <= 14) return base - 2;
     return base - 4;
+  }
+
+  void _hideCurrencyBreakdownOverlay() {
+    _currencyBreakdownOverlay?.remove();
+    _currencyBreakdownOverlay = null;
+  }
+
+  void _showCurrencyBreakdownOverlay({
+    required BuildContext context,
+    required GlobalKey anchorKey,
+    required _ActivityFilter breakdownType,
+    required List<CurrencyBreakdownItem> items,
+    required String title,
+    required String mainCurrency,
+  }) {
+    if (items.isEmpty || !mounted) {
+      _hideCurrencyBreakdownOverlay();
+      return;
+    }
+
+    final BuildContext? anchorContext = anchorKey.currentContext;
+    final RenderObject? anchorObject = anchorContext?.findRenderObject();
+    if (anchorObject is! RenderBox || !anchorObject.hasSize) {
+      return;
+    }
+
+    final OverlayState overlay = Overlay.of(context, rootOverlay: true);
+
+    _hideCurrencyBreakdownOverlay();
+
+    final Rect anchorRect =
+        anchorObject.localToGlobal(Offset.zero) & anchorObject.size;
+    final MediaQueryData mediaQuery = MediaQuery.of(context);
+    final double screenWidth = mediaQuery.size.width;
+    final double screenHeight = mediaQuery.size.height;
+    final double horizontalMargin = 16;
+    final double bubbleWidth = math.min(screenWidth - 48, 360).toDouble();
+    final double estimatedHeight = math
+        .min(screenHeight * 0.42, 64 + (items.length * 40))
+        .toDouble();
+    final double belowTop = anchorRect.bottom + 10;
+    final double aboveTop = anchorRect.top - estimatedHeight - 10;
+    final bool showAbove =
+        belowTop + estimatedHeight >
+            screenHeight - mediaQuery.padding.bottom - 8 &&
+        aboveTop >= mediaQuery.padding.top + 8;
+    final double bubbleTop = showAbove
+        ? aboveTop
+              .clamp(
+                mediaQuery.padding.top + 8,
+                screenHeight - mediaQuery.padding.bottom - estimatedHeight - 8,
+              )
+              .toDouble()
+        : belowTop
+              .clamp(
+                mediaQuery.padding.top + 8,
+                screenHeight - mediaQuery.padding.bottom - estimatedHeight - 8,
+              )
+              .toDouble();
+    final double bubbleLeft = (anchorRect.center.dx - bubbleWidth / 2)
+        .clamp(horizontalMargin, screenWidth - bubbleWidth - horizontalMargin)
+        .toDouble();
+    final double arrowWidth = 18;
+    final double arrowLeft = (anchorRect.center.dx - (arrowWidth / 2))
+        .clamp(bubbleLeft + 22, bubbleLeft + bubbleWidth - 22 - arrowWidth)
+        .toDouble();
+
+    _currencyBreakdownOverlay = OverlayEntry(
+      builder: (BuildContext overlayContext) {
+        final tokens = overlayContext.premiumTokens;
+        return Positioned.fill(
+          key: const Key('activityCurrencyBreakdownOverlay'),
+          child: IgnorePointer(
+            child: Stack(
+              children: <Widget>[
+                Positioned(
+                  left: bubbleLeft,
+                  top: bubbleTop,
+                  width: bubbleWidth,
+                  child: _CurrencyBreakdownBubble(
+                    key: const Key('activityCurrencyBreakdownBubble'),
+                    title: title,
+                    items: items,
+                    showAbove: showAbove,
+                    arrowLeft: arrowLeft - bubbleLeft,
+                    maxBubbleWidth: bubbleWidth,
+                    backgroundColor: tokens.colors.card,
+                    borderColor: tokens.colors.divider,
+                    titleColor: tokens.colors.textPrimary,
+                    primaryTextColor: tokens.colors.textPrimary,
+                    secondaryTextColor: tokens.colors.textSecondary,
+                    mainCurrency: mainCurrency,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    overlay.insert(_currencyBreakdownOverlay!);
+  }
+
+  String _breakdownTitle(BuildContext context, _ActivityFilter type) {
+    final String label = switch (type) {
+      _ActivityFilter.income => context.l10n.tr('income'),
+      _ActivityFilter.expense => context.l10n.tr('expense'),
+      _ActivityFilter.transfer => context.l10n.tr('transfer'),
+      _ActivityFilter.all => context.l10n.tr('activity'),
+    };
+    return '$label ${context.l10n.tr('by_currency')}';
   }
 
   Widget _buildTransactionCard(
@@ -1218,7 +1458,10 @@ class ActivityScreenState extends State<ActivityScreen> {
         : (entry.isIncome
               ? context.l10n.tr('income')
               : context.l10n.tr('expense'));
-    final String dateText = _formatHumanDate(entry.date);
+    final String dateText = _formatHumanDate(
+      entry.date,
+      Localizations.localeOf(context).toString(),
+    );
     final String subtitleText = entry.isTransfer
         ? _getTransferSubtitle(context, entry, mainCurrency, market, isArabic)
         : [
@@ -1240,9 +1483,7 @@ class ActivityScreenState extends State<ActivityScreen> {
           child: Icon(resolvedIcon, color: resolvedColor, size: 22),
         ),
         title: Text(
-          entry.isTransfer
-              ? (entry.transferTitle ?? entry.title(context))
-              : entry.title(context),
+          entry.displayTitle(context),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
@@ -1269,7 +1510,12 @@ class ActivityScreenState extends State<ActivityScreen> {
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: <Widget>[
                   _MetaPill(text: typeLabel),
-                  _MetaPill(text: _formatHumanDate(entry.date)),
+                  _MetaPill(
+                    text: _formatHumanDate(
+                      entry.date,
+                      Localizations.localeOf(context).toString(),
+                    ),
+                  ),
                 ],
               ),
             ],
@@ -1342,14 +1588,14 @@ class ActivityScreenState extends State<ActivityScreen> {
     return CategoryVisuals.neutralFallback;
   }
 
-  String _formatHumanDate(String raw) {
+  String _formatHumanDate(String raw, String locale) {
     final DateTime? parsed = DateTime.tryParse(raw);
     if (parsed == null) {
       final DateTime? fallback = _tryParseLooseDate(raw);
       if (fallback == null) return raw;
-      return DateFormat('dd MMM yyyy').format(fallback);
+      return DateFormat('dd MMM yyyy', locale).format(fallback);
     }
-    return DateFormat('dd MMM yyyy').format(parsed.toLocal());
+    return DateFormat('dd MMM yyyy', locale).format(parsed.toLocal());
   }
 
   DateTime? _tryParseLooseDate(String raw) {
@@ -1481,7 +1727,7 @@ class ActivityScreenState extends State<ActivityScreen> {
     final double totalZakat = ((row?['totalZakat'] ?? 0) as num).toDouble();
     final String nextDueLabel = paymentDate.isEmpty
         ? context.l10n.tr('upcoming')
-        : _formatHumanDate(paymentDate);
+        : _formatHumanDate(paymentDate, Localizations.localeOf(context).toString());
     return PremiumCard(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1588,9 +1834,20 @@ class ActivityScreenState extends State<ActivityScreen> {
                     const SizedBox(width: 8),
                     ...<String>['All Time', '30D', '90D', 'YTD'].map((filter) {
                       final bool isSelected = _zakatDateFilter == filter;
-                      final String label = filter == 'All Time'
-                          ? context.l10n.tr('all')
-                          : filter;
+                      String label = filter;
+                      if (filter == 'All Time') {
+                        label = context.l10n.tr('all');
+                      } else if (filter == 'YTD') {
+                        final String localized = context.l10n.tr('this_year');
+                        label = localized
+                            .split(' ')
+                            .map(
+                              (word) => word.isNotEmpty
+                                  ? '${word[0].toUpperCase()}${word.substring(1)}'
+                                  : '',
+                            )
+                            .join(' ');
+                      }
                       return Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 3),
                         child: ChoiceChip(
@@ -1693,7 +1950,7 @@ class ActivityScreenState extends State<ActivityScreen> {
     final String monthTitle = _monthTitleFromKey(monthKey, paymentDate);
     final String dueLabel = paymentDate.isEmpty
         ? ''
-        : 'Due on ${_formatHumanDate(paymentDate)}';
+        : 'Due on ${_formatHumanDate(paymentDate, Localizations.localeOf(context).toString())}';
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     final String status = isCurrent
         ? context.l10n.tr('due_now')
@@ -1886,7 +2143,10 @@ class ActivityScreenState extends State<ActivityScreen> {
                   style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
                 subtitle: Text(
-                  _formatHumanDate((entry['dueDateRaw'] ?? '').toString()),
+                  _formatHumanDate(
+                    (entry['dueDateRaw'] ?? '').toString(),
+                    Localizations.localeOf(context).toString(),
+                  ),
                   style: TextStyle(color: tokens.colors.textSecondary),
                 ),
                 trailing: Text(
@@ -1953,11 +2213,15 @@ class ActivityScreenState extends State<ActivityScreen> {
       if (_zakatDateFilter != 'All Time') {
         final DateTime date = _parseDate((row['paymentDate'] ?? '').toString());
         if (_zakatDateFilter == '30D') {
-          return date.isAfter(now.subtract(const Duration(days: 30))) ||
-              date.isAtSameMomentAs(now.subtract(const Duration(days: 30)));
+          final DateTime start = now.subtract(const Duration(days: 30));
+          final DateTime end = now.add(const Duration(days: 30));
+          return (date.isAfter(start) || date.isAtSameMomentAs(start)) &&
+              (date.isBefore(end) || date.isAtSameMomentAs(end));
         } else if (_zakatDateFilter == '90D') {
-          return date.isAfter(now.subtract(const Duration(days: 90))) ||
-              date.isAtSameMomentAs(now.subtract(const Duration(days: 90)));
+          final DateTime start = now.subtract(const Duration(days: 90));
+          final DateTime end = now.add(const Duration(days: 90));
+          return (date.isAfter(start) || date.isAtSameMomentAs(start)) &&
+              (date.isBefore(end) || date.isAtSameMomentAs(end));
         } else if (_zakatDateFilter == 'YTD') {
           return date.year == now.year;
         } else if (_zakatDateFilter == 'Custom' &&
@@ -2313,7 +2577,8 @@ class ActivityScreenState extends State<ActivityScreen> {
 
   static DateTime _parseDate(String raw) {
     try {
-      return DateTime.parse(raw);
+      final DateTime parsed = DateTime.parse(raw);
+      return DateUtils.dateOnly(parsed);
     } catch (_) {
       return DateTime.fromMillisecondsSinceEpoch(0);
     }
@@ -2442,6 +2707,426 @@ class _SummaryMetric extends StatelessWidget {
         ],
       ],
     );
+  }
+}
+
+class _CurrencyBreakdownBubble extends StatelessWidget {
+  const _CurrencyBreakdownBubble({
+    super.key,
+    required this.title,
+    required this.items,
+    required this.showAbove,
+    required this.arrowLeft,
+    required this.maxBubbleWidth,
+    required this.backgroundColor,
+    required this.borderColor,
+    required this.titleColor,
+    required this.primaryTextColor,
+    required this.secondaryTextColor,
+    required this.mainCurrency,
+  });
+
+  final String title;
+  final List<CurrencyBreakdownItem> items;
+  final bool showAbove;
+  final double arrowLeft;
+  final double maxBubbleWidth;
+  final Color backgroundColor;
+  final Color borderColor;
+  final Color titleColor;
+  final Color primaryTextColor;
+  final Color secondaryTextColor;
+  final String mainCurrency;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isArabic =
+        Localizations.localeOf(context).languageCode.toLowerCase() == 'ar';
+    final tokens = context.premiumTokens;
+    final String displayMainCurrency = mainCurrency.trim().isEmpty
+        ? 'EGP'
+        : mainCurrency.trim().toUpperCase();
+    final List<CurrencyBreakdownItem> visibleItems = items.length > 4
+        ? items.take(4).toList(growable: false)
+        : items;
+    final bool hasOther = items.length > 4;
+    final ui.TextDirection textDirection = Directionality.of(context);
+    final TextStyle amountStyle = TextStyle(
+      fontSize: 13,
+      fontWeight: FontWeight.w700,
+      color: primaryTextColor,
+    );
+    final TextStyle percentageStyle = TextStyle(
+      fontSize: 12,
+      fontWeight: FontWeight.w600,
+      color: secondaryTextColor,
+    );
+    final double innerBubbleWidth = math.max(0, maxBubbleWidth - 32);
+    final double amountColumnWidth = visibleItems.fold<double>(0, (
+      double widest,
+      CurrencyBreakdownItem item,
+    ) {
+      final String amountText = _formatOriginalAmount(
+        item.originalAmount,
+        item.currencyCode == 'OTHER' ? displayMainCurrency : item.currencyCode,
+        isArabic: isArabic,
+      );
+      return math.max(
+        widest,
+        _measureTextWidth(amountText, amountStyle, textDirection) + 2,
+      );
+    });
+    final double percentageColumnWidth = visibleItems.fold<double>(0, (
+      double widest,
+      CurrencyBreakdownItem item,
+    ) {
+      final String percentageText = '${item.percentage.toStringAsFixed(1)}%';
+      return math.max(
+        widest,
+        _measureTextWidth(percentageText, percentageStyle, textDirection) + 2,
+      );
+    });
+    final double maxAmountWidth = math.max(
+      84,
+      innerBubbleWidth - 22 - 8 - 8 - percentageColumnWidth,
+    );
+    final double clampedAmountWidth = math.min(
+      amountColumnWidth,
+      maxAmountWidth,
+    );
+
+    final List<Widget> rowWidgets = <Widget>[];
+    for (int index = 0; index < visibleItems.length; index++) {
+      if (index > 0) {
+        rowWidgets.add(
+          Divider(
+            height: 10,
+            thickness: 0.5,
+            color: borderColor.withValues(alpha: 0.28),
+          ),
+        );
+      }
+      rowWidgets.add(
+        _CurrencyBreakdownRow(
+          item: visibleItems[index],
+          isArabic: isArabic,
+          primaryTextColor: primaryTextColor,
+          secondaryTextColor: secondaryTextColor,
+          displayMainCurrency: displayMainCurrency,
+          hasOtherBucket: hasOther,
+          amountColumnWidth: clampedAmountWidth,
+          percentageColumnWidth: percentageColumnWidth,
+        ),
+      );
+    }
+
+    final Widget card = Container(
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: borderColor.withValues(alpha: 0.55),
+          width: 1,
+        ),
+        boxShadow: tokens.softShadow,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            title,
+            maxLines: 1,
+            style: TextStyle(
+              fontSize: 16.5,
+              height: 1.05,
+              fontWeight: FontWeight.w800,
+              color: titleColor,
+              decoration: TextDecoration.none,
+            ),
+          ),
+          const SizedBox(height: 10),
+          ...rowWidgets,
+        ],
+      ),
+    );
+
+    final Widget pointer = SizedBox(
+      width: 18,
+      height: 8,
+      child: CustomPaint(
+        painter: _BubblePointerPainter(
+          fillColor: backgroundColor,
+          borderColor: borderColor,
+          pointingDown: showAbove,
+        ),
+      ),
+    );
+
+    return SizedBox(
+      width: double.infinity,
+      child: DefaultTextStyle.merge(
+        style: DefaultTextStyle.of(
+          context,
+        ).style.copyWith(decoration: TextDecoration.none),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: <Widget>[
+            Padding(
+              padding: EdgeInsets.only(
+                top: showAbove ? 0 : 8,
+                bottom: showAbove ? 8 : 0,
+              ),
+              child: card,
+            ),
+            Positioned(
+              left: arrowLeft,
+              top: showAbove ? null : 0,
+              bottom: showAbove ? 0 : null,
+              child: pointer,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CurrencyBreakdownRow extends StatelessWidget {
+  const _CurrencyBreakdownRow({
+    required this.item,
+    required this.isArabic,
+    required this.primaryTextColor,
+    required this.secondaryTextColor,
+    required this.displayMainCurrency,
+    required this.hasOtherBucket,
+    required this.amountColumnWidth,
+    required this.percentageColumnWidth,
+  });
+
+  final CurrencyBreakdownItem item;
+  final bool isArabic;
+  final Color primaryTextColor;
+  final Color secondaryTextColor;
+  final String displayMainCurrency;
+  final bool hasOtherBucket;
+  final double amountColumnWidth;
+  final double percentageColumnWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    final String code = item.currencyCode == 'OTHER'
+        ? context.l10n.tr('other')
+        : item.currencyCode;
+    final String name = item.currencyCode == 'OTHER'
+        ? context.l10n.tr('other')
+        : item.currencyName;
+    final String amountText = _formatOriginalAmount(
+      item.originalAmount,
+      item.currencyCode == 'OTHER' ? displayMainCurrency : item.currencyCode,
+      isArabic: isArabic,
+    );
+    final String percentageText = '${item.percentage.toStringAsFixed(1)}%';
+    final Widget leading = item.currencyCode == 'OTHER'
+        ? Container(
+            width: 22,
+            height: 22,
+            decoration: BoxDecoration(
+              color: secondaryTextColor.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              '•',
+              style: TextStyle(
+                fontSize: 18,
+                height: 1,
+                color: secondaryTextColor,
+                decoration: TextDecoration.none,
+              ),
+            ),
+          )
+        : Text(
+            item.flagEmoji,
+            style: const TextStyle(
+              fontSize: 16,
+              height: 1.0,
+              decoration: TextDecoration.none,
+            ),
+          );
+
+    return SizedBox(
+      height: 40,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: <Widget>[
+          SizedBox(width: 22, height: 22, child: Center(child: leading)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    code,
+                    maxLines: 1,
+                    overflow: TextOverflow.clip,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: primaryTextColor,
+                      decoration: TextDecoration.none,
+                    ),
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.clip,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: secondaryTextColor,
+                      decoration: TextDecoration.none,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          SizedBox(
+            width: math.max(amountColumnWidth, hasOtherBucket ? 84 : 88),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerRight,
+                child: Text(
+                  amountText,
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.visible,
+                  textAlign: TextAlign.right,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: primaryTextColor,
+                    decoration: TextDecoration.none,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: math.max(percentageColumnWidth, 42),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerRight,
+                child: Text(
+                  percentageText,
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.visible,
+                  textAlign: TextAlign.right,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: secondaryTextColor,
+                    decoration: TextDecoration.none,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _formatOriginalAmount(
+  double amount,
+  String currencyCode, {
+  required bool isArabic,
+}) {
+  final String formatted = ZakatEngineService.formatCurrency(
+    amount,
+    currencyCode,
+    isArabic: isArabic,
+  );
+  final String symbol = ZakatEngineService.getCurrencySymbol(
+    currencyCode,
+    isArabic: isArabic,
+  );
+  final String normalized = formatted
+      .replaceAll('\u200E', '')
+      .replaceAll('\u200F', '')
+      .trim();
+  final String stripped = normalized.startsWith(symbol)
+      ? normalized.substring(symbol.length).trim()
+      : normalized;
+  return '$stripped ${_normalizeCurrencyCode(currencyCode)}';
+}
+
+double _measureTextWidth(
+  String text,
+  TextStyle style,
+  ui.TextDirection textDirection,
+) {
+  final TextPainter painter = TextPainter(
+    text: TextSpan(text: text, style: style),
+    textDirection: textDirection,
+    maxLines: 1,
+  )..layout();
+  return painter.width;
+}
+
+class _BubblePointerPainter extends CustomPainter {
+  const _BubblePointerPainter({
+    required this.fillColor,
+    required this.borderColor,
+    required this.pointingDown,
+  });
+
+  final Color fillColor;
+  final Color borderColor;
+  final bool pointingDown;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Paint fillPaint = Paint()
+      ..color = fillColor
+      ..style = PaintingStyle.fill;
+    final Paint borderPaint = Paint()
+      ..color = borderColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+    final Path path = Path();
+    if (pointingDown) {
+      path.moveTo(size.width / 2, size.height);
+      path.lineTo(0, 0);
+      path.lineTo(size.width, 0);
+    } else {
+      path.moveTo(size.width / 2, 0);
+      path.lineTo(0, size.height);
+      path.lineTo(size.width, size.height);
+    }
+    path.close();
+    canvas.drawPath(path, fillPaint);
+    canvas.drawPath(path, borderPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _BubblePointerPainter oldDelegate) {
+    return oldDelegate.fillColor != fillColor ||
+        oldDelegate.borderColor != borderColor ||
+        oldDelegate.pointingDown != pointingDown;
   }
 }
 
@@ -2669,6 +3354,55 @@ class _ActivityEntry {
     return transaction!.category;
   }
 
+  String displayTitle(BuildContext context) {
+    if (transferTitle != null) {
+      return _localizedTransferTitle(context, transferTitle!);
+    }
+    if (isCashSaving) return context.l10n.tr('cash_in');
+    return context.l10n.translateCategory(transaction!.category);
+  }
+
+  String _localizedTransferTitle(BuildContext context, String value) {
+    final String trimmed = value.trim();
+    final String lower = trimmed.toLowerCase();
+    if (lower == 'currency exchange') {
+      return context.l10n.locale.languageCode == 'ar'
+          ? 'تحويل عملة'
+          : trimmed;
+    }
+    if (lower == 'cash transfer') {
+      return context.l10n.locale.languageCode == 'ar'
+          ? 'تحويل نقدي'
+          : trimmed;
+    }
+    if (lower == 'gold sale') {
+      return context.l10n.locale.languageCode == 'ar'
+          ? 'بيع الذهب'
+          : trimmed;
+    }
+    if (lower == 'silver sale') {
+      return context.l10n.locale.languageCode == 'ar'
+          ? 'بيع الفضة'
+          : trimmed;
+    }
+    if (lower == 'gold purchase') {
+      return context.l10n.locale.languageCode == 'ar'
+          ? 'شراء الذهب'
+          : trimmed;
+    }
+    if (lower == 'silver purchase') {
+      return context.l10n.locale.languageCode == 'ar'
+          ? 'شراء الفضة'
+          : trimmed;
+    }
+    if (lower == 'precious metals purchase') {
+      return context.l10n.locale.languageCode == 'ar'
+          ? 'شراء المعادن الثمينة'
+          : trimmed;
+    }
+    return trimmed;
+  }
+
   void _logExchangeBuild({
     required String sourceCurrency,
     required String targetCurrency,
@@ -2688,6 +3422,216 @@ class _ActivityEntry {
       'source=$sourceCurrency $sourceAmount '
       'target=$targetCurrency $targetAmount '
       'sourceCreatedAt=$sourceCreatedAt',
+    );
+  }
+}
+
+class CurrencyBreakdownItem {
+  const CurrencyBreakdownItem({
+    required this.currencyCode,
+    required this.currencyName,
+    required this.originalAmount,
+    required this.convertedMainAmount,
+    required this.percentage,
+  });
+
+  final String currencyCode;
+  final String currencyName;
+  final double originalAmount;
+  final double convertedMainAmount;
+  final double percentage;
+
+  String get flagEmoji => CurrencyPresentation.flagEmoji(currencyCode);
+}
+
+class _CurrencyBreakdownSource {
+  const _CurrencyBreakdownSource({
+    required this.currencyCode,
+    required this.amount,
+  });
+
+  final String currencyCode;
+  final double amount;
+}
+
+List<CurrencyBreakdownItem> _buildActivityCurrencyBreakdown({
+  required List<_ActivityEntry> entries,
+  required _ActivityFilter type,
+  required String mainCurrency,
+  required MarketData market,
+}) {
+  final Iterable<_ActivityEntry> filtered = switch (type) {
+    _ActivityFilter.income => entries.where(
+      (_ActivityEntry entry) => entry.isIncome,
+    ),
+    _ActivityFilter.expense => entries.where(
+      (_ActivityEntry entry) => entry.isExpense,
+    ),
+    _ActivityFilter.transfer => entries.where(
+      (_ActivityEntry entry) => entry.isTransfer,
+    ),
+    _ActivityFilter.all => entries,
+  };
+
+  return _buildCurrencyBreakdownFromSources(
+    filtered
+        .map(
+          (_ActivityEntry entry) => _CurrencyBreakdownSource(
+            currencyCode: entry.currency,
+            amount: entry.amount,
+          ),
+        )
+        .toList(growable: false),
+    mainCurrency: mainCurrency,
+    market: market,
+  );
+}
+
+List<CurrencyBreakdownItem> _buildCurrencyBreakdownFromSources(
+  List<_CurrencyBreakdownSource> sources, {
+  required String mainCurrency,
+  required MarketData market,
+}) {
+  if (sources.isEmpty) return const <CurrencyBreakdownItem>[];
+
+  final Map<String, _CurrencyBreakdownBucket> buckets =
+      <String, _CurrencyBreakdownBucket>{};
+  for (final _CurrencyBreakdownSource source in sources) {
+    final String code = _normalizeCurrencyCode(source.currencyCode);
+    final double originalAmount = source.amount.abs();
+    final double convertedMainAmount = ZakatEngineService.convertFromEgp(
+      ZakatEngineService.convertToEgp(originalAmount, code, market),
+      mainCurrency,
+      market,
+    );
+    final _CurrencyBreakdownBucket next =
+        (buckets[code] ?? const _CurrencyBreakdownBucket()).add(
+          originalAmount: originalAmount,
+          convertedMainAmount: convertedMainAmount,
+        );
+    buckets[code] = next;
+  }
+
+  final List<MapEntry<String, _CurrencyBreakdownBucket>> ordered =
+      buckets.entries.toList()..sort((
+        MapEntry<String, _CurrencyBreakdownBucket> a,
+        MapEntry<String, _CurrencyBreakdownBucket> b,
+      ) {
+        return b.value.convertedMainAmount.compareTo(
+          a.value.convertedMainAmount,
+        );
+      });
+
+  final double totalConverted = ordered.fold<double>(
+    0,
+    (double sum, MapEntry<String, _CurrencyBreakdownBucket> entry) =>
+        sum + entry.value.convertedMainAmount,
+  );
+  if (totalConverted <= 0) {
+    return const <CurrencyBreakdownItem>[];
+  }
+
+  final List<MapEntry<String, _CurrencyBreakdownBucket>> top =
+      ordered.length > 3 ? ordered.take(3).toList(growable: false) : ordered;
+  final List<CurrencyBreakdownItem> items = top
+      .map(
+        (MapEntry<String, _CurrencyBreakdownBucket> entry) =>
+            CurrencyBreakdownItem(
+              currencyCode: entry.key,
+              currencyName: currencyNameForCode(entry.key),
+              originalAmount: entry.value.originalAmount,
+              convertedMainAmount: entry.value.convertedMainAmount,
+              percentage:
+                  (entry.value.convertedMainAmount / totalConverted) * 100,
+            ),
+      )
+      .toList(growable: true);
+
+  if (ordered.length > 3) {
+    final Iterable<MapEntry<String, _CurrencyBreakdownBucket>> remainder =
+        ordered.skip(3);
+    final double otherConverted = remainder.fold<double>(
+      0,
+      (double sum, MapEntry<String, _CurrencyBreakdownBucket> entry) =>
+          sum + entry.value.convertedMainAmount,
+    );
+    if (otherConverted > 0) {
+      items.add(
+        CurrencyBreakdownItem(
+          currencyCode: 'OTHER',
+          currencyName: 'Other',
+          originalAmount: otherConverted,
+          convertedMainAmount: otherConverted,
+          percentage: (otherConverted / totalConverted) * 100,
+        ),
+      );
+    }
+  }
+
+  return items;
+}
+
+String _normalizeCurrencyCode(String value) {
+  final String code = value.trim().toUpperCase();
+  return code.isEmpty ? 'EGP' : code;
+}
+
+String currencyNameForCode(String currencyCode) {
+  switch (_normalizeCurrencyCode(currencyCode)) {
+    case 'EGP':
+      return 'Egyptian Pound';
+    case 'SAR':
+      return 'Saudi Riyal';
+    case 'USD':
+      return 'US Dollar';
+    case 'AED':
+      return 'UAE Dirham';
+    case 'KWD':
+      return 'Kuwaiti Dinar';
+    case 'QAR':
+      return 'Qatari Riyal';
+    case 'EUR':
+      return 'Euro';
+    case 'GBP':
+      return 'British Pound';
+    case 'BHD':
+      return 'Bahraini Dinar';
+    case 'OMR':
+      return 'Omani Rial';
+    case 'JOD':
+      return 'Jordanian Dinar';
+    case 'TRY':
+      return 'Turkish Lira';
+    case 'MYR':
+      return 'Malaysian Ringgit';
+    case 'PKR':
+      return 'Pakistani Rupee';
+    case 'IDR':
+      return 'Indonesian Rupiah';
+    case 'OTHER':
+      return 'Other';
+    default:
+      return _normalizeCurrencyCode(currencyCode);
+  }
+}
+
+@immutable
+class _CurrencyBreakdownBucket {
+  const _CurrencyBreakdownBucket({
+    this.originalAmount = 0,
+    this.convertedMainAmount = 0,
+  });
+
+  final double originalAmount;
+  final double convertedMainAmount;
+
+  _CurrencyBreakdownBucket add({
+    required double originalAmount,
+    required double convertedMainAmount,
+  }) {
+    return _CurrencyBreakdownBucket(
+      originalAmount: this.originalAmount + originalAmount,
+      convertedMainAmount: this.convertedMainAmount + convertedMainAmount,
     );
   }
 }

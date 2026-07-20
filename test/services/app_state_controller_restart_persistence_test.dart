@@ -190,6 +190,27 @@ void main() {
     },
   );
 
+  test(
+    'gate true persists language preference to SQLite across restart',
+    () async {
+      final database = AppDatabase(executor: NativeDatabase.memory());
+
+      final controller1 = await _controller(
+        database: database,
+        useSqlite: true,
+      );
+      await controller1.updateLanguagePreference('ar');
+
+      final controller2 = await _controller(
+        database: database,
+        useSqlite: true,
+      );
+
+      expect(controller2.state.languagePreference, 'ar');
+      await database.close();
+    },
+  );
+
   test('authenticated users use isolated SQLite databases', () async {
     final AppDatabase database = AppDatabase(userId: 'switch-a');
     final AppStateController controller = AppStateController(

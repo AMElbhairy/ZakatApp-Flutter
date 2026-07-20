@@ -38,6 +38,14 @@ class SavingsDao extends DatabaseAccessor<db.AppDatabase> {
     return rows.map(_mapper.fromRow).toList(growable: false);
   }
 
+  Future<int> countActiveSavings() async {
+    final QueryRow row = await customSelect(
+      'SELECT COUNT(*) AS c FROM savings WHERE deleted_at IS NULL',
+      readsFrom: <TableInfo<Object?, Object?>>{attachedDatabase.savings},
+    ).getSingle();
+    return row.read<int>('c');
+  }
+
   Future<void> upsertSavingRow(
     model.Saving saving, {
     String? updatedAt,

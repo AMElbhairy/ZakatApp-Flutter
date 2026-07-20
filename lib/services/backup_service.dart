@@ -15,6 +15,7 @@ class BackupService {
     required String email,
   }) {
     final Map<String, dynamic> cleanedState = Map<String, dynamic>.from(appStateJson);
+    cleanedState['languagePreference'] = 'en';
     if (cleanedState['aiSettings'] is Map) {
       final Map<String, dynamic> ai = Map<String, dynamic>.from(cleanedState['aiSettings'] as Map);
       ai.remove('keys');

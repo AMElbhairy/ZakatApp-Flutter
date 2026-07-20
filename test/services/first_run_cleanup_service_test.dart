@@ -24,6 +24,7 @@ void main() {
     final MockFirebaseAuth firebaseAuth = MockFirebaseAuth();
     final _FakeGoogleSignIn googleSignIn = _FakeGoogleSignIn();
     int secureStorageDeletes = 0;
+    int appStorageDeletes = 0;
 
     await FirstRunCleanupService(
       firebaseAuth: firebaseAuth,
@@ -31,11 +32,15 @@ void main() {
       clearSecureStorage: () async {
         secureStorageDeletes += 1;
       },
+      clearAppStorage: () async {
+        appStorageDeletes += 1;
+      },
     ).runIfNeeded(prefs);
 
     expect(googleSignIn.signOutCalls, equals(1));
     expect(prefs.getBool('has_run_before'), isTrue);
     expect(secureStorageDeletes, equals(1));
+    expect(appStorageDeletes, equals(1));
     expect(firebaseAuth.currentUser, isNull);
   });
 
@@ -47,6 +52,7 @@ void main() {
     final MockFirebaseAuth firebaseAuth = MockFirebaseAuth();
     final _FakeGoogleSignIn googleSignIn = _FakeGoogleSignIn();
     int secureStorageDeletes = 0;
+    int appStorageDeletes = 0;
 
     await FirstRunCleanupService(
       firebaseAuth: firebaseAuth,
@@ -54,11 +60,15 @@ void main() {
       clearSecureStorage: () async {
         secureStorageDeletes += 1;
       },
+      clearAppStorage: () async {
+        appStorageDeletes += 1;
+      },
     ).runIfNeeded(prefs);
 
     expect(googleSignIn.signOutCalls, equals(0));
     expect(prefs.getBool('has_run_before'), isTrue);
     expect(secureStorageDeletes, equals(0));
+    expect(appStorageDeletes, equals(0));
     expect(firebaseAuth.currentUser, isNull);
   });
 }

@@ -7,14 +7,17 @@ class FirstRunCleanupService {
     FirebaseAuth? firebaseAuth,
     GoogleSignIn? googleSignIn,
     Future<void> Function()? clearSecureStorage,
+    Future<void> Function()? clearAppStorage,
   })  : _firebaseAuth = firebaseAuth ?? FirebaseAuth.instance,
         _googleSignIn = googleSignIn ?? GoogleSignIn(),
         _clearSecureStorage =
-            clearSecureStorage ?? (() async {});
+            clearSecureStorage ?? (() async {}),
+        _clearAppStorage = clearAppStorage ?? (() async {});
 
   final FirebaseAuth _firebaseAuth;
   final GoogleSignIn _googleSignIn;
   final Future<void> Function() _clearSecureStorage;
+  final Future<void> Function() _clearAppStorage;
 
   Future<void> runIfNeeded(SharedPreferences prefs) async {
     final bool hasRunBefore = prefs.getBool('has_run_before') ?? false;
@@ -34,6 +37,12 @@ class FirstRunCleanupService {
 
     try {
       await _clearSecureStorage();
+    } catch (_) {
+      // Best-effort cleanup on fresh install.
+    }
+
+    try {
+      await _clearAppStorage();
     } catch (_) {
       // Best-effort cleanup on fresh install.
     }

@@ -221,6 +221,7 @@ class _PlansScreenState extends State<PlansScreen> {
       actualWealth: actualWealth,
       projectedEndBalance: planEndGoal,
       targetDate: targetDate,
+      isArabic: isArabic,
     );
 
     double projectedLifetimeZakat = 0.0;
@@ -2612,6 +2613,7 @@ List<_Milestone> _buildMilestones({
   required double actualWealth,
   required double projectedEndBalance,
   required DateTime targetDate,
+  required bool isArabic,
 }) {
   final double journey = projectedEndBalance - actualWealth;
   final List<double> goals = <double>[];
@@ -2672,7 +2674,9 @@ List<_Milestone> _buildMilestones({
 
     result.add(
       _Milestone(
-        title: 'Net Worth ${_shortNumber(goal)}',
+        title: isArabic
+            ? 'صافي الثروة ${_shortNumber(goal)}'
+            : 'Net Worth ${_shortNumber(goal)}',
         remaining: math.max(0, goal - actualWealth),
         reached: actualWealth >= goal,
         date: actualWealth >= goal ? DateTime.now() : match?.date,
@@ -2682,7 +2686,7 @@ List<_Milestone> _buildMilestones({
 
   result.add(
     _Milestone(
-      title: 'Target Achieved',
+      title: isArabic ? 'تم الوصول إلى الهدف' : 'Target Achieved',
       remaining: math.max(0, projectedEndBalance - actualWealth),
       reached: actualWealth >= projectedEndBalance,
       date: targetDate,

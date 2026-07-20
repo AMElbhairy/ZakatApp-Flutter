@@ -1,3 +1,5 @@
+import '../core/utils/amount_parser.dart';
+
 class Saving {
   const Saving({
     required this.id,
@@ -43,7 +45,7 @@ class Saving {
     return Saving(
       id: (json['id'] ?? '').toString(),
       assetType: (json['assetType'] ?? '').toString(),
-      dateAcquired: (json['dateAcquired'] ?? '').toString(),
+      dateAcquired: normalizeDateText(json['dateAcquired']?.toString()),
       amount: _asDouble(json['amount']),
       remainingAmount: json['remainingAmount'] == null
           ? _asDouble(json['amount'])
@@ -56,7 +58,7 @@ class Saving {
           .trim()
           .toUpperCase(),
       purchaseAmount: _asDouble(json['purchaseAmount']),
-      createdAt: (json['createdAt'] ?? '').toString(),
+      createdAt: normalizeTimestampText(json['createdAt']?.toString()),
       sourceIncomeId: json['sourceIncomeId']?.toString(),
       exchangeSourceSavingId: json['exchangeSourceSavingId']?.toString(),
       exchangeSourceIncomeId: json['exchangeSourceIncomeId']?.toString(),
@@ -99,7 +101,7 @@ class Saving {
 
   static double _asDouble(dynamic value) {
     if (value is num) return value.toDouble();
-    return double.tryParse(value?.toString() ?? '') ?? 0;
+    return tryParseAmount(value?.toString()) ?? 0;
   }
 
   static bool _asBool(dynamic value) {

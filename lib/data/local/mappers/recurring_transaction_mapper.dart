@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart';
 
+import '../../../core/utils/amount_parser.dart';
 import '../../../models/recurring_transaction.dart';
 import '../app_database.dart' as db;
 
@@ -66,5 +67,5 @@ class RecurringTransactionMapper {
     return DateTime.now().toUtc().toIso8601String();
   }
 
-  double _toDouble(String value) => double.tryParse(value) ?? 0;
+  double _toDouble(String value) => tryParseAmount(value) ?? 0;
 }

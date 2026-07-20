@@ -9,6 +9,7 @@ import 'merchant_confirmation.dart';
 import 'capture_analytics.dart';
 import 'correction_feedback.dart';
 import '../core/utils/category_visuals.dart';
+import '../core/utils/amount_parser.dart';
 
 class AppStateModel {
   const AppStateModel({
@@ -24,6 +25,8 @@ class AppStateModel {
     required this.processedExpenseIds,
     required this.mainCurrency,
     required this.defaultEntryCurrency,
+    required this.financialMonthCycle,
+    required this.financialMonthStartDay,
     required this.zakatExpenseIds,
     required this.zakatMethod,
     required this.zakatAnnualDate,
@@ -57,6 +60,7 @@ class AppStateModel {
     required this.merchantConfirmations,
     required this.smartCaptureEnabled,
     required this.smartCaptureAutoApproveEnabled,
+    this.androidSmsAutoCaptureEnabled = false,
   });
 
   final List<Transaction> transactions;
@@ -71,6 +75,8 @@ class AppStateModel {
   final List<String> processedExpenseIds;
   final String mainCurrency;
   final String defaultEntryCurrency;
+  final String financialMonthCycle;
+  final int financialMonthStartDay;
   final Map<String, dynamic> zakatExpenseIds;
   final String zakatMethod;
   final String zakatAnnualDate;
@@ -105,6 +111,7 @@ class AppStateModel {
   final List<MerchantConfirmation> merchantConfirmations;
   final bool smartCaptureEnabled;
   final bool smartCaptureAutoApproveEnabled;
+  final bool androidSmsAutoCaptureEnabled;
 
   factory AppStateModel.fromJson(Map<String, dynamic> json) {
     return AppStateModel(
@@ -136,6 +143,12 @@ class AppStateModel {
       ).map((dynamic e) => e.toString()).toList(growable: false),
       mainCurrency: (json['mainCurrency'] ?? '').toString(),
       defaultEntryCurrency: (json['defaultEntryCurrency'] ?? '').toString(),
+      financialMonthCycle: _normalizeFinancialMonthCycle(
+        json['financialMonthCycle'],
+      ),
+      financialMonthStartDay: _normalizeFinancialMonthStartDay(
+        json['financialMonthStartDay'],
+      ),
       zakatExpenseIds: _asMap(json['zakatExpenseIds']),
       zakatMethod: (json['zakatMethod'] ?? '').toString(),
       zakatAnnualDate: (json['zakatAnnualDate'] ?? '').toString(),
@@ -202,6 +215,9 @@ class AppStateModel {
           json['smartCaptureAutoApproveEnabled'] != null
           ? _asBool(json['smartCaptureAutoApproveEnabled'])
           : false,
+      androidSmsAutoCaptureEnabled: json['androidSmsAutoCaptureEnabled'] != null
+          ? _asBool(json['androidSmsAutoCaptureEnabled'])
+          : false,
     );
   }
 
@@ -227,6 +243,8 @@ class AppStateModel {
       'processedExpenseIds': processedExpenseIds,
       'mainCurrency': mainCurrency,
       'defaultEntryCurrency': defaultEntryCurrency,
+      'financialMonthCycle': financialMonthCycle,
+      'financialMonthStartDay': financialMonthStartDay,
       'zakatExpenseIds': zakatExpenseIds,
       'zakatMethod': zakatMethod,
       'zakatAnnualDate': zakatAnnualDate,
@@ -266,6 +284,7 @@ class AppStateModel {
           .toList(),
       'smartCaptureEnabled': smartCaptureEnabled,
       'smartCaptureAutoApproveEnabled': smartCaptureAutoApproveEnabled,
+      'androidSmsAutoCaptureEnabled': androidSmsAutoCaptureEnabled,
     };
   }
 
@@ -279,6 +298,20 @@ class AppStateModel {
   static String _normalizeZakatNisabBasis(dynamic value) {
     final String raw = (value ?? '').toString().trim();
     return raw == 'silver595' ? 'silver595' : 'gold85';
+  }
+
+  static String _normalizeFinancialMonthCycle(dynamic value) {
+    final String raw = (value ?? '').toString().trim().toLowerCase();
+    return raw == 'custom' ? 'custom' : 'calendar';
+  }
+
+  static int _normalizeFinancialMonthStartDay(dynamic value) {
+    final int parsed = value is int
+        ? value
+        : value is num
+        ? value.toInt()
+        : int.tryParse(normalizeAmountText(value?.toString())) ?? 1;
+    return parsed.clamp(1, 28);
   }
 
   static List<dynamic> _asList(dynamic value) {
@@ -322,18 +355,16 @@ class AppCategories {
           .map((dynamic e) => e.toString())
           .toList(growable: false),
       incomeMetadata: incomeMetaJson.map(
-        (String key, dynamic value) =>
-            MapEntry<String, CategoryVisual>(
-              key,
-              CategoryVisual.fromJson(_asMap(value)),
-            ),
+        (String key, dynamic value) => MapEntry<String, CategoryVisual>(
+          key,
+          CategoryVisual.fromJson(_asMap(value)),
+        ),
       ),
       expenseMetadata: expenseMetaJson.map(
-        (String key, dynamic value) =>
-            MapEntry<String, CategoryVisual>(
-              key,
-              CategoryVisual.fromJson(_asMap(value)),
-            ),
+        (String key, dynamic value) => MapEntry<String, CategoryVisual>(
+          key,
+          CategoryVisual.fromJson(_asMap(value)),
+        ),
       ),
     );
   }
@@ -343,24 +374,17 @@ class AppCategories {
       'income': income,
       'expense': expense,
       'incomeMetadata': incomeMetadata.map(
-        (String key, CategoryVisual value) => MapEntry<String, dynamic>(
-          key,
-          value.toJson(),
-        ),
+        (String key, CategoryVisual value) =>
+            MapEntry<String, dynamic>(key, value.toJson()),
       ),
       'expenseMetadata': expenseMetadata.map(
-        (String key, CategoryVisual value) => MapEntry<String, dynamic>(
-          key,
-          value.toJson(),
-        ),
+        (String key, CategoryVisual value) =>
+            MapEntry<String, dynamic>(key, value.toJson()),
       ),
     };
   }
 
-  CategoryVisual? metadataFor({
-    required String type,
-    required String name,
-  }) {
+  CategoryVisual? metadataFor({required String type, required String name}) {
     final Map<String, CategoryVisual> map =
         type.trim().toLowerCase() == 'income'
         ? incomeMetadata
@@ -571,6 +595,6 @@ class SyncHealth {
   static int _asInt(dynamic value) {
     if (value is int) return value;
     if (value is num) return value.toInt();
-    return int.tryParse(value?.toString() ?? '') ?? 0;
+    return int.tryParse(normalizeAmountText(value?.toString())) ?? 0;
   }
 }

@@ -17,6 +17,7 @@ import 'backup_key_manager.dart';
 import 'app_state_controller.dart';
 import 'auth_controller.dart';
 import 'backup_service.dart';
+import 'bootstrap_cloud_service.dart';
 import 'sync/cloud_sync_manager.dart';
 import 'sync/cloud_sync_manifest.dart';
 import 'sync/google_drive_operation_sync_manager.dart';
@@ -24,8 +25,11 @@ import 'sync/google_drive_storage_provider.dart';
 import 'sync/snapshot_manager.dart';
 import 'sync/sync_encryption_service.dart';
 import 'sync/user_cloud_storage_provider.dart';
+import 'backup_integrity_summary.dart';
 import 'google_sign_in_factory.dart';
 import 'startup_restore_discovery.dart';
+import 'launch_diagnostics.dart';
+import '../core/i18n/app_localizations.dart';
 
 typedef CloudSyncManagerBuilder = Future<CloudSyncManager?> Function();
 typedef GoogleDriveOperationSyncManagerBuilder =
@@ -33,7 +37,9 @@ typedef GoogleDriveOperationSyncManagerBuilder =
 
 const bool enableGoogleDriveOperationSync = false;
 
-class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
+class CloudBackupController extends ChangeNotifier
+    with WidgetsBindingObserver
+    implements BootstrapCloudService {
   CloudBackupController({
     required this.appStateController,
     required this.authController,
@@ -72,7 +78,7 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
   final DateTime Function() nowProvider;
 
   bool _autoBackupEnabled = true;
-  int _minimumIntervalHours = 3;
+  int _minimumIntervalMinutes = 30;
   DateTime? _lastBackupAt;
   DateTime? _nextEligibleBackupAt;
   String _lastBackupStatus = '';
@@ -96,9 +102,10 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
   int _retryCount = 0;
   SnapshotEntry? _latestSnapshot;
   BackupPreview? _latestPreview;
-  String _statusMessage = 'Refreshing backup status...';
+  BackupIntegritySummary? _lastKnownGoodIntegritySummary;
+  String _statusMessage = '';
 
-  static const List<int> _allowedIntervals = <int>[3, 6, 12];
+  static const List<int> _allowedIntervals = <int>[30, 60, 180, 360, 720];
 
   bool get isChecking => false;
   bool get isBackingUp => _isBackingUp;
@@ -118,6 +125,66 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
   bool get isOperationSyncEnabled => enableOperationSync;
   bool get isOperationSyncing => _isOperationSyncing;
   bool get isDriveConnected => _isDriveConnected;
+
+  String _languageCode() {
+    final String normalized =
+        appStateController.state.languagePreference.trim().toLowerCase();
+    return normalized == 'ar' ? 'ar' : 'en';
+  }
+
+  AppLocalizations _l10n() => AppLocalizations(Locale(_languageCode()));
+
+  String _tr(String key) => _l10n().tr(key);
+
+  String _text({required String english, required String arabic}) {
+    return _languageCode() == 'ar' ? arabic : english;
+  }
+
+  Future<bool> connectGoogleDrive({required bool interactive}) async {
+    final String userId = _currentUserId();
+    if (userId.isEmpty) return false;
+
+    final GoogleDriveStorageProvider provider = GoogleDriveStorageProvider(
+      googleSignIn: _googleSignIn,
+      getAuthHeaders: () async {
+        final headers = await _googleSignIn.currentUser?.authHeaders;
+        return headers ?? <String, String>{};
+      },
+      checkConnected: () async {
+        try {
+          final bool signedIn = await _googleSignIn.isSignedIn();
+          if (!signedIn) {
+            await _googleSignIn.signInSilently();
+          }
+          return _googleSignIn.currentUser != null;
+        } catch (_) {
+          return false;
+        }
+      },
+      requestConnect: () async => false,
+      requestDisconnect: () async {},
+      hasGrantedDriveScope: _hasDrivePermissionGranted,
+      setGrantedDriveScope: _setDrivePermissionGranted,
+      namespacePrefix: userId,
+    );
+
+    final status = await provider.resolveConnection(
+      interactive: interactive,
+      phase: 'connect',
+    );
+
+    if (status.connected) {
+      _isDriveConnected = true;
+      notifyListeners();
+      await refreshCloudState(evaluatePrompt: false);
+      return true;
+    } else {
+      _isDriveConnected = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
   String get operationSyncModeLabel => enableOperationSync ? 'On' : 'Off';
   String get operationSyncStatusMessage {
     if (!enableOperationSync) {
@@ -139,27 +206,60 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   bool get automaticBackupEnabled => _autoBackupEnabled;
-  int get minimumIntervalHours => _minimumIntervalHours;
+  Duration get minimumInterval => Duration(minutes: _minimumIntervalMinutes);
+  int get minimumIntervalHours => _minimumIntervalMinutes ~/ 60;
   DateTime? get lastBackupAt => _lastBackupAt;
   DateTime? get nextEligibleBackupAt => _nextEligibleBackupAt;
   String get lastBackupStatus => _lastBackupStatus;
   String get lastBackupError => _lastBackupError;
-  String get statusMessage => _statusMessage;
+  BackupIntegritySummary? get lastKnownGoodIntegritySummary =>
+      _lastKnownGoodIntegritySummary;
+  @override
+  String get statusMessage => _statusMessage.isNotEmpty
+      ? _statusMessage
+      : currentStatus;
   String get currentStatus => _statusMessage.isNotEmpty
       ? _statusMessage
       : (_isDriveConnected
-            ? 'Cloud Sync: Active'
-            : 'Refreshing backup status...');
+            ? _text(
+                english: 'Cloud Sync: Active',
+                arabic: 'مزامنة السحابة: نشطة',
+              )
+            : _tr('refreshing_backup_status'));
 
   Duration get autoBackupDelay => debounceDuration;
 
   Future<void> refreshCloudState({bool evaluatePrompt = true}) async {
+    if (!appStateController.isHydrationReady ||
+        appStateController.isRestoringDatabase) {
+      await LaunchDiagnostics.record(
+        'cloud_refresh_blocked',
+        level: 'warning',
+        metadata: <String, dynamic>{
+          'reason': appStateController.isRestoringDatabase
+              ? 'restore_in_progress'
+              : 'hydration_not_ready',
+          'phase': appStateController.hydrationPhase.name,
+        },
+      );
+      return;
+    }
     await _loadSettings();
     await _refreshRemoteState();
     if (evaluatePrompt) {
       _maybeScheduleAutoBackup(reason: 'refresh');
     }
     notifyListeners();
+  }
+
+  @override
+  Future<void> activateAfterBootstrap() async {
+    await refreshCloudState(evaluatePrompt: false);
+  }
+
+  @override
+  Future<void> onLifecycleResume() async {
+    await refreshCloudState();
   }
 
   Future<void> setAutomaticBackupEnabled(bool enabled) async {
@@ -173,12 +273,21 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  Future<void> setMinimumIntervalHours(int hours) async {
-    final int normalized = _allowedIntervals.contains(hours) ? hours : 3;
-    _minimumIntervalHours = normalized;
-    await _saveSettings();
+  Future<void> setMinimumIntervalMinutes(int minutes) async {
+    final int normalized = _allowedIntervals.contains(minutes) ? minutes : 30;
+    _minimumIntervalMinutes = normalized;
     _recalculateNextEligibleTime();
+    _eligibleTimer?.cancel();
+    _eligibleTimer = null;
+    if (_autoBackupEnabled) {
+      _scheduleEligibleTimer();
+    }
+    await _saveSettings();
     notifyListeners();
+  }
+
+  Future<void> setMinimumIntervalHours(int hours) async {
+    await setMinimumIntervalMinutes(hours * 60);
   }
 
   void setBackupPassphrase(String passphrase) {
@@ -213,7 +322,7 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
         return;
       }
     } on BackupKeyRecoveryException catch (error) {
-      _setStatus('Backup key recovery failed', error: error.message);
+      _setStatus(_tr('restore_backup_key_required'), error: error.message);
     }
 
     _backupPassphrase = null;
@@ -224,31 +333,83 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
     bool forceIfCloudNewer = false,
     bool automatic = false,
   }) async {
+    if (!appStateController.isHydrationReady ||
+        appStateController.isRestoringDatabase) {
+      await LaunchDiagnostics.record(
+        'cloud_backup_blocked',
+        level: 'warning',
+        metadata: <String, dynamic>{
+          'automatic': automatic,
+          'reason': appStateController.isRestoringDatabase
+              ? 'restore_in_progress'
+              : 'hydration_not_ready',
+          'phase': appStateController.hydrationPhase.name,
+        },
+      );
+      _setStatus(
+        _text(
+          english: 'Backup blocked until startup is ready',
+          arabic: 'تم حظر النسخ الاحتياطي حتى تصبح الحالة جاهزة',
+        ),
+        error: 'hydration_not_ready',
+      );
+      return false;
+    }
     if (_isBackingUp) {
       _pendingAutoBackup = _pendingAutoBackup || automatic;
       _setStatus(
-        'Backup already running',
+        _text(
+          english: 'Backup already running',
+          arabic: 'النسخ الاحتياطي قيد التشغيل بالفعل',
+        ),
         error: automatic ? '' : _lastBackupError,
       );
       return false;
     }
 
     if (isRestoring) {
-      _setStatus('Restore in progress', error: '');
+      _setStatus(
+        _text(
+          english: 'Restore in progress',
+          arabic: 'الاستعادة قيد التنفيذ',
+        ),
+        error: '',
+      );
       return false;
     }
 
     _isBackingUp = true;
     _lastBackupError = '';
     _lastBackupStatus = automatic
-        ? 'Backing up automatically...'
-        : 'Backing up...';
+        ? _text(
+            english: 'Backing up automatically...',
+            arabic: 'جارٍ النسخ الاحتياطي تلقائياً...',
+        )
+        : _text(english: 'Backing up...', arabic: 'جارٍ النسخ الاحتياطي...');
     notifyListeners();
+    unawaited(
+      LaunchDiagnostics.record(
+        'cloud_backup_started',
+        metadata: <String, dynamic>{
+          'automatic': automatic,
+          'phase': appStateController.hydrationPhase.name,
+          'transactionCount': appStateController.state.transactions.length,
+          'savingCount': appStateController.state.savings.length,
+          'investmentCount': appStateController.state.investments.length,
+          'pendingCount': appStateController.state.pendingTransactions.length,
+          'planCount': appStateController.state.financialPlans.length,
+          'recurringCount': appStateController.state.recurringTransactions.length,
+        },
+      ),
+    );
 
     final CloudSyncManager? manager = await _resolveSyncManager();
     if (manager == null) {
       _isBackingUp = false;
-      _setStatus('Google Drive is not connected', error: '');
+      _setStatus(
+        _tr('google_drive_permission_required_for_cloud_backup'),
+        error: '',
+      );
       return false;
     }
 
@@ -256,7 +417,10 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
     final bool connected = await provider.isConnected();
     if (!connected) {
       _isBackingUp = false;
-      _setStatus('Google Drive is not connected', error: '');
+      _setStatus(
+        _tr('google_drive_permission_required_for_cloud_backup'),
+        error: '',
+      );
       return false;
     }
     _isDriveConnected = true;
@@ -265,8 +429,14 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
     if (passphrase == null || passphrase.isEmpty) {
       _isBackingUp = false;
       _setStatus(
-        'Backup passphrase is required',
-        error: 'Enter and save a cloud backup passphrase first.',
+        _text(
+          english: 'Backup passphrase is required',
+          arabic: 'مطلوب كلمة مرور النسخ الاحتياطي',
+        ),
+        error: _text(
+          english: 'Enter and save a cloud backup passphrase first.',
+          arabic: 'أدخل واحفظ كلمة مرور النسخ الاحتياطي السحابي أولاً.',
+        ),
       );
       return false;
     }
@@ -276,6 +446,75 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
     if (db == null) {
       _isBackingUp = false;
       _setStatus('Active database is unavailable', error: '');
+      return false;
+    }
+
+    final bool candidateHasData = BackupService.hasData(
+      appStateController.state.toJson(),
+    );
+    final bool hasBackupHistory = _lastBackupAt != null || _latestSnapshot != null;
+    if (automatic && !candidateHasData && hasBackupHistory) {
+      _isBackingUp = false;
+      _setStatus(
+        _text(
+          english: 'Automatic backup blocked: empty candidate',
+          arabic: 'تم حظر النسخ الاحتياطي التلقائي: الحالة فارغة',
+        ),
+        error: 'empty_candidate_has_history',
+      );
+      await _saveSettings();
+      unawaited(
+        LaunchDiagnostics.record(
+          'cloud_backup_blocked',
+          level: 'warning',
+          metadata: <String, dynamic>{
+            'automatic': automatic,
+            'reason': 'empty_candidate_has_history',
+            'phase': appStateController.hydrationPhase.name,
+            'transactionCount': appStateController.state.transactions.length,
+            'savingCount': appStateController.state.savings.length,
+            'investmentCount': appStateController.state.investments.length,
+            'pendingCount': appStateController.state.pendingTransactions.length,
+            'planCount': appStateController.state.financialPlans.length,
+            'recurringCount': appStateController.state.recurringTransactions.length,
+          },
+        ),
+      );
+      return false;
+    }
+
+    final BackupIntegritySummary candidateIntegritySummary =
+        _currentIntegritySummary();
+    final BackupEligibilityResult eligibility = await _evaluateBackupEligibility(
+      automatic: automatic,
+      candidate: candidateIntegritySummary,
+    );
+    if (!eligibility.allowed) {
+      final BackupEligibilityBlocked blocked = eligibility
+          as BackupEligibilityBlocked;
+      _isBackingUp = false;
+      _setStatus(
+        _text(
+          english: 'Automatic backup blocked by integrity checks',
+          arabic: 'تم حظر النسخ الاحتياطي التلقائي بسبب فحوصات السلامة',
+        ),
+        error: blocked.reason,
+      );
+      await _saveSettings();
+      unawaited(
+        LaunchDiagnostics.record(
+          'cloud_backup_blocked',
+          level: 'warning',
+          metadata: <String, dynamic>{
+            'automatic': automatic,
+            'reason': blocked.reason,
+            'phase': appStateController.hydrationPhase.name,
+            'suspiciousCollections': blocked.suspiciousCollections,
+            'candidateSignature': candidateIntegritySummary.signature,
+            'baselineSignature': blocked.baseline?.signature,
+          },
+        ),
+      );
       return false;
     }
 
@@ -393,9 +632,25 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
         _lastBackupStatus = 'Backup completed';
         _lastBackupError = '';
         _recalculateNextEligibleTime();
+        _lastKnownGoodIntegritySummary = candidateIntegritySummary;
+        await _saveIntegritySummary(candidateIntegritySummary);
         await _refreshRemoteState(provider: provider);
         await _saveSettings();
         notifyListeners();
+        unawaited(
+          LaunchDiagnostics.record(
+            'cloud_backup_complete',
+            metadata: <String, dynamic>{
+              'automatic': automatic,
+              'transactionCount': appStateController.state.transactions.length,
+              'savingCount': appStateController.state.savings.length,
+              'investmentCount': appStateController.state.investments.length,
+              'pendingCount': appStateController.state.pendingTransactions.length,
+              'planCount': appStateController.state.financialPlans.length,
+              'recurringCount': appStateController.state.recurringTransactions.length,
+            },
+          ),
+        );
         return true;
       }
 
@@ -403,6 +658,17 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
       _lastBackupError = errMsg;
       _lastBackupStatus = errMsg;
       await _saveSettings();
+      unawaited(
+        LaunchDiagnostics.record(
+          'cloud_backup_failed',
+          level: 'error',
+          metadata: <String, dynamic>{
+            'automatic': automatic,
+            'error': errMsg,
+            'phase': appStateController.hydrationPhase.name,
+          },
+        ),
+      );
 
       // Background exponential backoff retry for failed automatic backups
       if (automatic) {
@@ -421,6 +687,17 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
       _lastBackupError = e.toString();
       _lastBackupStatus = _lastBackupError;
       await _saveSettings();
+      unawaited(
+        LaunchDiagnostics.record(
+          'cloud_backup_failed',
+          level: 'error',
+          metadata: <String, dynamic>{
+            'automatic': automatic,
+            'error': e.toString(),
+            'phase': appStateController.hydrationPhase.name,
+          },
+        ),
+      );
 
       if (automatic) {
         _retryCount++;
@@ -540,10 +817,12 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
     _pendingAutoBackup = false;
   }
 
+  @override
   void completeStartupRestoreDiscovery() {
     _startupRestoreDiscoveryActive = false;
   }
 
+  @override
   Future<StartupRestoreDiscoveryResult> discoverStartupRestore({
     required bool localHasData,
   }) async {
@@ -553,7 +832,7 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
       completeStartupRestoreDiscovery();
       return const StartupRestoreDiscoveryResult(
         status: StartupRestoreDiscoveryStatus.none,
-        message: 'Local data exists',
+        message: '',
       );
     }
 
@@ -566,7 +845,7 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
       completeStartupRestoreDiscovery();
       return const StartupRestoreDiscoveryResult(
         status: StartupRestoreDiscoveryStatus.dismissed,
-        message: 'Restore prompt dismissed',
+        message: '',
       );
     }
 
@@ -579,7 +858,7 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
         completeStartupRestoreDiscovery();
         return const StartupRestoreDiscoveryResult(
           status: StartupRestoreDiscoveryStatus.drivePermissionRequired,
-          message: 'A backup may exist. Connect Google Drive to check.',
+          message: '',
         );
       }
 
@@ -590,7 +869,7 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
         completeStartupRestoreDiscovery();
         return const StartupRestoreDiscoveryResult(
           status: StartupRestoreDiscoveryStatus.drivePermissionRequired,
-          message: 'A backup may exist. Connect Google Drive to check.',
+          message: '',
         );
       }
 
@@ -601,7 +880,7 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
         completeStartupRestoreDiscovery();
         return const StartupRestoreDiscoveryResult(
           status: StartupRestoreDiscoveryStatus.none,
-          message: 'No cloud backup found',
+          message: '',
         );
       }
 
@@ -618,7 +897,7 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
         completeStartupRestoreDiscovery();
         return const StartupRestoreDiscoveryResult(
           status: StartupRestoreDiscoveryStatus.none,
-          message: 'No available snapshots registered in manifest.',
+          message: '',
         );
       }
 
@@ -630,10 +909,10 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
         _latestSnapshot = null;
         _latestPreview = null;
         completeStartupRestoreDiscovery();
-        return const StartupRestoreDiscoveryResult(
+        return StartupRestoreDiscoveryResult(
           status: StartupRestoreDiscoveryStatus.keyRecoveryRequired,
-          message: BackupKeyRecoveryException.recoveryUnavailableMessage,
-          error: BackupKeyRecoveryException.recoveryUnavailableMessage,
+          message: _tr('restore_backup_key_required'),
+          error: _tr('restore_backup_key_required'),
         );
       }
 
@@ -660,22 +939,22 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
         backupProvider: 'google_drive',
         backupEmail: null,
       );
-      _statusMessage = 'Cloud backup found';
+      _statusMessage = _tr('cloud_backup_found');
       notifyListeners();
       return StartupRestoreDiscoveryResult(
         status: StartupRestoreDiscoveryStatus.restorePrompt,
-        message: 'Cloud backup found. Restore your latest backup?',
+        message: _tr('restore_cloud_backup_prompt'),
         preview: _latestPreview,
       );
     } on BackupKeyRecoveryException catch (error) {
       _latestSnapshot = null;
       _latestPreview = null;
       completeStartupRestoreDiscovery();
-      _setStatus('Backup key recovery failed', error: error.message);
+      _setStatus(_tr('restore_backup_key_required'), error: error.message);
       return StartupRestoreDiscoveryResult(
         status: StartupRestoreDiscoveryStatus.keyRecoveryRequired,
-        message: error.message,
-        error: error.message,
+        message: _tr('restore_backup_key_required'),
+        error: _tr('restore_backup_key_required'),
       );
     } catch (error) {
       _latestSnapshot = null;
@@ -683,7 +962,7 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
       completeStartupRestoreDiscovery();
       return StartupRestoreDiscoveryResult(
         status: StartupRestoreDiscoveryStatus.none,
-        message: error.toString(),
+        message: _tr('no_cloud_backup_found'),
         error: error.toString(),
       );
     }
@@ -692,14 +971,14 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
   Future<BackupPreview?> previewLatestBackup() async {
     final CloudSyncManager? manager = await _resolveSyncManager();
     if (manager == null) {
-      _statusMessage = 'Google Drive is not connected';
+      _statusMessage = _tr('google_drive_permission_required_for_cloud_backup');
       notifyListeners();
       return null;
     }
 
     final UserCloudStorageProvider provider = manager.provider;
     if (!await provider.isConnected()) {
-      _statusMessage = 'Google Drive is not connected';
+      _statusMessage = _tr('google_drive_permission_required_for_cloud_backup');
       notifyListeners();
       return null;
     }
@@ -708,7 +987,7 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
     if (manifest == null) {
       _latestSnapshot = null;
       _latestPreview = null;
-      _statusMessage = 'No cloud backup found';
+      _statusMessage = _tr('no_cloud_backup_found');
       notifyListeners();
       return null;
     }
@@ -723,7 +1002,10 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
     _latestSnapshot = snapshot;
     _statusMessage = _lastBackupStatus.isNotEmpty
         ? _lastBackupStatus
-        : 'Cloud Sync: Active';
+        : _text(
+            english: 'Cloud Sync: Active',
+            arabic: 'مزامنة السحابة: نشطة',
+          );
 
     if (snapshot == null) {
       _latestPreview = null;
@@ -757,31 +1039,71 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
     return _latestPreview;
   }
 
+  @override
   Future<bool> restoreLatestBackup({bool allowOverwrite = true}) async {
+    if (!appStateController.isHydrationReady &&
+        !_startupRestoreDiscoveryActive &&
+        !appStateController.isRestoringDatabase) {
+      await LaunchDiagnostics.record(
+        'cloud_restore_blocked',
+        level: 'warning',
+        metadata: <String, dynamic>{
+          'reason': 'hydration_not_ready',
+          'phase': appStateController.hydrationPhase.name,
+        },
+      );
+      return false;
+    }
     final String? passphrase = await _resolvePassphrase(createIfMissing: false);
     if (passphrase == null || passphrase.isEmpty) {
       _setStatus(
-        'Backup passphrase is required',
-        error: 'Enter and save a cloud backup passphrase first.',
+        _text(
+          english: 'Backup passphrase is required',
+          arabic: 'مطلوب كلمة مرور النسخ الاحتياطي',
+        ),
+        error: _text(
+          english: 'Enter and save a cloud backup passphrase first.',
+          arabic: 'أدخل واحفظ كلمة مرور النسخ الاحتياطي السحابي أولاً.',
+        ),
       );
       return false;
     }
 
     final CloudSyncManager? manager = await _resolveSyncManager();
     if (manager == null) {
-      _setStatus('Google Drive is not connected', error: '');
+      _setStatus(
+        _tr('google_drive_permission_required_for_cloud_backup'),
+        error: '',
+      );
       return false;
     }
 
     final UserCloudStorageProvider provider = manager.provider;
     if (!await provider.isConnected()) {
-      _setStatus('Google Drive is not connected', error: '');
+      _setStatus(
+        _tr('google_drive_permission_required_for_cloud_backup'),
+        error: '',
+      );
       return false;
     }
 
     manager.setPassphrase(passphrase);
     _isRestoring = true;
-    _setStatus('Restoring cloud backup...');
+    _setStatus(
+      _text(
+        english: 'Restoring cloud backup...',
+        arabic: 'جارٍ استعادة النسخة الاحتياطية السحابية...',
+      ),
+    );
+    unawaited(
+      LaunchDiagnostics.record(
+        'cloud_restore_started',
+        metadata: <String, dynamic>{
+          'phase': appStateController.hydrationPhase.name,
+          'startupRestoreDiscoveryActive': _startupRestoreDiscoveryActive,
+        },
+      ),
+    );
 
     final String targetPath =
         '${Directory.systemTemp.path}/cloud_restore_${DateTime.now().millisecondsSinceEpoch}.sqlite';
@@ -804,12 +1126,44 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
         await restoredFile.delete();
       }
 
-      _setStatus('Restore completed');
+      _setStatus(
+        _text(
+          english: 'Restore completed',
+          arabic: 'اكتملت الاستعادة',
+        ),
+      );
       await _refreshRemoteState(provider: provider);
       completeStartupRestoreDiscovery();
+      unawaited(
+        LaunchDiagnostics.record(
+          'cloud_restore_complete',
+          metadata: <String, dynamic>{
+            'phase': appStateController.hydrationPhase.name,
+            'transactionCount': appStateController.state.transactions.length,
+            'savingCount': appStateController.state.savings.length,
+            'investmentCount': appStateController.state.investments.length,
+            'pendingCount': appStateController.state.pendingTransactions.length,
+            'planCount': appStateController.state.financialPlans.length,
+            'recurringCount': appStateController.state.recurringTransactions.length,
+          },
+        ),
+      );
       return true;
     } catch (e) {
-      _setStatus('Restore failed', error: e.toString());
+      _setStatus(
+        _text(english: 'Restore failed', arabic: 'فشلت الاستعادة'),
+        error: e.toString(),
+      );
+      unawaited(
+        LaunchDiagnostics.record(
+          'cloud_restore_failed',
+          level: 'error',
+          metadata: <String, dynamic>{
+            'error': e.toString(),
+            'phase': appStateController.hydrationPhase.name,
+          },
+        ),
+      );
       return false;
     } finally {
       _isRestoring = false;
@@ -861,6 +1215,10 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!appStateController.isHydrationReady ||
+        appStateController.isRestoringDatabase) {
+      return;
+    }
     if (!_autoBackupEnabled || isRestoring || _startupRestoreDiscoveryActive) {
       if (!appStateController.isRestoringDatabase) {
         if (state == AppLifecycleState.resumed) {
@@ -883,6 +1241,10 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _onSourceChanged() {
+    if (!appStateController.isHydrationReady ||
+        appStateController.isRestoringDatabase) {
+      return;
+    }
     final String currentStamp = _currentStateStamp();
     if (currentStamp == _lastObservedStateStamp) {
       return;
@@ -890,7 +1252,7 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
     _lastObservedStateStamp = currentStamp;
     if (authController.currentUser == null) {
       _cancelTimers();
-      _statusMessage = 'Refreshing backup status...';
+      _statusMessage = _tr('refreshing_backup_status');
     } else {
       if (_autoBackupEnabled &&
           !isRestoring &&
@@ -922,6 +1284,10 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
         isRestoring ||
         _isBackingUp ||
         _startupRestoreDiscoveryActive) {
+      return;
+    }
+    if (!appStateController.isHydrationReady ||
+        appStateController.isRestoringDatabase) {
       return;
     }
     final bool hasLocalData = BackupService.hasData(
@@ -1112,16 +1478,28 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
         : 'default';
     _autoBackupEnabled =
         prefs.getBool(_prefsKey('auto_enabled', userId)) ?? true;
-    _minimumIntervalHours =
-        prefs.getInt(_prefsKey('interval_hours', userId)) ?? 3;
+    final int? savedMinutes = prefs.getInt(
+      _prefsKey('interval_minutes', userId),
+    );
+    if (savedMinutes != null && _allowedIntervals.contains(savedMinutes)) {
+      _minimumIntervalMinutes = savedMinutes;
+    } else {
+      final int? legacyHours =
+          prefs.getInt(_prefsKey('interval_hours', userId));
+      if (legacyHours != null) {
+        final int legacyMinutes = legacyHours * 60;
+        _minimumIntervalMinutes = _allowedIntervals.contains(legacyMinutes)
+            ? legacyMinutes
+            : 30;
+      } else {
+        _minimumIntervalMinutes = 30;
+      }
+    }
     final int? lastBackupMs = prefs.getInt(_prefsKey('last_backup_ms', userId));
-    final int? nextBackupMs = prefs.getInt(_prefsKey('next_backup_ms', userId));
     _lastBackupAt = lastBackupMs == null
         ? null
         : DateTime.fromMillisecondsSinceEpoch(lastBackupMs, isUtc: true);
-    _nextEligibleBackupAt = nextBackupMs == null
-        ? null
-        : DateTime.fromMillisecondsSinceEpoch(nextBackupMs, isUtc: true);
+    _recalculateNextEligibleTime();
     _lastBackupStatus = prefs.getString(_prefsKey('last_status', userId)) ?? '';
     _lastBackupError = prefs.getString(_prefsKey('last_error', userId)) ?? '';
     _lastOperationSyncAt = prefs.getString(
@@ -1129,11 +1507,28 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
     );
     _lastOperationSyncError =
         prefs.getString(_prefsKey('last_operation_sync_error', userId)) ?? '';
+    final String? integrityJson = prefs.getString(
+      _prefsKey('last_integrity_summary', userId),
+    );
+    if (integrityJson != null && integrityJson.trim().isNotEmpty) {
+      try {
+        _lastKnownGoodIntegritySummary = BackupIntegritySummary.fromJson(
+          Map<String, dynamic>.from(jsonDecode(integrityJson) as Map),
+        );
+      } catch (_) {
+        _lastKnownGoodIntegritySummary = null;
+      }
+    } else {
+      _lastKnownGoodIntegritySummary = null;
+    }
     _statusMessage = _lastBackupStatus.isNotEmpty
         ? _lastBackupStatus
         : (_isDriveConnected
-              ? 'Cloud Sync: Active'
-              : 'Refreshing backup status...');
+              ? _text(
+                  english: 'Cloud Sync: Active',
+                  arabic: 'مزامنة السحابة: نشطة',
+                )
+              : _tr('refreshing_backup_status'));
     if (_backupPassphraseUserId != null && _backupPassphraseUserId != userId) {
       _backupPassphrase = null;
       _backupPassphraseUserId = null;
@@ -1149,9 +1544,10 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
         : 'default';
     await prefs.setBool(_prefsKey('auto_enabled', userId), _autoBackupEnabled);
     await prefs.setInt(
-      _prefsKey('interval_hours', userId),
-      _minimumIntervalHours,
+      _prefsKey('interval_minutes', userId),
+      _minimumIntervalMinutes,
     );
+    await prefs.remove(_prefsKey('interval_hours', userId));
     if (_lastBackupAt != null) {
       await prefs.setInt(
         _prefsKey('last_backup_ms', userId),
@@ -1185,6 +1581,14 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
       );
     } else {
       await prefs.remove(_prefsKey('last_operation_sync_error', userId));
+    }
+    if (_lastKnownGoodIntegritySummary != null) {
+      await prefs.setString(
+        _prefsKey('last_integrity_summary', userId),
+        jsonEncode(_lastKnownGoodIntegritySummary!.toJson()),
+      );
+    } else {
+      await prefs.remove(_prefsKey('last_integrity_summary', userId));
     }
   }
 
@@ -1227,7 +1631,7 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     _nextEligibleBackupAt = _lastBackupAt!.add(
-      Duration(hours: _minimumIntervalHours),
+      Duration(minutes: _minimumIntervalMinutes),
     );
   }
 
@@ -1262,7 +1666,7 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
       _backupPassphraseUserId = currentUserId;
       return _backupPassphrase;
     } on BackupKeyRecoveryException catch (error) {
-      _setStatus('Backup key recovery failed', error: error.message);
+      _setStatus(_tr('restore_backup_key_required'), error: error.message);
       return null;
     }
   }
@@ -1274,6 +1678,70 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
     final String authUserId = authController.currentUser?.id.trim() ?? '';
     if (authUserId.isNotEmpty) return authUserId;
     return 'default';
+  }
+
+  BackupIntegritySummary _currentIntegritySummary() {
+    return BackupIntegritySummary.fromState(
+      appStateController.state,
+      collectionSources: appStateController.collectionSources,
+    );
+  }
+
+  Future<BackupEligibilityResult> _evaluateBackupEligibility({
+    required bool automatic,
+    required BackupIntegritySummary candidate,
+  }) async {
+    if (!automatic) {
+      return BackupEligibilityAllowed(summary: candidate);
+    }
+
+    final BackupIntegritySummary? baseline =
+        _lastKnownGoodIntegritySummary ?? await _loadIntegritySummaryFromPrefs();
+    if (baseline == null) {
+      return BackupEligibilityAllowed(summary: candidate);
+    }
+
+    final List<String> suspicious = candidate.suspiciousMissingCollections(
+      baseline: baseline,
+    );
+    if (suspicious.isEmpty) {
+      return BackupEligibilityAllowed(summary: candidate);
+    }
+    return BackupEligibilityBlocked(
+      reason: 'partial_candidate_missing_${suspicious.join('_')}',
+      summary: candidate,
+      baseline: baseline,
+      suspiciousCollections: suspicious,
+    );
+  }
+
+  Future<BackupIntegritySummary?> _loadIntegritySummaryFromPrefs() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String userId = _currentUserId();
+    final String? integrityJson = prefs.getString(
+      _prefsKey('last_integrity_summary', userId),
+    );
+    if (integrityJson == null || integrityJson.trim().isEmpty) {
+      return null;
+    }
+    try {
+      return BackupIntegritySummary.fromJson(
+        Map<String, dynamic>.from(jsonDecode(integrityJson) as Map),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _saveIntegritySummary(
+    BackupIntegritySummary summary,
+  ) async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String userId = _currentUserId();
+    await prefs.setString(
+      _prefsKey('last_integrity_summary', userId),
+      jsonEncode(summary.toJson()),
+    );
   }
 
   void _cancelTimers() {
@@ -1294,14 +1762,16 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
           : null;
       final UserCloudStorageProvider? activeProvider =
           provider ?? manager?.provider;
-      if (activeProvider == null || !await activeProvider.isConnected()) {
+    if (activeProvider == null || !await activeProvider.isConnected()) {
         _isDriveConnected = false;
         _latestSnapshot = null;
         _latestPreview = null;
         if (authController.currentUser == null) {
-          _statusMessage = 'Refreshing backup status...';
+          _statusMessage = _tr('refreshing_backup_status');
         } else {
-          _statusMessage = 'Google Drive is not connected';
+          _statusMessage = _tr(
+            'google_drive_permission_required_for_cloud_backup',
+          );
         }
         return false;
       }
@@ -1312,7 +1782,10 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
         _latestSnapshot = null;
         _latestPreview = null;
         if (_lastBackupStatus.isEmpty) {
-          _statusMessage = 'Cloud Sync: Active';
+          _statusMessage = _text(
+            english: 'Cloud Sync: Active',
+            arabic: 'مزامنة السحابة: نشطة',
+          );
         }
         return true;
       }
@@ -1355,7 +1828,10 @@ class CloudBackupController extends ChangeNotifier with WidgetsBindingObserver {
 
       if (_lastBackupStatus.isEmpty ||
           _lastBackupStatus == 'Cloud Sync: Active') {
-        _statusMessage = 'Cloud Sync: Active';
+        _statusMessage = _text(
+          english: 'Cloud Sync: Active',
+          arabic: 'مزامنة السحابة: نشطة',
+        );
       }
       return true;
     } catch (_) {

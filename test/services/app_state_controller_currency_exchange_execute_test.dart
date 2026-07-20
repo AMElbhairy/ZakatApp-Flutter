@@ -47,6 +47,11 @@ class _FakeTransactionsStore implements TransactionsLocalStore {
   Stream<List<model.Transaction>> watchActiveTransactions() async* {
     yield transactions;
   }
+
+  @override
+  Future<int> countActiveTransactions() async {
+    return transactions.length;
+  }
 }
 
 class _FakeSavingsStore implements SavingsLocalStore {
@@ -74,6 +79,11 @@ class _FakeSavingsStore implements SavingsLocalStore {
   @override
   Stream<List<model.Saving>> watchActiveSavings() async* {
     yield savings;
+  }
+
+  @override
+  Future<int> countActiveSavings() async {
+    return savings.length;
   }
 }
 

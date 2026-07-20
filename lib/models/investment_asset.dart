@@ -1,3 +1,5 @@
+import '../core/utils/amount_parser.dart';
+
 class InvestmentAsset {
   const InvestmentAsset({
     required this.id,
@@ -73,12 +75,12 @@ class InvestmentAsset {
       paidAmount: _asDouble(json['paidAmount']),
       remainingAmount: _asDouble(json['remainingAmount']),
       installmentPlan: normalizeInstallmentPlan(json['installmentPlan']),
-      valuationDate: (json['valuationDate'] ?? '').toString(),
+      valuationDate: normalizeDateText(json['valuationDate']?.toString()),
       marketValue: _asDouble(json['marketValue']),
-      marketValueDate: (json['marketValueDate'] ?? '').toString(),
+      marketValueDate: normalizeDateText(json['marketValueDate']?.toString()),
       valuationSource: (json['valuationSource'] ?? '').toString(),
       loanBalance: _asDouble(json['loanBalance']),
-      loanAsOfDate: (json['loanAsOfDate'] ?? '').toString(),
+      loanAsOfDate: normalizeDateText(json['loanAsOfDate']?.toString()),
       paidAmountToDate: _asDouble(json['paidAmountToDate']),
       ownershipSharePct: _asDouble(json['ownershipSharePct']),
       country: (json['country'] ?? '').toString(),
@@ -87,7 +89,7 @@ class InvestmentAsset {
       estimatedCurrentValue: _asDouble(json['estimatedCurrentValue']),
       description: (json['description'] ?? '').toString(),
       noZakat: json['noZakat'] == null ? true : _asBool(json['noZakat']),
-      createdAt: (json['createdAt'] ?? '').toString(),
+      createdAt: normalizeTimestampText(json['createdAt']?.toString()),
       yearlyGrowthRate: _asDouble(json['yearlyGrowthRate']),
     );
   }
@@ -138,9 +140,10 @@ class InvestmentAsset {
               'dueDate',
               'paymentDate',
             ]);
-            if (dueDate.isNotEmpty) {
-              item['recurrenceDate'] = dueDate;
-              item['date'] = dueDate;
+            final String normalizedDueDate = normalizeDateText(dueDate);
+            if (normalizedDueDate.isNotEmpty) {
+              item['recurrenceDate'] = normalizedDueDate;
+              item['date'] = normalizedDueDate;
             }
             if (item['amount'] != null) {
               item['amount'] = _asDouble(item['amount']);
@@ -174,7 +177,7 @@ class InvestmentAsset {
 
   static double _asDouble(dynamic value) {
     if (value is num) return value.toDouble();
-    return double.tryParse(value?.toString() ?? '') ?? 0;
+    return tryParseAmount(value?.toString()) ?? 0;
   }
 
   static bool _asBool(dynamic value) {

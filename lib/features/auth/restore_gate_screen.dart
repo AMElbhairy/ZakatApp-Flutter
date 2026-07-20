@@ -61,7 +61,7 @@ class _RestoreGateScreenState extends State<RestoreGateScreen> {
     final bool needsDrivePermission = widget.discovery.needsDrivePermission;
     final bool needsKeyRecovery = widget.discovery.needsKeyRecovery;
     final String subtitle = needsDrivePermission
-        ? 'A backup may exist. Connect Google Drive to check.'
+        ? l10n.tr('restore_backup_may_exist')
         : needsKeyRecovery
         ? widget.discovery.message
         : l10n.tr('cloud_backup_found');
@@ -93,9 +93,9 @@ class _RestoreGateScreenState extends State<RestoreGateScreen> {
                       children: <Widget>[
                         Text(
                           needsDrivePermission
-                              ? 'A backup may exist'
+                              ? l10n.tr('restore_backup_may_exist_title')
                               : needsKeyRecovery
-                              ? 'Backup key recovery required'
+                              ? l10n.tr('restore_backup_key_required')
                               : l10n.tr('cloud_backup_found'),
                           textAlign: TextAlign.center,
                           style: Theme.of(context).textTheme.titleLarge
@@ -107,7 +107,7 @@ class _RestoreGateScreenState extends State<RestoreGateScreen> {
                         const SizedBox(height: AppSpacing.xs),
                         Text(
                           needsDrivePermission
-                              ? 'Open Backup & Sync to connect Google Drive and check for a cloud backup.'
+                              ? l10n.tr('restore_open_backup_sync')
                               : needsKeyRecovery
                               ? widget.discovery.message
                               : backupDate,
@@ -163,7 +163,7 @@ class _RestoreGateScreenState extends State<RestoreGateScreen> {
                           )
                         else if (needsDrivePermission)
                           AuthBrandPrimaryButton(
-                            label: 'Open Backup & Sync',
+                            label: l10n.tr('restore_open_backup_sync_button'),
                             leading: const Icon(
                               Icons.cloud_queue_rounded,
                               size: 20,
@@ -176,7 +176,7 @@ class _RestoreGateScreenState extends State<RestoreGateScreen> {
                           )
                         else
                           AuthBrandPrimaryButton(
-                            label: 'Start Fresh',
+                            label: l10n.tr('start_fresh'),
                             leading: const Icon(
                               Icons.auto_awesome_rounded,
                               size: 20,

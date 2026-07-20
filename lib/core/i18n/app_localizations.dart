@@ -17,6 +17,170 @@ class AppLocalizations {
       'brand_tagline': 'Track Wealth. Calculate Zakat.',
       'brand_trust_message':
           'Sign in with Google to enable secure backup and sync with Google Drive.',
+      'onboarding_choose_language': 'Choose your language',
+      'onboarding_language_english_subtitle': 'Use the app in English',
+      'onboarding_language_arabic_subtitle': 'Use the app in Arabic',
+      'onboarding_continue_in_english': 'Continue in English',
+      'onboarding_continue_in_arabic': 'Continue in Arabic',
+      'onboarding_welcome_title': 'Your Wealth. Organized.',
+      'onboarding_welcome_subtitle':
+          'Track income, expenses, savings and investments in one secure place.',
+      'onboarding_welcome_body':
+          'Track income, expenses, savings and investments in one secure place.',
+      'onboarding_privacy_title': 'Local first, always yours',
+      'onboarding_privacy_subtitle':
+          'Your data is primarily stored locally on this device.',
+      'onboarding_privacy_body':
+          'Your financial data is primarily stored locally on this device. Backup and synchronization are used only when you enable or sign in to the relevant service. You remain responsible for reviewing your records and Zakah calculations.',
+      'onboarding_capture_title': 'Capture supported messages',
+      'onboarding_capture_android_body':
+          'Allow SMS access so Zakah Wealth can detect supported financial messages and prepare pending transactions for your review. Transactions are not confirmed until you review them.',
+      'onboarding_capture_ios_body':
+          'Use Apple Shortcuts to capture supported bank notifications for review.',
+      'onboarding_capture_status_enabled': 'Enabled',
+      'onboarding_capture_status_not_enabled': 'Not enabled',
+      'onboarding_capture_status_denied': 'Permission denied',
+      'onboarding_capture_status_unavailable':
+          'Unavailable on this device/platform',
+      'onboarding_capture_enable_sms': 'Enable SMS Capture',
+      'onboarding_not_now': 'Not Now',
+      'onboarding_open_settings': 'Open Settings',
+      'onboarding_back': 'Back',
+      'onboarding_skip': 'Skip',
+      'onboarding_continue': 'Continue',
+      'onboarding_features_title': 'Powerful Tools',
+      'onboarding_features_subtitle':
+          'Manage wealth, calculate zakat, capture transactions and protect your data.',
+      'onboarding_track_wealth_title': 'Track Wealth',
+      'onboarding_track_wealth_body':
+          'Monitor all your assets, savings, investments and cash in one place.',
+      'onboarding_calculate_zakat_title': 'Calculate Zakat',
+      'onboarding_calculate_zakat_body':
+          'Automatically calculate zakat using accurate nisab values.',
+      'onboarding_smart_capture_title': 'Smart Capture',
+      'onboarding_smart_capture_body':
+          'Capture bank transactions automatically for review.',
+      'onboarding_secure_backup_title': 'Secure Backup',
+      'onboarding_secure_backup_body':
+          'Protect your data with encrypted cloud backups.',
+      'onboarding_language_title': 'Choose Your Language',
+      'onboarding_language_subtitle': 'Choose a language whenever you need.',
+      'onboarding_currency_title': 'Choose Your Currency',
+      'onboarding_currency_subtitle':
+          'Select your main currency for accurate calculations.',
+      'onboarding_setup_title': 'Let’s personalize your experience',
+      'onboarding_setup_subtitle':
+          'Review the core settings that shape your day-to-day use.',
+      'onboarding_setup_progress': '{done} of {total} complete',
+      'onboarding_ready_title': 'You’re Ready',
+      'onboarding_ready_subtitle':
+          'Start building your financial future with clarity.',
+      'onboarding_ready_body':
+          'You can change these settings later from the app settings.',
+      'onboarding_start': 'Start Using Zakah Wealth',
+      'onboarding_android_capture_title': 'Smart Capture',
+      'onboarding_android_capture_body':
+          'Bank SMS are detected automatically and prepared for your approval.',
+      'onboarding_android_capture_line_1':
+          'Bank SMS are detected automatically',
+      'onboarding_android_capture_line_2': 'Nothing is added automatically',
+      'onboarding_android_capture_line_3':
+          'Every transaction requires your approval',
+      'onboarding_android_capture_line_4': 'Messages never leave your device',
+      'onboarding_ios_capture_title': 'Smart Capture with Shortcuts',
+      'onboarding_ios_capture_body':
+          'Use Apple Shortcuts to capture supported bank notifications automatically.',
+      'onboarding_backup_title': 'Secure Backup',
+      'onboarding_backup_body':
+          'Encrypted backups keep your data protected and ready to restore.',
+      'onboarding_more_currencies': 'More currencies',
+      'onboarding_backup_encrypted': 'Encrypted',
+      'onboarding_backup_private': 'Private',
+      'onboarding_backup_restore_anytime': 'Restore Anytime',
+      'onboarding_connect_google_drive': 'Connect Google Drive',
+      'onboarding_skip_for_now': 'Skip for now',
+      'onboarding_open_shortcuts': 'Set Up Shortcuts',
+      'onboarding_enable_smart_capture': 'Enable Smart Capture',
+      'onboarding_open_cloud_backup': 'Open Cloud Backup',
+      'onboarding_main_currency': 'Main Currency',
+      'onboarding_theme': 'Theme',
+      'onboarding_notifications': 'Notifications',
+      'onboarding_biometric_lock': 'Biometric Lock',
+      'onboarding_smart_capture': 'Smart Capture',
+      'onboarding_cloud_backup': 'Cloud Backup',
+      'onboarding_open': 'Open',
+      'setup_skip': 'Skip',
+      'setup_continue': 'Continue',
+      'setup_done': 'Done',
+      'setup_android_sms_title': 'Enable SMS Access',
+      'setup_android_sms_subtitle':
+          'Zakah Wealth reads supported bank transaction SMS messages to prepare transactions for your approval.\n\nPersonal messages are ignored.\n\nNothing is uploaded.',
+      'setup_android_phone': 'Phone',
+      'setup_android_sms': 'SMS',
+      'setup_android_shield': 'Shield',
+      'setup_android_zakah_wealth': 'Zakah Wealth',
+      'setup_android_allow_sms': 'Allow SMS Access',
+      'setup_android_battery_title': 'Disable Battery Restrictions',
+      'setup_android_battery_subtitle':
+          'Allow unrestricted battery usage so Smart Capture continues working reliably in the background.',
+      'setup_android_battery_caption': 'Battery\nUnrestricted',
+      'setup_android_open_battery': 'Open Battery Settings',
+      'setup_android_checking': 'Checking battery status...',
+      'setup_android_battery_ready': 'Battery restrictions are disabled',
+      'setup_android_battery_retry': 'Return here after changing the setting.',
+      'setup_android_ready_title': 'Smart Capture is Ready',
+      'setup_android_ready_subtitle':
+          'Supported bank SMS messages will now be detected automatically and prepared for your approval.',
+      'setup_android_ready_check_title': 'Setup Complete',
+      'setup_android_ready_check_subtitle':
+          'Smart Capture is active on this device.',
+      'setup_android_check_sms': 'SMS Permission Enabled',
+      'setup_android_check_background': 'Background Processing Enabled',
+      'setup_ios_enable_title': 'Enable Smart Capture',
+      'setup_ios_enable_subtitle':
+          'Apple Shortcuts securely sends supported bank notifications to Zakah Wealth for review.',
+      'setup_ios_install_title': 'Install Log Bank Message',
+      'setup_ios_install_subtitle':
+          'Tap Add Shortcut to install the shortcut provided by Zakah Wealth.',
+      'setup_ios_add_shortcut_caption': 'Add Shortcut',
+      'setup_ios_add_shortcut_primary': 'Add Shortcut',
+      'setup_ios_create_automation_title': 'Create Automation',
+      'setup_ios_create_automation_subtitle':
+          'Open the Automation tab and create a new Personal Automation.',
+      'setup_ios_automation_caption': 'Automation',
+      'setup_ios_trigger_title': 'Choose the Trigger',
+      'setup_ios_trigger_subtitle':
+          'Create an automation that runs whenever a supported bank message is received.',
+      'setup_ios_message_caption': 'When Message is Received',
+      'setup_ios_log_title': 'Add Log Bank Message',
+      'setup_ios_log_subtitle':
+          'Search for the Log Bank Message action and add it.',
+      'setup_ios_log_caption': 'Log Bank Message',
+      'setup_ios_connect_title': 'Connect the Message',
+      'setup_ios_connect_subtitle':
+          'Set Message Content to Shortcut Input.\n\nThis allows the received message to be passed to Zakah Wealth.',
+      'setup_ios_input_caption': 'Shortcut Input\nMessage Content',
+      'setup_ios_auto_title': 'Enable Automatic Execution',
+      'setup_ios_auto_subtitle':
+          'Allow the automation to run immediately without asking every time.',
+      'setup_ios_run_caption': 'Run Immediately\nTurn Off Notify When Run',
+      'setup_ios_ready_title': 'Smart Capture is Ready',
+      'setup_ios_ready_subtitle':
+          'Supported bank notifications will now be prepared automatically for your approval.',
+      'setup_ios_ready_check_title': 'Setup Complete',
+      'setup_ios_ready_check_subtitle':
+          'Smart Capture is active on this iPhone.',
+      'setup_ios_check_shortcut': 'Shortcut Installed',
+      'setup_ios_check_automation': 'Automation Created',
+      'setup_ios_check_capture': 'Automatic Capture Enabled',
+      'onboarding_security_title': 'Protect your financial information',
+      'onboarding_security_body':
+          'Protect your financial information when opening the app.',
+      'onboarding_security_enable': 'Enable biometric/privacy lock',
+      'onboarding_security_not_now': 'Not Now',
+      'onboarding_security_unavailable': 'Unavailable on this device/platform',
+      'onboarding_security_status_checking': 'Checking device support...',
+      'onboarding_security_status_available': 'Supported on this device',
       'google_sign_in_only_intro':
           'Continue with Google to enable backup and sync.',
       'login_intro': 'Continue with your account',
@@ -67,9 +231,35 @@ class AppLocalizations {
       'loading_assets': 'Loading assets',
       'loading_market_data': 'Loading market data',
       'loading_plans': 'Loading plans',
+      'refreshing_backup_status': 'Refreshing backup status...',
+      'connected': 'Connected',
+      'google_drive_permission_required_for_cloud_backup':
+          'Google Drive permission is required for cloud backup.',
       'backup_date_unknown': 'Backup date unknown',
       'backup_date': 'Backup date',
       'cloud_backup_found': 'Cloud backup found',
+      'local_data_exists': 'Local data exists',
+      'no_cloud_backup_found': 'No cloud backup found',
+      'no_available_snapshots_registered_in_manifest':
+          'No available snapshots registered in manifest.',
+      'restore_cloud_backup_prompt':
+          'Cloud backup found. Restore your latest backup?',
+      'restoring_latest_cloud_backup': 'Restoring latest cloud backup...',
+      'restoring_cloud_backup': 'Restoring cloud backup...',
+      'restore_failed': 'Restore failed',
+      'startup_preparing_dashboard': 'Preparing your wealth dashboard...',
+      'startup_loading_assets': 'Loading assets',
+      'startup_loading_transactions': 'Loading transactions',
+      'startup_restoring_session': 'Restoring session',
+      'startup_preparing_projections': 'Preparing projections',
+      'startup_still_preparing_data': 'Still preparing your data...',
+      'restore_backup_may_exist':
+          'A backup may exist. Connect Google Drive to check.',
+      'restore_backup_may_exist_title': 'A backup may exist',
+      'restore_backup_key_required': 'Backup key recovery required',
+      'restore_open_backup_sync':
+          'Open Backup & Sync to connect Google Drive and check for a cloud backup.',
+      'restore_open_backup_sync_button': 'Open Backup & Sync',
       'restore_backup': 'Restore Backup',
       'start_fresh': 'Start Fresh',
       'loading_backup_preview': 'Loading backup details...',
@@ -89,6 +279,57 @@ class AppLocalizations {
           'The backup could not be completed. You can retry or sign out anyway.',
       'retry_backup': 'Retry Backup',
       'local_backup_options': 'Local Import/Export',
+      'merchant_rules_title': 'Merchant Rules',
+      'merchant_rules_all': 'All',
+      'merchant_rules_builtin': 'Built-in',
+      'merchant_rules_learned': 'Learned',
+      'merchant_rules_custom': 'Custom',
+      'merchant_rules_no_rules': 'No rules in this section',
+      'merchant_rules_custom_rules': 'Custom Rules',
+      'merchant_rules_learned_rules': 'Learned Rules',
+      'merchant_rules_builtin_rules': 'Built-in Rules',
+      'merchant_rules_results': 'Results',
+      'merchant_rules_add_custom': 'Add Custom Rule',
+      'merchant_rules_edit': 'Edit Merchant Rule',
+      'merchant_rules_add': 'Add Custom Rule',
+      'merchant_rules_create': 'Create Rule',
+      'merchant_rules_merchant_name': 'Merchant Name',
+      'merchant_rules_transaction_type': 'Transaction Type',
+      'merchant_rules_category': 'Category',
+      'merchant_rules_aliases': 'Aliases',
+      'merchant_rules_auto_approve': 'Auto Approve',
+      'merchant_rules_rule_enabled': 'Rule Enabled',
+      'merchant_rules_enable_auto_approval': 'Enable Auto Approval',
+      'merchant_rules_based_on_builtin': 'Based on built-in template',
+      'merchant_rules_reset_builtin': 'Reset to Built-in Defaults',
+      'merchant_rules_save': 'Save',
+      'merchant_rules_review_transaction': 'Review Transaction',
+      'merchant_rules_original_capture_details': 'Original Capture Details',
+      'merchant_rules_source': 'Source',
+      'merchant_rules_bank': 'Bank',
+      'merchant_rules_confidence': 'Confidence',
+      'merchant_rules_raw_message': 'Raw Message:',
+      'merchant_rules_transaction_information': 'Transaction Information',
+      'merchant_rules_type': 'Type',
+      'merchant_rules_amount': 'Amount',
+      'merchant_rules_currency': 'Currency',
+      'merchant_rules_date': 'Date',
+      'merchant_rules_description': 'Description',
+      'merchant_rules_search_merchants': 'Search merchants...',
+      'merchant_rules_auto_approval_description':
+          'Transactions matching rules with >=95% confidence are approved automatically.',
+      'merchant_rules_example_merchant_name': 'e.g. Talabat',
+      'merchant_rules_example_aliases': 'merchant.com, merchant app',
+      'merchant_rules_merchant_name_required':
+          'Merchant name is required to create a rule.',
+      'enter_amount': 'Please enter amount',
+      'enter_valid_number': 'Please enter a valid number',
+      'approve': 'Approve',
+      'reject': 'Reject',
+      'transaction_updated_successfully': 'Transaction updated successfully',
+      'transaction_added_successfully': 'Transaction added successfully',
+      'transaction_rejected': 'Transaction rejected',
+      'error_prefix': 'Error',
       'dashboard': 'Dashboard',
       'assets': 'Assets',
       'activity': 'Activity',
@@ -119,7 +360,19 @@ class AppLocalizations {
       'remaining_entries': 'Remaining Entries',
       'total_due': 'Total Due',
       'all': 'All',
+      'all_time': 'All Time',
       'all_categories': 'All Categories',
+      'period_30d': '30D',
+      'period_90d': '90D',
+      'period_6m': '6M',
+      'period_ytd': 'YTD',
+      'period_custom': 'Custom',
+      'enabled': 'Enabled',
+      'disabled': 'Disabled',
+      'about_zakah_wealth': 'About Zakah Wealth',
+      'stocks_funds_etc': 'Stocks, Funds, etc.',
+      'properties': 'Properties',
+      'of_total': 'of total',
       'search_notes': 'Search notes',
       'search_icons': 'Search icons',
       'income': 'Income',
@@ -186,6 +439,7 @@ class AppLocalizations {
       'account_section': 'Account',
       'currency_section': 'Currency',
       'zakat_calculation_section': 'Zakat Calculation',
+      'preferences_section': 'Preferences',
       'cash_nisab': 'Cash Nisab',
       'nisab_gold_85': '85 g gold 24 k',
       'nisab_silver_595': '595 g silver 999',
@@ -311,6 +565,26 @@ class AppLocalizations {
       'purchase_price_gt_zero': 'Purchase price must be greater than 0',
       'purchase_price_optional': 'Purchase Price (Optional)',
       'remaining_liability_optional': 'Remaining Liability (Optional)',
+      'remaining_liability': 'Remaining Liability',
+      'installment_schedule': 'Installment Schedule',
+      'installment_amount': 'Installment Amount',
+      'installment_frequency': 'Installment Frequency',
+      'number_of_installments': 'Number of Installments',
+      'first_payment_date': 'First Payment Date',
+      'generate_installments': 'Generate Installments',
+      'auto_generate': 'Auto-Generate',
+      'add_one_by_one': 'Add One-by-One',
+      'scheduled_installments': 'Scheduled Installments',
+      'purchase_amount': 'Purchase amount',
+      'purchase_currency': 'Purchase currency',
+      'link_this_purchase_to_cash_entries':
+          'Link this purchase to cash entries',
+      'pay': 'Pay',
+      'current_net_worth': 'Current Net Worth',
+      'projected_net_worth': 'Projected Net Worth',
+      'net_worth': 'Net Worth',
+      'target_achieved': 'Target Achieved',
+      'net_worth_breakdown': 'Net Worth Breakdown',
       'valuation_date': 'Valuation Date',
       'yearly_growth_rate': 'Yearly Growth Rate (%)',
       'repeat': 'Repeat',
@@ -390,6 +664,9 @@ class AppLocalizations {
       'smart_capture_log': 'Capture Log',
       'smart_capture_paste': 'Paste Bank Message',
       'smart_capture_review': 'Capture Review',
+      'smart_capture_pending_for_approval': 'Pending for Approval',
+      'smart_capture_auto_approved': 'Auto approved',
+      'smart_capture_rejected': 'Rejected',
       'paste_bank_message': 'Paste Bank Message',
       'paste_bank_message_desc':
           'Paste the notification SMS, email content, or raw bank details text. The system will automatically parse type, amount, and currency for review.',
@@ -399,7 +676,6 @@ class AppLocalizations {
       'message_parsed_successfully':
           'Message parsed successfully into Pending Transactions',
       'create_pending': 'Create Pending',
-      'error_prefix': 'Error',
       'message_parsed_into_pending': 'Message moved to pending review',
       'transactions_need_review': '{count} transactions need review',
       'usd_to_egp': 'USD to EGP',
@@ -454,12 +730,169 @@ class AppLocalizations {
       'subscriptions': 'Subscriptions',
       'loan payment': 'Loan Payment',
       'other': 'Other',
+      'by_currency': 'by currency',
     },
     'ar': <String, String>{
       'brand_title': 'Zakah Wealth',
       'brand_tagline': 'تتبع الثروة. احسب الزكاة.',
       'brand_trust_message':
           'سجّل الدخول عبر Google لتفعيل النسخ الاحتياطي والمزامنة الآمنة مع Google Drive.',
+      'onboarding_choose_language': 'اختر اللغة',
+      'onboarding_language_english_subtitle':
+          'استخدم التطبيق باللغة الإنجليزية',
+      'onboarding_language_arabic_subtitle': 'استخدم التطبيق باللغة العربية',
+      'onboarding_continue_in_english': 'متابعة بالإنجليزية',
+      'onboarding_continue_in_arabic': 'متابعة بالعربية',
+      'onboarding_welcome_title': 'ثروتك. منظمة.',
+      'onboarding_welcome_subtitle':
+          'تتبّع الدخل والمصروفات والمدخرات والاستثمارات في مكان واحد آمن.',
+      'onboarding_welcome_body':
+          'تتبّع الدخل والمصروفات والمدخرات والاستثمارات في مكان واحد آمن.',
+      'onboarding_privacy_title': 'محلي أولاً، والبيانات لك دائماً',
+      'onboarding_privacy_subtitle':
+          'تُحفظ بياناتك بشكل أساسي محلياً على هذا الجهاز.',
+      'onboarding_privacy_body':
+          'تُحفظ بياناتك المالية بشكل أساسي محلياً على هذا الجهاز. يُستخدم النسخ الاحتياطي أو المزامنة فقط عندما تفعّل الخدمة ذات الصلة أو تسجّل الدخول إليها. وتظل مسؤولاً عن مراجعة السجلات وحسابات الزكاة.',
+      'onboarding_capture_title': 'التقاط الرسائل المدعومة',
+      'onboarding_capture_android_body':
+          'اسمح بالوصول إلى الرسائل القصيرة حتى يتمكن Zakah Wealth من اكتشاف الرسائل المالية المدعومة وتجهيز المعاملات المعلقة لمراجعتك. لا تُؤكَّد أي معاملة حتى تراجعها.',
+      'onboarding_capture_ios_body':
+          'استخدم Apple Shortcuts لالتقاط إشعارات البنوك المدعومة للمراجعة.',
+      'onboarding_capture_status_enabled': 'مفعّل',
+      'onboarding_capture_status_not_enabled': 'غير مفعّل',
+      'onboarding_capture_status_denied': 'تم رفض الإذن',
+      'onboarding_capture_status_unavailable': 'غير متاح على هذا الجهاز/النظام',
+      'onboarding_capture_enable_sms': 'تفعيل التقاط الرسائل',
+      'onboarding_not_now': 'ليس الآن',
+      'onboarding_open_settings': 'فتح الإعدادات',
+      'onboarding_back': 'رجوع',
+      'onboarding_skip': 'تخطي',
+      'onboarding_continue': 'متابعة',
+      'onboarding_features_title': 'أدوات قوية',
+      'onboarding_features_subtitle':
+          'أدر الثروة، واحسب الزكاة، والتقط المعاملات، واحمِ بياناتك.',
+      'onboarding_track_wealth_title': 'تتبع الثروة',
+      'onboarding_track_wealth_body':
+          'راقب الأصول والمدخرات والاستثمارات والنقد في مكان واحد.',
+      'onboarding_calculate_zakat_title': 'احسب الزكاة',
+      'onboarding_calculate_zakat_body':
+          'احسب الزكاة تلقائياً باستخدام قيم النصاب الدقيقة.',
+      'onboarding_smart_capture_title': 'التقاط ذكي',
+      'onboarding_smart_capture_body':
+          'التقط معاملات البنك تلقائياً لمراجعتها لاحقاً.',
+      'onboarding_secure_backup_title': 'نسخ احتياطي آمن',
+      'onboarding_secure_backup_body': 'احمِ بياناتك بنسخ احتياطي سحابي مشفّر.',
+      'onboarding_language_title': 'اختر لغتك',
+      'onboarding_language_subtitle': 'اختر لغة متى احتجت.',
+      'onboarding_currency_title': 'اختر عملتك',
+      'onboarding_currency_subtitle': 'حدّد عملتك الرئيسية لإجراء حسابات أدق.',
+      'onboarding_setup_title': 'لنخصص تجربتك',
+      'onboarding_setup_subtitle':
+          'راجع الإعدادات الأساسية التي تؤثر على استخدامك اليومي.',
+      'onboarding_setup_progress': 'اكتمل {done} من {total}',
+      'onboarding_ready_title': 'أنت جاهز',
+      'onboarding_ready_subtitle': 'ابدأ بناء مستقبلك المالي بوضوح.',
+      'onboarding_ready_body':
+          'يمكنك تغيير هذه الإعدادات لاحقاً من إعدادات التطبيق.',
+      'onboarding_start': 'ابدأ استخدام Zakah Wealth',
+      'onboarding_android_capture_title': 'التقاط ذكي',
+      'onboarding_android_capture_body':
+          'يتم رصد رسائل البنك تلقائياً وتجهيزها لموافقتك.',
+      'onboarding_android_capture_line_1': 'يتم رصد رسائل البنك تلقائياً',
+      'onboarding_android_capture_line_2': 'لا يُضاف أي شيء تلقائياً',
+      'onboarding_android_capture_line_3': 'كل معاملة تحتاج إلى موافقتك',
+      'onboarding_android_capture_line_4': 'الرسائل لا تغادر جهازك',
+      'onboarding_ios_capture_title': 'التقاط ذكي مع الاختصارات',
+      'onboarding_ios_capture_body':
+          'استخدم اختصارات Apple لالتقاط إشعارات البنوك المدعومة تلقائياً.',
+      'onboarding_backup_title': 'نسخ احتياطي آمن',
+      'onboarding_backup_body':
+          'تظل النسخ الاحتياطية المشفّرة تحافظ على بياناتك جاهزة للاستعادة.',
+      'onboarding_more_currencies': 'عملات أخرى',
+      'onboarding_backup_encrypted': 'مشفّر',
+      'onboarding_backup_private': 'خاص',
+      'onboarding_backup_restore_anytime': 'يمكن الاستعادة في أي وقت',
+      'onboarding_connect_google_drive': 'ربط Google Drive',
+      'onboarding_skip_for_now': 'تخطي الآن',
+      'onboarding_open_shortcuts': 'إعداد الاختصارات',
+      'onboarding_enable_smart_capture': 'تفعيل الالتقاط الذكي',
+      'onboarding_open_cloud_backup': 'فتح النسخ الاحتياطي السحابي',
+      'onboarding_main_currency': 'العملة الرئيسية',
+      'onboarding_theme': 'المظهر',
+      'onboarding_notifications': 'الإشعارات',
+      'onboarding_biometric_lock': 'القفل البيومتري',
+      'onboarding_smart_capture': 'التقاط ذكي',
+      'onboarding_cloud_backup': 'النسخ الاحتياطي السحابي',
+      'onboarding_open': 'فتح',
+      'setup_skip': 'تخطي',
+      'setup_continue': 'متابعة',
+      'setup_done': 'تم',
+      'setup_android_sms_title': 'تفعيل الوصول إلى الرسائل القصيرة',
+      'setup_android_sms_subtitle':
+          'يقرأ Zakah Wealth رسائل SMS الخاصة بمعاملات البنوك المدعومة ليجهّز المعاملات لموافقتك.\n\nتُتجاهل الرسائل الشخصية.\n\nولا يتم رفع أي شيء.',
+      'setup_android_phone': 'الهاتف',
+      'setup_android_sms': 'SMS',
+      'setup_android_shield': 'الدرع',
+      'setup_android_zakah_wealth': 'Zakah Wealth',
+      'setup_android_allow_sms': 'السماح بالوصول إلى SMS',
+      'setup_android_battery_title': 'إيقاف قيود البطارية',
+      'setup_android_battery_subtitle':
+          'اسمح باستخدام البطارية بشكل غير مقيّد حتى يستمر الالتقاط الذكي بالعمل بثبات في الخلفية.',
+      'setup_android_battery_caption': 'البطارية\nغير مقيّدة',
+      'setup_android_open_battery': 'فتح إعدادات البطارية',
+      'setup_android_checking': 'جارٍ التحقق من حالة البطارية...',
+      'setup_android_battery_ready': 'تم إيقاف قيود البطارية',
+      'setup_android_battery_retry': 'عد إلى هنا بعد تغيير الإعداد.',
+      'setup_android_ready_title': 'الالتقاط الذكي جاهز',
+      'setup_android_ready_subtitle':
+          'سيتم الآن رصد رسائل البنك المدعومة تلقائياً وتجهيزها لموافقتك.',
+      'setup_android_ready_check_title': 'اكتمل الإعداد',
+      'setup_android_ready_check_subtitle':
+          'الالتقاط الذكي نشط على هذا الجهاز.',
+      'setup_android_check_sms': 'تم تفعيل إذن SMS',
+      'setup_android_check_background': 'تم تفعيل المعالجة في الخلفية',
+      'setup_ios_enable_title': 'تفعيل الالتقاط الذكي',
+      'setup_ios_enable_subtitle':
+          'يرسل Apple Shortcuts إشعارات البنوك المدعومة إلى Zakah Wealth بشكل آمن للمراجعة.',
+      'setup_ios_install_title': 'تثبيت Log Bank Message',
+      'setup_ios_install_subtitle':
+          'اضغط على Add Shortcut لتثبيت الاختصار الذي يوفّره Zakah Wealth.',
+      'setup_ios_add_shortcut_caption': 'Add Shortcut',
+      'setup_ios_add_shortcut_primary': 'Add Shortcut',
+      'setup_ios_create_automation_title': 'إنشاء أتمتة',
+      'setup_ios_create_automation_subtitle':
+          'افتح تبويب Automation وأنشئ Personal Automation جديدة.',
+      'setup_ios_automation_caption': 'Automation',
+      'setup_ios_trigger_title': 'اختر المشغّل',
+      'setup_ios_trigger_subtitle':
+          'أنشئ أتمتة تعمل كلما وصل إشعار من بنك مدعوم.',
+      'setup_ios_message_caption': 'When Message is Received',
+      'setup_ios_log_title': 'إضافة Log Bank Message',
+      'setup_ios_log_subtitle': 'ابحث عن إجراء Log Bank Message وأضفه.',
+      'setup_ios_log_caption': 'Log Bank Message',
+      'setup_ios_connect_title': 'ربط الرسالة',
+      'setup_ios_connect_subtitle':
+          'اضبط Message Content على Shortcut Input.\n\nوهذا يسمح بتمرير الرسالة المستلمة إلى Zakah Wealth.',
+      'setup_ios_input_caption': 'Shortcut Input\nMessage Content',
+      'setup_ios_auto_title': 'تفعيل التنفيذ التلقائي',
+      'setup_ios_auto_subtitle': 'اسمح للأتمتة بالعمل فوراً دون طلب كل مرة.',
+      'setup_ios_run_caption': 'Run Immediately\nTurn Off Notify When Run',
+      'setup_ios_ready_title': 'الالتقاط الذكي جاهز',
+      'setup_ios_ready_subtitle':
+          'سيتم الآن تجهيز إشعارات البنوك المدعومة تلقائياً لموافقتك.',
+      'setup_ios_ready_check_title': 'اكتمل الإعداد',
+      'setup_ios_ready_check_subtitle':
+          'الالتقاط الذكي نشط على هذا الـ iPhone.',
+      'setup_ios_check_shortcut': 'تم تثبيت الاختصار',
+      'setup_ios_check_automation': 'تم إنشاء الأتمتة',
+      'setup_ios_check_capture': 'تم تفعيل الالتقاط التلقائي',
+      'onboarding_security_title': 'احمِ معلوماتك المالية',
+      'onboarding_security_body': 'احمِ معلوماتك المالية عند فتح التطبيق.',
+      'onboarding_security_enable': 'تفعيل القفل البيومتري/الخصوصية',
+      'onboarding_security_not_now': 'ليس الآن',
+      'onboarding_security_unavailable': 'غير متاح على هذا الجهاز/النظام',
+      'onboarding_security_status_checking': 'جارٍ التحقق من دعم الجهاز...',
+      'onboarding_security_status_available': 'مدعوم على هذا الجهاز',
       'google_sign_in_only_intro':
           'تابع عبر Google لتفعيل النسخ الاحتياطي والمزامنة.',
       'login_intro': 'استمر باستخدام حسابك الموثوق',
@@ -511,9 +944,36 @@ class AppLocalizations {
       'loading_assets': 'جارٍ تحميل الأصول',
       'loading_market_data': 'جارٍ تحميل بيانات السوق',
       'loading_plans': 'جارٍ تحميل الخطط',
+      'refreshing_backup_status': 'جارٍ تحديث حالة النسخ الاحتياطي...',
+      'connected': 'متصل',
+      'google_drive_permission_required_for_cloud_backup':
+          'مطلوب إذن Google Drive للنسخ الاحتياطي السحابي.',
       'backup_date_unknown': 'تاريخ النسخة الاحتياطية غير معروف',
       'backup_date': 'تاريخ النسخة الاحتياطية',
       'cloud_backup_found': 'تم العثور على نسخة احتياطية سحابية',
+      'local_data_exists': 'توجد بيانات محلية',
+      'no_cloud_backup_found': 'لم يتم العثور على نسخة احتياطية سحابية',
+      'no_available_snapshots_registered_in_manifest':
+          'لا توجد لقطات متاحة مسجلة في البيان.',
+      'restore_cloud_backup_prompt':
+          'تم العثور على نسخة احتياطية سحابية. هل تريد استعادة أحدث نسخة احتياطية؟',
+      'restoring_latest_cloud_backup':
+          'جارٍ استعادة أحدث نسخة احتياطية سحابية...',
+      'restoring_cloud_backup': 'جارٍ استعادة النسخة الاحتياطية السحابية...',
+      'restore_failed': 'فشلت الاستعادة',
+      'startup_preparing_dashboard': 'جارٍ تجهيز لوحة ثروتك...',
+      'startup_loading_assets': 'جارٍ تحميل الأصول',
+      'startup_loading_transactions': 'جارٍ تحميل العمليات',
+      'startup_restoring_session': 'جارٍ استعادة الجلسة',
+      'startup_preparing_projections': 'جارٍ تجهيز التوقعات',
+      'startup_still_preparing_data': 'جارٍ تجهيز بياناتك...',
+      'restore_backup_may_exist':
+          'قد توجد نسخة احتياطية. صِل Google Drive للتحقق.',
+      'restore_backup_may_exist_title': 'قد توجد نسخة احتياطية',
+      'restore_backup_key_required': 'مطلوب استرجاع مفتاح النسخة الاحتياطية',
+      'restore_open_backup_sync':
+          'افتح النسخ الاحتياطي والمزامنة لربط Google Drive والتحقق من النسخة السحابية.',
+      'restore_open_backup_sync_button': 'فتح النسخ الاحتياطي والمزامنة',
       'restore_backup': 'استعادة النسخة الاحتياطية',
       'start_fresh': 'البدء من جديد',
       'loading_backup_preview': 'جارٍ تحميل تفاصيل النسخة الاحتياطية...',
@@ -533,6 +993,56 @@ class AppLocalizations {
           'تعذر إكمال النسخ الاحتياطي. يمكنك إعادة المحاولة أو المتابعة بتسجيل الخروج على أي حال.',
       'retry_backup': 'إعادة المحاولة',
       'local_backup_options': 'الاستيراد / التصدير المحلي',
+      'merchant_rules_title': 'قواعد التجار',
+      'merchant_rules_all': 'الكل',
+      'merchant_rules_builtin': 'مضمنة',
+      'merchant_rules_learned': 'متعلَّمة',
+      'merchant_rules_custom': 'مخصصة',
+      'merchant_rules_no_rules': 'لا توجد قواعد في هذا القسم',
+      'merchant_rules_custom_rules': 'القواعد المخصصة',
+      'merchant_rules_learned_rules': 'القواعد المتعلَّمة',
+      'merchant_rules_builtin_rules': 'القواعد المضمنة',
+      'merchant_rules_results': 'النتائج',
+      'merchant_rules_add_custom': 'إضافة قاعدة مخصصة',
+      'merchant_rules_edit': 'تعديل قاعدة التاجر',
+      'merchant_rules_add': 'إضافة قاعدة مخصصة',
+      'merchant_rules_create': 'إنشاء قاعدة',
+      'merchant_rules_merchant_name': 'اسم التاجر',
+      'merchant_rules_transaction_type': 'نوع العملية',
+      'merchant_rules_category': 'الفئة',
+      'merchant_rules_aliases': 'الأسماء البديلة',
+      'merchant_rules_auto_approve': 'موافقة تلقائية',
+      'merchant_rules_rule_enabled': 'القاعدة مفعلة',
+      'merchant_rules_enable_auto_approval': 'تفعيل الموافقة التلقائية',
+      'merchant_rules_based_on_builtin': 'بناءً على القالب المدمج',
+      'merchant_rules_reset_builtin': 'إعادة التعيين إلى القيم المدمجة',
+      'merchant_rules_save': 'حفظ',
+      'merchant_rules_review_transaction': 'مراجعة العملية',
+      'merchant_rules_original_capture_details': 'تفاصيل الالتقاط الأصلية',
+      'merchant_rules_source': 'المصدر',
+      'merchant_rules_bank': 'البنك',
+      'merchant_rules_confidence': 'الثقة',
+      'merchant_rules_raw_message': 'الرسالة الأصلية:',
+      'merchant_rules_transaction_information': 'معلومات العملية',
+      'merchant_rules_type': 'النوع',
+      'merchant_rules_amount': 'المبلغ',
+      'merchant_rules_currency': 'العملة',
+      'merchant_rules_date': 'التاريخ',
+      'merchant_rules_description': 'الوصف',
+      'merchant_rules_search_merchants': 'ابحث عن التجار...',
+      'merchant_rules_auto_approval_description':
+          'تُعتمد العمليات المطابقة للقواعد بنسبة ثقة 95% أو أكثر تلقائيًا.',
+      'merchant_rules_example_merchant_name': 'مثلًا: طلبات',
+      'merchant_rules_example_aliases': 'merchant.com, تطبيق التاجر',
+      'merchant_rules_merchant_name_required': 'اسم التاجر مطلوب لإنشاء قاعدة.',
+      'enter_amount': 'الرجاء إدخال المبلغ',
+      'enter_valid_number': 'الرجاء إدخال رقم صالح',
+      'approve': 'موافقة',
+      'reject': 'رفض',
+      'transaction_updated_successfully': 'تم تحديث العملية بنجاح',
+      'transaction_added_successfully': 'تمت إضافة العملية بنجاح',
+      'transaction_rejected': 'تم رفض العملية',
+      'error_prefix': 'خطأ',
       'dashboard': 'الرئيسية',
       'assets': 'الأصول',
       'activity': 'السجل',
@@ -563,7 +1073,19 @@ class AppLocalizations {
       'remaining_entries': 'المدخلات المتبقية',
       'total_due': 'الإجمالي المستحق',
       'all': 'الكل',
+      'all_time': 'الكل',
       'all_categories': 'جميع الفئات',
+      'period_30d': '30 يوم',
+      'period_90d': '90 يوم',
+      'period_6m': '6 أشهر',
+      'period_ytd': 'منذ بداية السنة',
+      'period_custom': 'مخصص',
+      'enabled': 'مفعّل',
+      'disabled': 'معطّل',
+      'about_zakah_wealth': 'عن زكاة وِيلث',
+      'stocks_funds_etc': 'أسهم، صناديق، إلخ',
+      'properties': 'عقارات',
+      'of_total': 'من الإجمالي',
       'search_notes': 'بحث في الملاحظات',
       'search_icons': 'بحث عن الأيقونات',
       'income': 'الدخل',
@@ -630,6 +1152,7 @@ class AppLocalizations {
       'account_section': 'حسابي',
       'currency_section': 'العملة',
       'zakat_calculation_section': 'حساب الزكاة',
+      'preferences_section': 'التفضيلات',
       'cash_nisab': 'نصاب النقد',
       'nisab_gold_85': '٨٥ جرام ذهب عيار ٢٤',
       'nisab_silver_595': '٥٩٥ جرام فضة عيار ٩٩٩',
@@ -752,6 +1275,25 @@ class AppLocalizations {
       'purchase_price_gt_zero': 'يجب أن يكون سعر الشراء أكبر من 0',
       'purchase_price_optional': 'سعر الشراء (اختياري)',
       'remaining_liability_optional': 'الالتزامات المتبقية (اختياري)',
+      'remaining_liability': 'الالتزامات المتبقية',
+      'installment_schedule': 'جدول الأقساط',
+      'installment_amount': 'مبلغ القسط',
+      'installment_frequency': 'تكرار القسط',
+      'number_of_installments': 'عدد الأقساط',
+      'first_payment_date': 'تاريخ الدفعة الأولى',
+      'generate_installments': 'إنشاء الأقساط',
+      'auto_generate': 'إنشاء تلقائي',
+      'add_one_by_one': 'إضافة واحدة تلو الأخرى',
+      'scheduled_installments': 'الأقساط المجدولة',
+      'purchase_amount': 'مبلغ الشراء',
+      'purchase_currency': 'عملة الشراء',
+      'link_this_purchase_to_cash_entries': 'ربط هذا الشراء بمدخلات النقد',
+      'pay': 'ادفع',
+      'current_net_worth': 'صافي الثروة الحالي',
+      'projected_net_worth': 'صافي الثروة المتوقع',
+      'net_worth': 'صافي الثروة',
+      'target_achieved': 'تم الوصول إلى الهدف',
+      'net_worth_breakdown': 'تفصيل صافي الثروة',
       'valuation_date': 'تاريخ التقييم',
       'yearly_growth_rate': 'معدل النمو السنوي (%)',
       'repeat': 'تكرار',
@@ -826,10 +1368,13 @@ class AppLocalizations {
       'sign_out': 'تسجيل الخروج',
       'market_data_refreshed': 'تم تحديث بيانات السوق.',
       'no_market_data_refreshed': 'لم يتم تحديث بيانات السوق.',
-      'smart_capture': 'استخراج العمليات الذكي',
-      'smart_capture_log': 'سجل الاستخراج',
+      'smart_capture': 'التقاط العمليات الذكي',
+      'smart_capture_log': 'سجل الالتقاط',
       'smart_capture_paste': 'لصق رسالة البنك',
-      'smart_capture_review': 'مراجعة الاستخراج الذكي',
+      'smart_capture_review': 'مراجعة الالتقاط الذكي',
+      'smart_capture_pending_for_approval': 'بانتظار الموافقة',
+      'smart_capture_auto_approved': 'موافق عليه تلقائيًا',
+      'smart_capture_rejected': 'مرفوض',
       'paste_bank_message': 'لصق رسالة البنك',
       'paste_bank_message_desc':
           'الصق الرسالة النصية أو محتوى البريد الإلكتروني أو تفاصيل العملية البنكية. سيستخرج النظام تلقائيًا النوع والمبلغ والعملة للمراجعة.',
@@ -839,7 +1384,6 @@ class AppLocalizations {
       'message_parsed_successfully':
           'تمت معالجة الرسالة بنجاح وتحويلها إلى عمليات معلّقة',
       'create_pending': 'إنشاء عملية معلّقة',
-      'error_prefix': 'خطأ',
       'message_parsed_into_pending': 'تم نقل الرسالة إلى المراجعة المعلّقة',
       'transactions_need_review': 'تحتاج {count} عملية إلى مراجعة',
       'usd_to_egp': 'من دولار أمريكي إلى جنيه مصري',
@@ -898,6 +1442,7 @@ class AppLocalizations {
       'subscriptions': 'الاشتراكات',
       'loan payment': 'سداد القروض',
       'other': 'أخرى',
+      'by_currency': 'حسب العملة',
     },
   };
 
@@ -910,11 +1455,18 @@ class AppLocalizations {
   }
 
   String tr(String key) {
-    final String lang = _values.containsKey(locale.languageCode)
-        ? locale.languageCode
-        : 'en';
-    return _values[lang]?[key] ?? _values['en']?[key] ?? key;
+    final String languageCode = locale.languageCode.toLowerCase();
+    final Map<String, String> values =
+        _values[languageCode] ?? _values['en'] ?? const <String, String>{};
+    return values[key] ?? _values['en']?[key] ?? key;
   }
+
+  String get smartCapturePendingForApproval =>
+      tr('smart_capture_pending_for_approval');
+
+  String get smartCaptureAutoApproved => tr('smart_capture_auto_approved');
+
+  String get smartCaptureRejected => tr('smart_capture_rejected');
 
   String translateCategory(String categoryName) {
     final String clean = categoryName.trim();
@@ -926,18 +1478,27 @@ class AppLocalizations {
       key = 'zakat_category';
     }
 
-    final String lang = _values.containsKey(locale.languageCode)
-        ? locale.languageCode
-        : 'en';
-
-    // Check if the lowercase string exists in our localization map for English.
-    // If it does, we treat it as a default category and translate it.
-    // If it does not, we return the original name (as it is user-added/custom).
+    final String languageCode = locale.languageCode.toLowerCase();
+    final Map<String, String> values =
+        _values[languageCode] ?? _values['en'] ?? const <String, String>{};
     final bool isDefaultCategory = _values['en']?.containsKey(key) ?? false;
     if (isDefaultCategory) {
-      return _values[lang]?[key] ?? _values['en']?[key] ?? categoryName;
+      return values[key] ?? _values['en']?[key] ?? categoryName;
     }
     return categoryName;
+  }
+
+  static String translateCategoryForLanguage(
+    String languageCode,
+    String categoryName,
+  ) {
+    final String cleanLanguage = languageCode.toLowerCase();
+    final String normalizedLanguage = cleanLanguage.contains('_')
+        ? cleanLanguage.split('_').first
+        : cleanLanguage;
+    return AppLocalizations(
+      Locale(normalizedLanguage),
+    ).translateCategory(categoryName);
   }
 
   static AppLocalizations of(BuildContext context) {

@@ -25,6 +25,10 @@ class LocalInvestmentsRepository {
     return _investmentsDao.getActiveInvestments();
   }
 
+  Future<int> countActiveInvestments() {
+    return _investmentsDao.countActiveInvestments();
+  }
+
   Future<void> saveInvestment(
     InvestmentAsset investment, {
     String? now,

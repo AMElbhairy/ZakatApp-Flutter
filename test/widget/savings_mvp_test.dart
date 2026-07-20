@@ -63,9 +63,11 @@ Widget _buildApp({Key? key}) {
         ),
       ),
     ],
-    child: ZakatApp(navigatorKey: navigatorKey),
+    child: ZakatApp(navigatorKey: navigatorKey, preferences: _sharedPrefs),
   );
 }
+
+late SharedPreferences _sharedPrefs;
 
 Future<void> _openAddCash(WidgetTester tester) async {
   await tester.tap(find.byKey(const Key('bottomNavTab_1')));
@@ -89,6 +91,10 @@ Future<void> _addCashSaving(WidgetTester tester, String amount) async {
 }
 
 void main() {
+  setUp(() async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    _sharedPrefs = await SharedPreferences.getInstance();
+  });
   testWidgets('add cash saving', (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     await tester.pumpWidget(_buildApp());

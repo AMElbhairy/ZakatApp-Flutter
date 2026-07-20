@@ -30,6 +30,16 @@ class PendingTransactionsDao extends DatabaseAccessor<db.AppDatabase> {
     return rows.map(_mapper.fromRow).toList(growable: false);
   }
 
+  Future<int> countActivePendingTransactions() async {
+    final QueryRow row = await customSelect(
+      'SELECT COUNT(*) AS c FROM pending_transactions WHERE deleted_at IS NULL',
+      readsFrom: <TableInfo<Object?, Object?>>{
+        attachedDatabase.pendingTransactions,
+      },
+    ).getSingle();
+    return row.read<int>('c');
+  }
+
   Future<void> upsertPendingTransactionRow(
     model.PendingTransaction row, {
     String? updatedAt,

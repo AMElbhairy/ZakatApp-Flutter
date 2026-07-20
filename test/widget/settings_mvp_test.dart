@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -59,12 +60,16 @@ Widget _buildApp({AuthService? authService}) {
   return MultiProvider(
     providers: <ChangeNotifierProvider<dynamic>>[
       ChangeNotifierProvider<AppStateController>(
-        create: (_) => AppStateController(
-          repository: repository,
-          marketDataApiService: _FakeMarketDataApiService(),
-          enableBackgroundSync: false,
-          enableMarketAutoRefresh: false,
-        ),
+        create: (_) {
+          final AppStateController controller = AppStateController(
+            repository: repository,
+            marketDataApiService: _FakeMarketDataApiService(),
+            enableBackgroundSync: false,
+            enableMarketAutoRefresh: false,
+          );
+          unawaited(controller.load());
+          return controller;
+        },
       ),
       ChangeNotifierProvider<AuthController>(
         create: (_) => AuthController(
@@ -85,12 +90,16 @@ Widget _buildAppWithService(MarketDataApiService service) {
   return MultiProvider(
     providers: <ChangeNotifierProvider<dynamic>>[
       ChangeNotifierProvider<AppStateController>(
-        create: (_) => AppStateController(
-          repository: repository,
-          marketDataApiService: service,
-          enableBackgroundSync: false,
-          enableMarketAutoRefresh: false,
-        ),
+        create: (_) {
+          final AppStateController controller = AppStateController(
+            repository: repository,
+            marketDataApiService: service,
+            enableBackgroundSync: false,
+            enableMarketAutoRefresh: false,
+          );
+          unawaited(controller.load());
+          return controller;
+        },
       ),
       ChangeNotifierProvider<AuthController>(
         create: (_) => AuthController(
@@ -175,6 +184,35 @@ void main() {
     expect(find.text('Appearance'), findsOneWidget);
     expect(find.text('About'), findsOneWidget);
   });
+
+  testWidgets(
+    'android sms capture toggle opens the new onboarding-style setup screen',
+    (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      await tester.pumpWidget(_buildApp());
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(
+        find.byKey(const Key('settingsSmsCaptureToggle')),
+      );
+      await tester.pumpAndSettle();
+
+      final Finder smsToggle = find.descendant(
+        of: find.byKey(const Key('settingsSmsCaptureToggle')),
+        matching: find.byType(Switch),
+      );
+      expect(smsToggle, findsOneWidget);
+
+      await tester.tap(smsToggle);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Capture supported messages'), findsOneWidget);
+      expect(find.text('Enable SMS Access'), findsNothing);
+      expect(find.text('Allow SMS Access'), findsNothing);
+      expect(find.text('Battery Unrestricted'), findsNothing);
+      expect(find.text('Setup Complete'), findsNothing);
+    },
+  );
 
   testWidgets('debug developer diagnostics button is hidden by default', (
     WidgetTester tester,

@@ -4,8 +4,10 @@ import 'package:intl/intl.dart';
 
 import '../../core/widgets/app_ui.dart';
 import '../../core/widgets/compact_dropdown.dart';
+import '../../core/widgets/currency_dropdown_form_field.dart';
 import '../../core/theme/app_theme_extensions.dart';
 import '../../core/theme/app_radii.dart';
+import '../../core/utils/currency_presentation.dart';
 import '../../models/app_state.dart';
 import '../../models/merchant_rule.dart';
 import '../../models/pending_transaction.dart';
@@ -13,6 +15,7 @@ import '../../models/transaction.dart';
 import '../../services/app_state_controller.dart';
 import '../../services/smart_capture_parser.dart';
 import '../../core/i18n/app_localizations.dart';
+import '../../core/utils/amount_parser.dart';
 
 class ReviewPendingTransactionScreen extends StatefulWidget {
   const ReviewPendingTransactionScreen({
@@ -38,22 +41,15 @@ class _ReviewPendingTransactionScreenState
   late DateTime _selectedDate;
   String? _selectedCategory;
 
-  // Type definitions
-  final List<Map<String, String>> _types = [
-    {'value': 'expense', 'label': 'Expense'},
-    {'value': 'income', 'label': 'Income'},
-    {'value': 'transfer', 'label': 'Transfer'},
-    {'value': 'gold_purchase', 'label': 'Gold Purchase'},
-    {'value': 'silver_purchase', 'label': 'Silver Purchase'},
-    {'value': 'investment', 'label': 'Investment'},
-  ];
+  // Type definitions.
+  final List<String> _types = const <String>['expense', 'income', 'transfer'];
 
   @override
   void initState() {
     super.initState();
     final p = widget.pendingTransaction;
     _selectedType = p.suggestedType;
-    if (!_types.any((t) => t['value'] == _selectedType)) {
+    if (!_types.contains(_selectedType)) {
       _selectedType = 'expense';
     }
 
@@ -70,7 +66,8 @@ class _ReviewPendingTransactionScreenState
     // Parse creation date or use today
     DateTime? parsedDate;
     try {
-      parsedDate = DateTime.parse(p.createdAt).toLocal();
+      final String normalizedCreatedAt = normalizeTimestampText(p.createdAt);
+      parsedDate = DateTime.parse(normalizedCreatedAt).toLocal();
     } catch (_) {
       parsedDate = DateTime.now();
     }
@@ -181,7 +178,7 @@ class _ReviewPendingTransactionScreenState
 
     final controller = context.read<AppStateController>();
     final amount = double.tryParse(_amountController.text) ?? 0.0;
-    final dateStr = DateFormat('yyyy-MM-dd').format(_selectedDate);
+    final dateStr = _dateIso(_selectedDate);
     final p = widget.pendingTransaction;
     final bool isApproved =
         p.status == CaptureStatus.autoApproved ||
@@ -214,8 +211,8 @@ class _ReviewPendingTransactionScreenState
         showTopSnackBar(
           context,
           isApproved
-              ? 'Transaction updated successfully'
-              : 'Transaction added successfully',
+              ? context.l10n.tr('transaction_updated_successfully')
+              : context.l10n.tr('transaction_added_successfully'),
           kind: AppToastKind.success,
         );
         Navigator.pop(context);
@@ -224,11 +221,18 @@ class _ReviewPendingTransactionScreenState
       if (mounted) {
         showTopSnackBar(
           context,
-          'Error: ${e.toString()}',
+          '${context.l10n.tr('error_prefix')}: ${e.toString()}',
           kind: AppToastKind.error,
         );
       }
     }
+  }
+
+  static String _dateIso(DateTime date) {
+    final String y = date.year.toString();
+    final String m = date.month.toString().padLeft(2, '0');
+    final String d = date.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
   }
 
   void _reject() async {
@@ -238,7 +242,7 @@ class _ReviewPendingTransactionScreenState
       if (mounted) {
         showTopSnackBar(
           context,
-          'Transaction rejected',
+          context.l10n.tr('transaction_rejected'),
           kind: AppToastKind.info,
         );
         Navigator.pop(context);
@@ -247,7 +251,7 @@ class _ReviewPendingTransactionScreenState
       if (mounted) {
         showTopSnackBar(
           context,
-          'Error: ${e.toString()}',
+          '${context.l10n.tr('error_prefix')}: ${e.toString()}',
           kind: AppToastKind.error,
         );
       }
@@ -262,7 +266,7 @@ class _ReviewPendingTransactionScreenState
     if (merchantName == null || merchantName.isEmpty) {
       showTopSnackBar(
         context,
-        'Merchant name is required to create a rule.',
+        context.l10n.tr('merchant_rules_merchant_name_required'),
         kind: AppToastKind.error,
       );
       return;
@@ -318,7 +322,7 @@ class _ReviewPendingTransactionScreenState
                 side: BorderSide(color: tokens.colors.divider),
               ),
               title: Text(
-                'Create Rule',
+                context.l10n.tr('merchant_rules_create'),
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
                   color: tokens.colors.textPrimary,
                 ),
@@ -329,7 +333,7 @@ class _ReviewPendingTransactionScreenState
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Merchant Name',
+                      context.l10n.tr('merchant_rules_merchant_name'),
                       style: TextStyle(color: tokens.colors.textSecondary),
                     ),
                     const SizedBox(height: 6),
@@ -338,25 +342,23 @@ class _ReviewPendingTransactionScreenState
                       style: TextStyle(color: tokens.colors.textPrimary),
                       decoration: _fieldDecoration(
                         context,
-                        hintText: 'Merchant name',
+                        hintText: context.l10n.tr(
+                          'merchant_rules_merchant_name',
+                        ),
                       ),
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'Type',
+                      context.l10n.tr('merchant_rules_type'),
                       style: TextStyle(color: tokens.colors.textSecondary),
                     ),
                     const SizedBox(height: 6),
                     CompactDropdownFormField<String>(
                       value: selectedType,
-                      labelText: 'Type',
+                      labelText: context.l10n.tr('merchant_rules_type'),
                       floatingLabelBehavior: FloatingLabelBehavior.never,
                       items: const <String>['expense', 'income'],
-                      itemLabel: (String value) => switch (value) {
-                        'expense' => 'Expense',
-                        'income' => 'Income',
-                        _ => value,
-                      },
+                      itemLabel: (String value) => context.l10n.tr(value),
                       onChanged: (String value) {
                         setDialogState(() {
                           selectedType = value;
@@ -373,13 +375,13 @@ class _ReviewPendingTransactionScreenState
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'Category',
+                      context.l10n.tr('merchant_rules_category'),
                       style: TextStyle(color: tokens.colors.textSecondary),
                     ),
                     const SizedBox(height: 6),
                     CompactDropdownFormField<String>(
                       value: selectedCategory,
-                      labelText: 'Category',
+                      labelText: context.l10n.tr('merchant_rules_category'),
                       floatingLabelBehavior: FloatingLabelBehavior.never,
                       items: availableCategories,
                       itemLabel: context.l10n.translateCategory,
@@ -389,7 +391,7 @@ class _ReviewPendingTransactionScreenState
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'Aliases',
+                      context.l10n.tr('merchant_rules_aliases'),
                       style: TextStyle(color: tokens.colors.textSecondary),
                     ),
                     const SizedBox(height: 6),
@@ -398,14 +400,16 @@ class _ReviewPendingTransactionScreenState
                       style: TextStyle(color: tokens.colors.textPrimary),
                       decoration: _fieldDecoration(
                         context,
-                        hintText: 'talabat.com, talabat app, طلبات',
+                        hintText: context.l10n.tr(
+                          'merchant_rules_example_aliases',
+                        ),
                       ),
                     ),
                     const SizedBox(height: 16),
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
                       title: Text(
-                        'Auto Approve',
+                        context.l10n.tr('merchant_rules_auto_approve'),
                         style: TextStyle(color: tokens.colors.textPrimary),
                       ),
                       value: autoApprove,
@@ -418,7 +422,7 @@ class _ReviewPendingTransactionScreenState
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
                         title: Text(
-                          'Built-in Override',
+                          context.l10n.tr('merchant_rules_based_on_builtin'),
                           style: TextStyle(color: tokens.colors.textPrimary),
                         ),
                         value: true,
@@ -431,7 +435,7 @@ class _ReviewPendingTransactionScreenState
                 TextButton(
                   onPressed: () => Navigator.pop(dialogContext),
                   child: Text(
-                    'Cancel',
+                    context.l10n.tr('cancel'),
                     style: TextStyle(color: tokens.colors.textSecondary),
                   ),
                 ),
@@ -463,7 +467,7 @@ class _ReviewPendingTransactionScreenState
                     );
                     if (dialogContext.mounted) Navigator.pop(dialogContext);
                   },
-                  child: const Text('Save'),
+                  child: Text(context.l10n.tr('save')),
                 ),
               ],
             );
@@ -498,7 +502,9 @@ class _ReviewPendingTransactionScreenState
 
     return Scaffold(
       backgroundColor: tokens.colors.background,
-      appBar: AppBar(title: const Text('Review Transaction')),
+      appBar: AppBar(
+        title: Text(context.l10n.tr('merchant_rules_review_transaction')),
+      ),
       body: SafeArea(
         child: Form(
           key: _formKey,
@@ -521,30 +527,32 @@ class _ReviewPendingTransactionScreenState
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Original Capture Details',
+                          context.l10n.tr(
+                            'merchant_rules_original_capture_details',
+                          ),
                           style: Theme.of(context).textTheme.titleMedium
                               ?.copyWith(color: Colors.white),
                         ),
                         const SizedBox(height: 12),
                         _buildReadOnlyRow(
-                          'Source',
+                          context.l10n.tr('merchant_rules_source'),
                           '${widget.pendingTransaction.sourceDisplayLabel}${widget.pendingTransaction.sourceIdentifier != null && widget.pendingTransaction.sourceIdentifier != widget.pendingTransaction.sourceDisplayLabel ? " (${widget.pendingTransaction.sourceIdentifier})" : ""}',
                         ),
                         if (widget.pendingTransaction.detectedBank != null) ...[
                           const SizedBox(height: 8),
                           _buildReadOnlyRow(
-                            'Bank',
+                            context.l10n.tr('merchant_rules_bank'),
                             widget.pendingTransaction.detectedBank!,
                           ),
                         ],
                         const SizedBox(height: 8),
                         _buildReadOnlyRow(
-                          'Confidence',
+                          context.l10n.tr('merchant_rules_confidence'),
                           '${(widget.pendingTransaction.confidence * 100).toStringAsFixed(0)}%',
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          'Raw Message:',
+                          context.l10n.tr('merchant_rules_raw_message'),
                           style: TextStyle(
                             color: tokens.colors.textSecondary,
                             fontSize: 12,
@@ -575,18 +583,17 @@ class _ReviewPendingTransactionScreenState
 
                 // Editable Fields
                 Text(
-                  'Transaction Information',
+                  context.l10n.tr('merchant_rules_transaction_information'),
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 12),
 
                 // Type selector dropdown
                 _buildDropdownField<String>(
-                  label: 'Type',
+                  label: context.l10n.tr('merchant_rules_type'),
                   value: _selectedType,
-                  items: _types.map((t) => t['value']!).toList(),
-                  itemLabel: (String value) =>
-                      _types.firstWhere((t) => t['value'] == value)['label']!,
+                  items: _types,
+                  itemLabel: (String value) => context.l10n.tr(value),
                   onChanged: (String val) {
                     setState(() {
                       _selectedType = val;
@@ -598,17 +605,17 @@ class _ReviewPendingTransactionScreenState
 
                 // Amount
                 _buildTextField(
-                  label: 'Amount',
+                  label: context.l10n.tr('merchant_rules_amount'),
                   controller: _amountController,
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
                   validator: (value) {
                     if (value == null || value.trim().isEmpty) {
-                      return 'Please enter amount';
+                      return context.l10n.tr('enter_amount');
                     }
                     if (double.tryParse(value) == null) {
-                      return 'Please enter a valid number';
+                      return context.l10n.tr('enter_valid_number');
                     }
                     return null;
                   },
@@ -616,14 +623,22 @@ class _ReviewPendingTransactionScreenState
                 const SizedBox(height: 16),
 
                 // Currency
-                _buildTextField(
-                  label: 'Currency',
-                  controller: _currencyController,
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Please enter currency code';
-                    }
-                    return null;
+                Text(
+                  context.l10n.tr('merchant_rules_currency'),
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 6),
+                CurrencyDropdownFormField(
+                  value:
+                      CurrencyPresentation.marketCurrencyCodes.contains(
+                        _currencyController.text.trim().toUpperCase(),
+                      )
+                      ? _currencyController.text.trim().toUpperCase()
+                      : 'EGP',
+                  labelText: context.l10n.tr('merchant_rules_currency'),
+                  currencies: CurrencyPresentation.marketCurrencyCodes,
+                  onChanged: (String value) {
+                    setState(() => _currencyController.text = value);
                   },
                 ),
                 const SizedBox(height: 16),
@@ -632,7 +647,7 @@ class _ReviewPendingTransactionScreenState
                 if (_selectedType == 'expense' ||
                     _selectedType == 'income') ...[
                   _buildDropdownField<String>(
-                    label: 'Category',
+                    label: context.l10n.tr('merchant_rules_category'),
                     value: _selectedCategory,
                     items: availableCategories,
                     itemLabel: context.l10n.translateCategory,
@@ -646,7 +661,10 @@ class _ReviewPendingTransactionScreenState
                 ],
 
                 // Date Selector
-                Text('Date', style: Theme.of(context).textTheme.bodyMedium),
+                Text(
+                  context.l10n.tr('merchant_rules_date'),
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
                 const SizedBox(height: 6),
                 InkWell(
                   onTap: () => _selectDate(context),
@@ -680,7 +698,7 @@ class _ReviewPendingTransactionScreenState
 
                 // Description
                 _buildTextField(
-                  label: 'Description',
+                  label: context.l10n.tr('merchant_rules_description'),
                   controller: _descriptionController,
                 ),
                 const SizedBox(height: 30),
@@ -702,7 +720,7 @@ class _ReviewPendingTransactionScreenState
                           ),
                           onPressed: () => Navigator.pop(context),
                           child: Text(
-                            'Cancel',
+                            context.l10n.tr('cancel'),
                             style: TextStyle(
                               color: tokens.colors.textSecondary,
                               fontSize: 16,
@@ -723,8 +741,8 @@ class _ReviewPendingTransactionScreenState
                             ),
                           ),
                           onPressed: _approve,
-                          child: const Text(
-                            'Save',
+                          child: Text(
+                            context.l10n.tr('save'),
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
@@ -748,7 +766,7 @@ class _ReviewPendingTransactionScreenState
                           ),
                           onPressed: _reject,
                           child: Text(
-                            'Reject',
+                            context.l10n.tr('reject'),
                             style: TextStyle(
                               color: tokens.colors.danger,
                               fontSize: 16,
@@ -772,7 +790,7 @@ class _ReviewPendingTransactionScreenState
                               ? null
                               : _createRuleFromReview,
                           child: Text(
-                            'Create Rule',
+                            context.l10n.tr('merchant_rules_create'),
                             style: TextStyle(
                               color: tokens.colors.gold,
                               fontSize: 15,
@@ -793,8 +811,8 @@ class _ReviewPendingTransactionScreenState
                             ),
                           ),
                           onPressed: _approve,
-                          child: const Text(
-                            'Approve',
+                          child: Text(
+                            context.l10n.tr('approve'),
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/i18n/app_localizations.dart';
+import '../../core/privacy/app_privacy.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/compact_dropdown.dart';
 import '../../core/utils/currency_presentation.dart';
@@ -20,6 +21,9 @@ class RecurringTransactionsScreen extends StatefulWidget {
 
   static Route<void> route() {
     return CupertinoPageRoute<void>(
+      settings: const AppPrivacyRouteSettings(
+        privacy: ScreenPrivacyClassification.sensitive,
+      ),
       builder: (_) => const RecurringTransactionsScreen(),
     );
   }
@@ -67,6 +71,9 @@ class _RecurringTransactionsScreenState
 
     showDialog<void>(
       context: context,
+      routeSettings: const AppPrivacyRouteSettings(
+        privacy: ScreenPrivacyClassification.sensitive,
+      ),
       builder: (BuildContext dialogContext) {
         final tokens = context.premiumTokens;
         return StatefulBuilder(
@@ -162,7 +169,8 @@ class _RecurringTransactionsScreenState
                                 isRtl:
                                     Localizations.localeOf(
                                       context,
-                                    ).languageCode.toLowerCase() == 'ar',
+                                    ).languageCode.toLowerCase() ==
+                                    'ar',
                               ),
                           onChanged: (String value) {
                             setDialogState(() => currency = value);

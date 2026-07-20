@@ -2,6 +2,7 @@ import '../models/app_state.dart';
 import '../models/investment_asset.dart';
 import '../models/transaction.dart';
 import '../models/saving.dart';
+import '../core/utils/amount_parser.dart';
 import '../core/services/zakat_engine.dart';
 
 class IncomeLot {
@@ -76,8 +77,12 @@ class ReconciliationService {
     List<Saving> savingsList = state.savings;
     List<Transaction> transactionsList = state.transactions;
     if (asOfDate != null && asOfDate.isNotEmpty) {
-      savingsList = savingsList.where((s) => s.dateAcquired.compareTo(asOfDate) <= 0).toList();
-      transactionsList = transactionsList.where((tx) => tx.date.compareTo(asOfDate) <= 0).toList();
+      savingsList = savingsList
+          .where((s) => s.dateAcquired.compareTo(asOfDate) <= 0)
+          .toList();
+      transactionsList = transactionsList
+          .where((tx) => tx.date.compareTo(asOfDate) <= 0)
+          .toList();
     }
 
     final List<CashSource> sources = <CashSource>[
@@ -123,8 +128,10 @@ class ReconciliationService {
     ];
 
     sources.sort((CashSource a, CashSource b) {
-      final DateTime ad = DateTime.tryParse(a.date) ?? DateTime(1970);
-      final DateTime bd = DateTime.tryParse(b.date) ?? DateTime(1970);
+      final DateTime ad =
+          DateTime.tryParse(normalizeDateText(a.date)) ?? DateTime(1970);
+      final DateTime bd =
+          DateTime.tryParse(normalizeDateText(b.date)) ?? DateTime(1970);
       final int dateComparison = ad.compareTo(bd);
       if (dateComparison != 0) return dateComparison;
       return a.createdAt.compareTo(b.createdAt);
@@ -235,7 +242,9 @@ class ReconciliationService {
     List<Saving> savList = state.savings;
     if (asOfDate != null && asOfDate.isNotEmpty) {
       txList = txList.where((tx) => tx.date.compareTo(asOfDate) <= 0).toList();
-      savList = savList.where((s) => s.dateAcquired.compareTo(asOfDate) <= 0).toList();
+      savList = savList
+          .where((s) => s.dateAcquired.compareTo(asOfDate) <= 0)
+          .toList();
     }
     return ZakatEngineService.calculateCashByCurrency(
           transactions: txList,
@@ -306,8 +315,12 @@ class ReconciliationService {
           if (lastRollover.isNotEmpty) {
             shouldPreserve = true;
           } else if (oldestTxDateStr != null && dateAcquired.isNotEmpty) {
-            final DateTime? dtAcquired = DateTime.tryParse(dateAcquired);
-            final DateTime? dtOldestTx = DateTime.tryParse(oldestTxDateStr);
+            final DateTime? dtAcquired = DateTime.tryParse(
+              normalizeDateText(dateAcquired),
+            );
+            final DateTime? dtOldestTx = DateTime.tryParse(
+              normalizeDateText(oldestTxDateStr),
+            );
             if (dtAcquired != null && dtOldestTx != null) {
               if (dtOldestTx.difference(dtAcquired).inDays > 30) {
                 shouldPreserve = true;
@@ -992,7 +1005,11 @@ class ReconciliationService {
     );
 
     final List<Map<String, dynamic>> lots =
-        getAvailableCashSources(state: input, currency: sourceCurrency, asOfDate: date)
+        getAvailableCashSources(
+              state: input,
+              currency: sourceCurrency,
+              asOfDate: date,
+            )
             .map((CashSource source) {
               return <String, dynamic>{
                 'sourceType': source.sourceType,
@@ -1272,18 +1289,26 @@ class ReconciliationService {
             .toList(growable: false)
           ..sort((Map<String, dynamic> a, Map<String, dynamic> b) {
             final DateTime da =
-                DateTime.tryParse('${a['dateAcquired'] ?? ''}') ??
+                DateTime.tryParse(
+                  normalizeDateText('${a['dateAcquired'] ?? ''}'),
+                ) ??
                 DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
             final DateTime db =
-                DateTime.tryParse('${b['dateAcquired'] ?? ''}') ??
+                DateTime.tryParse(
+                  normalizeDateText('${b['dateAcquired'] ?? ''}'),
+                ) ??
                 DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
             final int dateComp = da.compareTo(db);
             if (dateComp != 0) return dateComp;
             final DateTime ca =
-                DateTime.tryParse('${a['createdAt'] ?? ''}') ??
+                DateTime.tryParse(
+                  normalizeTimestampText('${a['createdAt'] ?? ''}'),
+                ) ??
                 DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
             final DateTime cb =
-                DateTime.tryParse('${b['createdAt'] ?? ''}') ??
+                DateTime.tryParse(
+                  normalizeTimestampText('${b['createdAt'] ?? ''}'),
+                ) ??
                 DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
             return ca.compareTo(cb);
           });
@@ -1327,19 +1352,23 @@ class ReconciliationService {
     );
     list.sort((Map<String, dynamic> a, Map<String, dynamic> b) {
       final DateTime ad =
-          DateTime.tryParse((a['date'] ?? '').toString()) ??
+          DateTime.tryParse(normalizeDateText((a['date'] ?? '').toString())) ??
           DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
       final DateTime bd =
-          DateTime.tryParse((b['date'] ?? '').toString()) ??
+          DateTime.tryParse(normalizeDateText((b['date'] ?? '').toString())) ??
           DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
       final int dateComp = ad.compareTo(bd);
       if (dateComp != 0) return dateComp;
 
       final DateTime ac =
-          DateTime.tryParse((a['createdAt'] ?? '').toString()) ??
+          DateTime.tryParse(
+            normalizeTimestampText((a['createdAt'] ?? '').toString()),
+          ) ??
           DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
       final DateTime bc =
-          DateTime.tryParse((b['createdAt'] ?? '').toString()) ??
+          DateTime.tryParse(
+            normalizeTimestampText((b['createdAt'] ?? '').toString()),
+          ) ??
           DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
       final int createdComp = ac.compareTo(bc);
       if (createdComp != 0) return createdComp;
@@ -1354,13 +1383,17 @@ class ReconciliationService {
 
   String _stableCreatedAt(dynamic createdAt, dynamic baseDate, int orderIdx) {
     final String existing = (createdAt ?? '').toString().trim();
-    final DateTime? createdParsed = DateTime.tryParse(existing);
+    final DateTime? createdParsed = DateTime.tryParse(
+      normalizeTimestampText(existing),
+    );
     if (existing.isNotEmpty && createdParsed != null) {
       return createdParsed.toUtc().toIso8601String();
     }
 
     final String base = (baseDate ?? '').toString().trim();
-    final DateTime? baseParsed = DateTime.tryParse('${base}T00:00:00.000Z');
+    final DateTime? baseParsed = DateTime.tryParse(
+      normalizeTimestampText('${base}T00:00:00.000Z'),
+    );
     final int seed = orderIdx < 0 ? 0 : orderIdx;
     if (baseParsed != null) {
       return baseParsed

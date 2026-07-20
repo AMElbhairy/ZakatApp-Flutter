@@ -494,52 +494,13 @@ class AuthPrivacyOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = context.premiumTokens;
-    final bool dark = Theme.of(context).brightness == Brightness.dark;
-    final AppLocalizations l10n = context.l10n;
-    return Positioned.fill(
-      child: IgnorePointer(
-        child: Stack(
-          fit: StackFit.expand,
-          children: <Widget>[
-            const AuthBrandBackdrop(tone: AuthBackdropTone.shared),
-            Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 240),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: <Widget>[
-                      _BrandLogo(size: 58, framed: false),
-                      const SizedBox(height: AppSpacing.sm),
-                      Text(
-                        l10n.tr('protected_by_app_lock'),
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(
-                              color: tokens.colors.textPrimary,
-                              fontWeight: FontWeight.w800,
-                            ),
-                      ),
-                      const SizedBox(height: AppSpacing.xs),
-                      Text(
-                        l10n.tr('biometric_lock_enabled'),
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: dark
-                              ? tokens.colors.secondaryText
-                              : tokens.colors.hero,
-                          fontWeight: FontWeight.w600,
-                          height: 1.2,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
+    return ColoredBox(
+      color: context.premiumTokens.colors.primarySurface,
+      child: Center(
+        child: Image.asset(
+          'assets/images/app_icon.png',
+          width: 96,
+          fit: BoxFit.contain,
         ),
       ),
     );

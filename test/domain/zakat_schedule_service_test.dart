@@ -304,6 +304,32 @@ void main() {
     );
   });
 
+  test('annual zakat schedule falls back to the default date when blank', () {
+    final schedule = ZakatScheduleService.calculateAnnualZakatSchedule(
+      zakatAnnualDate: '',
+      transactions: highIncomeTransactions,
+      savings: highSavings,
+      investments: (fixture['investments'] as List)
+          .cast<Map<String, dynamic>>(),
+      marketData: marketData,
+      now: DateTime(2026, 5, 31),
+    );
+
+    expect(schedule, isNotEmpty);
+    final first = schedule.first;
+    expect(first.containsKey('hijriYear'), true);
+    expect(first.containsKey('totalWealth'), true);
+    expect(first.containsKey('entries'), true);
+
+    final entries = first['entries'] as List;
+    final entry = entries.first as Map<String, dynamic>;
+    expect(entry['type'], 'annual');
+    expect(
+      (entry['zakatAmount'] as num).toDouble(),
+      closeTo((entry['totalWealth'] as num).toDouble() * 0.025, 1e-6),
+    );
+  });
+
   test('annual zakat uses exact selected Hijri due date', () {
     const int hijriMonth = 12;
     const int hijriDay = 20;

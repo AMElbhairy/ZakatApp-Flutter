@@ -7,7 +7,9 @@ import 'package:provider/provider.dart';
 
 import '../../core/i18n/app_localizations.dart';
 import '../../core/motion/app_motion.dart';
+import '../../core/privacy/app_privacy.dart';
 import '../../core/services/zakat_engine.dart';
+import '../../core/utils/amount_parser.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/services/zakat_schedule_service.dart';
 import '../../core/theme/app_theme_extensions.dart';
@@ -37,6 +39,7 @@ class DashboardScreen extends StatefulWidget {
     this.onOpenAddTransaction,
     this.onOpenAddAsset,
     this.onViewAssets,
+    this.onOpenExpenseAnalysis,
   });
 
   final VoidCallback? onViewAllActivity;
@@ -45,6 +48,7 @@ class DashboardScreen extends StatefulWidget {
   final ValueChanged<String>? onOpenAddTransaction;
   final VoidCallback? onOpenAddAsset;
   final VoidCallback? onViewAssets;
+  final VoidCallback? onOpenExpenseAnalysis;
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -153,7 +157,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
       investments: investments,
       marketData: market,
     );
-    final String? nextZakatDate = _findNextZakatDate(schedule);
+    final String? nextZakatDate = findNextUnpaidZakatDate(
+      schedule,
+      state.zakatPaidMonths.toSet(),
+    );
+    final DateTime? nextZakatDueDate = _parseDashboardZakatDate(nextZakatDate);
+    final bool nextZakatIsOverdue =
+        nextZakatDueDate != null &&
+        !nextZakatDueDate.isAfter(DateUtils.dateOnly(DateTime.now()));
 
     final double cashWealthEgp = hasFxData
         ? ZakatEngineService.calculateTotalCashWealthEgp(
@@ -325,6 +336,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 state: state,
                 market: market,
                 nextZakatDate: nextZakatDate,
+                nextZakatIsOverdue: nextZakatIsOverdue,
                 balancesHidden: balancesHidden,
                 heroGrowth: heroGrowth,
               ),
@@ -343,29 +355,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
               order: 2,
               child: _PremiumSection(
                 title: context.l10n.tr('asset_allocation'),
-                trailing: TextButton(
+                trailing: _DashboardActionLink(
                   key: const Key('dashboardViewAssetAllocationDetailsButton'),
+                  label: context.l10n.tr('view_details'),
                   onPressed: widget.onViewAssets,
-                  style: TextButton.styleFrom(
-                    padding: EdgeInsets.zero,
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    foregroundColor: const Color(0xFF0F766E),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Text(
-                        context.l10n.tr('view_details'),
-                        style: const TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      const Icon(Icons.arrow_forward_ios_rounded, size: 11),
-                    ],
-                  ),
                 ),
                 child: _AllocationRing(
                   allocation: allocation,
@@ -424,6 +417,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       onTap: () {
                         Navigator.of(context).push(
                           MaterialPageRoute<void>(
+                            settings: const AppPrivacyRouteSettings(
+                              privacy: ScreenPrivacyClassification.sensitive,
+                            ),
                             builder: (_) => const ObligationsListScreen(
                               filterMode: 'this_month',
                             ),
@@ -453,6 +449,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       onTap: () {
                         Navigator.of(context).push(
                           MaterialPageRoute<void>(
+                            settings: const AppPrivacyRouteSettings(
+                              privacy: ScreenPrivacyClassification.sensitive,
+                            ),
                             builder: (_) => const ObligationsListScreen(
                               filterMode: 'next_month',
                             ),
@@ -483,6 +482,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       onTap: () {
                         Navigator.of(context).push(
                           MaterialPageRoute<void>(
+                            settings: const AppPrivacyRouteSettings(
+                              privacy: ScreenPrivacyClassification.sensitive,
+                            ),
                             builder: (_) => const ObligationsListScreen(
                               filterMode: 'total',
                             ),
@@ -502,6 +504,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 market: market,
                 mainCurrency: state.mainCurrency,
                 balancesHidden: balancesHidden,
+                onOpenExpenseAnalysis: widget.onOpenExpenseAnalysis,
               ),
             ),
             const SizedBox(height: 16),
@@ -509,10 +512,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
               order: 6,
               child: _PremiumSection(
                 title: context.l10n.tr('recent_activity_title'),
-                trailing: TextButton(
+                trailing: _DashboardActionLink(
                   key: const Key('dashboardViewAllActivityButton'),
+                  label: context.l10n.tr('view_all'),
                   onPressed: widget.onViewAllActivity,
-                  child: Text(context.l10n.tr('view_all')),
                 ),
                 child: Column(
                   children: <Widget>[
@@ -652,7 +655,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     for (final item in schedule) {
       final String monthKey = (item['monthKey'] ?? '').toString();
       final String paymentDateRaw = (item['paymentDate'] ?? '').toString();
-      final DateTime? paymentDate = DateTime.tryParse(paymentDateRaw);
+      final DateTime? paymentDate = DateTime.tryParse(
+        normalizeDateText(paymentDateRaw),
+      );
       final String scheduleMonthKey = paymentDate == null
           ? monthKey.length >= 7
                 ? monthKey.substring(0, 7)
@@ -677,7 +682,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         if (isPaid) continue;
 
         final String rawDate = InvestmentAsset.installmentDueDate(installment);
-        final DateTime? parsedDate = DateTime.tryParse(rawDate);
+        final DateTime? parsedDate = DateTime.tryParse(
+          normalizeDateText(rawDate),
+        );
         if (parsedDate == null) continue;
 
         final String installmentMonthKey =
@@ -840,28 +847,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return '${value.toStringAsFixed(1)}%';
   }
 
-  static String? _findNextZakatDate(List<Map<String, dynamic>> schedule) {
-    final DateTime today = DateTime.now();
-    DateTime? best;
-    for (final Map<String, dynamic> item in schedule) {
-      final String raw = (item['paymentDate'] ?? '').toString().trim();
-      if (raw.isEmpty) continue;
-      final DateTime? parsed = DateTime.tryParse(raw);
-      if (parsed == null) continue;
-      if (parsed.isBefore(DateTime(today.year, today.month, today.day))) {
-        continue;
-      }
-      if (best == null || parsed.isBefore(best)) {
-        best = parsed;
-      }
-    }
-    if (best == null) return null;
-    return DateFormat('dd MMM yyyy', 'en_US').format(best);
-  }
-
   static DateTime _parseDate(String value) {
     try {
-      return DateTime.parse(value);
+      return DateTime.parse(normalizeTimestampText(value));
     } catch (_) {
       return DateTime.fromMillisecondsSinceEpoch(0);
     }
@@ -950,7 +938,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   item['LAST_UPDATED'] ??
                   '')
               .toString();
-      final DateTime? recordedAt = DateTime.tryParse(rawDate);
+      final DateTime? recordedAt = DateTime.tryParse(
+        normalizeTimestampText(rawDate),
+      );
       if (recordedAt == null) continue;
       if (recordedAt.isBefore(startOfYear)) continue;
 
@@ -1247,6 +1237,7 @@ class _PremiumHeroCard extends StatelessWidget {
     required this.state,
     required this.market,
     required this.nextZakatDate,
+    required this.nextZakatIsOverdue,
     required this.balancesHidden,
     required this.heroGrowth,
   });
@@ -1260,6 +1251,7 @@ class _PremiumHeroCard extends StatelessWidget {
   final dynamic state;
   final MarketData market;
   final String? nextZakatDate;
+  final bool nextZakatIsOverdue;
   final bool balancesHidden;
   final _HeroGrowthData? heroGrowth;
 
@@ -1436,7 +1428,10 @@ class _PremiumHeroCard extends StatelessWidget {
                               ),
                               if (nextZakatDate != null && !balancesHidden) ...[
                                 const SizedBox(height: 8),
-                                _HeroNextZakatBadge(date: nextZakatDate!),
+                                _HeroNextZakatBadge(
+                                  date: nextZakatDate!,
+                                  isOverdue: nextZakatIsOverdue,
+                                ),
                               ],
                             ],
                           ),
@@ -1545,6 +1540,8 @@ class _AnimatedAmountText extends StatelessWidget {
     }
     return AnimatedValue(
       value: displayValue,
+      animateFromZero: true,
+      duration: const Duration(milliseconds: 560),
       builder: (BuildContext context, double value, Widget? child) {
         return FittedBox(
           fit: BoxFit.scaleDown,
@@ -1884,22 +1881,32 @@ class _HeroStatusPanel extends StatelessWidget {
 }
 
 class _HeroNextZakatBadge extends StatelessWidget {
-  const _HeroNextZakatBadge({required this.date});
+  const _HeroNextZakatBadge({required this.date, required this.isOverdue});
 
   final String date;
+  final bool isOverdue;
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
+    final Color badgeColor = isOverdue
+        ? const Color(0xFF7F1D1D).withValues(alpha: 0.9)
+        : Colors.white.withValues(alpha: 0.05);
+    final Color borderColor = isOverdue
+        ? const Color(0xFFF87171).withValues(alpha: 0.72)
+        : Colors.white.withValues(alpha: 0.1);
+    final Color iconColor = isOverdue
+        ? const Color(0xFFFCA5A5)
+        : const Color(0xFF21D99B);
+    final String label = isOverdue
+        ? '${context.l10n.tr('zakat')} ${context.l10n.tr('due_now')}'
+        : '${context.l10n.tr('next_zakat').toUpperCase()}: ';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
+        color: badgeColor,
         borderRadius: BorderRadius.circular(30),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.1),
-          width: 1,
-        ),
+        border: Border.all(color: borderColor, width: 1),
       ),
       child: FittedBox(
         fit: BoxFit.scaleDown,
@@ -1907,29 +1914,32 @@ class _HeroNextZakatBadge extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            const Icon(
-              Icons.nightlight_round,
-              color: Color(0xFF21D99B),
+            Icon(
+              isOverdue ? Icons.error_outline : Icons.nightlight_round,
+              color: iconColor,
               size: 12,
             ),
             const SizedBox(width: 4),
             Text(
-              '${context.l10n.tr('next_zakat').toUpperCase()}: ',
+              label,
               style: textTheme.bodySmall?.copyWith(
-                color: Colors.white.withValues(alpha: 0.54),
+                color: isOverdue
+                    ? const Color(0xFFFCA5A5)
+                    : Colors.white.withValues(alpha: 0.54),
                 fontWeight: FontWeight.w700,
                 fontSize: 8.5,
                 letterSpacing: 0.2,
               ),
             ),
-            Text(
-              date,
-              style: textTheme.bodySmall?.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-                fontSize: 10.0,
+            if (!isOverdue)
+              Text(
+                date,
+                style: textTheme.bodySmall?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 10.0,
+                ),
               ),
-            ),
           ],
         ),
       ),
@@ -2166,6 +2176,49 @@ class _PremiumSection extends StatelessWidget {
           ),
           SizedBox(height: spacing ?? 12),
           child,
+        ],
+      ),
+    );
+  }
+}
+
+class _DashboardActionLink extends StatelessWidget {
+  const _DashboardActionLink({super.key, required this.label, this.onPressed});
+
+  final String label;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    if (onPressed == null) return const SizedBox.shrink();
+    final tokens = context.premiumTokens;
+    final TextStyle textStyle = Theme.of(context).textTheme.bodyMedium!
+        .copyWith(
+          color: tokens.colors.emerald,
+          fontSize: 12.5,
+          fontWeight: FontWeight.w600,
+          height: 1.0,
+          letterSpacing: 0,
+        );
+
+    return TextButton(
+      onPressed: onPressed,
+      style: TextButton.styleFrom(
+        padding: EdgeInsets.zero,
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        foregroundColor: tokens.colors.emerald,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text(label, style: textStyle),
+          const SizedBox(width: 4),
+          Icon(
+            Icons.chevron_right_rounded,
+            size: 14,
+            color: tokens.colors.emerald,
+          ),
         ],
       ),
     );
@@ -2410,7 +2463,7 @@ class _NisabStatusCard extends StatelessWidget {
         market,
       );
       if (wealth >= nisabThreshold) {
-        crossingDate = DateTime.tryParse(d);
+        crossingDate = DateTime.tryParse(normalizeDateText(d));
       } else {
         break;
       }
@@ -2694,12 +2747,45 @@ class _AllocationRing extends StatelessWidget {
       currency,
       market,
     );
-    final String formattedTotal = balancesHidden
-        ? '••••••'
-        : _DashboardScreenState._formatCompactDisplay(
-            context,
-            displayTotalVal,
-            currency,
+    final Widget formattedTotal = balancesHidden
+        ? FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14.0),
+              child: Text(
+                '••••••',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 18,
+                  color: dark ? Colors.white : const Color(0xFF0F2E28),
+                ),
+              ),
+            ),
+          )
+        : AnimatedValue(
+            value: displayTotalVal,
+            animateFromZero: true,
+            duration: const Duration(milliseconds: 620),
+            builder: (BuildContext context, double value, Widget? _) {
+              return FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14.0),
+                  child: Text(
+                    _DashboardScreenState._formatCompactDisplay(
+                      context,
+                      value,
+                      currency,
+                    ),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 18,
+                      color: dark ? Colors.white : const Color(0xFF0F2E28),
+                    ),
+                  ),
+                ),
+              );
+            },
           );
 
     final List<Map<String, dynamic>> items = <Map<String, dynamic>>[
@@ -2777,20 +2863,7 @@ class _AllocationRing extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: <Widget>[
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 14.0),
-                      child: Text(
-                        formattedTotal,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 18,
-                          color: dark ? Colors.white : const Color(0xFF0F2E28),
-                        ),
-                      ),
-                    ),
-                  ),
+                  formattedTotal,
                   const SizedBox(height: 2),
                   Text(
                     context.l10n.tr('total_assets'),
@@ -3760,12 +3833,14 @@ class _TopExpenseCategoriesCard extends StatefulWidget {
     required this.market,
     required this.mainCurrency,
     required this.balancesHidden,
+    this.onOpenExpenseAnalysis,
   });
 
   final List<Transaction> transactions;
   final MarketData market;
   final String mainCurrency;
   final bool balancesHidden;
+  final VoidCallback? onOpenExpenseAnalysis;
 
   @override
   State<_TopExpenseCategoriesCard> createState() =>
@@ -3773,10 +3848,9 @@ class _TopExpenseCategoriesCard extends StatefulWidget {
 }
 
 class _TopExpenseCategoriesCardState extends State<_TopExpenseCategoriesCard> {
-
   static DateTime _parseDate(String value) {
     try {
-      return DateTime.parse(value);
+      return DateTime.parse(normalizeTimestampText(value));
     } catch (_) {
       return DateTime.fromMillisecondsSinceEpoch(0);
     }
@@ -3814,11 +3888,12 @@ class _TopExpenseCategoriesCardState extends State<_TopExpenseCategoriesCard> {
   @override
   Widget build(BuildContext context) {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
+    final AppStateController controller = context.watch<AppStateController>();
 
-    // Filter current month expenses
+    // Filter the current financial month expenses.
     final DateTime now = DateTime.now();
-    final int currentYear = now.year;
-    final int currentMonth = now.month;
+    final DateTime financialMonthStart = controller.financialMonthStart(now);
+    final DateTime financialMonthEnd = controller.financialMonthEnd(now);
 
     final List<Transaction> currentMonthExpenses = widget.transactions.where((
       Transaction tx,
@@ -3826,7 +3901,9 @@ class _TopExpenseCategoriesCardState extends State<_TopExpenseCategoriesCard> {
       if (tx.type != 'expense') return false;
       if (tx.isTransferActivity) return false;
       final DateTime txDate = _parseDate(tx.date);
-      return txDate.year == currentYear && txDate.month == currentMonth;
+      final DateTime dayOnly = DateTime(txDate.year, txDate.month, txDate.day);
+      return !dayOnly.isBefore(financialMonthStart) &&
+          !dayOnly.isAfter(financialMonthEnd);
     }).toList();
 
     // Group by category and sum EGP
@@ -3880,7 +3957,7 @@ class _TopExpenseCategoriesCardState extends State<_TopExpenseCategoriesCard> {
         padding: const EdgeInsets.only(top: 8),
         child: Column(
           children: topCategories.map((MapEntry<String, double> item) {
-            final String name = item.key;
+            final String name = context.l10n.translateCategory(item.key);
             final double amtEgp = item.value;
             final int percentage = (amtEgp / totalExpensesEgp * 100).round();
 
@@ -3973,17 +4050,62 @@ class _TopExpenseCategoriesCardState extends State<_TopExpenseCategoriesCard> {
       ),
       child: _PremiumSection(
         title: context.l10n.tr('top_expense_categories'),
-        trailing: Text(
-          context.l10n.tr('this_month'),
-          style: TextStyle(
-            fontSize: 12.0,
-            fontWeight: FontWeight.w600,
-            color: dark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-          ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(
+              context.l10n.tr('this_month'),
+              style: TextStyle(
+                fontSize: 12.0,
+                fontWeight: FontWeight.w600,
+                color: dark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+              ),
+            ),
+            const SizedBox(width: 8),
+            _DashboardActionLink(
+              key: const Key('dashboardOpenExpenseAnalysisButton'),
+              label: context.l10n.tr('view_details'),
+              onPressed: widget.onOpenExpenseAnalysis,
+            ),
+          ],
         ),
         child: cardContent,
       ),
     );
+  }
+}
+
+String? findNextUnpaidZakatDate(
+  List<Map<String, dynamic>> schedule,
+  Set<String> paidMonths,
+) {
+  DateTime? best;
+  for (final Map<String, dynamic> item in schedule) {
+    final String monthKey = (item['monthKey'] ?? '').toString().trim();
+    if (monthKey.isEmpty || paidMonths.contains(monthKey)) {
+      continue;
+    }
+    final String raw = (item['paymentDate'] ?? '').toString().trim();
+    if (raw.isEmpty) continue;
+    final DateTime? parsed = DateTime.tryParse(normalizeDateText(raw));
+    if (parsed == null) continue;
+    if (best == null || parsed.isBefore(best)) {
+      best = parsed;
+    }
+  }
+  if (best == null) return null;
+  return DateFormat('dd MMM yyyy', 'en_US').format(best);
+}
+
+DateTime? _parseDashboardZakatDate(String? rawDate) {
+  if (rawDate == null || rawDate.trim().isEmpty) return null;
+  try {
+    return DateFormat(
+      'dd MMM yyyy',
+      'en_US',
+    ).parseStrict(normalizeDateText(rawDate.trim()));
+  } catch (_) {
+    return null;
   }
 }
 

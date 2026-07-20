@@ -30,6 +30,10 @@ class LocalRecurringTransactionsRepository
     return _recurringTransactionsDao.getActiveRecurringTransactions();
   }
 
+  Future<int> countActiveRecurringTransactions() {
+    return _recurringTransactionsDao.countActiveRecurringTransactions();
+  }
+
   @override
   Stream<List<RecurringTransaction>> watchActiveRecurringTransactions() {
     return _recurringTransactionsDao.watchActiveRecurringTransactions();

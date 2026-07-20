@@ -1,11 +1,13 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../widgets/sensitive_content_scope.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/i18n/app_localizations.dart';
 import '../../core/widgets/compact_dropdown.dart';
 import '../../core/utils/currency_presentation.dart';
+import '../../core/utils/amount_parser.dart';
 import '../../core/services/zakat_engine.dart';
 import '../../core/widgets/app_ui.dart';
 import '../../models/investment_asset.dart';
@@ -140,9 +142,9 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
 
   void _calculateCurrentValue() {
     final double purchasePrice =
-        double.tryParse(_purchasePriceController.text.trim()) ?? 0;
+        tryParseAmount(_purchasePriceController.text) ?? 0;
     final double growthRate =
-        double.tryParse(_growthRateController.text.trim()) ?? 0;
+        tryParseAmount(_growthRateController.text) ?? 0;
 
     if (purchasePrice <= 0 || growthRate == 0) {
       return;
@@ -181,10 +183,16 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
     showDialog<void>(
       context: context,
       builder: (BuildContext context) {
+        final bool isArabic =
+            Localizations.localeOf(context).languageCode.toLowerCase() == 'ar';
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter dialogSetState) {
             return AlertDialog(
-              title: Text('Edit Installment #${index + 1}'),
+              title: Text(
+                isArabic
+                    ? 'تعديل القسط #${index + 1}'
+                    : 'Edit Installment #${index + 1}',
+              ),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -194,15 +202,15 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                       keyboardType: const TextInputType.numberWithOptions(
                         decimal: true,
                       ),
-                      decoration: const InputDecoration(
-                        labelText: 'Amount',
+                      decoration: InputDecoration(
+                        labelText: context.l10n.tr('amount'),
                         border: OutlineInputBorder(),
                       ),
                     ),
                     const SizedBox(height: 16),
                     CompactDropdownFormField<String>(
                       value: selectedCurrency,
-                      labelText: 'Currency',
+                      labelText: context.l10n.tr('currency'),
                       items: ZakatEngineService.supportedCurrencies,
                       itemLabel: (String currency) =>
                           CurrencyPresentation.selectorLabel(
@@ -219,7 +227,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                     const SizedBox(height: 16),
                     ListTile(
                       contentPadding: EdgeInsets.zero,
-                      title: const Text('Payment Date'),
+                      title: Text(context.l10n.tr('date')),
                       subtitle: Text(_dateIso(selectedDate)),
                       trailing: const Icon(Icons.calendar_today),
                       onTap: () async {
@@ -244,8 +252,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                 ),
                 ElevatedButton(
                   onPressed: () {
-                    final double? amount =
-                        double.tryParse(amountController.text.trim());
+                    final double? amount = tryParseAmount(amountController.text);
                     if (amount == null || amount <= 0) {
                       showTopSnackBar(
                         context,
@@ -294,6 +301,8 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final bool isArabic =
+        Localizations.localeOf(context).languageCode.toLowerCase() == 'ar';
     final String defaultEntryCurrency =
         context
             .watch<AppStateController>()
@@ -308,7 +317,8 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
         defaultEntryCurrency != 'EGP') {
       _currency = defaultEntryCurrency;
     }
-    return Scaffold(
+    return SensitiveContentScope(
+      child: Scaffold(
       appBar: AppBar(
         title: Text(
           widget.isEditMode
@@ -365,7 +375,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                     border: const OutlineInputBorder(),
                   ),
                   validator: (String? value) {
-                    final double v = double.tryParse((value ?? '').trim()) ?? 0;
+                    final double v = tryParseAmount(value) ?? 0;
                     if (v <= 0) {
                       return context.l10n.tr('purchase_price_gt_zero');
                     }
@@ -409,7 +419,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                   ),
                   validator: (String? value) {
                     final double pct =
-                        double.tryParse((value ?? '').trim()) ?? -1;
+                        tryParseAmount(value) ?? -1;
                     if (pct < 0 || pct > 100) {
                       return context.l10n.tr('ownership_pct_range');
                     }
@@ -430,7 +440,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                   validator: (String? value) {
                     final String trimmed = (value ?? '').trim();
                     if (trimmed.isEmpty) return null;
-                    final double v = double.tryParse(trimmed) ?? 0;
+                    final double v = tryParseAmount(trimmed) ?? 0;
                     if (v < 0) {
                       return context.l10n.tr('current_value_negative');
                     }
@@ -497,8 +507,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                       final controller = context.read<AppStateController>();
                       final market = MarketData.fromJson(controller.state.marketData);
                       final double liability =
-                          double.tryParse(_liabilityController.text.trim()) ??
-                          0;
+                          tryParseAmount(_liabilityController.text) ?? 0;
 
                       double scheduledTotal = 0.0;
                       for (final Map<String, dynamic> item in _installmentPlan) {
@@ -639,7 +648,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                     children: <Widget>[
                       Expanded(
                         child: ChoiceChip(
-                          label: const Center(child: Text('Auto-Generate')),
+                          label: Center(child: Text(context.l10n.tr('auto_generate'))),
                           selected: _scheduleInputMode == 'auto',
                           onSelected: (bool selected) {
                             if (selected) {
@@ -651,7 +660,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: ChoiceChip(
-                          label: const Center(child: Text('Add One-by-One')),
+                          label: Center(child: Text(context.l10n.tr('add_one_by_one'))),
                           selected: _scheduleInputMode == 'manual',
                           onSelected: (bool selected) {
                             if (selected) {
@@ -667,8 +676,8 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                     TextFormField(
                       controller: _numInstallmentsController,
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Number of Installments',
+                      decoration: InputDecoration(
+                        labelText: context.l10n.tr('number_of_installments'),
                         border: OutlineInputBorder(),
                         hintText: 'e.g. 12',
                       ),
@@ -689,7 +698,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                         if (_showInstallmentConfig &&
                             _scheduleInputMode == 'auto' &&
                             _installmentPlan.isEmpty) {
-                          final double? amt = double.tryParse((value ?? '').trim());
+                          final double? amt = tryParseAmount(value);
                           if (amt == null || amt <= 0) {
                             return context.l10n.tr('total_installments_amount_required');
                           }
@@ -701,7 +710,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                     CompactDropdownFormField<String>(
                       key: const Key('investmentAutoCurrencyField'),
                       value: _autoCurrency,
-                      labelText: 'Currency',
+                      labelText: context.l10n.tr('currency'),
                       items: ZakatEngineService.supportedCurrencies,
                       itemLabel: (String currency) =>
                           CurrencyPresentation.selectorLabel(
@@ -718,12 +727,12 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                     const SizedBox(height: 12),
                     CompactDropdownFormField<String>(
                       value: _autoFrequency,
-                      labelText: 'Installment Frequency',
+                      labelText: context.l10n.tr('installment_frequency'),
                       items: const <String>['monthly', 'quarterly', 'yearly'],
                       itemLabel: (String value) => switch (value) {
-                        'monthly' => 'Monthly',
-                        'quarterly' => 'Quarterly',
-                        'yearly' => 'Yearly',
+                        'monthly' => isArabic ? 'شهري' : 'Monthly',
+                        'quarterly' => isArabic ? 'ربع سنوي' : 'Quarterly',
+                        'yearly' => isArabic ? 'سنوي' : 'Yearly',
                         _ => value,
                       },
                       onChanged: (String value) {
@@ -733,7 +742,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                     const SizedBox(height: 12),
                     ListTile(
                       contentPadding: EdgeInsets.zero,
-                      title: const Text('First Payment Date'),
+                      title: Text(context.l10n.tr('first_payment_date')),
                       subtitle: Text(_dateIso(_autoStartDate)),
                       trailing: const Icon(Icons.calendar_today),
                       onTap: () async {
@@ -753,26 +762,30 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                       width: double.infinity,
                       child: OutlinedButton.icon(
                         icon: const Icon(Icons.flash_on),
-                        label: const Text('Generate Installments'),
+                        label: Text(context.l10n.tr('generate_installments')),
                         onPressed: () {
-                          final double? totalAmount = double.tryParse(
-                            _totalInstallmentsAmountController.text.trim(),
+                          final double? totalAmount = tryParseAmount(
+                            _totalInstallmentsAmountController.text,
                           );
                           final int? numInst = int.tryParse(
                             _numInstallmentsController.text.trim(),
                           );
 
                           if (totalAmount == null || totalAmount <= 0) {
-                            showTopSnackBar(
-                              context,
-                              'Please enter a valid total installments amount.',
-                            );
+                        showTopSnackBar(
+                          context,
+                          isArabic
+                              ? 'يرجى إدخال إجمالي صالح لمبلغ الأقساط.'
+                              : 'Please enter a valid total installments amount.',
+                        );
                             return;
                           }
                           if (numInst == null || numInst <= 0) {
                             showTopSnackBar(
                               context,
-                              'Please enter a valid number of installments.',
+                              isArabic
+                                  ? 'يرجى إدخال عدد صحيح صالح للأقساط.'
+                                  : 'Please enter a valid number of installments.',
                             );
                             return;
                           }
@@ -826,8 +839,8 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                       keyboardType: const TextInputType.numberWithOptions(
                         decimal: true,
                       ),
-                      decoration: const InputDecoration(
-                        labelText: 'Installment Amount',
+                      decoration: InputDecoration(
+                        labelText: context.l10n.tr('installment_amount'),
                         border: OutlineInputBorder(),
                         hintText: 'e.g. 1000',
                       ),
@@ -836,7 +849,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                     CompactDropdownFormField<String>(
                       key: const Key('investmentOneByOneCurrencyField'),
                       value: _oneByOneCurrency,
-                      labelText: 'Currency',
+                      labelText: context.l10n.tr('currency'),
                       items: ZakatEngineService.supportedCurrencies,
                       itemLabel: (String currency) =>
                           CurrencyPresentation.selectorLabel(
@@ -853,7 +866,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                     const SizedBox(height: 12),
                     ListTile(
                       contentPadding: EdgeInsets.zero,
-                      title: const Text('Payment Date'),
+                      title: Text(context.l10n.tr('date')),
                       subtitle: Text(_dateIso(_oneByOneDate)),
                       trailing: const Icon(Icons.calendar_today),
                       onTap: () async {
@@ -873,15 +886,17 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                       width: double.infinity,
                       child: OutlinedButton.icon(
                         icon: const Icon(Icons.add),
-                        label: const Text('Add Installment'),
+                        label: Text(context.l10n.tr('add')),
                         onPressed: () {
-                          final double? amount = double.tryParse(
-                            _oneByOneAmountController.text.trim(),
+                          final double? amount = tryParseAmount(
+                            _oneByOneAmountController.text,
                           );
                           if (amount == null || amount <= 0) {
                             showTopSnackBar(
                               context,
-                              'Please enter a valid amount.',
+                              isArabic
+                                  ? 'يرجى إدخال مبلغ صالح.'
+                                  : 'Please enter a valid amount.',
                             );
                             return;
                           }
@@ -904,8 +919,8 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                   ],
                   const SizedBox(height: 16),
                   if (_installmentPlan.isNotEmpty) ...[
-                    const Text(
-                      'Scheduled Installments',
+                    Text(
+                      context.l10n.tr('scheduled_installments'),
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 14,
@@ -940,7 +955,9 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                           child: ListTile(
                             dense: true,
                             title: Text(
-                              'Installment #${index + 1} - $amountStr',
+                              isArabic
+                                  ? 'القسط #${index + 1} - $amountStr'
+                                  : 'Installment #${index + 1} - $amountStr',
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 decoration: isPaid
@@ -1170,7 +1187,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
           ),
         ),
       ),
-    );
+    ));
   }
 
   Future<void> _submit() async {
@@ -1183,17 +1200,17 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
       _ownershipPctController.text.trim(),
     );
     final double purchasePrice =
-        double.tryParse(_purchasePriceController.text.trim()) ?? 0;
+        tryParseAmount(_purchasePriceController.text) ?? 0;
     
     final String rawCurrentValue = _currentValueController.text.trim();
     final double currentValue = rawCurrentValue.isEmpty
         ? purchasePrice
-        : (double.tryParse(rawCurrentValue) ?? purchasePrice);
+        : (tryParseAmount(rawCurrentValue) ?? purchasePrice);
 
     final AppStateController controller = context.read<AppStateController>();
     final MarketData market = MarketData.fromJson(controller.state.marketData);
 
-    double liability = double.tryParse(_liabilityController.text.trim()) ?? 0;
+    double liability = tryParseAmount(_liabilityController.text) ?? 0;
     if (_showInstallmentConfig && _installmentPlan.isNotEmpty) {
       liability = _calculateLiabilityFromInstallments(market);
     }
@@ -1205,7 +1222,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
         : const <Map<String, dynamic>>[];
 
     final double growthRate =
-        double.tryParse(_growthRateController.text.trim()) ?? 0;
+        tryParseAmount(_growthRateController.text) ?? 0;
 
     final double finalRemainingAmount = liability;
     final double finalPaidAmount = purchasePrice > liability

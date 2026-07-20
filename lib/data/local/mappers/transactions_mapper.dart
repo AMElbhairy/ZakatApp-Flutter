@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart';
 
+import '../../../core/utils/amount_parser.dart';
 import '../../../models/transaction.dart' as model;
 import '../app_database.dart' as db;
 
@@ -111,11 +112,11 @@ class TransactionsMapper {
     return raw.replaceFirst(RegExp(r'\.?0+$'), '');
   }
 
-  double _toDouble(String value) => double.tryParse(value) ?? 0;
+  double _toDouble(String value) => tryParseAmount(value) ?? 0;
 
   double? _nullableDouble(String? value) {
     if (value == null || value.isEmpty) return null;
-    return double.tryParse(value);
+    return tryParseAmount(value);
   }
 
   String _timestampOrFallback(String? value, {String? fallback}) {

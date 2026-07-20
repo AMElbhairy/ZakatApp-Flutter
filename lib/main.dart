@@ -1,11 +1,15 @@
+// ignore_for_file: use_build_context_synchronously
+
 import 'dart:async';
 import 'dart:io' show Platform;
 
+import 'package:app_links/app_links.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -13,6 +17,7 @@ import 'package:provider/provider.dart';
 import 'package:provider/single_child_widget.dart';
 
 import 'core/i18n/app_localizations.dart';
+import 'core/privacy/app_privacy.dart';
 import 'core/theme/app_colors.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/auth_brand_ui.dart';
@@ -20,8 +25,8 @@ import 'features/auth/email_verification_screen.dart';
 import 'features/auth/auth_loading_screen.dart';
 import 'features/auth/login_page.dart';
 import 'features/auth/restore_gate_screen.dart';
+import 'features/onboarding/onboarding_gate.dart';
 import 'firebase_options.dart';
-import 'models/user_profile.dart';
 import 'data/local/app_database.dart';
 import 'data/local/daos/migration_state_dao.dart';
 import 'data/local/local_store_providers.dart';
@@ -32,13 +37,17 @@ import 'data/repositories/local_transactions_repository.dart';
 import 'repositories/app_state_repository.dart';
 import 'screens/account/security_lock_screen.dart';
 import 'screens/app_shell.dart';
+import 'screens/account/notifications_screen.dart';
+import 'screens/dashboard/obligations_list_screen.dart';
 import 'services/app_state_controller.dart';
-import 'services/apple_shortcuts_service.dart';
+import 'services/collection_hydration_evidence.dart';
+import 'services/bootstrap_coordinator.dart';
 import 'services/auth_controller.dart';
 import 'services/auth_service.dart';
+import 'services/biometric_service.dart';
 import 'services/cloud_backup_controller.dart';
 import 'services/backup_key_manager.dart';
-import 'services/backup_service.dart';
+import 'services/launch_diagnostics.dart';
 import 'services/first_run_cleanup_service.dart';
 import 'services/google_sign_in_factory.dart';
 import 'services/google_sheets_service.dart';
@@ -47,23 +56,37 @@ import 'services/network_status_controller.dart';
 import 'services/smart_capture_alert_service.dart';
 import 'services/sync_controller.dart';
 import 'services/startup_restore_discovery.dart';
+import 'services/widget_data_service.dart';
 
 final bool _showLegacyAuthUi = kDebugMode && !ZakatApp.isTesting;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  LaunchDiagnostics.setLaunchSource('app_icon');
+  unawaited(
+    LaunchDiagnostics.record(
+      'process_entry',
+      metadata: <String, dynamic>{'processState': 'cold_start'},
+    ),
+  );
   final GoogleSignIn googleSignIn = createAppGoogleSignIn();
+  final SharedPreferences prefs = await SharedPreferences.getInstance();
+  unawaited(WidgetDataService.initialize());
 
   if (!ZakatApp.isTesting) {
     try {
-      final SharedPreferences prefs = await SharedPreferences.getInstance();
       await FirstRunCleanupService(
         firebaseAuth: FirebaseAuth.instance,
         googleSignIn: googleSignIn,
         clearSecureStorage: () async {
           const FlutterSecureStorage secureStorage = FlutterSecureStorage();
           await secureStorage.deleteAll();
+        },
+        clearAppStorage: () async {
+          await prefs.clear();
+          await WidgetDataService.clearAll();
+          await AppDatabase.deleteAllDatabaseFiles();
         },
       ).runIfNeeded(prefs);
     } catch (e) {
@@ -73,16 +96,14 @@ Future<void> main() async {
 
   const LocalStorageService localStorage = LocalStorageService();
   final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+  final String startupLanguage =
+      prefs.getString('language_preference')?.trim().toLowerCase() == 'ar'
+      ? 'ar'
+      : 'en';
   final SmartCaptureAlertService smartCaptureAlertService = kIsWeb
       ? const NoopSmartCaptureAlertService()
       : PlatformSmartCaptureAlertService();
   smartCaptureAlertService.attachNavigatorKey(navigatorKey);
-  try {
-    await smartCaptureAlertService.initialize();
-  } catch (error, stackTrace) {
-    debugPrint('Smart capture alert init skipped: $error');
-    debugPrintStack(stackTrace: stackTrace);
-  }
   final localDatabase = localDatabaseProvider();
   final AppStateRepository repository = AppStateRepository(
     localStorage: localStorage,
@@ -94,6 +115,7 @@ Future<void> main() async {
         Provider<SmartCaptureAlertService>.value(
           value: smartCaptureAlertService,
         ),
+
         ChangeNotifierProvider<AppPrivacyOverlayController>(
           create: (_) => AppPrivacyOverlayController(),
         ),
@@ -152,11 +174,22 @@ Future<void> main() async {
             googleSignIn: ctx.read<GoogleSignIn>(),
           ),
         ),
+        ChangeNotifierProvider<BootstrapCoordinator>(
+          create: (BuildContext ctx) => BootstrapCoordinator(
+            dependencies: BootstrapDependencies(
+              authController: ctx.read<AuthController>(),
+              appStateController: ctx.read<AppStateController>(),
+              cloudBackupController: ctx.read<CloudBackupController>(),
+            ),
+          ),
+        ),
         ChangeNotifierProvider<NetworkStatusController>(
           create: (_) {
             final NetworkStatusController controller =
                 NetworkStatusController();
-            unawaited(controller.start());
+            unawaited(
+              controller.start(initialDelay: const Duration(milliseconds: 850)),
+            );
             return controller;
           },
         ),
@@ -168,15 +201,39 @@ Future<void> main() async {
           ),
         ),
       ],
-      child: ZakatApp(navigatorKey: navigatorKey),
+      child: ZakatApp(
+        navigatorKey: navigatorKey,
+        preferences: prefs,
+        startupLanguage: startupLanguage,
+      ),
     ),
   );
+
+  unawaited(_initializeSmartCaptureAlertService(smartCaptureAlertService));
+}
+
+Future<void> _initializeSmartCaptureAlertService(
+  SmartCaptureAlertService smartCaptureAlertService,
+) async {
+  try {
+    await smartCaptureAlertService.initialize();
+  } catch (error, stackTrace) {
+    debugPrint('Smart capture alert init skipped: $error');
+    debugPrintStack(stackTrace: stackTrace);
+  }
 }
 
 class ZakatApp extends StatelessWidget {
-  const ZakatApp({super.key, this.navigatorKey});
+  const ZakatApp({
+    super.key,
+    this.navigatorKey,
+    required this.preferences,
+    this.startupLanguage,
+  });
 
   final GlobalKey<NavigatorState>? navigatorKey;
+  final SharedPreferences preferences;
+  final String? startupLanguage;
 
   static final bool isTesting =
       !kIsWeb && Platform.environment.containsKey('FLUTTER_TEST');
@@ -185,22 +242,13 @@ class ZakatApp extends StatelessWidget {
   Widget build(BuildContext context) {
     final GlobalKey<NavigatorState> key =
         navigatorKey ?? GlobalKey<NavigatorState>();
-    if (_hasAppPrivacyOverlayController(context)) {
-      return _NetworkStatusScope(child: _ZakatAppContent(navigatorKey: key));
-    }
-    return ChangeNotifierProvider<AppPrivacyOverlayController>(
-      create: (_) => AppPrivacyOverlayController(),
-      child: _NetworkStatusScope(child: _ZakatAppContent(navigatorKey: key)),
+    return _NetworkStatusScope(
+      child: _ZakatAppContent(
+        navigatorKey: key,
+        preferences: preferences,
+        startupLanguage: startupLanguage ?? 'en',
+      ),
     );
-  }
-}
-
-bool _hasAppPrivacyOverlayController(BuildContext context) {
-  try {
-    context.read<AppPrivacyOverlayController>();
-    return true;
-  } catch (_) {
-    return false;
   }
 }
 
@@ -222,9 +270,20 @@ class _NetworkStatusScope extends StatefulWidget {
   State<_NetworkStatusScope> createState() => _NetworkStatusScopeState();
 }
 
-class _NetworkStatusScopeState extends State<_NetworkStatusScope> {
+class _NetworkStatusScopeState extends State<_NetworkStatusScope>
+    with WidgetsBindingObserver {
   NetworkStatusController? _controller;
   bool _usesExternalController = false;
+  bool _ownsController = false;
+  bool _startupProbeScheduled = false;
+  Timer? _startupProbeTimer;
+  Timer? _resumeProbeTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
 
   @override
   void didChangeDependencies() {
@@ -236,18 +295,42 @@ class _NetworkStatusScopeState extends State<_NetworkStatusScope> {
 
     _usesExternalController = hasExternalController;
     if (_usesExternalController) {
-      _controller?.dispose();
-      _controller = null;
+      if (_ownsController) {
+        _controller?.dispose();
+      }
+      _controller = context.read<NetworkStatusController>();
+      _ownsController = false;
     } else if (!ZakatApp.isTesting && _controller == null) {
       _controller = NetworkStatusController();
-      unawaited(_controller!.start());
+      _ownsController = true;
+      _scheduleStartupProbe(_controller!);
     }
   }
 
   @override
   void dispose() {
-    _controller?.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    _startupProbeTimer?.cancel();
+    _resumeProbeTimer?.cancel();
+    if (_ownsController) {
+      _controller?.dispose();
+    }
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      final NetworkStatusController? controller = _controller;
+      if (controller != null) {
+        _resumeProbeTimer?.cancel();
+        _resumeProbeTimer = Timer(const Duration(milliseconds: 900), () {
+          if (!mounted) return;
+          unawaited(controller.refresh());
+        });
+      }
+    }
   }
 
   @override
@@ -260,37 +343,293 @@ class _NetworkStatusScopeState extends State<_NetworkStatusScope> {
     }
     final NetworkStatusController controller = _controller ??=
         NetworkStatusController();
-    if (!_controller!.isOffline && !_controller!.isChecking) {
-      unawaited(_controller!.start());
+    if (!_startupProbeScheduled) {
+      _scheduleStartupProbe(controller);
     }
     return ChangeNotifierProvider<NetworkStatusController>.value(
       value: controller,
       child: widget.child,
     );
   }
+
+  void _scheduleStartupProbe(NetworkStatusController controller) {
+    if (_startupProbeScheduled || ZakatApp.isTesting) return;
+    _startupProbeScheduled = true;
+    _startupProbeTimer?.cancel();
+    _startupProbeTimer = Timer(const Duration(milliseconds: 850), () {
+      if (!mounted) return;
+      unawaited(
+        controller.start(initialDelay: const Duration(milliseconds: 0)),
+      );
+    });
+  }
 }
 
-class _ZakatAppContent extends StatelessWidget {
-  const _ZakatAppContent({required this.navigatorKey});
+class _ZakatAppContent extends StatefulWidget {
+  const _ZakatAppContent({
+    required this.navigatorKey,
+    required this.preferences,
+    required this.startupLanguage,
+  });
 
   final GlobalKey<NavigatorState> navigatorKey;
+  final SharedPreferences preferences;
+  final String startupLanguage;
+
+  @override
+  State<_ZakatAppContent> createState() => _ZakatAppContentState();
+}
+
+class _ZakatAppContentState extends State<_ZakatAppContent> {
+  final AppLinks _appLinks = AppLinks();
+  final ValueNotifier<bool> _navigationReadyNotifier = ValueNotifier<bool>(
+    false,
+  );
+  final GlobalKey<_AppBootstrapperState> _bootstrapperKey =
+      GlobalKey<_AppBootstrapperState>();
+  String? _lastAppliedLanguage;
+  String? _pendingLanguageRestartTarget;
+  int _languageRestartGeneration = 0;
+  bool _languageRestartScheduled = false;
+  StreamSubscription<Uri>? _uriSubscription;
+  String? _lastHandledLink;
+  Uri? _pendingIncomingUri;
+  Timer? _pendingIncomingUriTimer;
+  late final PrivacyRouteObserver _privacyRouteObserver;
+
+  @override
+  void initState() {
+    super.initState();
+    _privacyRouteObserver = PrivacyRouteObserver((
+      ScreenPrivacyClassification? privacy,
+    ) {
+      _bootstrapperKey.currentState?.setRoutePrivacyOverride(privacy);
+    });
+    unawaited(_handleInitialLink());
+    _uriSubscription = _appLinks.uriLinkStream.listen(
+      _handleIncomingUri,
+      onError: (Object error, StackTrace stackTrace) {
+        debugPrint('App link stream error: $error');
+        debugPrintStack(stackTrace: stackTrace);
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _pendingIncomingUriTimer?.cancel();
+    _uriSubscription?.cancel();
+    _navigationReadyNotifier.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleInitialLink() async {
+    try {
+      final Uri? uri = await _appLinks.getInitialLink();
+      if (uri != null) {
+        LaunchDiagnostics.setLaunchSource(_launchSourceFromUri(uri));
+        unawaited(
+          LaunchDiagnostics.record(
+            'initial_uri_received',
+            metadata: <String, dynamic>{'uri': uri.toString()},
+          ),
+        );
+        _handleIncomingUri(uri);
+      }
+    } catch (error, stackTrace) {
+      debugPrint('Initial app link error: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  void _handleIncomingUri(Uri uri) {
+    final String serialized = uri.toString();
+    if (serialized == _lastHandledLink) {
+      return;
+    }
+    LaunchDiagnostics.setLaunchSource(_launchSourceFromUri(uri));
+    unawaited(
+      LaunchDiagnostics.record(
+        'incoming_uri',
+        metadata: <String, dynamic>{'uri': serialized},
+      ),
+    );
+    _lastHandledLink = serialized;
+    _pendingIncomingUri = uri;
+    _schedulePendingIncomingUriDispatch();
+  }
+
+  void _schedulePendingIncomingUriDispatch() {
+    _pendingIncomingUriTimer?.cancel();
+    if (!mounted || _pendingIncomingUri == null) {
+      return;
+    }
+    _pendingIncomingUriTimer = Timer(const Duration(milliseconds: 120), () {
+      if (!mounted) return;
+      final Uri pending = _pendingIncomingUri!;
+      final AuthController authController = context.read<AuthController>();
+      final AppStateController appStateController = context
+          .read<AppStateController>();
+      final bool requiresBiometricLock =
+          authController.currentUser != null &&
+          appStateController.state.biometricLockEnabled;
+      if (!_navigationReadyNotifier.value ||
+          (requiresBiometricLock &&
+              !BiometricService.isSensitiveSessionUnlocked)) {
+        _schedulePendingIncomingUriDispatch();
+        return;
+      }
+
+      _pendingIncomingUri = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _navigateForUri(pending);
+      });
+    });
+  }
+
+  void _navigateForUri(Uri uri) {
+    final NavigatorState? navigator = widget.navigatorKey.currentState;
+    if (navigator == null) return;
+
+    final String host = uri.host.trim().toLowerCase();
+    final String firstPath = uri.pathSegments.isNotEmpty
+        ? uri.pathSegments.first.trim().toLowerCase()
+        : '';
+    final String normalizedPath = uri.path.trim().toLowerCase();
+    final String filter = (uri.queryParameters['filter'] ?? '')
+        .trim()
+        .toLowerCase();
+
+    if (host == 'widget' ||
+        firstPath == 'widget' ||
+        normalizedPath.contains('/widget')) {
+      navigator.popUntil((Route<dynamic> route) => route.isFirst);
+      return;
+    }
+
+    if (host == 'smart-capture' ||
+        firstPath == 'smart-capture' ||
+        normalizedPath.contains('smart-capture')) {
+      navigator.push(
+        NotificationsScreen.route(
+          initialStatus: CaptureInboxStatusFilter.pending,
+        ),
+      );
+      return;
+    }
+
+    if (host == 'obligations' ||
+        firstPath == 'obligations' ||
+        normalizedPath.contains('obligations')) {
+      navigator.push(
+        MaterialPageRoute<void>(
+          settings: const AppPrivacyRouteSettings(
+            privacy: ScreenPrivacyClassification.sensitive,
+          ),
+          builder: (_) => ObligationsListScreen(
+            filterMode: switch (filter) {
+              'next_month' => 'next_month',
+              'total' => 'total',
+              _ => 'this_month',
+            },
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (host == 'dashboard' ||
+        firstPath == 'dashboard' ||
+        host == 'zakah-status' ||
+        normalizedPath.contains('dashboard')) {
+      navigator.popUntil((Route<dynamic> route) => route.isFirst);
+    }
+  }
+
+  String _launchSourceFromUri(Uri uri) {
+    final String host = uri.host.trim().toLowerCase();
+    final String firstPath = uri.pathSegments.isNotEmpty
+        ? uri.pathSegments.first.trim().toLowerCase()
+        : '';
+    if (host != 'widget' && firstPath != 'widget') {
+      return 'deep_link';
+    }
+    final String family =
+        uri.queryParameters['family']?.trim().toLowerCase() ?? '';
+    return switch (family) {
+      'small' => 'widget_small',
+      'medium' => 'widget_medium',
+      'large' => 'widget_large',
+      _ => 'widget_unknown',
+    };
+  }
+
+  void _scheduleLanguageRestart(String preferredLanguage, bool canRestart) {
+    if (_lastAppliedLanguage == null) {
+      _lastAppliedLanguage = preferredLanguage;
+      return;
+    }
+    if (_lastAppliedLanguage == preferredLanguage) {
+      _pendingLanguageRestartTarget = null;
+      return;
+    }
+    _pendingLanguageRestartTarget = preferredLanguage;
+    if (!canRestart) return;
+    if (_languageRestartScheduled) return;
+    _languageRestartScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _languageRestartScheduled = false;
+      if (!mounted) return;
+      if (_pendingLanguageRestartTarget != preferredLanguage) return;
+      setState(() {
+        _lastAppliedLanguage = preferredLanguage;
+        _pendingLanguageRestartTarget = null;
+        _languageRestartGeneration += 1;
+      });
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final AppStateController appStateController = context
         .watch<AppStateController>();
-    final String languageCode = appStateController.state.languagePreference;
     final String themeModeRaw = appStateController.state.themeMode;
+    final bool hasPersistedLanguagePreference = widget.preferences.containsKey(
+      'language_preference',
+    );
+    final String persistedLanguageCode =
+        hasPersistedLanguagePreference &&
+            widget.preferences
+                    .getString('language_preference')
+                    ?.trim()
+                    .toLowerCase() ==
+                'ar'
+        ? 'ar'
+        : 'en';
+    final String preferredLanguage = hasPersistedLanguagePreference
+        ? persistedLanguageCode
+        : appStateController.state.languagePreference == 'ar'
+        ? 'ar'
+        : 'en';
+    _scheduleLanguageRestart(
+      preferredLanguage,
+      appStateController.hydrationPhase == AppHydrationPhase.ready,
+    );
+    final Locale locale = preferredLanguage == 'ar'
+        ? const Locale('ar')
+        : const Locale('en');
     final ThemeMode themeMode = switch (themeModeRaw) {
       'light' => ThemeMode.light,
       'dark' => ThemeMode.dark,
       _ => ThemeMode.system,
     };
-    final Locale locale = languageCode == 'ar'
-        ? const Locale('ar')
-        : const Locale('en');
     return MaterialApp(
-      navigatorKey: navigatorKey,
+      key: ValueKey<String>(
+        'zakat-app-$preferredLanguage-$_languageRestartGeneration',
+      ),
+      navigatorKey: widget.navigatorKey,
+      navigatorObservers: <NavigatorObserver>[_privacyRouteObserver],
       title: 'Zakah Wealth',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightForLocale(locale: locale),
@@ -320,20 +659,41 @@ class _ZakatAppContent extends StatelessWidget {
                       Widget? _,
                     ) {
                       if (!controller.visible) return const SizedBox.shrink();
-                      return const AuthPrivacyOverlay();
+                      return const Positioned.fill(
+                        child: AbsorbPointer(
+                          absorbing: true,
+                          child: AuthPrivacyOverlay(
+                            key: Key('appPrivacyOverlay'),
+                          ),
+                        ),
+                      );
                     },
               ),
             ],
           ),
         );
       },
-      home: const _AppBootstrapper(),
+      home: _AppBootstrapper(
+        key: _bootstrapperKey,
+        preferences: widget.preferences,
+        navigationReadyNotifier: _navigationReadyNotifier,
+      ),
     );
   }
 }
 
-class _OfflineStatusBannerOverlay extends StatelessWidget {
+class _OfflineStatusBannerOverlay extends StatefulWidget {
   const _OfflineStatusBannerOverlay();
+
+  @override
+  State<_OfflineStatusBannerOverlay> createState() =>
+      _OfflineStatusBannerOverlayState();
+}
+
+class _OfflineStatusBannerOverlayState
+    extends State<_OfflineStatusBannerOverlay> {
+  bool _dismissedWhileOffline = false;
+  bool _lastOffline = false;
 
   @override
   Widget build(BuildContext context) {
@@ -341,21 +701,39 @@ class _OfflineStatusBannerOverlay extends StatelessWidget {
     if (!hasController) return const SizedBox.shrink();
 
     final bool isOffline = context.watch<NetworkStatusController>().isOffline;
+    if (_lastOffline && !isOffline && _dismissedWhileOffline) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() {
+            _dismissedWhileOffline = false;
+          });
+        }
+      });
+    }
+    _lastOffline = isOffline;
+
     if (!isOffline) return const SizedBox.shrink();
+    if (_dismissedWhileOffline) return const SizedBox.shrink();
 
     final ThemeData theme = Theme.of(context);
     final Color surface = theme.colorScheme.surface;
     final Color onSurface = theme.colorScheme.onSurface;
     final Color accent = theme.colorScheme.tertiary;
 
-    return IgnorePointer(
-      ignoring: true,
-      child: SafeArea(
-        bottom: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-          child: Align(
-            alignment: Alignment.topCenter,
+    return SafeArea(
+      bottom: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: Dismissible(
+            key: const ValueKey<String>('offline-status-banner'),
+            direction: DismissDirection.horizontal,
+            onDismissed: (_) {
+              setState(() {
+                _dismissedWhileOffline = true;
+              });
+            },
             child: DecoratedBox(
               decoration: BoxDecoration(
                 color: surface.withValues(alpha: 0.96),
@@ -427,7 +805,14 @@ enum _BootstrapPhase {
 }
 
 class _AppBootstrapper extends StatefulWidget {
-  const _AppBootstrapper();
+  const _AppBootstrapper({
+    super.key,
+    required this.preferences,
+    required this.navigationReadyNotifier,
+  });
+
+  final SharedPreferences preferences;
+  final ValueNotifier<bool> navigationReadyNotifier;
 
   @override
   State<_AppBootstrapper> createState() => _AppBootstrapperState();
@@ -436,9 +821,8 @@ class _AppBootstrapper extends StatefulWidget {
 class _AppBootstrapperState extends State<_AppBootstrapper>
     with WidgetsBindingObserver {
   _BootstrapPhase _phase = _BootstrapPhase.authLoading;
-  int _shellInitialIndex = 2;
+  int _shellIndex = 2;
   StartupRestoreDiscoveryResult? _restoreGateDiscovery;
-  DateTime? _pausedAt;
   bool _accountVerified = false;
   bool _checkingCloudBackup = false;
   bool _loadingEntries = false;
@@ -446,11 +830,16 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
   bool _loadingMarketData = false;
   bool _loadingPlans = false;
   String? _loadingMessage;
-  AuthController? _authController;
-  StreamSubscription<AuthGateState>? _authGateSubscription;
-  bool _gateBootstrapInProgress = false;
-  bool _sessionExpiryHandlingInProgress = false;
-  bool _initialBootstrapComplete = false;
+  BootstrapCoordinator? _bootstrapCoordinator;
+  AppLifecycleState _lastLifecycleState = AppLifecycleState.resumed;
+  bool _privacyOverlayArmed = false;
+  bool _privacyArmScheduled = false;
+  ScreenPrivacyClassification _baseVisibleScreenPrivacy =
+      ScreenPrivacyClassification.nonSensitive;
+  ScreenPrivacyClassification? _routePrivacyOverride;
+
+  ScreenPrivacyClassification get _visibleScreenPrivacy =>
+      _routePrivacyOverride ?? _baseVisibleScreenPrivacy;
 
   T? _maybeRead<T>() {
     try {
@@ -460,689 +849,248 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
     }
   }
 
+  void _setNavigationReady(bool ready) {
+    widget.navigationReadyNotifier.value = ready;
+  }
+
+  AppPrivacyOverlayController? _privacyOverlayController() {
+    try {
+      return context.read<AppPrivacyOverlayController>();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  bool _shouldShowPrivacyOverlay() {
+    final coordinator = _bootstrapCoordinator;
+    if (coordinator == null) {
+      return false;
+    }
+    if (!_privacyOverlayArmed) {
+      return false;
+    }
+    if (_visibleScreenPrivacy != ScreenPrivacyClassification.sensitive) {
+      return false;
+    }
+    if (coordinator.phase != BootstrapPhase.ready) {
+      return false;
+    }
+    if (coordinator.biometricPromptInProgress) {
+      return false;
+    }
+    return _lastLifecycleState != AppLifecycleState.resumed;
+  }
+
+  void _refreshPrivacyOverlay() {
+    final AppPrivacyOverlayController? controller = _privacyOverlayController();
+    if (controller == null) return;
+    final bool visible = _shouldShowPrivacyOverlay();
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _privacyOverlayController()?.setVisible(_shouldShowPrivacyOverlay());
+      });
+      return;
+    }
+    controller.setVisible(visible);
+  }
+
+  void _resetPrivacyOverlayArming() {
+    _privacyOverlayArmed = false;
+    _privacyArmScheduled = false;
+  }
+
+  void _setBaseVisibleScreenPrivacy(ScreenPrivacyClassification privacy) {
+    if (_baseVisibleScreenPrivacy == privacy) return;
+    _baseVisibleScreenPrivacy = privacy;
+    _refreshPrivacyOverlay();
+    _tryArmPrivacyOverlay();
+  }
+
+  void setRoutePrivacyOverride(ScreenPrivacyClassification? privacy) {
+    if (_routePrivacyOverride == privacy) return;
+    _routePrivacyOverride = privacy;
+    _refreshPrivacyOverlay();
+    _tryArmPrivacyOverlay();
+  }
+
+  void _tryArmPrivacyOverlay() {
+    final BootstrapCoordinator? coordinator = _bootstrapCoordinator;
+    if (_privacyOverlayArmed ||
+        _privacyArmScheduled ||
+        coordinator == null ||
+        coordinator.phase != BootstrapPhase.ready ||
+        coordinator.biometricPromptInProgress ||
+        _lastLifecycleState != AppLifecycleState.resumed ||
+        _visibleScreenPrivacy != ScreenPrivacyClassification.sensitive) {
+      return;
+    }
+    _privacyArmScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _privacyArmScheduled = false;
+      if (!mounted) return;
+      final BootstrapCoordinator? currentCoordinator = _bootstrapCoordinator;
+      if (currentCoordinator?.phase == BootstrapPhase.ready &&
+          !(currentCoordinator?.biometricPromptInProgress ?? true) &&
+          _lastLifecycleState == AppLifecycleState.resumed &&
+          _visibleScreenPrivacy == ScreenPrivacyClassification.sensitive) {
+        _privacyOverlayArmed = true;
+        _refreshPrivacyOverlay();
+      }
+    });
+  }
+
+  BootstrapCoordinator? _listenedCoordinator;
+
+  void _attachBootstrapCoordinator(BootstrapCoordinator? coordinator) {
+    if (identical(_listenedCoordinator, coordinator)) {
+      return;
+    }
+    _listenedCoordinator?.removeListener(_handleCoordinatorChanged);
+    _listenedCoordinator = coordinator;
+    _listenedCoordinator?.addListener(_handleCoordinatorChanged);
+    _bootstrapCoordinator = coordinator;
+    _syncFromBootstrapCoordinator();
+    _refreshPrivacyOverlay();
+  }
+
+  void _handleCoordinatorChanged() {
+    _syncFromBootstrapCoordinator();
+    _refreshPrivacyOverlay();
+  }
+
+  void _syncFromBootstrapCoordinator() {
+    if (!mounted) return;
+    final BootstrapCoordinator? coordinator = _bootstrapCoordinator;
+    if (coordinator == null) return;
+    if (coordinator.phase != BootstrapPhase.ready) {
+      _resetPrivacyOverlayArming();
+      _refreshPrivacyOverlay();
+    }
+    setState(() {
+      _phase = switch (coordinator.phase) {
+        BootstrapPhase.authLoading => _BootstrapPhase.authLoading,
+        BootstrapPhase.signedOut => _BootstrapPhase.signedOut,
+        BootstrapPhase.emailVerification => _BootstrapPhase.emailVerification,
+        BootstrapPhase.loading => _BootstrapPhase.loading,
+        BootstrapPhase.restoreGate => _BootstrapPhase.restoreGate,
+        BootstrapPhase.locked => _BootstrapPhase.locked,
+        BootstrapPhase.ready => _BootstrapPhase.ready,
+        BootstrapPhase.failed => _BootstrapPhase.signedOut,
+        BootstrapPhase.idle => _BootstrapPhase.authLoading,
+      };
+      _restoreGateDiscovery = coordinator.restoreGateDiscovery;
+      _loadingMessage = coordinator.loadingMessage;
+      _accountVerified =
+          coordinator.phase != BootstrapPhase.signedOut &&
+          coordinator.phase != BootstrapPhase.emailVerification &&
+          coordinator.phase != BootstrapPhase.idle;
+      _checkingCloudBackup =
+          coordinator.phase == BootstrapPhase.loading ||
+          coordinator.phase == BootstrapPhase.restoreGate;
+      _loadingEntries =
+          coordinator.phase == BootstrapPhase.authLoading ||
+          coordinator.phase == BootstrapPhase.loading;
+      _loadingAssets = coordinator.phase == BootstrapPhase.loading;
+      _loadingMarketData = coordinator.phase == BootstrapPhase.loading;
+      _loadingPlans = coordinator.phase == BootstrapPhase.loading;
+    });
+    _setNavigationReady(coordinator.phase == BootstrapPhase.ready);
+    if (coordinator.phase == BootstrapPhase.ready) {
+      _tryArmPrivacyOverlay();
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _baseVisibleScreenPrivacy = _privacyForTab(_shellIndex);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      unawaited(_bootstrap());
+      final BootstrapCoordinator? coordinator =
+          _maybeRead<BootstrapCoordinator>();
+      if (coordinator != null) {
+        unawaited(coordinator.start());
+      }
     });
+  }
+
+  AppPrivacyOverlayController? _listenedPrivacyController;
+
+  void _attachPrivacyController(AppPrivacyOverlayController? controller) {
+    if (identical(_listenedPrivacyController, controller)) {
+      return;
+    }
+    _listenedPrivacyController?.removeListener(_refreshPrivacyOverlay);
+    _listenedPrivacyController = controller;
+    _listenedPrivacyController?.addListener(_refreshPrivacyOverlay);
+    _refreshPrivacyOverlay();
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final AuthController nextAuth = context.read<AuthController>();
-    if (!identical(nextAuth, _authController)) {
-      _authGateSubscription?.cancel();
-      _authController = nextAuth;
-      _authGateSubscription = nextAuth.authGateStateChanges.listen((
-        AuthGateState state,
-      ) {
-        unawaited(_handleAuthGateState(state));
-      });
-    }
+    final BootstrapCoordinator? nextBootstrapCoordinator =
+        _maybeRead<BootstrapCoordinator>();
+    _attachBootstrapCoordinator(nextBootstrapCoordinator);
+    final AppPrivacyOverlayController? nextPrivacyController =
+        _maybeRead<AppPrivacyOverlayController>();
+    _attachPrivacyController(nextPrivacyController);
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _authGateSubscription?.cancel();
+    _listenedCoordinator?.removeListener(_handleCoordinatorChanged);
+    _listenedPrivacyController?.removeListener(_refreshPrivacyOverlay);
     super.dispose();
   }
 
-  Future<void> _bootstrap() async {
-    final AuthController authController = context.read<AuthController>();
-    context.read<AppPrivacyOverlayController>().hide();
-
-    try {
-      setState(() {
-        _phase = _BootstrapPhase.authLoading;
-        _loadingMessage = null;
-      });
-
-      await authController.load();
-      if (!mounted) return;
-
-      final UserProfile? user = authController.currentUser;
-      if (user == null) {
-        await _routeToSignedOut();
-        return;
-      }
-      if (_requiresEmailVerification(user)) {
-        await _routeToEmailVerification(user);
-        return;
-      }
-      await _bootstrapAuthenticatedUser(user);
-    } catch (error, stackTrace) {
-      debugPrint('App bootstrap failed: $error');
-      debugPrintStack(stackTrace: stackTrace);
-      await _routeToSignedOut();
+  Future<void> _restoreBackup() async {
+    final BootstrapCoordinator? coordinator = _bootstrapCoordinator;
+    if (coordinator != null) {
+      await coordinator.restoreBackup();
     }
   }
 
-  Future<void> _bootstrapAuthenticatedUser(UserProfile user) async {
-    _initialBootstrapComplete = false;
-    final AppStateController appStateController = context
-        .read<AppStateController>();
-    final CloudBackupController? cloudBackupController =
-        _maybeRead<CloudBackupController>();
-
-    setState(() {
-      _phase = _BootstrapPhase.loading;
-      _accountVerified = true;
-      _checkingCloudBackup = false;
-      _loadingEntries = true;
-      _loadingAssets = false;
-      _loadingMarketData = false;
-      _loadingPlans = false;
-      _loadingMessage = null;
-    });
-
-    await appStateController.loadAuthenticated(user.id);
-    if (!mounted) return;
-
-    await appStateController.attachCurrentUser(
-      userId: user.id,
-      email: user.email,
-      displayName: user.displayName,
-      photoUrl: user.photoUrl,
-      provider: user.provider,
-    );
-    if (!mounted) return;
-
-    final bool localHasData = BackupService.hasData(
-      appStateController.state.toJson(),
-    );
-    final StartupRestoreDiscoveryResult discovery = localHasData ||
-            cloudBackupController == null
-        ? const StartupRestoreDiscoveryResult(
-            status: StartupRestoreDiscoveryStatus.none,
-            message: 'Local data exists',
-          )
-        : await cloudBackupController.discoverStartupRestore(
-            localHasData: false,
-          );
-    _restoreGateDiscovery = discovery;
-
-    if (!localHasData &&
-        discovery.status == StartupRestoreDiscoveryStatus.restorePrompt) {
-      await _autoRestoreStartupBackup(discovery);
-      return;
-    }
-
-    if (discovery.shouldShowGate) {
-      setState(() {
-        _loadingEntries = false;
-        _loadingMarketData = false;
-        _loadingAssets = false;
-        _loadingPlans = false;
-        _checkingCloudBackup = false;
-        _loadingMessage = discovery.message;
-        _phase = _BootstrapPhase.restoreGate;
-      });
-      _initialBootstrapComplete = true;
-      return;
-    }
-
-    if (cloudBackupController != null) {
-      unawaited(() async {
-        try {
-          await cloudBackupController.refreshCloudState(
-            evaluatePrompt: false,
-          );
-        } catch (error, stackTrace) {
-          debugPrint('Cloud backup bootstrap refresh failed: $error');
-          debugPrintStack(stackTrace: stackTrace);
-        }
-      }());
-    }
-
-    if (!appStateController.enableBackgroundSync &&
-        !appStateController.enableMarketAutoRefresh) {
-      setState(() {
-        _loadingEntries = false;
-        _loadingMarketData = false;
-        _loadingAssets = false;
-        _loadingPlans = false;
-        _checkingCloudBackup = false;
-        _phase = _BootstrapPhase.ready;
-      });
-      _initialBootstrapComplete = true;
-      return;
-    }
-
-    setState(() {
-      _loadingEntries = false;
-      _loadingMarketData = false;
-      _loadingAssets = false;
-      _loadingPlans = false;
-      _checkingCloudBackup = false;
-      _phase = appStateController.state.biometricLockEnabled
-          ? _BootstrapPhase.locked
-          : _BootstrapPhase.ready;
-    });
-    _initialBootstrapComplete = true;
-
-    unawaited(
-      _finishBootstrapBackgroundTasks(
-        user: user,
-        appStateController: appStateController,
-      ),
-    );
-  }
-
-  Future<void> _autoRestoreStartupBackup(
-    StartupRestoreDiscoveryResult discovery,
-  ) async {
-    final CloudBackupController? cloudBackupController =
-        _maybeRead<CloudBackupController>();
-    if (cloudBackupController == null) {
-      await _enterShellAfterRestore();
-      return;
-    }
-    setState(() {
-      _phase = _BootstrapPhase.loading;
-      _loadingEntries = false;
-      _loadingAssets = false;
-      _loadingMarketData = false;
-      _loadingPlans = false;
-      _checkingCloudBackup = false;
-      _loadingMessage = 'Restoring latest cloud backup...';
-      _restoreGateDiscovery = discovery;
-    });
-
-    final bool ok = await cloudBackupController.restoreLatestBackup();
-    if (!mounted) return;
-    if (!ok) {
-      final String error = cloudBackupController.statusMessage.isNotEmpty
-          ? cloudBackupController.statusMessage
-          : 'Restore failed';
-      setState(() {
-        _loadingMessage = error;
-        _phase = _BootstrapPhase.restoreGate;
-        _restoreGateDiscovery = discovery.copyWith(error: error);
-      });
-      _initialBootstrapComplete = true;
-      return;
-    }
-
-    await _enterShellAfterRestore();
-  }
-
-  Future<void> _finishBootstrapBackgroundTasks({
-    required UserProfile user,
-    required AppStateController appStateController,
-  }) async {
-    final CloudBackupController? cloudBackupController =
-        _maybeRead<CloudBackupController>();
-    cloudBackupController?.completeStartupRestoreDiscovery();
-
-    if (appStateController.enableBackgroundSync) {
-      try {
-        if (cloudBackupController != null) {
-          unawaited(cloudBackupController.refreshCloudState());
-        }
-      } catch (error, stackTrace) {
-        debugPrint('Cloud backup bootstrap refresh failed: $error');
-        debugPrintStack(stackTrace: stackTrace);
-      }
-    }
-
-    if (appStateController.enableMarketAutoRefresh) {
-      try {
-        unawaited(appStateController.startMarketAutoRefresh());
-      } catch (error, stackTrace) {
-        debugPrint('Market refresh bootstrap failed: $error');
-        debugPrintStack(stackTrace: stackTrace);
-      }
-    }
-
-    if (!mounted) return;
-    AppleShortcutsService.initialize(appStateController);
-    await Future<void>.delayed(const Duration(milliseconds: 80));
-    if (!mounted) return;
-  }
-
-  Future<void> _handleAuthGateState(AuthGateState state) async {
-    if (!mounted) return;
-    if (!_initialBootstrapComplete) {
-      return;
-    }
-    switch (state.status) {
-      case AuthGateStatus.checking:
-        if (_phase == _BootstrapPhase.signedOut) {
-          setState(() {
-            _phase = _BootstrapPhase.authLoading;
-            _loadingMessage = null;
-          });
-        }
-        return;
-      case AuthGateStatus.signedOut:
-        await context.read<AppStateController>().resetForSignedOutUser();
-        if (!mounted) return;
-        if (_phase == _BootstrapPhase.signedOut) return;
-        setState(() {
-          _phase = _BootstrapPhase.signedOut;
-          _pausedAt = null;
-          _accountVerified = false;
-          _checkingCloudBackup = false;
-          _loadingEntries = false;
-          _loadingAssets = false;
-          _loadingMarketData = false;
-          _loadingPlans = false;
-          _loadingMessage = state.message;
-          _restoreGateDiscovery = null;
-        });
-        context.read<AppPrivacyOverlayController>().hide();
-        return;
-      case AuthGateStatus.error:
-        if (_authController?.currentUser != null) {
-          setState(() {
-            _loadingMessage = state.message;
-          });
-          return;
-        }
-        await context.read<AppStateController>().resetForSignedOutUser();
-        if (!mounted) return;
-        if (_phase == _BootstrapPhase.signedOut) return;
-        setState(() {
-          _phase = _BootstrapPhase.signedOut;
-          _pausedAt = null;
-          _accountVerified = false;
-          _checkingCloudBackup = false;
-          _loadingEntries = false;
-          _loadingAssets = false;
-          _loadingMarketData = false;
-          _loadingPlans = false;
-          _loadingMessage = state.message;
-          _restoreGateDiscovery = null;
-        });
-        context.read<AppPrivacyOverlayController>().hide();
-        return;
-      case AuthGateStatus.tokenExpired:
-        if (_sessionExpiryHandlingInProgress) return;
-        _sessionExpiryHandlingInProgress = true;
-        try {
-          await _showSessionExpiredIntervention();
-          if (!mounted) return;
-          await _authController?.signOut();
-          if (!mounted) return;
-          await _routeToSignedOut();
-        } finally {
-          _sessionExpiryHandlingInProgress = false;
-        }
-        return;
-      case AuthGateStatus.signedIn:
-        final UserProfile? user = state.user ?? _authController?.currentUser;
-        if (user == null) return;
-        if (_requiresEmailVerification(user)) {
-          await _routeToEmailVerification(user);
-          return;
-        }
-        if (_gateBootstrapInProgress) return;
-        if (!(_phase == _BootstrapPhase.signedOut ||
-            _phase == _BootstrapPhase.authLoading)) {
-          return;
-        }
-        _gateBootstrapInProgress = true;
-        try {
-          await _bootstrapAuthenticatedUser(user);
-        } finally {
-          _gateBootstrapInProgress = false;
-        }
-        return;
+  Future<void> _startFresh() async {
+    final BootstrapCoordinator? coordinator = _bootstrapCoordinator;
+    if (coordinator != null) {
+      await coordinator.startFresh();
     }
   }
 
-  Future<void> _routeToSignedOut() async {
-    if (!mounted) return;
-    _maybeRead<CloudBackupController>()?.completeStartupRestoreDiscovery();
-    await context.read<AppStateController>().resetForSignedOutUser();
-    if (!mounted) return;
-    setState(() {
-      _phase = _BootstrapPhase.signedOut;
-      _pausedAt = null;
-      _accountVerified = false;
-      _checkingCloudBackup = false;
-      _loadingEntries = false;
-      _loadingAssets = false;
-      _loadingPlans = false;
-      _restoreGateDiscovery = null;
-    });
-    _initialBootstrapComplete = true;
-    context.read<AppPrivacyOverlayController>().hide();
-  }
-
-  bool _requiresEmailVerification(UserProfile user) {
-    return user.provider == 'email' && !user.emailVerified;
-  }
-
-  Future<void> _routeToEmailVerification(UserProfile user) async {
-    if (!mounted) return;
-    _maybeRead<CloudBackupController>()?.completeStartupRestoreDiscovery();
-    await context.read<AppStateController>().resetForSignedOutUser();
-    if (!mounted) return;
-    setState(() {
-      _phase = _BootstrapPhase.emailVerification;
-      _pausedAt = null;
-      _accountVerified = false;
-      _checkingCloudBackup = false;
-      _loadingEntries = false;
-      _loadingAssets = false;
-      _loadingMarketData = false;
-      _loadingPlans = false;
-      _loadingMessage = null;
-      _restoreGateDiscovery = null;
-    });
-    _initialBootstrapComplete = true;
-    context.read<AppPrivacyOverlayController>().hide();
-  }
-
-  Future<void> _showSessionExpiredIntervention() async {
-    if (!mounted) return;
-    const Color deepEmerald = AppColors.brandForest;
-    const Color surface = AppColors.sharedContainer;
-
-    await showModalBottomSheet<void>(
-      context: context,
-      isDismissible: false,
-      enableDrag: false,
-        backgroundColor: AppColors.transparent,
-      builder: (BuildContext bottomSheetContext) {
-        final ThemeData theme = Theme.of(bottomSheetContext);
-        return SafeArea(
-          top: false,
-          child: Container(
-            margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
-            decoration: BoxDecoration(
-              color: surface,
-              borderRadius: BorderRadius.circular(24),
-                boxShadow: const <BoxShadow>[
-                  BoxShadow(
-                    color: AppColors.black12,
-                    blurRadius: 20,
-                    offset: Offset(0, 8),
-                  ),
-                ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Container(
-                  height: 4,
-                  width: 42,
-                  decoration: BoxDecoration(
-                    color: AppColors.brandForest.withValues(alpha: 0.20),
-                    borderRadius: BorderRadius.circular(99),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  'Session verification required',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    color: deepEmerald,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Your secure session has expired. Please verify your identity to continue.',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: deepEmerald.withValues(alpha: 0.86),
-                    height: 1.35,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: deepEmerald,
-                      foregroundColor: surface,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    onPressed: () => Navigator.of(bottomSheetContext).pop(),
-                    child: const Text('Continue'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
+  Future<void> _openBackupSync() async {
+    final BootstrapCoordinator? coordinator = _bootstrapCoordinator;
+    if (coordinator != null) {
+      await coordinator.openBackupSync();
+    }
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-    final AuthController? authController = _authController;
-    final AppStateController appStateController = context
-        .read<AppStateController>();
-    final bool shouldProtect =
-        authController?.currentUser != null &&
-        (appStateController.state.biometricLockEnabled ||
-            appStateController.state.biometricHideWealthEnabled);
-
-    if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.inactive) {
-      if (_pausedAt == null &&
-          shouldProtect &&
-          _phase != _BootstrapPhase.locked) {
-        _pausedAt = DateTime.now();
-        if (mounted) {
-          context.read<AppPrivacyOverlayController>().show();
-        }
-      }
-      return;
-    }
-
+    _lastLifecycleState = state;
     if (state == AppLifecycleState.resumed) {
-      final DateTime? pausedAt = _pausedAt;
-      _pausedAt = null;
-      if (!mounted) return;
-      context.read<AppPrivacyOverlayController>().hide();
-
-      if (authController?.currentUser != null &&
-          (_phase == _BootstrapPhase.ready ||
-              _phase == _BootstrapPhase.locked)) {
-        unawaited(appStateController.startMarketAutoRefresh());
-        unawaited(
-          appStateController.processDueRecurringTransactions(reason: 'resume'),
-        );
-      }
-
-      if (pausedAt != null &&
-          authController?.currentUser != null &&
-          appStateController.state.biometricLockEnabled &&
-          _phase == _BootstrapPhase.ready) {
-        final int secondsPaused = DateTime.now().difference(pausedAt).inSeconds;
-        final int delaySeconds =
-            switch (appStateController.state.biometricAutoLockDelay) {
-              'immediate' => 0,
-              '30_seconds' => 30,
-              '5_minutes' => 300,
-              _ => 60,
-            };
-        if (secondsPaused >= delaySeconds) {
-          setState(() {
-            _phase = _BootstrapPhase.locked;
-          });
-        }
-      }
+      _privacyOverlayController()?.setVisible(false);
     }
-  }
-
-  void _handleUnlock() {
-    if (!mounted) return;
-    context.read<AppPrivacyOverlayController>().hide();
-    setState(() {
-      _phase = _BootstrapPhase.loading;
-      _loadingEntries = false;
-      _loadingAssets = false;
-      _loadingMarketData = false;
-      _loadingPlans = false;
-      _loadingMessage = 'Unlocking secure session...';
-    });
-    unawaited(_finishUnlockTransition());
-  }
-
-  Future<void> _finishUnlockTransition() async {
-    await Future<void>.delayed(const Duration(milliseconds: 120));
-    if (!mounted) return;
-    final AppStateController appStateController = context
-        .read<AppStateController>();
-    if (appStateController.enableMarketAutoRefresh) {
-      setState(() {
-        _loadingMarketData = true;
-      });
-      try {
-        await appStateController.startMarketAutoRefresh();
-      } finally {
-        if (mounted) {
-          setState(() {
-            _loadingMarketData = false;
-          });
-        }
-      }
+    final BootstrapCoordinator? coordinator = _bootstrapCoordinator;
+    if (coordinator != null) {
+      unawaited(coordinator.handleLifecycleState(state));
     }
-    if (!mounted) return;
-    setState(() {
-      _loadingMessage = null;
-      _phase = _BootstrapPhase.ready;
-    });
-  }
-
-  Future<void> _enterShellAfterRestore() async {
-    if (!mounted) return;
-    final AppStateController appStateController = context
-        .read<AppStateController>();
-    final CloudBackupController? cloudBackupController =
-        _maybeRead<CloudBackupController>();
-    final UserProfile? user = context.read<AuthController>().currentUser;
-    if (user == null) {
-      setState(() => _phase = _BootstrapPhase.signedOut);
-      return;
-    }
-    cloudBackupController?.completeStartupRestoreDiscovery();
-    if (cloudBackupController != null) {
-      await cloudBackupController.refreshCloudState(evaluatePrompt: false);
-    }
-    if (!mounted) return;
-    if (appStateController.state.biometricLockEnabled) {
-      setState(() {
-        _phase = _BootstrapPhase.locked;
-        _loadingMessage = null;
-        _restoreGateDiscovery = null;
-      });
+    if (state == AppLifecycleState.resumed) {
+      _tryArmPrivacyOverlay();
     } else {
-      setState(() {
-        _loadingMarketData = true;
-      });
-      await appStateController.startMarketAutoRefresh();
-      if (!mounted) return;
-      setState(() {
-        _loadingMarketData = false;
-        _phase = _BootstrapPhase.ready;
-        _shellInitialIndex = 2;
-        _restoreGateDiscovery = null;
-      });
-    }
-    _initialBootstrapComplete = true;
-  }
-
-  Future<void> _restoreBackup() async {
-    final CloudBackupController? cloudBackupController =
-        _maybeRead<CloudBackupController>();
-    if (cloudBackupController == null) {
-      await _enterShellAfterRestore();
-      return;
-    }
-    setState(() {
-      _phase = _BootstrapPhase.loading;
-      _loadingEntries = false;
-      _loadingAssets = false;
-      _loadingMarketData = false;
-      _loadingPlans = false;
-      _checkingCloudBackup = false;
-      _loadingMessage = 'Restoring cloud backup...';
-    });
-    final bool ok = await cloudBackupController.restoreLatestBackup();
-    if (!mounted) return;
-    if (!ok) {
-      setState(() {
-        _loadingMessage = cloudBackupController.statusMessage;
-        _phase = _BootstrapPhase.restoreGate;
-      });
-      return;
-    }
-    await _enterShellAfterRestore();
-  }
-
-  Future<void> _startFresh() async {
-    final AppStateController appStateController = context
-        .read<AppStateController>();
-    final AuthController authController = context.read<AuthController>();
-    final CloudBackupController? cloudBackupController =
-        _maybeRead<CloudBackupController>();
-    final UserProfile? user = authController.currentUser;
-    if (user == null) {
-      setState(() => _phase = _BootstrapPhase.signedOut);
-      return;
-    }
-    final bool shouldLock = appStateController.state.biometricLockEnabled;
-    cloudBackupController?.completeStartupRestoreDiscovery();
-    await appStateController.markRestorePromptDismissedForCurrentUser(
-      userId: user.id,
-    );
-    if (!mounted) return;
-    if (!shouldLock) {
-      setState(() {
-        _loadingMarketData = true;
-      });
-      await appStateController.startMarketAutoRefresh();
-      if (!mounted) return;
-    }
-    setState(() {
-      _loadingMarketData = false;
-      _phase = shouldLock ? _BootstrapPhase.locked : _BootstrapPhase.ready;
-      _shellInitialIndex = 2;
-      _restoreGateDiscovery = null;
-    });
-    if (cloudBackupController != null) {
-      unawaited(cloudBackupController.refreshCloudState(evaluatePrompt: false));
+      _refreshPrivacyOverlay();
     }
   }
 
-  Future<void> _openBackupSync() async {
-    final AppStateController appStateController = context
-        .read<AppStateController>();
-    final AuthController authController = context.read<AuthController>();
-    final CloudBackupController? cloudBackupController =
-        _maybeRead<CloudBackupController>();
-    final UserProfile? user = authController.currentUser;
-    if (user == null) {
-      setState(() => _phase = _BootstrapPhase.signedOut);
-      return;
-    }
-    cloudBackupController?.completeStartupRestoreDiscovery();
-    setState(() {
-      _loadingMarketData = false;
-      _shellInitialIndex = 4;
-      _phase = appStateController.state.biometricLockEnabled
-          ? _BootstrapPhase.locked
-          : _BootstrapPhase.ready;
-      _restoreGateDiscovery = null;
-    });
-    if (cloudBackupController != null) {
-      unawaited(cloudBackupController.refreshCloudState(evaluatePrompt: false));
-    }
-    if (!appStateController.state.biometricLockEnabled) {
-      await appStateController.startMarketAutoRefresh();
+  Future<void> _handleUnlock() async {
+    final BootstrapCoordinator? coordinator = _bootstrapCoordinator;
+    if (coordinator != null) {
+      await coordinator.handleUnlock();
     }
   }
 
@@ -1164,11 +1112,11 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
       _BootstrapPhase.emailVerification => EmailVerificationScreen(
         email: context.watch<AuthController>().currentUser?.email ?? '',
         onVerified: () async {
-          final UserProfile? user = context.read<AuthController>().currentUser;
-          if (user == null || _requiresEmailVerification(user)) {
-            return;
+          final BootstrapCoordinator? coordinator =
+              _maybeRead<BootstrapCoordinator>();
+          if (coordinator != null) {
+            await coordinator.start(retry: true);
           }
-          await _bootstrapAuthenticatedUser(user);
         },
       ),
       _BootstrapPhase.loading => AuthLoadingScreen(
@@ -1180,43 +1128,77 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
         isLoadingPlans: _loadingPlans,
         statusMessage: _loadingMessage,
       ),
-      _BootstrapPhase.restoreGate => _maybeRead<CloudBackupController>() ==
-              null
-          ? const SizedBox.shrink()
-          : RestoreGateScreen(
-              cloudBackupController:
-                  _maybeRead<CloudBackupController>()!,
-              discovery:
-                  _restoreGateDiscovery ??
-                  const StartupRestoreDiscoveryResult(
-                    status: StartupRestoreDiscoveryStatus.none,
-                    message: 'No cloud backup found',
-                  ),
-              onRestore: _restoreBackup,
-              onStartFresh: _startFresh,
-              onOpenBackupSync: _openBackupSync,
-            ),
-      _BootstrapPhase.locked => SecurityLockScreen(onUnlock: _handleUnlock),
-      _BootstrapPhase.ready => AppShell(initialIndex: _shellInitialIndex),
+      _BootstrapPhase.restoreGate =>
+        _maybeRead<CloudBackupController>() == null
+            ? const SizedBox.shrink()
+            : RestoreGateScreen(
+                cloudBackupController: _maybeRead<CloudBackupController>()!,
+                discovery:
+                    _restoreGateDiscovery ??
+                    StartupRestoreDiscoveryResult(
+                      status: StartupRestoreDiscoveryStatus.none,
+                      message: context.l10n.tr('no_cloud_backup_found'),
+                    ),
+                onRestore: _restoreBackup,
+                onStartFresh: _startFresh,
+                onOpenBackupSync: _openBackupSync,
+              ),
+      _BootstrapPhase.locked => SecurityLockScreen(
+        onUnlock: _handleUnlock,
+        autoPrompt: _bootstrapCoordinator?.lockScreenAutoPrompt ?? false,
+      ),
+
+      _BootstrapPhase.ready => OnboardingGate(
+        preferences: widget.preferences,
+        skipInTests: ZakatApp.isTesting,
+        child: AppShell(
+          initialIndex: _shellIndex,
+          onIndexChanged: (int index) {
+            _shellIndex = index;
+            _setBaseVisibleScreenPrivacy(_privacyForTab(index));
+          },
+        ),
+      ),
     };
 
     return body;
+  }
+
+  ScreenPrivacyClassification _privacyForTab(int index) {
+    if (index >= 0 && index <= 3) {
+      return ScreenPrivacyClassification.sensitive;
+    }
+    return ScreenPrivacyClassification.nonSensitive;
   }
 }
 
 class AppPrivacyOverlayController extends ChangeNotifier {
   bool _visible = false;
+  int _sensitiveCount = 0;
 
   bool get visible => _visible;
+  bool get sensitiveContentVisible => _sensitiveCount > 0;
 
-  void show() {
-    if (_visible) return;
-    _visible = true;
+  void setVisible(bool visible) {
+    if (_visible == visible) return;
+    _visible = visible;
     notifyListeners();
   }
 
-  void hide() {
-    if (!_visible) return;
+  void incrementSensitiveCount() {
+    _sensitiveCount++;
+    notifyListeners();
+  }
+
+  void decrementSensitiveCount() {
+    if (_sensitiveCount > 0) {
+      _sensitiveCount--;
+    }
+    notifyListeners();
+  }
+
+  void forceOff() {
+    _sensitiveCount = 0;
     _visible = false;
     notifyListeners();
   }

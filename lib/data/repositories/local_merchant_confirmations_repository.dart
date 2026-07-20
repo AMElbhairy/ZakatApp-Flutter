@@ -40,6 +40,10 @@ class LocalMerchantConfirmationsRepository
     return _merchantConfirmationsDao.getActiveMerchantConfirmations();
   }
 
+  Future<int> countActiveMerchantConfirmations() {
+    return _merchantConfirmationsDao.countActiveMerchantConfirmations();
+  }
+
   @override
   Stream<List<MerchantConfirmation>> watchActiveMerchantConfirmations() {
     return _merchantConfirmationsDao.watchActiveMerchantConfirmations();

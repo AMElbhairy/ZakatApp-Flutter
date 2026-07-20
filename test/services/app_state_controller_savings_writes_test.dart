@@ -50,6 +50,11 @@ class _ThrowingSavingsRepository implements SavingsLocalStore {
   Stream<List<model.Saving>> watchActiveSavings() async* {
     yield seed;
   }
+
+  @override
+  Future<int> countActiveSavings() async {
+    return seed.length;
+  }
 }
 
 Future<AppStateController> _makeController({

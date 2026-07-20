@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../widgets/sensitive_content_scope.dart';
 import 'package:uuid/uuid.dart';
 import 'dart:convert';
 import 'dart:io';
@@ -11,6 +12,7 @@ import 'package:image_picker/image_picker.dart' as image_picker;
 import '../../core/i18n/app_localizations.dart';
 import '../../core/widgets/compact_dropdown.dart';
 import '../../core/utils/currency_presentation.dart';
+import '../../core/utils/amount_parser.dart';
 import '../../core/services/zakat_engine.dart';
 import '../../core/widgets/app_ui.dart';
 import '../../models/transaction.dart';
@@ -127,11 +129,15 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
         ? controller.state.categories.income
         : controller.state.categories.expense;
 
-    if (_category != null && !categories.contains(_category)) {
+    if (categories.isNotEmpty &&
+        (_category == null || !categories.contains(_category))) {
+      _category = categories.first;
+    } else if (categories.isEmpty) {
       _category = null;
     }
 
-    return Scaffold(
+    return SensitiveContentScope(
+      child: Scaffold(
       appBar: AppBar(
         title: Text(
           widget.isEditMode
@@ -206,8 +212,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                     border: OutlineInputBorder(),
                   ),
                   validator: (String? value) {
-                    final double amount =
-                        double.tryParse((value ?? '').trim()) ?? 0;
+                    final double amount = tryParseAmount(value) ?? 0;
                     if (amount <= 0) return context.l10n.tr('amount_gt_zero');
                     return null;
                   },
@@ -287,9 +292,8 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                               return;
                             }
                             setState(() => _saving = true);
-                            final double amount = double.parse(
-                              _amountController.text.trim(),
-                            );
+                            final double amount =
+                                tryParseAmount(_amountController.text) ?? 0;
 
                             if (!widget.isEditMode && _type == 'expense') {
                               final double availableBalance = context
@@ -361,7 +365,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
           ),
         ),
       ),
-    );
+    ));
   }
 
   static DateTime? _tryParseDate(String? value) {
@@ -698,10 +702,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
 
   static double _asPositiveDouble(dynamic value) {
     if (value is num) return value.toDouble();
-    return double.tryParse(
-          value?.toString().replaceAll(',', '').trim() ?? '',
-        ) ??
-        0;
+    return tryParseAmount(value?.toString()) ?? 0;
   }
 
   static String _normalizedAmountText(dynamic value) {

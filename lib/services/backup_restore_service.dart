@@ -42,6 +42,7 @@ class BackupRestoreService {
     if (effectiveUserId.isNotEmpty) {
       normalized['userId'] = effectiveUserId;
     }
+    normalized['languagePreference'] = 'en';
     final AppStateModel next = AppStateModel.fromJson(normalized);
     await controller.updateState(next);
 
@@ -146,9 +147,7 @@ class BackupRestoreService {
     merged['zakatNisabBasis'] =
         (incoming['zakatNisabBasis'] ?? current['zakatNisabBasis'] ?? 'gold85')
             .toString();
-    merged['languagePreference'] =
-        (incoming['languagePreference'] ?? current['languagePreference'])
-            .toString();
+    merged['languagePreference'] = 'en';
     merged['themeMode'] =
         (incoming['themeMode'] ?? current['themeMode'] ?? 'system').toString();
     final Map<String, dynamic>? incomingMarketData =

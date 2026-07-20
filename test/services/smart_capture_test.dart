@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -7,15 +8,17 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zakatapp_flutter/core/services/zakat_engine.dart';
+import 'package:zakatapp_flutter/core/i18n/app_localizations.dart';
 import 'package:zakatapp_flutter/core/theme/app_colors.dart';
 import 'package:zakatapp_flutter/core/theme/app_theme.dart';
 import 'package:zakatapp_flutter/models/app_state.dart';
 import 'package:zakatapp_flutter/models/merchant_rule.dart';
 import 'package:zakatapp_flutter/models/pending_transaction.dart';
+import 'package:zakatapp_flutter/models/recurring_transaction.dart';
+import 'package:zakatapp_flutter/models/saving.dart';
 import 'package:zakatapp_flutter/models/transaction.dart';
 import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
 import 'package:zakatapp_flutter/screens/account/notifications_screen.dart';
-import 'package:zakatapp_flutter/screens/account/review_pending_transaction_screen.dart';
 import 'package:zakatapp_flutter/services/apple_shortcuts_service.dart';
 import 'package:zakatapp_flutter/services/app_state_controller.dart';
 import 'package:zakatapp_flutter/services/local_storage_service.dart';
@@ -26,6 +29,7 @@ import 'package:zakatapp_flutter/services/smart_capture_parser.dart';
 class FakeSmartCaptureAlertService extends SmartCaptureAlertService {
   int initializeCalls = 0;
   int? lastBadgeCount;
+  NotificationResponse? lastNotificationResponse;
   final List<PendingTransaction> notifications = <PendingTransaction>[];
 
   @override
@@ -37,19 +41,32 @@ class FakeSmartCaptureAlertService extends SmartCaptureAlertService {
   }
 
   @override
+  Future<bool> areAndroidNotificationsEnabled() async => false;
+
+  @override
+  Future<bool> requestAndroidNotificationsPermission() async => false;
+
+  @override
   Future<void> flushPendingNotificationLaunch() async {}
 
   @override
-  Future<void> handleNotificationResponse(
-    NotificationResponse response,
-  ) async {}
+  Future<void> handleNotificationResponse(NotificationResponse response) async {
+    lastNotificationResponse = response;
+  }
+
+  @override
+  Future<void> notifyCaptureState({
+    required PendingTransaction pendingTransaction,
+  }) async {
+    notifications.add(pendingTransaction);
+  }
 
   @override
   Future<void> notifyPendingReview({
     required PendingTransaction pendingTransaction,
     required int pendingReviewCount,
   }) async {
-    notifications.add(pendingTransaction);
+    await notifyCaptureState(pendingTransaction: pendingTransaction);
     lastBadgeCount = pendingReviewCount;
   }
 
@@ -69,6 +86,7 @@ class _FakeNavigatorState extends NavigatorState {
   }
 }
 
+// ignore: must_be_immutable
 class _TestNavigatorKey extends GlobalKey<NavigatorState> {
   _TestNavigatorKey() : super.constructor();
 
@@ -83,6 +101,16 @@ class _TestNavigatorKey extends GlobalKey<NavigatorState> {
 }
 
 void main() {
+  group('Smart Capture notification localization', () {
+    test('Arabic notification labels are localized', () {
+      final AppLocalizations ar = const AppLocalizations(Locale('ar'));
+
+      expect(ar.smartCapturePendingForApproval, 'بانتظار الموافقة');
+      expect(ar.smartCaptureAutoApproved, 'موافق عليه تلقائيًا');
+      expect(ar.smartCaptureRejected, 'مرفوض');
+    });
+  });
+
   group('PendingTransaction Model', () {
     test('serialization and deserialization roundtrip', () {
       const original = PendingTransaction(
@@ -134,6 +162,53 @@ void main() {
       expect(decoded.suggestedAmount, isNull);
       expect(decoded.requiresReview, isTrue); // default fallback
       expect(decoded.isRead, isFalse); // default fallback
+    });
+
+    test('date fields normalize Arabic-Indic digits on load', () {
+      final tx = Transaction.fromJson(<String, dynamic>{
+        'id': 'tx-1',
+        'type': 'expense',
+        'date': '٢٠٢٦-٠٦-١٤',
+        'amount': 10,
+        'currency': 'egp',
+        'category': 'Groceries',
+        'description': 'Test',
+        'createdAt': '٢٠٢٦-٠٦-١٤T10:00:00Z',
+        'rolledOver': false,
+      });
+      final saving = Saving.fromJson(<String, dynamic>{
+        'id': 'sv-1',
+        'assetType': 'cash',
+        'dateAcquired': '٢٠٢٦-٠٦-١٤',
+        'amount': 10,
+        'remainingAmount': 10,
+        'unit': 'EGP',
+        'description': 'Test',
+        'purchaseCurrency': 'EGP',
+        'purchaseAmount': 10,
+        'createdAt': '٢٠٢٦-٠٦-١٤T10:00:00Z',
+      });
+      final recurring = RecurringTransaction.fromJson(<String, dynamic>{
+        'id': 'rt-1',
+        'name': 'Monthly test',
+        'type': 'expense',
+        'amount': 50,
+        'currency': 'EGP',
+        'category': 'Utilities',
+        'description': 'Test',
+        'dayOfMonth': '١٤',
+        'frequency': 'monthly',
+        'lastProcessed': '٢٠٢٦-٠٦-١٤',
+        'createdAt': '٢٠٢٦-٠٦-١٤T10:00:00Z',
+      });
+
+      expect(tx.date, '2026-06-14');
+      expect(tx.createdAt, '2026-06-14T10:00:00Z');
+      expect(saving.dateAcquired, '2026-06-14');
+      expect(saving.createdAt, '2026-06-14T10:00:00Z');
+      expect(recurring.dayOfMonth, 14);
+      expect(recurring.lastProcessed, '2026-06-14');
+      expect(recurring.createdAt, '2026-06-14T10:00:00Z');
     });
   });
 
@@ -268,6 +343,39 @@ void main() {
         expect(capture.confidence, greaterThanOrEqualTo(0.95));
       },
     );
+
+    test(
+      'simulateSmsCapture developer helper routes SMS payloads into Smart Capture',
+      () async {
+        final controller = await makeController();
+        AppleShortcutsService.initialize(controller);
+
+        final bool result = await AppleShortcutsService.simulateSmsCapture(
+          'Debit Card Purchase at Talabat SAR 45.50',
+        );
+
+        expect(result, isTrue);
+        expect(controller.state.pendingTransactions, hasLength(1));
+        final pending = controller.state.pendingTransactions.first;
+        expect(pending.source, PendingTransactionSource.sms);
+        expect(pending.sourceDisplayLabel, 'SMS Import');
+        expect(pending.sourceIdentifier, 'Android SMS');
+        expect(pending.status, CaptureStatus.pendingReview);
+        expect(controller.state.captureAnalytics.parsedMessages, 1);
+      },
+    );
+
+    test('android sms auto capture toggle persists in app state', () async {
+      final controller = await makeController();
+
+      expect(controller.state.androidSmsAutoCaptureEnabled, isFalse);
+
+      await controller.setAndroidSmsAutoCaptureEnabled(true);
+      expect(controller.state.androidSmsAutoCaptureEnabled, isTrue);
+
+      await controller.setAndroidSmsAutoCaptureEnabled(false);
+      expect(controller.state.androidSmsAutoCaptureEnabled, isFalse);
+    });
 
     test(
       'simulateShortcutCapture auto approves Talabat mixed text when rule is enabled',
@@ -478,6 +586,38 @@ void main() {
     );
 
     test(
+      'approvePendingTransaction normalizes Arabic-Indic date input before saving',
+      () async {
+        final controller = await makeController();
+
+        await controller.createPendingTransaction(
+          source: PendingTransactionSource.sms,
+          rawMessage: 'Paid EGP 150 at Supermarket',
+          suggestedType: 'expense',
+          confidence: 0.9,
+          suggestedAmount: 150.0,
+          suggestedCurrency: 'EGP',
+          suggestedDescription: 'Supermarket Expense',
+        );
+
+        final pt = controller.state.pendingTransactions.first;
+
+        await controller.approvePendingTransaction(
+          pt.id,
+          type: 'expense',
+          amount: 150.0,
+          currency: 'EGP',
+          category: 'Groceries',
+          description: 'Approved Supermarket Expense',
+          date: '٢٠٢٦-٠٦-١٤',
+        );
+
+        expect(controller.state.transactions, hasLength(1));
+        expect(controller.state.transactions.single.date, '2026-06-14');
+      },
+    );
+
+    test(
       'pending inbox notification fires once on creation and clears after approval',
       () async {
         final alertService = FakeSmartCaptureAlertService();
@@ -520,7 +660,7 @@ void main() {
       },
     );
 
-    testWidgets('notification payload routes to pending review screen', (
+    testWidgets('notification payload routes to the smart capture inbox', (
       WidgetTester tester,
     ) async {
       SharedPreferences.setMockInitialValues(<String, Object>{});
@@ -569,21 +709,71 @@ void main() {
               NotificationResponseType.selectedNotification,
           payload: jsonEncode(<String, dynamic>{
             'pendingTransactionId': pending.id,
-            'pendingReviewCount': 1,
+            'captureStatus': 'autoApproved',
+            'notificationTapToken': 'notif-token-1',
           }),
         ),
       );
 
-      expect(fakeNavigator.pushedRoute, isA<MaterialPageRoute<void>>());
-      final MaterialPageRoute<void> pushedRoute =
-          fakeNavigator.pushedRoute! as MaterialPageRoute<void>;
+      expect(fakeNavigator.pushedRoute, isA<CupertinoPageRoute<void>>());
+      final CupertinoPageRoute<void> pushedRoute =
+          fakeNavigator.pushedRoute! as CupertinoPageRoute<void>;
       final Widget routePage = pushedRoute.builder(capturedContext!);
 
-      expect(routePage, isA<ReviewPendingTransactionScreen>());
-      expect(
-        (routePage as ReviewPendingTransactionScreen).pendingTransaction.id,
-        pending.id,
+      expect(routePage, isA<NotificationsScreen>());
+      expect((routePage as NotificationsScreen).initialStatus, isNull);
+    });
+
+    test(
+      'Android notification launch payload routes without creating a transaction',
+      () async {
+        final fakeAlertService = FakeSmartCaptureAlertService();
+        final controller = await makeController(
+          smartCaptureAlertService: fakeAlertService,
+        );
+        AppleShortcutsService.initialize(controller);
+
+        final bool result =
+            await AppleShortcutsService.handleNotificationLaunchPayload(
+              <String, dynamic>{
+                'notificationTap': 'true',
+                'notificationTapToken': 'launch-token-1',
+              },
+            );
+
+        expect(result, isTrue);
+        expect(controller.state.pendingTransactions, isEmpty);
+        expect(fakeAlertService.lastNotificationResponse, isNotNull);
+        expect(
+          jsonDecode(fakeAlertService.lastNotificationResponse!.payload!),
+          <String, dynamic>{
+            'notificationTap': 'true',
+            'notificationTapToken': 'launch-token-1',
+          },
+        );
+      },
+    );
+
+    test('duplicate Android notification tap token is ignored', () async {
+      final fakeAlertService = FakeSmartCaptureAlertService();
+      final controller = await makeController(
+        smartCaptureAlertService: fakeAlertService,
       );
+      AppleShortcutsService.initialize(controller);
+
+      final Map<String, dynamic> payload = <String, dynamic>{
+        'notificationTap': 'true',
+        'notificationTapToken': 'tap-token-123',
+      };
+
+      final bool first =
+          await AppleShortcutsService.handleNotificationLaunchPayload(payload);
+      final bool second =
+          await AppleShortcutsService.handleNotificationLaunchPayload(payload);
+
+      expect(first, isTrue);
+      expect(second, isFalse);
+      expect(fakeAlertService.lastNotificationResponse, isNotNull);
     });
 
     test(
@@ -1136,8 +1326,11 @@ void main() {
         final declinedMessages = [
           'Transaction Declined: Insufficient funds\nAmount: SAR 44.99',
           'تم رفض عملية الشراء بقيمة 100 ريال',
+          'العملية مرفوضة: لم يتم تنفيذ المبلغ',
           'Declined Purchase at Amazon EGP 500',
           'Transaction failed: card blocked',
+          'Payment declined: authorization failed',
+          'غير مصرح بالعملية: لم تتم الموافقة',
         ];
 
         for (final msg in declinedMessages) {
@@ -1625,7 +1818,9 @@ void main() {
           suggestedCategory: 'Food & Dining',
         );
         await controller.approvePendingTransaction(
-          controller.state.pendingTransactions.firstWhere((t) => t.suggestedAmount == 90).id,
+          controller.state.pendingTransactions
+              .firstWhere((t) => t.suggestedAmount == 90)
+              .id,
           type: 'expense',
           amount: 90,
           currency: 'EGP',

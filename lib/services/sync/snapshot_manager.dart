@@ -241,6 +241,7 @@ class SnapshotManager {
     required String passphrase,
     required String targetPath,
     int? localSchemaVersion,
+    String? snapshotPath,
   }) async {
     // 1. Read manifest to identify the newest snapshot file that still exists.
     final manifestInfo = await provider.readManifest();
@@ -252,29 +253,42 @@ class SnapshotManager {
     if (manifest.snapshots.isEmpty) {
       throw const BackupCorruptedException('No snapshots registered in the manifest.');
     }
-    final Set<String> availableSnapshotPaths = <String>{
-      for (final CloudFileInfo file in await provider.listFiles('snapshots/'))
-        file.path,
-    };
-    SnapshotEntry? latestSnapshot;
-    for (final SnapshotEntry candidate in manifest.snapshots.reversed) {
-      if (candidate.path.trim().isEmpty) continue;
-      if (availableSnapshotPaths.contains(candidate.path)) {
-        latestSnapshot = candidate;
-        break;
+
+    SnapshotEntry? chosenSnapshot;
+    if (snapshotPath != null && snapshotPath.trim().isNotEmpty) {
+      for (final SnapshotEntry candidate in manifest.snapshots) {
+        if (candidate.path == snapshotPath) {
+          chosenSnapshot = candidate;
+          break;
+        }
+      }
+      if (chosenSnapshot == null) {
+        throw BackupCorruptedException('Selected backup path $snapshotPath is not found in manifest.');
+      }
+    } else {
+      final Set<String> availableSnapshotPaths = <String>{
+        for (final CloudFileInfo file in await provider.listFiles('snapshots/'))
+          file.path,
+      };
+      for (final SnapshotEntry candidate in manifest.snapshots.reversed) {
+        if (candidate.path.trim().isEmpty) continue;
+        if (availableSnapshotPaths.contains(candidate.path)) {
+          chosenSnapshot = candidate;
+          break;
+        }
+      }
+      if (chosenSnapshot == null) {
+        throw const BackupCorruptedException(
+          'No snapshot files from the manifest are available in cloud storage.',
+        );
       }
     }
-    if (latestSnapshot == null) {
-      throw const BackupCorruptedException(
-        'No snapshot files from the manifest are available in cloud storage.',
-      );
-    }
-    final String snapshotPath = latestSnapshot.path;
+    final String actualPath = chosenSnapshot.path;
 
     // Check schema version compatibility
-    if (localSchemaVersion != null && latestSnapshot.databaseSchemaVersion > localSchemaVersion) {
+    if (localSchemaVersion != null && chosenSnapshot.databaseSchemaVersion > localSchemaVersion) {
       throw BackupSchemaIncompatibleException(
-        'This backup requires database schema version ${latestSnapshot.databaseSchemaVersion}, but this device only supports schema version $localSchemaVersion.',
+        'This backup requires database schema version ${chosenSnapshot.databaseSchemaVersion}, but this device only supports schema version $localSchemaVersion.',
       );
     }
 
@@ -287,10 +301,10 @@ class SnapshotManager {
     );
 
     // 3. Download encrypted snapshot
-    final encryptedBytes = await provider.readFile(snapshotPath);
+    final encryptedBytes = await provider.readFile(actualPath);
     if (encryptedBytes == null) {
       throw BackupCorruptedException(
-        'Snapshot file at $snapshotPath could not be retrieved.',
+        'Snapshot file at $actualPath could not be retrieved.',
       );
     }
 
@@ -308,7 +322,7 @@ class SnapshotManager {
     // Verify decrypted backup checksum
     final hash = await crypto.Sha256().hash(decryptedBytes);
     final calculatedChecksum = base64Encode(hash.bytes);
-    if (calculatedChecksum != latestSnapshot.checksum) {
+    if (calculatedChecksum != chosenSnapshot.checksum) {
       throw const BackupCorruptedException('Decrypted backup checksum does not match expected checksum.');
     }
 

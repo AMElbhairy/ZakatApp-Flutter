@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:io' show Platform;
 import 'package:intl/intl.dart';
 
+import '../utils/amount_parser.dart';
 import '../../models/investment_asset.dart';
 import '../../models/saving.dart';
 import '../../models/transaction.dart';
@@ -62,6 +63,8 @@ class MarketData {
     return double.tryParse(value?.toString() ?? '') ?? 0;
   }
 }
+
+const String kDefaultAnnualZakatDate = '09-01';
 
 class NisabTotals {
   const NisabTotals({
@@ -168,7 +171,7 @@ class ZakatEngineService {
       case 'USD':
         return r'$';
       case 'SAR':
-        return Platform.isAndroid ? 'SAR' : '⃁';
+        return Platform.isAndroid ? _androidSaudiRiyalSymbol() : '⃁';
       case 'EUR':
         return '€';
       case 'GBP':
@@ -184,6 +187,17 @@ class ZakatEngineService {
       default:
         return cur;
     }
+  }
+
+  static String _androidSaudiRiyalSymbol() {
+    if (!Platform.isAndroid) {
+      return '⃁';
+    }
+    final Match? match = RegExp(r'Android (\d+)').firstMatch(
+      Platform.operatingSystemVersion,
+    );
+    final int androidVersion = int.tryParse(match?.group(1) ?? '') ?? 0;
+    return androidVersion >= 16 ? '⃁' : 'SR';
   }
 
   static String formatCurrency(
@@ -389,7 +403,7 @@ class ZakatEngineService {
       final String lotDateStr = (lot['date'] ?? '').toString();
       if (lotDateStr.isNotEmpty) {
         try {
-          final DateTime ld = DateTime.parse(lotDateStr);
+          final DateTime ld = DateTime.parse(normalizeDateText(lotDateStr));
           if (!ld.isAfter(targetDate)) {
             cash += _asDouble(lot['remainingAmount']);
           }
@@ -403,7 +417,7 @@ class ZakatEngineService {
       for (final _SavingZakatSegment segment in _savingZakatSegments(s)) {
         if (segment.date.isNotEmpty) {
           try {
-            final DateTime sd = DateTime.parse(segment.date);
+            final DateTime sd = DateTime.parse(normalizeDateText(segment.date));
             if (!sd.isAfter(targetDate)) {
               if (assetType == 'cash') {
                 savingsVal += convertToEgp(segment.amount, s.unit, marketData);
@@ -480,7 +494,7 @@ class ZakatEngineService {
   }
 
   static int calculateDaysElapsed(String dateString) {
-    final DateTime pastDate = DateTime.parse(dateString);
+    final DateTime pastDate = DateTime.parse(normalizeDateText(dateString));
     final DateTime today = DateTime.now();
     return today.difference(pastDate).inDays;
   }
@@ -628,7 +642,7 @@ class ZakatEngineService {
 
     DateTime? fromDate;
     try {
-      fromDate = DateTime.parse('${valuationDate}T00:00:00');
+      fromDate = DateTime.parse(normalizeDateText('${valuationDate}T00:00:00'));
     } catch (_) {
       fromDate = null;
     }
@@ -1036,6 +1050,90 @@ class ZakatEngineService {
         );
   }
 
+  static double calculateTotalLiabilitiesEgpAt({
+    required DateTime asOf,
+    required List<Transaction> transactions,
+    required List<Saving> savings,
+    required List<InvestmentAsset> investments,
+    required MarketData marketData,
+    String? lastRollover,
+  }) {
+    final DateTime asOfDate = _dateOnlyDateTime(asOf);
+    final MarketData ratesAtDate = getMarketDataAtDate(marketData);
+    final List<Transaction> transactionsAtDate = transactions
+        .where((Transaction tx) => _dateOnly(tx.date).compareTo(asOfDate) <= 0)
+        .toList(growable: false);
+    final List<Saving> savingsAtDate = savings
+        .where(
+          (Saving saving) =>
+              _dateOnly(saving.dateAcquired).compareTo(asOfDate) <= 0,
+        )
+        .toList(growable: false);
+    final List<InvestmentAsset> investmentsAtDate = investments
+        .where((InvestmentAsset asset) {
+          if (asset.valuationDate.isEmpty) return false;
+          final DateTime? valuationDate = _tryDate(asset.valuationDate);
+          return valuationDate != null &&
+              valuationDate.compareTo(asOfDate) <= 0;
+        })
+        .toList(growable: false);
+
+    final double investmentDebt = calculateTotalInvestmentLoanBalancesEgp(
+      investments: investmentsAtDate,
+      marketData: ratesAtDate,
+    );
+    final double walletOverdraft =
+        _cashCurrencies(
+          transactions: transactionsAtDate,
+          savings: savingsAtDate,
+          marketData: ratesAtDate,
+        ).fold<double>(0, (double sum, String currency) {
+          final double balance = calculateWalletBalanceByCurrency(
+            currency: currency,
+            transactions: transactionsAtDate,
+            savings: savingsAtDate,
+            lastRollover: lastRollover,
+          );
+          if (balance >= -minAmount) return sum;
+          final double? converted = tryConvertToEgp(
+            -balance,
+            currency,
+            ratesAtDate,
+          );
+          return sum + (converted ?? 0);
+        });
+
+    return investmentDebt + walletOverdraft;
+  }
+
+  static double calculateNetWorthEgpAt({
+    required DateTime asOf,
+    required List<Transaction> transactions,
+    required List<Saving> savings,
+    required List<InvestmentAsset> investments,
+    required MarketData marketData,
+    MarketData? ratesOverride,
+    String? lastRollover,
+  }) {
+    return calculateTotalWealthEgpAt(
+          asOf: asOf,
+          transactions: transactions,
+          savings: savings,
+          investments: investments,
+          marketData: marketData,
+          ratesOverride: ratesOverride,
+          lastRollover: lastRollover,
+        ) -
+        calculateTotalLiabilitiesEgpAt(
+          asOf: asOf,
+          transactions: transactions,
+          savings: savings,
+          investments: investments,
+          marketData: marketData,
+          lastRollover: lastRollover,
+        );
+  }
+
   static MarketData getMarketDataAtDate(MarketData marketData) {
     return MarketData(
       goldPrice24kEgp: marketData.goldPrice24kEgp,
@@ -1326,7 +1424,7 @@ class ZakatEngineService {
         eventDateStrings
             .map((String s) {
               try {
-                return DateTime.parse(s);
+                return DateTime.parse(normalizeDateText(s));
               } catch (_) {
                 return DateTime(1970);
               }
@@ -1445,7 +1543,7 @@ class ZakatEngineService {
         eventDateStrings
             .map((String s) {
               try {
-                return DateTime.parse(s);
+                return DateTime.parse(normalizeDateText(s));
               } catch (_) {
                 return DateTime(1970);
               }
@@ -1561,11 +1659,14 @@ class ZakatEngineService {
     DateTime? now,
     String? zakatNisabBasis,
   }) {
-    if (zakatAnnualDate.isEmpty || !zakatAnnualDate.contains('-')) {
+    final String effectiveAnnualDate = zakatAnnualDate.isEmpty
+        ? kDefaultAnnualZakatDate
+        : zakatAnnualDate;
+    if (!effectiveAnnualDate.contains('-')) {
       return const <ZakatScheduleEntry>[];
     }
 
-    final List<String> parts = zakatAnnualDate.split('-');
+    final List<String> parts = effectiveAnnualDate.split('-');
     final int? hm = int.tryParse(parts[0]);
     final int? hd = int.tryParse(parts[1]);
 
@@ -1738,7 +1839,9 @@ class ZakatEngineService {
   }
 
   static DateTime _dateOnly(String date) {
-    return DateTime.parse('${date.split('T').first}T00:00:00');
+    return DateTime.parse(
+      normalizeDateText('${date.split('T').first}T00:00:00'),
+    );
   }
 
   static DateTime _dateOnlyDateTime(DateTime dateTime) {
@@ -1756,7 +1859,7 @@ class ZakatEngineService {
   static DateTime? _tryDateTime(String? iso) {
     if (iso == null || iso.isEmpty) return null;
     try {
-      return DateTime.parse(iso);
+      return DateTime.parse(normalizeTimestampText(iso));
     } catch (_) {
       return null;
     }

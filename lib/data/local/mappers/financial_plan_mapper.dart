@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart';
 
+import '../../../core/utils/amount_parser.dart';
 import '../../../models/financial_plan.dart';
 import '../app_database.dart' as db;
 
@@ -94,7 +95,7 @@ class FinancialPlanMapper {
     return DateTime.now().toUtc().toIso8601String();
   }
 
-  double _toDouble(String value) => double.tryParse(value) ?? 0;
+  double _toDouble(String value) => tryParseAmount(value) ?? 0;
 
   Map<String, double> _decodeMap(String raw) {
     if (raw.trim().isEmpty) return <String, double>{};
@@ -102,8 +103,8 @@ class FinancialPlanMapper {
     if (decoded is! Map) return <String, double>{};
     return decoded.map(
       (dynamic key, dynamic value) => MapEntry<String, double>(
-        key.toString(),
-        value is num ? value.toDouble() : double.tryParse(value.toString()) ?? 0,
+      key.toString(),
+        value is num ? value.toDouble() : tryParseAmount(value.toString()) ?? 0,
       ),
     );
   }

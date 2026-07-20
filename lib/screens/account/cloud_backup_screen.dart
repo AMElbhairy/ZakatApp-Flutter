@@ -13,6 +13,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../core/i18n/app_localizations.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/app_ui.dart';
 import '../../core/widgets/compact_dropdown.dart';
@@ -137,6 +138,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
       }
     }
   }
+
+  bool _isArabic(BuildContext context) =>
+      Localizations.localeOf(context).languageCode == 'ar';
 
   Future<bool> _tryAuthorizeDrive({
     required bool interactive,
@@ -272,13 +276,13 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     } on BackupKeyRecoveryException catch (error) {
       if (mounted) {
         setState(() {
-          _statusMessage = 'Backup key recovery required';
+          _statusMessage = context.l10n.tr('restore_backup_key_required');
         });
         if (showDialogOnFailure) {
           await _showBlockingDialog(
-            title: 'Backup Key Recovery Required',
+            title: context.l10n.tr('restore_backup_key_required'),
             message: error.message,
-            buttonLabel: 'OK',
+            buttonLabel: _isArabic(context) ? 'حسناً' : 'OK',
           );
         }
       }
@@ -557,12 +561,12 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
       );
       if (connected) {
         await _fetchBackups();
-        } else if (mounted && _statusMessage == 'Connecting...') {
-          setState(() {
-            _isConnected = false;
-            _statusMessage = 'Refreshing backup status...';
-          });
-        }
+      } else if (mounted && _statusMessage == 'Connecting...') {
+        setState(() {
+          _isConnected = false;
+          _statusMessage = 'Refreshing backup status...';
+        });
+      }
     } catch (e) {
       setState(() {
         if (_isPermissionRevokedError(e)) {
@@ -801,6 +805,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
   }
 
   Future<void> _deleteAllCloudBackups() async {
+    final bool isArabic = _isArabic(context);
     final bool? confirmed = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) {
@@ -809,20 +814,28 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
         return StatefulBuilder(
           builder: (BuildContext context, void Function(void Function()) setS) {
             return AlertDialog(
-              title: const Text('Delete All Cloud Backups'),
+              title: Text(
+                isArabic
+                    ? 'حذف جميع النسخ السحابية'
+                    : 'Delete All Cloud Backups',
+              ),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text(
-                    'This permanently deletes every backup snapshot from Google Drive for this account.',
+                  Text(
+                    isArabic
+                        ? 'سيؤدي هذا إلى حذف كل نسخة احتياطية من Google Drive لهذا الحساب بشكل دائم.'
+                        : 'This permanently deletes every backup snapshot from Google Drive for this account.',
                   ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: confirmController,
                     autofocus: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Type DELETE to confirm',
+                    decoration: InputDecoration(
+                      labelText: isArabic
+                          ? 'اكتب DELETE للتأكيد'
+                          : 'Type DELETE to confirm',
                     ),
                     onChanged: (String value) {
                       setS(() {
@@ -835,15 +848,15 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.of(dialogContext).pop(false),
-                  child: const Text('Cancel'),
+                  child: Text(isArabic ? 'إلغاء' : 'Cancel'),
                 ),
                 TextButton(
                   onPressed: canDelete
                       ? () => Navigator.of(dialogContext).pop(true)
                       : null,
-                  child: const Text(
-                    'Delete',
-                    style: TextStyle(color: AppColors.redStrong),
+                  child: Text(
+                    isArabic ? 'حذف' : 'Delete',
+                    style: const TextStyle(color: AppColors.redStrong),
                   ),
                 ),
               ],
@@ -896,6 +909,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     BuildContext context,
     CloudBackupController controller,
   ) {
+    final bool isArabic = _isArabic(context);
     return AnimatedBuilder(
       animation: controller,
       builder: (BuildContext context, Widget? _) {
@@ -918,7 +932,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Automatic Cloud Backup',
+                        isArabic
+                            ? 'النسخ السحابي التلقائي'
+                            : 'Automatic Cloud Backup',
                         style: Theme.of(context).textTheme.titleMedium
                             ?.copyWith(fontWeight: FontWeight.bold),
                       ),
@@ -945,9 +961,15 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                             );
                           }
                         },
-                  title: const Text('Enable automatic backups'),
-                  subtitle: const Text(
-                    'Backups run in the background when the app is idle, resumes, or important data changes.',
+                  title: Text(
+                    isArabic
+                        ? 'تفعيل النسخ التلقائي'
+                        : 'Enable automatic backups',
+                  ),
+                  subtitle: Text(
+                    isArabic
+                        ? 'تعمل النسخ في الخلفية عندما يكون التطبيق خاملاً أو عند استئنافه أو عند تغيّر بيانات مهمة.'
+                        : 'Backups run in the background when the app is idle, resumes, or important data changes.',
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -955,29 +977,34 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                   key: const Key('advancedBackupSettingsTile'),
                   tilePadding: EdgeInsets.zero,
                   childrenPadding: const EdgeInsets.only(bottom: 8),
-                  title: const Text(
-                    'Advanced',
-                    style: TextStyle(fontWeight: FontWeight.w600),
+                  title: Text(
+                    isArabic ? 'متقدم' : 'Advanced',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
-                  subtitle: const Text(
-                    'Adjust backup timing and other power-user options.',
+                  subtitle: Text(
+                    isArabic
+                        ? 'عدّل توقيت النسخ وخيارات متقدمة أخرى.'
+                        : 'Adjust backup timing and other power-user options.',
                   ),
                   children: [
                     Row(
                       children: [
-                        const Text(
-                          'Minimum interval',
-                          style: TextStyle(fontWeight: FontWeight.w600),
+                        Text(
+                          isArabic ? 'الحد الأدنى للفاصل' : 'Minimum interval',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
                         const Spacer(),
                         CompactDropdownButton<int>(
-                          value: controller.minimumIntervalHours,
-                          labelText: 'Minimum interval',
-                          items: const <int>[3, 6, 12],
-                          itemLabel: (int value) => '$value hours',
+                          value: controller.minimumInterval.inMinutes,
+                          labelText: isArabic
+                              ? 'الحد الأدنى للفاصل'
+                              : 'Minimum interval',
+                          items: const <int>[30, 60, 180, 360, 720],
+                          itemLabel: (int value) =>
+                              _minimumIntervalLabel(value, isArabic: isArabic),
                           onChanged: (int value) {
                             if (_busy) return;
-                            controller.setMinimumIntervalHours(value);
+                            controller.setMinimumIntervalMinutes(value);
                           },
                         ),
                       ],
@@ -987,31 +1014,38 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                 const SizedBox(height: 8),
                 OutlinedButton.icon(
                   onPressed: _busy ? null : _deleteAllCloudBackups,
-                  icon: const Icon(Icons.delete_outline, color: AppColors.redStrong),
-                  label: const Text(
-                    'Delete All Cloud Backups',
-                    style: TextStyle(color: AppColors.redStrong),
+                  icon: const Icon(
+                    Icons.delete_outline,
+                    color: AppColors.redStrong,
+                  ),
+                  label: Text(
+                    isArabic
+                        ? 'حذف جميع النسخ السحابية'
+                        : 'Delete All Cloud Backups',
+                    style: const TextStyle(color: AppColors.redStrong),
                   ),
                 ),
                 const Divider(height: 24),
                 _detailRow(
                   context,
                   icon: Icons.history,
-                  label: 'Last backup time',
+                  label: isArabic ? 'آخر وقت للنسخ' : 'Last backup time',
                   value: _formatMaybeDate(controller.lastBackupAt),
                 ),
                 const SizedBox(height: 8),
                 _detailRow(
                   context,
                   icon: Icons.event_available,
-                  label: 'Next eligible backup',
+                  label: isArabic
+                      ? 'النسخة التالية المتاحة'
+                      : 'Next eligible backup',
                   value: _formatMaybeDate(controller.nextEligibleBackupAt),
                 ),
                 const SizedBox(height: 8),
                 _detailRow(
                   context,
                   icon: Icons.info_outline,
-                  label: 'Status',
+                  label: isArabic ? 'الحالة' : 'Status',
                   value: controller.statusMessage,
                 ),
                 if (controller.lastBackupError.isNotEmpty) ...[
@@ -1036,6 +1070,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     BuildContext context,
     CloudBackupController controller,
   ) {
+    final bool isArabic = _isArabic(context);
     if (!controller.isOperationSyncEnabled) {
       return const SizedBox.shrink();
     }
@@ -1065,7 +1100,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            'Cloud Operation Sync',
+                            isArabic
+                                ? 'مزامنة العمليات السحابية'
+                                : 'Cloud Operation Sync',
                             style: Theme.of(context).textTheme.titleMedium
                                 ?.copyWith(fontWeight: FontWeight.bold),
                           ),
@@ -1082,28 +1119,30 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                     _detailRow(
                       context,
                       icon: Icons.flag_outlined,
-                      label: 'Mode',
+                      label: isArabic ? 'الوضع' : 'Mode',
                       value: controller.operationSyncModeLabel,
                     ),
                     const SizedBox(height: 8),
                     _detailRow(
                       context,
                       icon: Icons.swap_horiz,
-                      label: 'Status',
+                      label: isArabic ? 'الحالة' : 'Status',
                       value: controller.operationSyncStatusMessage,
                     ),
                     const SizedBox(height: 8),
                     _detailRow(
                       context,
                       icon: Icons.queue,
-                      label: 'Pending operations',
+                      label: isArabic
+                          ? 'العمليات المعلقة'
+                          : 'Pending operations',
                       value: pending.toString(),
                     ),
                     const SizedBox(height: 8),
                     _detailRow(
                       context,
                       icon: Icons.schedule,
-                      label: 'Last sync',
+                      label: isArabic ? 'آخر مزامنة' : 'Last sync',
                       value: _formatMaybeDate(
                         controller.lastOperationSyncAt == null
                             ? null
@@ -1129,7 +1168,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                           : () async {
                               await controller.syncOperationsNow();
                             },
-                      label: 'Manual Sync Now',
+                      label: isArabic ? 'مزامنة يدوية الآن' : 'Manual Sync Now',
                       icon: Icons.sync,
                     ),
                   ],
@@ -1286,6 +1325,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
   }
 
   Future<bool> _confirmStaleRestore(SnapshotEntry snapshot) async {
+    final bool isArabic = _isArabic(context);
     if (!_isLocalDatabaseNewerThan(snapshot)) {
       return true;
     }
@@ -1293,18 +1333,20 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Older Backup Warning'),
-        content: const Text(
-          'This backup is older than your current database. Restoring it may lose recent changes.',
+        title: Text(isArabic ? 'تحذير: نسخة أقدم' : 'Older Backup Warning'),
+        content: Text(
+          isArabic
+              ? 'هذه النسخة أقدم من قاعدة بياناتك الحالية. قد تفقد آخر التغييرات عند استعادتها.'
+              : 'This backup is older than your current database. Restoring it may lose recent changes.',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
+            child: Text(isArabic ? 'إلغاء' : 'Cancel'),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Restore Anyway'),
+            child: Text(isArabic ? 'استعادة على أي حال' : 'Restore Anyway'),
           ),
         ],
       ),
@@ -1328,9 +1370,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     );
     if (compatibilityError != null) {
       await _showBlockingDialog(
-        title: 'Restore Blocked',
+        title: _isArabic(context) ? 'تم منع الاستعادة' : 'Restore Blocked',
         message: compatibilityError,
-        buttonLabel: 'OK',
+        buttonLabel: _isArabic(context) ? 'حسناً' : 'OK',
       );
       return;
     }
@@ -1343,24 +1385,39 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
       // ignore: use_build_context_synchronously
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Restore Cloud Backup?'),
+        title: Text(
+          _isArabic(context)
+              ? 'استعادة النسخة السحابية؟'
+              : 'Restore Cloud Backup?',
+        ),
         content: Text(
-          'This will replace your current data.\n'
-          'A local safety copy will be created automatically.\n\n'
-          'Are you sure you want to replace your local database with Cloud Backup Sequence #${snapshot.sequence}?\n'
-          'Device: ${snapshot.deviceName.isEmpty ? 'Unknown device' : snapshot.deviceName} (${_formatPlatformLabel(_platformForBackup(snapshot))})\n'
-          'Backup date: ${_formatBackupDate(snapshot.createdAt)}\n'
-          'Schema/App: ${snapshot.databaseSchemaVersion} / ${snapshot.appVersion}\n'
-          'Checksum: ${_shortChecksum(snapshot.checksum)}',
+          _isArabic(context)
+              ? 'سيتم استبدال بياناتك الحالية.\n'
+                    'سيتم إنشاء نسخة أمان محلية تلقائياً.\n\n'
+                    'هل تريد استبدال قاعدة بياناتك المحلية بالنسخة السحابية رقم #${snapshot.sequence}؟\n'
+                    'الجهاز: ${snapshot.deviceName.isEmpty ? 'جهاز غير معروف' : snapshot.deviceName} (${_formatPlatformLabel(_platformForBackup(snapshot))})\n'
+                    'تاريخ النسخة: ${_formatBackupDate(snapshot.createdAt)}\n'
+                    'المخطط/التطبيق: ${snapshot.databaseSchemaVersion} / ${snapshot.appVersion}\n'
+                    'التحقق: ${_shortChecksum(snapshot.checksum)}'
+              : 'This will replace your current data.\n'
+                    'A local safety copy will be created automatically.\n\n'
+                    'Are you sure you want to replace your local database with Cloud Backup Sequence #${snapshot.sequence}?\n'
+                    'Device: ${snapshot.deviceName.isEmpty ? 'Unknown device' : snapshot.deviceName} (${_formatPlatformLabel(_platformForBackup(snapshot))})\n'
+                    'Backup date: ${_formatBackupDate(snapshot.createdAt)}\n'
+                    'Schema/App: ${snapshot.databaseSchemaVersion} / ${snapshot.appVersion}\n'
+                    'Checksum: ${_shortChecksum(snapshot.checksum)}',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
+            child: Text(_isArabic(context) ? 'إلغاء' : 'Cancel'),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Replace', style: TextStyle(color: AppColors.redStrong)),
+            child: Text(
+              _isArabic(context) ? 'استبدال' : 'Replace',
+              style: const TextStyle(color: AppColors.redStrong),
+            ),
           ),
         ],
       ),
@@ -1370,21 +1427,29 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     final confirm2 = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('WARNING: Destructive Operation'),
-        content: const Text(
-          'This will close active database connections, overwrite the local file, and reload your application state.\n\n'
-          'Do you really want to proceed?',
+        title: Text(
+          _isArabic(context)
+              ? 'تحذير: عملية مدمرة'
+              : 'WARNING: Destructive Operation',
+        ),
+        content: Text(
+          _isArabic(context)
+              ? 'سيؤدي هذا إلى إغلاق الاتصالات النشطة بقاعدة البيانات، واستبدال الملف المحلي، وإعادة تحميل حالة التطبيق.\n\nهل تريد المتابعة؟'
+              : 'This will close active database connections, overwrite the local file, and reload your application state.\n\nDo you really want to proceed?',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('No, Cancel'),
+            child: Text(_isArabic(context) ? 'لا، إلغاء' : 'No, Cancel'),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text(
-              'Yes, Force Restore',
-              style: TextStyle(color: AppColors.redStrong, fontWeight: FontWeight.bold),
+            child: Text(
+              _isArabic(context) ? 'نعم، استعادة قسرية' : 'Yes, Force Restore',
+              style: const TextStyle(
+                color: AppColors.redStrong,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
         ],
@@ -1410,23 +1475,30 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
       final pullResult = await syncManager.pullAndRestore(
         targetPath: tempPath,
         localSchemaVersion: controller.database?.schemaVersion,
+        snapshotPath: snapshot.path,
       );
       if (pullResult.status != CloudSyncStatus.success) {
         if (_isWrongPassphraseError(pullResult.message)) {
           await _showBlockingDialog(
-            title: 'Wrong Passphrase',
-            message:
-                'The selected cloud backup could not be decrypted with this passphrase. Please verify your passphrase and try again.',
-            buttonLabel: 'OK',
+            title: _isArabic(context)
+                ? 'عبارة المرور غير صحيحة'
+                : 'Wrong Passphrase',
+            message: _isArabic(context)
+                ? 'تعذّر فك تشفير النسخة السحابية بهذه العبارة. يرجى التحقق والمحاولة مرة أخرى.'
+                : 'The selected cloud backup could not be decrypted with this passphrase. Please verify your passphrase and try again.',
+            buttonLabel: _isArabic(context) ? 'حسناً' : 'OK',
           );
           return;
         }
         if (_isMissingSnapshotError(pullResult.message)) {
           await _showBlockingDialog(
-            title: 'Backup File Missing',
-            message:
-                'The selected backup file is no longer available in Google Drive. Refresh the list and choose another backup.',
-            buttonLabel: 'OK',
+            title: _isArabic(context)
+                ? 'ملف النسخة مفقود'
+                : 'Backup File Missing',
+            message: _isArabic(context)
+                ? 'لم يعد ملف النسخة المحدد متاحاً في Google Drive. حدّث القائمة واختر نسخة أخرى.'
+                : 'The selected backup file is no longer available in Google Drive. Refresh the list and choose another backup.',
+            buttonLabel: _isArabic(context) ? 'حسناً' : 'OK',
           );
           return;
         }
@@ -1447,12 +1519,16 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
 
       if (mounted) {
         setState(() {
-          _statusMessage = 'Restore completed';
+          _statusMessage = _isArabic(context)
+              ? 'اكتملت الاستعادة'
+              : 'Restore completed';
         });
         await _showBlockingDialog(
-          title: 'Restore Completed',
-          message: 'Restore completed successfully.',
-          buttonLabel: 'OK',
+          title: _isArabic(context) ? 'اكتملت الاستعادة' : 'Restore Completed',
+          message: _isArabic(context)
+              ? 'اكتملت الاستعادة بنجاح.'
+              : 'Restore completed successfully.',
+          buttonLabel: _isArabic(context) ? 'حسناً' : 'OK',
         );
       }
       await _loadLocalChecksum();
@@ -1460,13 +1536,18 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     } on crypto.SecretBoxAuthenticationError {
       if (mounted) {
         await _showBlockingDialog(
-          title: 'Wrong Passphrase',
-          message:
-              'The selected cloud backup could not be decrypted with this passphrase. Please verify your passphrase and try again.',
-          buttonLabel: 'OK',
+          title: _isArabic(context)
+              ? 'عبارة المرور غير صحيحة'
+              : 'Wrong Passphrase',
+          message: _isArabic(context)
+              ? 'تعذّر فك تشفير النسخة السحابية بهذه العبارة. يرجى التحقق والمحاولة مرة أخرى.'
+              : 'The selected cloud backup could not be decrypted with this passphrase. Please verify your passphrase and try again.',
+          buttonLabel: _isArabic(context) ? 'حسناً' : 'OK',
         );
         setState(() {
-          _statusMessage = 'Wrong passphrase';
+          _statusMessage = _isArabic(context)
+              ? 'عبارة مرور غير صحيحة'
+              : 'Wrong passphrase';
         });
       }
     } catch (e) {
@@ -1483,22 +1564,30 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
         final bool? restoreSafety = await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
-            title: const Text('Restore Failed'),
+            title: Text(
+              _isArabic(context) ? 'فشلت الاستعادة' : 'Restore Failed',
+            ),
             content: Text(
-              'Reason: $reason\n\n'
-              'Would you like to restore the local safety copy created before the restore attempt?\n\n'
-              'Local safety backup:\n${_latestRestoreLocalBackupPath ?? 'Unknown path'}',
+              _isArabic(context)
+                  ? 'السبب: $reason\n\n'
+                        'هل تريد استعادة نسخة الأمان المحلية التي أُنشئت قبل محاولة الاستعادة؟\n\n'
+                        'نسخة الأمان المحلية:\n${_latestRestoreLocalBackupPath ?? 'مسار غير معروف'}'
+                  : 'Reason: $reason\n\n'
+                        'Would you like to restore the local safety copy created before the restore attempt?\n\n'
+                        'Local safety backup:\n${_latestRestoreLocalBackupPath ?? 'Unknown path'}',
             ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Cancel'),
+                child: Text(_isArabic(context) ? 'إلغاء' : 'Cancel'),
               ),
               TextButton(
                 onPressed: () => Navigator.of(context).pop(true),
-                child: const Text(
-                  'Restore Safety Copy',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+                child: Text(
+                  _isArabic(context)
+                      ? 'استعادة نسخة الأمان'
+                      : 'Restore Safety Copy',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
               ),
             ],
@@ -1517,17 +1606,23 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
               _latestRestoreLocalBackupPath!,
             );
             _showToast(
-              'Restore completed successfully.',
+              _isArabic(context)
+                  ? 'اكتملت الاستعادة بنجاح.'
+                  : 'Restore completed successfully.',
               kind: AppToastKind.success,
             );
             setState(() {
-              _statusMessage = 'Safety copy restored';
+              _statusMessage = _isArabic(context)
+                  ? 'تمت استعادة نسخة الأمان'
+                  : 'Safety copy restored';
             });
             await _loadLocalChecksum();
             await _fetchBackups();
           } catch (restoreErr) {
             _showToast(
-              'Failed to restore safety copy: $restoreErr',
+              _isArabic(context)
+                  ? 'فشل استعادة نسخة الأمان: $restoreErr'
+                  : 'Failed to restore safety copy: $restoreErr',
               kind: AppToastKind.error,
             );
           } finally {
@@ -1614,6 +1709,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     SnapshotEntry backup, {
     required bool isLatestCard,
   }) {
+    final bool isArabic = _isArabic(context);
     final bool isAvailable =
         _availableSnapshotPaths?.contains(backup.path) ?? true;
     final isCurrent =
@@ -1635,16 +1731,36 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
 
     final badges = <Widget>[];
     if (isCurrent) {
-      badges.add(_badge(label: 'Current Device', color: AppColors.emeraldSuccess));
+      badges.add(
+        _badge(
+          label: isArabic ? 'الجهاز الحالي' : 'Current Device',
+          color: AppColors.emeraldSuccess,
+        ),
+      );
     }
     if (isNewest) {
-      badges.add(_badge(label: 'Newest Backup', color: AppColors.blue));
+      badges.add(
+        _badge(
+          label: isArabic ? 'أحدث نسخة' : 'Newest Backup',
+          color: AppColors.blue,
+        ),
+      );
     }
     if (isOlder) {
-      badges.add(_badge(label: 'Older Backup', color: AppColors.orangeDeep));
+      badges.add(
+        _badge(
+          label: isArabic ? 'نسخة أقدم' : 'Older Backup',
+          color: AppColors.orangeDeep,
+        ),
+      );
     }
     if (!isAvailable) {
-      badges.add(_badge(label: 'Unavailable', color: AppColors.slateDark));
+      badges.add(
+        _badge(
+          label: isArabic ? 'غير متاحة' : 'Unavailable',
+          color: AppColors.slateDark,
+        ),
+      );
     }
 
     return Card(
@@ -1681,8 +1797,10 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                     children: [
                       Text(
                         isLatestCard
-                            ? 'Latest Backup'
-                            : 'Backup #${backup.sequence}',
+                            ? (isArabic ? 'أحدث نسخة' : 'Latest Backup')
+                            : (isArabic
+                                  ? 'النسخة #${backup.sequence}'
+                                  : 'Backup #${backup.sequence}'),
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 16,
@@ -1691,7 +1809,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                       const SizedBox(height: 4),
                       Text(
                         backup.deviceName.isEmpty
-                            ? 'Unknown device'
+                            ? (isArabic ? 'جهاز غير معروف' : 'Unknown device')
                             : backup.deviceName,
                         style: TextStyle(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -1701,7 +1819,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                       if (!isAvailable) ...[
                         const SizedBox(height: 4),
                         Text(
-                          'Snapshot file missing from Drive',
+                          isArabic
+                              ? 'ملف النسخة غير موجود في Drive'
+                              : 'Snapshot file missing from Drive',
                           style: TextStyle(
                             color: Theme.of(context).colorScheme.error,
                             fontSize: 12,
@@ -1738,30 +1858,37 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                   context,
                   icon: _platformIcon(platform),
                   label: backup.deviceName.isEmpty
-                      ? 'Unknown device'
+                      ? (isArabic ? 'جهاز غير معروف' : 'Unknown device')
                       : backup.deviceName,
                 ),
                 _detailChip(
                   context,
                   icon: Icons.data_object,
-                  label: 'DB schema ${backup.databaseSchemaVersion}',
+                  label: isArabic
+                      ? 'مخطط قاعدة البيانات ${backup.databaseSchemaVersion}'
+                      : 'DB schema ${backup.databaseSchemaVersion}',
                 ),
                 _detailChip(
                   context,
                   icon: Icons.apps,
-                  label:
-                      'App ${backup.appVersion.isEmpty ? 'unknown' : backup.appVersion}',
+                  label: isArabic
+                      ? 'التطبيق ${backup.appVersion.isEmpty ? 'غير معروف' : backup.appVersion}'
+                      : 'App ${backup.appVersion.isEmpty ? 'unknown' : backup.appVersion}',
                 ),
                 _detailChip(
                   context,
                   icon: Icons.tag,
-                  label: 'Seq ${backup.sequence} / G${backup.globalSequence}',
+                  label: isArabic
+                      ? 'تسلسل ${backup.sequence} / عام ${backup.globalSequence}'
+                      : 'Seq ${backup.sequence} / G${backup.globalSequence}',
                 ),
               ],
             ),
             const SizedBox(height: 12),
             Text(
-              'Checksum: ${_shortChecksum(backup.checksum)}',
+              isArabic
+                  ? 'التحقق: ${_shortChecksum(backup.checksum)}'
+                  : 'Checksum: ${_shortChecksum(backup.checksum)}',
               style: TextStyle(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
                 fontSize: 12,
@@ -1777,19 +1904,19 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                                 ? null
                                 : () => _confirmAndRestore(backup),
                             icon: const Icon(Icons.restore),
-                            label: const Text('Restore'),
+                            label: Text(isArabic ? 'استعادة' : 'Restore'),
                           )
                         : OutlinedButton.icon(
                             onPressed: _busy
                                 ? null
                                 : () => _confirmAndRestore(backup),
                             icon: const Icon(Icons.restore),
-                            label: const Text('Restore'),
+                            label: Text(isArabic ? 'استعادة' : 'Restore'),
                           ))
                   : OutlinedButton.icon(
                       onPressed: null,
                       icon: const Icon(Icons.restore),
-                      label: const Text('Unavailable'),
+                      label: Text(isArabic ? 'غير متاحة' : 'Unavailable'),
                     ),
             ),
           ],
@@ -1837,6 +1964,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final bool isArabic = _isArabic(context);
     final backupController = _maybeBackupController();
     final sortedBackups = _sortedBackups;
     final latestBackup = sortedBackups.isNotEmpty ? sortedBackups.first : null;
@@ -1847,17 +1975,21 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
         backupController?.lastBackupAt ?? latestBackup?.createdAt;
     final nextEligibleTime = backupController?.nextEligibleBackupAt;
     final autoBackupSummary = backupController == null
-        ? 'Not available'
-        : (backupController.automaticBackupEnabled ? 'Enabled' : 'Disabled');
+        ? (isArabic ? 'غير متاح' : 'Not available')
+        : (backupController.automaticBackupEnabled
+              ? (isArabic ? 'مفعّل' : 'Enabled')
+              : (isArabic ? 'معطل' : 'Disabled'));
     final lastError =
         backupController == null ||
             backupController.lastBackupError.trim().isEmpty
-        ? 'None'
+        ? (isArabic ? 'لا يوجد' : 'None')
         : backupController.lastBackupError.trim();
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Cloud Backup & Sync'),
+        title: Text(
+          isArabic ? 'النسخ السحابي والمزامنة' : 'Cloud Backup & Sync',
+        ),
         actions: [
           if (_isConnected)
             PopupMenuButton<String>(
@@ -1867,9 +1999,13 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                 }
               },
               itemBuilder: (context) => [
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: 'disconnect',
-                  child: Text('Disconnect Google Drive'),
+                  child: Text(
+                    isArabic
+                        ? 'قطع اتصال Google Drive'
+                        : 'Disconnect Google Drive',
+                  ),
                 ),
               ],
             ),
@@ -1897,7 +2033,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                   children: [
                     Icon(
                       _isConnected ? Icons.cloud_done : Icons.cloud_off,
-                      color: _isConnected ? AppColors.emeraldSuccess : AppColors.gray,
+                      color: _isConnected
+                          ? AppColors.emeraldSuccess
+                          : AppColors.gray,
                       size: 28,
                     ),
                     const SizedBox(width: 16),
@@ -1906,7 +2044,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Status: $_statusMessage',
+                            isArabic
+                                ? 'الحالة: $_statusMessage'
+                                : 'Status: $_statusMessage',
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 16,
@@ -1918,7 +2058,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                           if (_isConnected && _userEmail != null) ...[
                             const SizedBox(height: 4),
                             Text(
-                              'Account: $_userEmail',
+                              isArabic
+                                  ? 'الحساب: $_userEmail'
+                                  : 'Account: $_userEmail',
                               style: TextStyle(
                                 fontSize: 13,
                                 color: Theme.of(
@@ -1931,36 +2073,46 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                           _detailRow(
                             context,
                             icon: Icons.history,
-                            label: 'Last backup',
+                            label: isArabic ? 'آخر نسخة' : 'Last backup',
                             value: _formatMaybeDate(lastBackupTime),
                           ),
                           const SizedBox(height: 8),
                           _detailRow(
                             context,
                             icon: Icons.schedule,
-                            label: 'Auto backup',
-                            value: autoBackupSummary,
+                            label: isArabic ? 'النسخ التلقائي' : 'Auto backup',
+                            value: isArabic
+                                ? (backupController == null
+                                      ? 'غير متاح'
+                                      : (backupController.automaticBackupEnabled
+                                            ? 'مفعّل'
+                                            : 'معطل'))
+                                : autoBackupSummary,
                           ),
                           const SizedBox(height: 8),
                           _detailRow(
                             context,
                             icon: Icons.event,
-                            label: 'Next eligible backup',
+                            label: isArabic
+                                ? 'النسخة التالية المتاحة'
+                                : 'Next eligible backup',
                             value: _formatMaybeDate(nextEligibleTime),
                           ),
                           const SizedBox(height: 8),
                           _detailRow(
                             context,
                             icon: Icons.error_outline,
-                            label: 'Last error',
-                            value: lastError,
+                            label: isArabic ? 'آخر خطأ' : 'Last error',
+                            value: isArabic && lastError == 'None'
+                                ? 'لا يوجد'
+                                : lastError,
                           ),
                           if (kDebugMode) ...[
                             const SizedBox(height: 8),
                             _detailRow(
                               context,
                               icon: Icons.inventory_2_outlined,
-                              label: 'Backup count',
+                              label: isArabic ? 'عدد النسخ' : 'Backup count',
                               value: '${_backups.length}',
                             ),
                           ],
@@ -1972,7 +2124,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                               child: OutlinedButton.icon(
                                 onPressed: _busy ? null : _fetchBackups,
                                 icon: const Icon(Icons.refresh),
-                                label: const Text('Retry'),
+                                label: Text(
+                                  isArabic ? 'إعادة المحاولة' : 'Retry',
+                                ),
                               ),
                             ),
                           ],
@@ -1993,7 +2147,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                     color: Theme.of(context).colorScheme.outlineVariant,
                   ),
                 ),
-                child: const Padding(
+                child: Padding(
                   padding: EdgeInsets.all(24),
                   child: Row(
                     children: [
@@ -2005,8 +2159,10 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                       SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          'Checking Google Drive connection...',
-                          style: TextStyle(fontWeight: FontWeight.w600),
+                          isArabic
+                              ? 'جارٍ فحص اتصال Google Drive...'
+                              : 'Checking Google Drive connection...',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
                       ),
                     ],
@@ -2028,25 +2184,35 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Connect Google Drive to enable cloud backups',
+                        isArabic
+                            ? 'اربط Google Drive لتفعيل النسخ السحابي'
+                            : 'Connect Google Drive to enable cloud backups',
                         style: Theme.of(context).textTheme.titleMedium
                             ?.copyWith(fontWeight: FontWeight.bold),
                       ),
                       const SizedBox(height: 12),
-                      const Text(
-                        'Google Drive appDataFolder is app-private. Backup files are not visible in your Drive files list.',
+                      Text(
+                        isArabic
+                            ? 'مجلد appDataFolder في Google Drive خاص بالتطبيق، ولا تظهر النسخ في قائمة الملفات.'
+                            : 'Google Drive appDataFolder is app-private. Backup files are not visible in your Drive files list.',
                       ),
                       const SizedBox(height: 8),
-                      const Text(
-                        'Backups are encrypted automatically on this device before upload.',
+                      Text(
+                        isArabic
+                            ? 'تُشفَّر النسخ تلقائياً على هذا الجهاز قبل الرفع.'
+                            : 'Backups are encrypted automatically on this device before upload.',
                       ),
                       const SizedBox(height: 8),
-                      const Text(
-                        'Your backup key is recovered securely when you sign in.',
+                      Text(
+                        isArabic
+                            ? 'يُستعاد مفتاح النسخ بأمان عند تسجيل الدخول.'
+                            : 'Your backup key is recovered securely when you sign in.',
                       ),
                       const SizedBox(height: 8),
-                      const Text(
-                        'Firebase app login is separate from Google Drive access. Connecting Drive does not change your app login session.',
+                      Text(
+                        isArabic
+                            ? 'تسجيل الدخول للتطبيق منفصل عن صلاحية Google Drive. ربط Drive لا يغيّر جلسة الدخول.'
+                            : 'Firebase app login is separate from Google Drive access. Connecting Drive does not change your app login session.',
                       ),
                       const SizedBox(height: 16),
                       Align(
@@ -2057,13 +2223,15 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                               : () {
                                   Navigator.of(context).maybePop();
                                 },
-                          child: const Text('Skip'),
+                          child: Text(isArabic ? 'تخطي' : 'Skip'),
                         ),
                       ),
                       const SizedBox(height: 8),
                       AppPrimaryButton(
                         onPressed: _busy ? null : _connect,
-                        label: 'Connect Google Drive',
+                        label: isArabic
+                            ? 'ربط Google Drive'
+                            : 'Connect Google Drive',
                         icon: Icons.login,
                       ),
                     ],
@@ -2081,7 +2249,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
               ],
               const SizedBox(height: 24),
               Text(
-                'Cloud Backup',
+                isArabic ? 'النسخ السحابي' : 'Cloud Backup',
                 style: Theme.of(
                   context,
                 ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
@@ -2113,8 +2281,10 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                             color: Theme.of(context).colorScheme.outlineVariant,
                           ),
                         ),
-                        child: const Text(
-                          'Backups are encrypted automatically on this device before upload to Google Drive. Your backup key is recovered securely upon sign in.',
+                        child: Text(
+                          isArabic
+                              ? 'تُشفَّر النسخ تلقائياً على هذا الجهاز قبل رفعها إلى Google Drive. ويُستعاد مفتاح النسخ بأمان عند تسجيل الدخول.'
+                              : 'Backups are encrypted automatically on this device before upload to Google Drive. Your backup key is recovered securely upon sign in.',
                         ),
                       ),
                       const SizedBox(height: 16),
@@ -2124,7 +2294,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                         ),
                         onPressed: _busy ? null : _createBackup,
                         icon: const Icon(Icons.backup),
-                        label: const Text('Create Backup Now'),
+                        label: Text(
+                          isArabic ? 'إنشاء نسخة الآن' : 'Create Backup Now',
+                        ),
                       ),
                     ],
                   ),
@@ -2135,7 +2307,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'Backup History',
+                    isArabic ? 'سجل النسخ' : 'Backup History',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),
@@ -2150,7 +2322,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                     TextButton.icon(
                       onPressed: _busy ? null : _fetchBackups,
                       icon: const Icon(Icons.refresh, size: 18),
-                      label: const Text('Refresh backups'),
+                      label: Text(isArabic ? 'تحديث النسخ' : 'Refresh backups'),
                     ),
                 ],
               ),
@@ -2164,12 +2336,14 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                       color: Theme.of(context).colorScheme.outlineVariant,
                     ),
                   ),
-                  child: const Padding(
+                  child: Padding(
                     padding: EdgeInsets.all(24),
                     child: Center(
                       child: Text(
-                        'No cloud backups found.',
-                        style: TextStyle(color: AppColors.gray),
+                        isArabic
+                            ? 'لا توجد نسخ سحابية.'
+                            : 'No cloud backups found.',
+                        style: const TextStyle(color: AppColors.gray),
                       ),
                     ),
                   ),
@@ -2181,7 +2355,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                 if (previousBackups.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   Text(
-                    'Previous Backups',
+                    isArabic ? 'النسخ السابقة' : 'Previous Backups',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),
@@ -2207,4 +2381,18 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
       ),
     );
   }
+}
+
+String _minimumIntervalLabel(int minutes, {required bool isArabic}) {
+  if (minutes == 30) {
+    return isArabic ? '30 دقيقة' : '30 minutes';
+  }
+  if (minutes == 60) {
+    return isArabic ? 'ساعة واحدة' : '1 hour';
+  }
+  final int hours = minutes ~/ 60;
+  if (hours <= 1) {
+    return isArabic ? '$minutes دقيقة' : '$minutes minutes';
+  }
+  return isArabic ? '$hours ساعات' : '$hours hours';
 }

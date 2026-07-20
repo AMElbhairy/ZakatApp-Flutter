@@ -1,3 +1,5 @@
+import '../core/utils/amount_parser.dart';
+
 class MarketSnapshot {
   const MarketSnapshot({
     required this.gold24kPricePerGramEgp,
@@ -158,7 +160,7 @@ class MarketSnapshot {
 
   static double _asDouble(dynamic value) {
     if (value is num) return value.toDouble();
-    return double.tryParse((value ?? '').toString()) ?? 0;
+    return tryParseAmount((value ?? '').toString()) ?? 0;
   }
 
   MarketSnapshot copyWith({

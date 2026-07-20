@@ -106,9 +106,11 @@ Widget _buildApp() {
         ),
       ),
     ],
-    child: ZakatApp(navigatorKey: navigatorKey),
+    child: ZakatApp(navigatorKey: navigatorKey, preferences: _sharedPrefs),
   );
 }
+
+late SharedPreferences _sharedPrefs;
 
 Future<void> _openTransactionForm(WidgetTester tester) async {
   await tester.tap(find.byKey(const Key('bottomNavTab_1')));
@@ -120,6 +122,10 @@ Future<void> _openTransactionForm(WidgetTester tester) async {
 }
 
 void main() {
+  setUp(() async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    _sharedPrefs = await SharedPreferences.getInstance();
+  });
   test('receipt scan errors are concise and classify transient statuses', () {
     expect(isTransientReceiptScanStatus(503), isTrue);
     expect(isTransientReceiptScanStatus(429), isTrue);
@@ -265,6 +271,30 @@ void main() {
     // Verify the hero card shows total wealth including the new transaction
     expect(find.text('TOTAL WEALTH'), findsOneWidget);
     expect(find.textContaining('100'), findsWidgets);
+  });
+
+  testWidgets('save transaction uses the default visible category', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'zakatAppData': jsonEncode(_seedStateWithMarketData()),
+    });
+
+    await tester.pumpWidget(_buildApp());
+    await tester.pumpAndSettle();
+
+    await _openTransactionForm(tester);
+
+    await tester.enterText(find.byKey(const Key('amountField')), '75');
+
+    await tester.tap(find.byKey(const Key('saveTransactionButton')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('bottomNavDashboardTab')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('TOTAL WEALTH'), findsOneWidget);
+    expect(find.textContaining('75'), findsWidgets);
   });
 
   testWidgets('persistence survives reload', (WidgetTester tester) async {

@@ -40,6 +40,14 @@ class MerchantRulesDao extends DatabaseAccessor<db.AppDatabase> {
     return rows.map(_mapper.fromRow).toList(growable: false);
   }
 
+  Future<int> countActiveMerchantRules() async {
+    final QueryRow row = await customSelect(
+      'SELECT COUNT(*) AS c FROM merchant_rules WHERE deleted_at IS NULL',
+      readsFrom: <TableInfo<Object?, Object?>>{attachedDatabase.merchantRules},
+    ).getSingle();
+    return row.read<int>('c');
+  }
+
   Future<void> upsertMerchantRuleRow(
     MerchantRule rule, {
     String? updatedAt,

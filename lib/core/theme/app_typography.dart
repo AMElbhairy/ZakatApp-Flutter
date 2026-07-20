@@ -6,12 +6,11 @@ class AppTypography {
   static const String englishFamily = 'Inter';
   static const String arabicFamily = 'IBMPlexSansArabic';
 
-  static bool isArabicLocale(Locale? locale) {
-    return locale?.languageCode.toLowerCase() == 'ar';
-  }
-
   static String familyFor(Locale? locale) {
-    return isArabicLocale(locale) ? arabicFamily : englishFamily;
+    if (locale?.languageCode.toLowerCase() == 'ar') {
+      return arabicFamily;
+    }
+    return englishFamily;
   }
 
   static TextTheme build({
@@ -19,7 +18,7 @@ class AppTypography {
     required Locale? locale,
   }) {
     final String family = familyFor(locale);
-    final String fallback = isArabicLocale(locale)
+    final String fallback = family == arabicFamily
         ? englishFamily
         : arabicFamily;
     final Color primary = brightness == Brightness.dark

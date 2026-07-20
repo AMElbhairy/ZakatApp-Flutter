@@ -145,10 +145,11 @@ class CloudSyncManager {
     return null;
   }
 
-  /// Downloads, decrypts, and restores the latest snapshot from cloud storage to [targetPath].
+  /// Downloads, decrypts, and restores the latest snapshot (or specified snapshotPath) from cloud storage to [targetPath].
   Future<CloudSyncResult> pullAndRestore({
     required String targetPath,
     int? localSchemaVersion,
+    String? snapshotPath,
   }) async {
     if (!isConfigured) {
       return const CloudSyncResult(
@@ -163,6 +164,7 @@ class CloudSyncManager {
         passphrase: _passphrase!,
         targetPath: targetPath,
         localSchemaVersion: localSchemaVersion,
+        snapshotPath: snapshotPath,
       );
 
       return const CloudSyncResult(

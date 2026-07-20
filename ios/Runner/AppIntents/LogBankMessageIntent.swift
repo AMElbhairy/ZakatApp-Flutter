@@ -22,7 +22,7 @@ struct LogBankMessageIntent: AppIntent {
         let trimmed = messageContent.trimmingCharacters(in: .whitespacesAndNewlines)
         let shouldProcess = !trimmed.isEmpty && messageContent.count <= 10_000
         if shouldProcess {
-            if AppDelegate.enqueueShortcutMessage(messageContent) {
+            if await AppDelegate.enqueueShortcutMessage(messageContent) {
                 NSLog("[Shortcut] Payload queued")
                 NSLog("[Shortcut] Awaiting Flutter delivery")
             } else {

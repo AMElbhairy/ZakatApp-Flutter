@@ -30,6 +30,14 @@ class InvestmentsDao extends DatabaseAccessor<db.AppDatabase> {
     return rows.map(_mapper.fromRow).toList(growable: false);
   }
 
+  Future<int> countActiveInvestments() async {
+    final QueryRow row = await customSelect(
+      'SELECT COUNT(*) AS c FROM investments WHERE deleted_at IS NULL',
+      readsFrom: <TableInfo<Object?, Object?>>{attachedDatabase.investments},
+    ).getSingle();
+    return row.read<int>('c');
+  }
+
   Future<void> upsertInvestmentRow(
     model.InvestmentAsset row, {
     String? updatedAt,

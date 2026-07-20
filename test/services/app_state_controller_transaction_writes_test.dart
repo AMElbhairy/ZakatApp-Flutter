@@ -59,6 +59,11 @@ class _ThrowingTransactionsRepository implements TransactionsLocalStore {
   Stream<List<model.Transaction>> watchActiveTransactions() async* {
     yield seed;
   }
+
+  @override
+  Future<int> countActiveTransactions() async {
+    return seed.length;
+  }
 }
 
 Future<AppStateController> _makeController({

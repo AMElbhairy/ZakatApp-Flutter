@@ -12,6 +12,9 @@ void main() {
       );
 
       await controller.refresh();
+      expect(controller.isOffline, isFalse);
+
+      await controller.refresh();
       expect(controller.isOffline, isTrue);
 
       online = true;
@@ -21,12 +24,20 @@ void main() {
   );
 
   test('probe failures are treated as offline', () async {
+    var probes = 0;
     final NetworkStatusController controller = NetworkStatusController(
-      connectivityProbe: () async => throw StateError('offline'),
+      connectivityProbe: () async {
+        probes++;
+        throw StateError('offline');
+      },
       refreshInterval: const Duration(days: 1),
     );
 
     await controller.refresh();
+    expect(controller.isOffline, isFalse);
+
+    await controller.refresh();
     expect(controller.isOffline, isTrue);
+    expect(probes, 2);
   });
 }

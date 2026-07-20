@@ -86,8 +86,7 @@ class AuthController extends ChangeNotifier {
         _currentUser = restored;
         await _persistCurrentUser();
       } else if (persistedUser != null) {
-        _currentUser = null;
-        await localStorage.remove(StorageKeys.userProfileKey);
+        _currentUser = persistedUser;
       }
     } catch (error, stackTrace) {
       debugPrint('AuthController.load failed: $error');

@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:zakatapp_flutter/core/constants/storage_keys.dart';
+import 'package:zakatapp_flutter/core/utils/currency_presentation.dart';
 import 'package:zakatapp_flutter/main.dart';
 import 'package:zakatapp_flutter/models/user_profile.dart';
 import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
@@ -185,11 +187,13 @@ Map<String, dynamic> _transactionJson({
   };
 }
 
-Widget _buildApp() {
+Future<Widget> _buildApp() async {
   const LocalStorageService localStorage = LocalStorageService();
   final AppStateRepository repository = AppStateRepository(
     localStorage: localStorage,
   );
+  final SharedPreferences preferences = await SharedPreferences.getInstance();
+  await preferences.setBool(StorageKeys.onboardingCompletedKey, true);
   return MultiProvider(
     providers: <ChangeNotifierProvider<dynamic>>[
       ChangeNotifierProvider<AppStateController>(
@@ -207,7 +211,7 @@ Widget _buildApp() {
         ),
       ),
     ],
-    child: const ZakatApp(),
+    child: ZakatApp(preferences: preferences),
   );
 }
 
@@ -286,7 +290,7 @@ Future<void> _scrollToKey(WidgetTester tester, Key key) async {
 void main() {
   testWidgets('empty dashboard renders', (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
-    await tester.pumpWidget(_buildApp());
+    await tester.pumpWidget(await _buildApp());
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('dashboardEmptyCard')), findsOneWidget);
@@ -299,7 +303,7 @@ void main() {
     SharedPreferences.setMockInitialValues(<String, Object>{
       'zakatAppData': jsonEncode(_seedStateWithMarketData()),
     });
-    await tester.pumpWidget(_buildApp());
+    await tester.pumpWidget(await _buildApp());
     await tester.pumpAndSettle();
 
     await _addIncome(tester, '1200');
@@ -341,7 +345,7 @@ void main() {
         'zakatAppData': jsonEncode(seeded),
       });
 
-      await tester.pumpWidget(_buildApp());
+      await tester.pumpWidget(await _buildApp());
       await tester.pumpAndSettle();
 
       expect(find.text('NET POSITION'), findsOneWidget);
@@ -361,7 +365,7 @@ void main() {
     SharedPreferences.setMockInitialValues(<String, Object>{
       'zakatAppData': jsonEncode(_seedStateWithMarketData()),
     });
-    await tester.pumpWidget(_buildApp());
+    await tester.pumpWidget(await _buildApp());
     await tester.pumpAndSettle();
 
     await _addSaving(tester, '700');
@@ -377,7 +381,7 @@ void main() {
     SharedPreferences.setMockInitialValues(<String, Object>{
       'zakatAppData': jsonEncode(_seedStateWithMarketData()),
     });
-    await tester.pumpWidget(_buildApp());
+    await tester.pumpWidget(await _buildApp());
     await tester.pumpAndSettle();
 
     await _addInvestment(tester, '500000');
@@ -389,7 +393,7 @@ void main() {
 
   testWidgets('nisab status appears', (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
-    await tester.pumpWidget(_buildApp());
+    await tester.pumpWidget(await _buildApp());
     await tester.pumpAndSettle();
 
     await _addIncome(tester, '100');
@@ -404,7 +408,7 @@ void main() {
 
   testWidgets('recent activity limited to 4', (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
-    await tester.pumpWidget(_buildApp());
+    await tester.pumpWidget(await _buildApp());
     await tester.pumpAndSettle();
 
     await _addIncome(tester, '100');
@@ -460,7 +464,7 @@ void main() {
       'zakatAppData': jsonEncode(seeded),
     });
 
-    await tester.pumpWidget(_buildApp());
+    await tester.pumpWidget(await _buildApp());
     await tester.pumpAndSettle();
     await _scrollToText(tester, 'Recent Activity');
 
@@ -498,7 +502,7 @@ void main() {
       'zakatAppData': jsonEncode(seeded),
     });
 
-    await tester.pumpWidget(_buildApp());
+    await tester.pumpWidget(await _buildApp());
     await tester.pumpAndSettle();
     await _scrollToText(tester, 'Recent Activity');
 
@@ -511,7 +515,7 @@ void main() {
 
   testWidgets('View All goes to Activity tab', (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
-    await tester.pumpWidget(_buildApp());
+    await tester.pumpWidget(await _buildApp());
     await tester.pumpAndSettle();
 
     await _addIncome(tester, '111');
@@ -529,7 +533,7 @@ void main() {
     WidgetTester tester,
   ) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
-    await tester.pumpWidget(_buildApp());
+    await tester.pumpWidget(await _buildApp());
     await tester.pumpAndSettle();
 
     await _addIncome(tester, '350');
@@ -552,14 +556,16 @@ void main() {
     SharedPreferences.setMockInitialValues(<String, Object>{
       'zakatAppData': jsonEncode(seeded),
     });
-    await tester.pumpWidget(_buildApp());
+    await tester.pumpWidget(await _buildApp());
     await tester.pumpAndSettle();
 
     await _openAction(tester, const Key('actionAddIncome'));
     await tester.enterText(find.byKey(const Key('amountField')), '100');
     await tester.tap(find.byKey(const Key('currencyField')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('\$').last);
+    await tester.tap(
+      find.text(CurrencyPresentation.selectorLabel('USD', isRtl: false)).last,
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('categoryField')));
     await tester.pumpAndSettle();
@@ -580,7 +586,7 @@ void main() {
     SharedPreferences.setMockInitialValues(<String, Object>{
       'zakatAppData': jsonEncode(_seedStateWithMarketData()),
     });
-    await tester.pumpWidget(_buildApp());
+    await tester.pumpWidget(await _buildApp());
     await tester.pumpAndSettle();
 
     await _addIncome(tester, '100');
@@ -605,7 +611,7 @@ void main() {
     SharedPreferences.setMockInitialValues(<String, Object>{
       'zakatAppData': jsonEncode(seeded),
     });
-    await tester.pumpWidget(_buildApp());
+    await tester.pumpWidget(await _buildApp());
     await tester.pumpAndSettle();
 
     await _addIncome(tester, '1200');
@@ -622,7 +628,7 @@ void main() {
         _seedStateWithGrowth(startingWealth: 1000, incomeAfterStart: 500),
       ),
     });
-    await tester.pumpWidget(_buildApp());
+    await tester.pumpWidget(await _buildApp());
     await tester.pumpAndSettle();
 
     expect(find.text('50.0% this year'), findsOneWidget);
@@ -636,11 +642,35 @@ void main() {
         _seedStateWithGrowth(startingWealth: 1000, expenseAfterStart: 250),
       ),
     });
-    await tester.pumpWidget(_buildApp());
+    await tester.pumpWidget(await _buildApp());
     await tester.pumpAndSettle();
 
     expect(find.text('25.0% this year'), findsOneWidget);
     expect(find.byIcon(Icons.arrow_downward_rounded), findsOneWidget);
+  });
+
+  testWidgets('hero shows overdue zakat alert when next due date has passed', (
+    WidgetTester tester,
+  ) async {
+    final int year = DateTime.now().year - 2;
+    final Map<String, dynamic> seeded = _seedStateWithMarketData();
+    seeded['transactions'] = <Map<String, dynamic>>[
+      _transactionJson(
+        id: 'old-income',
+        type: 'income',
+        date: '$year-01-01',
+        amount: 500000,
+      ),
+    ];
+
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'zakatAppData': jsonEncode(seeded),
+    });
+    await tester.pumpWidget(await _buildApp());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Zakat Due Now'), findsOneWidget);
+    expect(find.textContaining('Next Zakat'), findsNothing);
   });
 
   testWidgets('hero hides growth when start-of-year wealth is invalid', (
@@ -659,7 +689,7 @@ void main() {
     SharedPreferences.setMockInitialValues(<String, Object>{
       'zakatAppData': jsonEncode(seeded),
     });
-    await tester.pumpWidget(_buildApp());
+    await tester.pumpWidget(await _buildApp());
     await tester.pumpAndSettle();
 
     expect(find.textContaining('this year'), findsNothing);
@@ -677,7 +707,7 @@ void main() {
         ),
       ),
     });
-    await tester.pumpWidget(_buildApp());
+    await tester.pumpWidget(await _buildApp());
     await tester.pumpAndSettle();
 
     expect(find.textContaining('this year'), findsNothing);
@@ -706,7 +736,7 @@ void main() {
         ),
       ),
     });
-    await tester.pumpWidget(_buildApp());
+    await tester.pumpWidget(await _buildApp());
     await tester.pumpAndSettle();
 
     expect(
@@ -734,7 +764,7 @@ void main() {
       SharedPreferences.setMockInitialValues(<String, Object>{
         'zakatAppData': jsonEncode(seeded),
       });
-      await tester.pumpWidget(_buildApp());
+      await tester.pumpWidget(await _buildApp());
       await tester.pumpAndSettle();
 
       await _scrollToText(tester, 'Top Expense Categories');
@@ -819,7 +849,7 @@ void main() {
         'zakatAppData': jsonEncode(seeded),
       });
 
-      await tester.pumpWidget(_buildApp());
+      await tester.pumpWidget(await _buildApp());
       await tester.pumpAndSettle();
       await _scrollToText(tester, 'Top Expense Categories');
 
@@ -903,14 +933,86 @@ void main() {
         findsOneWidget,
       );
 
-      // Click on the widget and verify snackbar
-      await tester.tap(find.text('Top Expense Categories'));
-      await tester.pump();
+      // Open the analysis screen from the dashboard entry point.
+      await tester.tap(
+        find.byKey(const Key('dashboardOpenExpenseAnalysisButton')),
+      );
+      await tester.pumpAndSettle();
 
-      expect(find.text('Expense Analysis screen coming soon'), findsOneWidget);
+      expect(find.text('Expenses Analysis'), findsOneWidget);
+    },
+  );
 
-      // Allow the toast dismissal timer to complete and fade out by advancing the clock
-      await tester.pump(const Duration(seconds: 5));
+  testWidgets(
+    'Top Expense Categories respects custom financial month start day',
+    (WidgetTester tester) async {
+      final Map<String, dynamic> seeded = _seedStateWithMarketData();
+      final DateTime now = DateTime.now();
+      const int startDay = 25;
+      final DateTime financialMonthStart = now.day >= startDay
+          ? DateTime(now.year, now.month, startDay)
+          : DateTime(now.year, now.month - 1, startDay);
+      final DateTime previousMonthEnd = financialMonthStart.subtract(
+        const Duration(days: 1),
+      );
+
+      seeded['financialMonthCycle'] = 'custom';
+      seeded['financialMonthStartDay'] = startDay;
+      seeded['transactions'] = <Map<String, dynamic>>[
+        <String, dynamic>{
+          ..._transactionJson(
+            id: 'in_cycle',
+            type: 'expense',
+            date:
+                '${financialMonthStart.add(const Duration(days: 1)).toIso8601String().split('T').first}',
+            amount: 3000,
+          ),
+          'category': 'Food',
+        },
+        <String, dynamic>{
+          ..._transactionJson(
+            id: 'on_boundary',
+            type: 'expense',
+            date: financialMonthStart.toIso8601String().split('T').first,
+            amount: 2000,
+          ),
+          'category': 'Rent',
+        },
+        <String, dynamic>{
+          ..._transactionJson(
+            id: 'previous_cycle',
+            type: 'expense',
+            date: previousMonthEnd.toIso8601String().split('T').first,
+            amount: 5000,
+          ),
+          'category': 'Shopping',
+        },
+      ];
+
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'zakatAppData': jsonEncode(seeded),
+      });
+
+      await tester.pumpWidget(await _buildApp());
+      await tester.pumpAndSettle();
+      await _scrollToText(tester, 'Top Expense Categories');
+
+      final Finder cardFinder = find.byWidgetPredicate(
+        (w) => w.runtimeType.toString() == '_TopExpenseCategoriesCard',
+      );
+
+      expect(
+        find.descendant(of: cardFinder, matching: find.text('Food')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: cardFinder, matching: find.text('Rent')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: cardFinder, matching: find.text('Shopping')),
+        findsNothing,
+      );
     },
   );
 
@@ -996,7 +1098,7 @@ void main() {
         'zakatAppData': jsonEncode(seeded),
       });
 
-      await tester.pumpWidget(_buildApp());
+      await tester.pumpWidget(await _buildApp());
       await tester.pumpAndSettle();
 
       // 1. Verify Top Expense Categories excludes transfers

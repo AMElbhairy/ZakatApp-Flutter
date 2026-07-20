@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../motion/app_motion.dart';
 import 'compact_selection_dialog.dart';
+import 'responsive_layout.dart';
 
 typedef CompactDropdownLabelBuilder<T> = String Function(T value);
 
@@ -109,6 +110,7 @@ class CompactDropdownButton<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final bool compact = ResponsiveLayout.isCompact(context);
     return PressScale(
       enabled: enabled,
       child: InkWell(
@@ -126,13 +128,23 @@ class CompactDropdownButton<T> extends StatelessWidget {
               }
             : null,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 4 : 6,
+            vertical: compact ? 3 : 4,
+          ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Text(itemLabel(value), style: theme.textTheme.bodyMedium),
-              const SizedBox(width: 4),
-              const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
+              Flexible(
+                child: Text(
+                  itemLabel(value),
+                  style: theme.textTheme.bodyMedium,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              SizedBox(width: compact ? 2 : 4),
+              Icon(Icons.keyboard_arrow_down_rounded, size: compact ? 16 : 18),
             ],
           ),
         ),

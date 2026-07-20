@@ -40,6 +40,16 @@ class MerchantConfirmationsDao extends DatabaseAccessor<db.AppDatabase> {
     return rows.map(_mapper.fromRow).toList(growable: false);
   }
 
+  Future<int> countActiveMerchantConfirmations() async {
+    final QueryRow row = await customSelect(
+      'SELECT COUNT(*) AS c FROM merchant_confirmations WHERE deleted_at IS NULL',
+      readsFrom: <TableInfo<Object?, Object?>>{
+        attachedDatabase.merchantConfirmations,
+      },
+    ).getSingle();
+    return row.read<int>('c');
+  }
+
   Future<void> upsertMerchantConfirmationRow(
     MerchantConfirmation item, {
     String? updatedAt,

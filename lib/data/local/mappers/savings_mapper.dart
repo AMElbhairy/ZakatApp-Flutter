@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart';
 
+import '../../../core/utils/amount_parser.dart';
 import '../../../models/saving.dart' as model;
 import '../app_database.dart' as db;
 
@@ -84,7 +85,7 @@ class SavingsMapper {
     return raw.replaceFirst(RegExp(r'\.?0+$'), '');
   }
 
-  double _toDouble(String value) => double.tryParse(value) ?? 0;
+  double _toDouble(String value) => tryParseAmount(value) ?? 0;
 
   String _timestampOrFallback(String? value) {
     final String trimmed = value?.trim() ?? '';

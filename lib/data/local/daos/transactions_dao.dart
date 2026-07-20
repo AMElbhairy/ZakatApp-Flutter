@@ -38,6 +38,14 @@ class TransactionsDao extends DatabaseAccessor<db.AppDatabase> {
     return rows.map(_mapper.fromRow).toList(growable: false);
   }
 
+  Future<int> countActiveTransactions() async {
+    final QueryRow row = await customSelect(
+      'SELECT COUNT(*) AS c FROM transactions WHERE deleted_at IS NULL',
+      readsFrom: <TableInfo<Object?, Object?>>{attachedDatabase.transactions},
+    ).getSingle();
+    return row.read<int>('c');
+  }
+
   Future<void> upsertTransactionRow(
     model.Transaction transaction, {
     String? updatedAt,

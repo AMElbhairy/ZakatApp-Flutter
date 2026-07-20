@@ -58,6 +58,11 @@ class _FakeSavingsLocalStore implements SavingsLocalStore {
   Stream<List<model.Saving>> watchActiveSavings() async* {
     yield savings;
   }
+
+  @override
+  Future<int> countActiveSavings() async {
+    return savings.length;
+  }
 }
 
 Future<AppStateController> _makeController({

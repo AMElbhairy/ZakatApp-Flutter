@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'dart:async';
 import 'package:provider/provider.dart';
@@ -9,17 +10,24 @@ import 'package:zakatapp_flutter/main.dart';
 import 'package:zakatapp_flutter/models/app_state.dart';
 import 'package:zakatapp_flutter/models/user_profile.dart';
 import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
+import 'package:zakatapp_flutter/features/auth/auth_brand_ui.dart';
 import 'package:zakatapp_flutter/services/app_state_controller.dart';
 import 'package:zakatapp_flutter/services/auth_controller.dart';
 import 'package:zakatapp_flutter/services/backup_key_manager.dart';
 import 'package:zakatapp_flutter/services/auth_service.dart';
 import 'package:zakatapp_flutter/models/backup_preview.dart';
 import 'package:zakatapp_flutter/services/cloud_backup_controller.dart';
+import 'package:zakatapp_flutter/services/bootstrap_coordinator.dart';
 import 'package:zakatapp_flutter/services/local_storage_service.dart';
 import 'package:zakatapp_flutter/services/network_status_controller.dart';
 import 'package:zakatapp_flutter/services/market_data_api_service.dart';
 import 'package:zakatapp_flutter/services/secure_storage_service.dart';
 import 'package:zakatapp_flutter/services/startup_restore_discovery.dart';
+import 'package:zakatapp_flutter/screens/account/security_lock_screen.dart';
+
+const MethodChannel _localAuthChannel = MethodChannel(
+  'plugins.flutter.io/local_auth',
+);
 
 Future<void> _seedNonEmptyLocalState() async {
   final AppStateRepository repository = AppStateRepository(
@@ -392,7 +400,7 @@ class _FakeNetworkStatusController extends NetworkStatusController {
   Future<void> refresh() async {}
 
   @override
-  Future<void> start() async {}
+  Future<void> start({Duration initialDelay = Duration.zero}) async {}
 }
 
 class _TestAppStateController extends AppStateController {
@@ -486,11 +494,153 @@ Widget _buildApp({
           value: networkStatusController,
         ),
     ],
-    child: const ZakatApp(),
+    child: ZakatApp(preferences: _sharedPrefs),
   );
 }
 
+Widget _buildPrivacyApp({
+  AuthService? authService,
+  MarketDataApiService? marketDataApiService,
+  BackupKeyManager? backupKeyManager,
+  CloudBackupController? cloudBackupController,
+  CloudBackupController Function(
+    AppStateController appStateController,
+    AuthController authController,
+    BackupKeyManager backupKeyManager,
+  )?
+  cloudBackupControllerBuilder,
+  NetworkStatusController? networkStatusController,
+  bool enableBackgroundSync = true,
+  bool enableMarketAutoRefresh = true,
+  BootstrapCoordinator? bootstrapCoordinator,
+}) {
+  final Widget app = _buildApp(
+    authService: authService,
+    marketDataApiService: marketDataApiService,
+    backupKeyManager: backupKeyManager,
+    cloudBackupController: cloudBackupController,
+    cloudBackupControllerBuilder: cloudBackupControllerBuilder,
+    networkStatusController: networkStatusController,
+    enableBackgroundSync: enableBackgroundSync,
+    enableMarketAutoRefresh: enableMarketAutoRefresh,
+  );
+  if (bootstrapCoordinator == null) return app;
+  return ChangeNotifierProvider<BootstrapCoordinator>.value(
+    value: bootstrapCoordinator,
+    child: app,
+  );
+}
+
+late SharedPreferences _sharedPrefs;
+
+class _TestPrivacyBootstrapCoordinator extends BootstrapCoordinator {
+  _TestPrivacyBootstrapCoordinator({
+    required BootstrapPhase initialPhase,
+    required this._initialUnlockRequired,
+  }) : _phase = initialPhase,
+       super(
+         dependencies: BootstrapDependencies(
+           authController: AuthController(
+             authService: _FakeAuthService(),
+             localStorage: const LocalStorageService(),
+           ),
+           appStateController: _TestAppStateController(
+             repository: AppStateRepository(
+               localStorage: const LocalStorageService(),
+             ),
+             marketDataApiService: _FakeMarketDataApiService(),
+             enableBackgroundSync: false,
+             enableMarketAutoRefresh: false,
+           ),
+         ),
+       );
+
+  BootstrapPhase _phase;
+  final bool _initialUnlockRequired;
+  final Completer<BootstrapResult> _startCompleter =
+      Completer<BootstrapResult>();
+
+  @override
+  BootstrapPhase get phase => _phase;
+
+  @override
+  bool get hasInitialBootstrapComplete =>
+      _phase == BootstrapPhase.ready || _phase == BootstrapPhase.locked;
+
+  @override
+  StartupRestoreDiscoveryResult? get restoreGateDiscovery => null;
+
+  @override
+  String? get loadingMessage => null;
+
+  @override
+  Future<BootstrapResult> start({bool retry = false}) {
+    if (retry) {
+      _phase = BootstrapPhase.authLoading;
+      notifyListeners();
+    }
+    return _startCompleter.future;
+  }
+
+  void completeReady() {
+    _phase = _initialUnlockRequired
+        ? BootstrapPhase.locked
+        : BootstrapPhase.ready;
+    notifyListeners();
+    if (!_startCompleter.isCompleted) {
+      _startCompleter.complete(
+        BootstrapReady(
+          phase: _phase,
+          generation: 0,
+          requiresUnlock: _initialUnlockRequired,
+          initializedServices: true,
+        ),
+      );
+    }
+  }
+
+  @override
+  Future<void> handleLifecycleState(AppLifecycleState state) async {}
+
+  @override
+  Future<void> handleUnlock() async {
+    _phase = BootstrapPhase.ready;
+    notifyListeners();
+  }
+
+  @override
+  Future<void> restoreBackup() async {}
+
+  @override
+  Future<void> startFresh() async {}
+
+  @override
+  Future<void> openBackupSync() async {}
+}
+
 void main() {
+  setUp(() async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    _sharedPrefs = await SharedPreferences.getInstance();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(_localAuthChannel, (MethodCall call) async {
+          switch (call.method) {
+            case 'authenticate':
+              return true;
+            case 'getAvailableBiometrics':
+              return <String>['face'];
+            case 'canCheckBiometrics':
+            case 'isDeviceSupported':
+              return true;
+          }
+          return null;
+        });
+  });
+
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(_localAuthChannel, null);
+  });
   testWidgets('signed-out state renders', (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     await tester.pumpWidget(_buildApp());
@@ -915,6 +1065,137 @@ void main() {
 
     expect(find.byKey(const Key('premiumBottomNav')), findsOneWidget);
   });
+
+  testWidgets('privacy overlay protects background transitions', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final _TestPrivacyBootstrapCoordinator coordinator =
+        _TestPrivacyBootstrapCoordinator(
+          initialPhase: BootstrapPhase.authLoading,
+          initialUnlockRequired: false,
+        );
+    await tester.pumpWidget(
+      _buildPrivacyApp(
+        bootstrapCoordinator: coordinator,
+        enableBackgroundSync: false,
+        enableMarketAutoRefresh: false,
+      ),
+    );
+    final AppPrivacyOverlayController controller =
+        Provider.of<AppPrivacyOverlayController>(
+          tester.element(find.byType(MaterialApp)),
+          listen: false,
+        );
+
+    await tester.pump();
+    expect(controller.visible, isFalse);
+    expect(find.byKey(const Key('premiumBottomNav')), findsNothing);
+
+    coordinator.completeReady();
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(controller.visible, isFalse);
+    expect(find.byKey(const Key('premiumBottomNav')), findsOneWidget);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await tester.pump();
+    await tester.pump();
+    expect(controller.visible, isTrue);
+    expect(controller.visible, isTrue);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    await tester.pump();
+    expect(controller.visible, isFalse);
+  });
+
+  testWidgets('privacy overlay stays up until biometric unlock completes', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final _TestPrivacyBootstrapCoordinator coordinator =
+        _TestPrivacyBootstrapCoordinator(
+          initialPhase: BootstrapPhase.locked,
+          initialUnlockRequired: true,
+        );
+
+    await tester.pumpWidget(
+      _buildPrivacyApp(
+        bootstrapCoordinator: coordinator,
+        enableBackgroundSync: false,
+        enableMarketAutoRefresh: false,
+      ),
+    );
+    final AppPrivacyOverlayController controller =
+        Provider.of<AppPrivacyOverlayController>(
+          tester.element(find.byType(MaterialApp)),
+          listen: false,
+        );
+    await tester.pumpAndSettle();
+
+    expect(controller.visible, isFalse);
+    expect(find.byType(SecurityLockScreen), findsOneWidget);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pump();
+    await tester.pump();
+    expect(controller.visible, isFalse);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    await tester.pump();
+    expect(find.byType(SecurityLockScreen), findsOneWidget);
+    expect(controller.visible, isFalse);
+
+    await tester.tap(find.text('Unlock'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SecurityLockScreen), findsNothing);
+    expect(find.byType(AuthPrivacyOverlay), findsNothing);
+    expect(find.byKey(const Key('premiumBottomNav')), findsOneWidget);
+  });
+
+  testWidgets(
+    'privacy overlay stays hidden during cold launch until the first stable foreground frame',
+    (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final _TestPrivacyBootstrapCoordinator coordinator =
+          _TestPrivacyBootstrapCoordinator(
+            initialPhase: BootstrapPhase.authLoading,
+            initialUnlockRequired: false,
+          );
+      await tester.pumpWidget(
+        _buildPrivacyApp(
+          bootstrapCoordinator: coordinator,
+          enableBackgroundSync: false,
+          enableMarketAutoRefresh: false,
+        ),
+      );
+      final AppPrivacyOverlayController controller =
+          Provider.of<AppPrivacyOverlayController>(
+            tester.element(find.byType(MaterialApp)),
+            listen: false,
+          );
+
+      await tester.pump();
+      expect(find.byType(AuthPrivacyOverlay), findsNothing);
+
+      coordinator.completeReady();
+      await tester.pump();
+      await tester.pumpAndSettle();
+
+      expect(controller.visible, isFalse);
+    expect(controller.visible, isFalse);
+    expect(find.byKey(const Key('premiumBottomNav')), findsOneWidget);
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pump();
+      await tester.pump();
+      expect(controller.visible, isTrue);
+    },
+  );
 
   testWidgets('startup works without auth', skip: true, (
     WidgetTester tester,

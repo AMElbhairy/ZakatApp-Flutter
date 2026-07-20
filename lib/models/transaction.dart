@@ -1,3 +1,5 @@
+import '../core/utils/amount_parser.dart';
+
 class Transaction {
   const Transaction({
     required this.id,
@@ -66,12 +68,12 @@ class Transaction {
     return Transaction(
       id: (json['id'] ?? '').toString(),
       type: (json['type'] ?? '').toString().trim().toLowerCase(),
-      date: (json['date'] ?? '').toString(),
+      date: normalizeDateText(json['date']?.toString()),
       amount: _asDouble(json['amount']),
       currency: (json['currency'] ?? '').toString().trim().toUpperCase(),
       category: (json['category'] ?? '').toString(),
       description: (json['description'] ?? '').toString(),
-      createdAt: (json['createdAt'] ?? '').toString(),
+      createdAt: normalizeTimestampText(json['createdAt']?.toString()),
       rolledOver: _asBool(json['rolledOver']),
       rolledAmount: json['rolledAmount'] == null
           ? null
@@ -128,7 +130,7 @@ class Transaction {
 
   static double _asDouble(dynamic value) {
     if (value is num) return value.toDouble();
-    return double.tryParse(value?.toString() ?? '') ?? 0;
+    return tryParseAmount(value?.toString()) ?? 0;
   }
 
   static bool _asBool(dynamic value) {

@@ -66,9 +66,12 @@ Widget _buildApp() {
         ),
       ),
     ],
-    child: const ZakatApp(),
+    child: ZakatApp(preferences: _sharedPrefs),
   );
 }
+
+late SharedPreferences _sharedPrefs;
+
 
 Future<void> _openPlans(WidgetTester tester) async {
   await tester.tap(find.byIcon(AppIcons.plans).first);
@@ -125,6 +128,10 @@ Future<void> _addPlan(
 }
 
 void main() {
+  setUp(() async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    _sharedPrefs = await SharedPreferences.getInstance();
+  });
   group('Unit Tests: Services', () {
     final MarketData marketData = MarketData.fromJson(const <String, dynamic>{
       'GOLD_PRICE_24K_EGP': 3200.0,

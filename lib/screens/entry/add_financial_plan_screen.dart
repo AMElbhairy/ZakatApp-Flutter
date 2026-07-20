@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../widgets/sensitive_content_scope.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/services/zakat_engine.dart';
 import '../../core/widgets/app_ui.dart';
 import '../../core/widgets/currency_dropdown_form_field.dart';
+import '../../core/utils/amount_parser.dart';
 import '../../models/financial_plan.dart';
 import '../../models/investment_asset.dart';
 import '../../models/transaction.dart';
@@ -113,7 +115,8 @@ class _AddFinancialPlanScreenState extends State<AddFinancialPlanScreen> {
   Widget build(BuildContext context) {
     final bool isArabic =
         Localizations.localeOf(context).languageCode.toLowerCase() == 'ar';
-    return Scaffold(
+    return SensitiveContentScope(
+      child: Scaffold(
       appBar: AppBar(
         title: Text(
           widget.isEditMode
@@ -254,7 +257,7 @@ class _AddFinancialPlanScreenState extends State<AddFinancialPlanScreen> {
                     ),
                     validator: (String? value) {
                       final double v =
-                          double.tryParse((value ?? '').trim()) ?? -1;
+                          tryParseAmount(value) ?? -1;
                       if (v < 0) {
                         return isArabic
                             ? 'الرجاء إدخال رصيد بدء صحيح'
@@ -309,7 +312,7 @@ class _AddFinancialPlanScreenState extends State<AddFinancialPlanScreen> {
                           validator: (String? value) {
                             final String raw = (value ?? '').trim();
                             if (raw.isEmpty) return null;
-                            final double? amount = double.tryParse(raw);
+                            final double? amount = tryParseAmount(raw);
                             if (amount == null || amount < 0) {
                               return isArabic
                                   ? 'الرجاء إدخال قيمة صحيحة'
@@ -361,7 +364,7 @@ class _AddFinancialPlanScreenState extends State<AddFinancialPlanScreen> {
                   ),
                   validator: (String? value) {
                     final double v =
-                        double.tryParse((value ?? '').trim()) ?? -1;
+                        tryParseAmount(value) ?? -1;
                     if (v < 0) {
                       return isArabic
                           ? 'الرجاء إدخال قيمة صحيحة'
@@ -389,7 +392,7 @@ class _AddFinancialPlanScreenState extends State<AddFinancialPlanScreen> {
                   ),
                   validator: (String? value) {
                     final double v =
-                        double.tryParse((value ?? '').trim()) ?? -1;
+                        tryParseAmount(value) ?? -1;
                     if (v < 0) {
                       return isArabic
                           ? 'الرجاء إدخال قيمة صحيحة'
@@ -441,7 +444,7 @@ class _AddFinancialPlanScreenState extends State<AddFinancialPlanScreen> {
           ),
         ),
       ),
-    );
+    ));
   }
 
   Future<void> _submit() async {
@@ -555,7 +558,7 @@ class _AddFinancialPlanScreenState extends State<AddFinancialPlanScreen> {
         startingFxSnapshot = Map<String, double>.from(marketData.ratesToEgp);
       } else {
         startingNetWorth =
-            double.tryParse(_manualBalanceController.text.trim()) ?? 0;
+            tryParseAmount(_manualBalanceController.text) ?? 0;
         if (_includeManualBreakdown) {
           startingAssetBreakdown = _manualBreakdownValues();
           startingAssets = startingAssetBreakdown.entries
@@ -602,9 +605,9 @@ class _AddFinancialPlanScreenState extends State<AddFinancialPlanScreen> {
     }
 
     final double monthlyIncome =
-        double.tryParse(_monthlyIncomeController.text.trim()) ?? 0;
+        tryParseAmount(_monthlyIncomeController.text) ?? 0;
     final double monthlyExpenses =
-        double.tryParse(_monthlyExpensesController.text.trim()) ?? 0;
+        tryParseAmount(_monthlyExpensesController.text) ?? 0;
     final int durationYears = int.parse(_durationYearsController.text.trim());
 
     final FinancialPlan plan = FinancialPlan(
@@ -649,7 +652,7 @@ class _AddFinancialPlanScreenState extends State<AddFinancialPlanScreen> {
     final Map<String, double> values = <String, double>{};
     for (final MapEntry<String, TextEditingController> entry
         in _manualBreakdownControllers.entries) {
-      final double value = double.tryParse(entry.value.text.trim()) ?? 0.0;
+      final double value = tryParseAmount(entry.value.text) ?? 0.0;
       if (value > 0 || entry.key == 'liability') {
         values[entry.key] = value;
       }

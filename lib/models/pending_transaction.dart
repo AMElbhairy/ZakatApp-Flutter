@@ -1,3 +1,5 @@
+import '../core/utils/amount_parser.dart';
+
 enum CaptureStatus { pendingReview, autoApproved, manuallyApproved, ignored }
 
 enum ApprovalSource { auto, manual }
@@ -141,8 +143,10 @@ class PendingTransaction {
       source: (json['source'] ?? '').toString(),
       sourceIdentifier: json['sourceIdentifier']?.toString(),
       rawMessage: (json['rawMessage'] ?? '').toString(),
-      createdAt: (json['createdAt'] ?? '').toString(),
-      reviewedAt: json['reviewedAt']?.toString(),
+      createdAt: normalizeTimestampText(json['createdAt']?.toString()),
+      reviewedAt: normalizeNullableTimestampText(
+        json['reviewedAt']?.toString(),
+      ),
       suggestedType: (json['suggestedType'] ?? 'unknown').toString(),
       suggestedAmount: json['suggestedAmount'] == null
           ? null
@@ -219,7 +223,7 @@ class PendingTransaction {
 
   static double _asDouble(dynamic value) {
     if (value is num) return value.toDouble();
-    return double.tryParse(value?.toString() ?? '') ?? 0.0;
+    return tryParseAmount(value?.toString()) ?? 0.0;
   }
 
   static bool _asBool(dynamic value) {

@@ -46,6 +46,11 @@ class _NoopTransactionsStore implements TransactionsLocalStore {
   Stream<List<model.Transaction>> watchActiveTransactions() async* {
     yield const <model.Transaction>[];
   }
+
+  @override
+  Future<int> countActiveTransactions() async {
+    return 0;
+  }
 }
 
 class _NoopSavingsStore implements SavingsLocalStore {
@@ -71,6 +76,11 @@ class _NoopSavingsStore implements SavingsLocalStore {
   @override
   Stream<List<model.Saving>> watchActiveSavings() async* {
     yield const <model.Saving>[];
+  }
+
+  @override
+  Future<int> countActiveSavings() async {
+    return 0;
   }
 }
 

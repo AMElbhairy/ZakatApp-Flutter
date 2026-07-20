@@ -90,30 +90,7 @@
       "scale" : "2x",
       "size" : "40x40"
     },
-    {
-      "filename" : "Icon-App-50x50@1x.png",
-      "idiom" : "ipad",
-      "scale" : "1x",
-      "size" : "50x50"
-    },
-    {
-      "filename" : "Icon-App-50x50@2x.png",
-      "idiom" : "ipad",
-      "scale" : "2x",
-      "size" : "50x50"
-    },
-    {
-      "filename" : "Icon-App-57x57@1x.png",
-      "idiom" : "ipad",
-      "scale" : "1x",
-      "size" : "57x57"
-    },
-    {
-      "filename" : "Icon-App-57x57@2x.png",
-      "idiom" : "ipad",
-      "scale" : "2x",
-      "size" : "57x57"
-    },
+
     {
       "filename" : "Icon-App-72x72@1x.png",
       "idiom" : "ipad",

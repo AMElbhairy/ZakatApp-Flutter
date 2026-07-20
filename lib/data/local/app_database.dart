@@ -70,6 +70,24 @@ class AppDatabase extends _$AppDatabase {
     }
   }
 
+  static Future<void> deleteAllDatabaseFiles() async {
+    final Directory directory = await getApplicationDocumentsDirectory();
+    if (!await directory.exists()) {
+      return;
+    }
+
+    await for (final FileSystemEntity entity in directory.list(
+      followLinks: false,
+    )) {
+      if (entity is! File) continue;
+      final String name = p.basename(entity.path);
+      final bool isAppDatabase = name == fileNameForUser(null) ||
+          (name.startsWith('zakatapp_') && name.endsWith('.sqlite'));
+      if (!isAppDatabase) continue;
+      await _deleteFileArtifacts(entity);
+    }
+  }
+
   Future<String?> resolveDatabasePath() async {
     try {
       final Directory directory = await getApplicationDocumentsDirectory();

@@ -37,6 +37,10 @@ class LocalCorrectionFeedbackRepository
     return _correctionFeedbackDao.getActiveCorrectionFeedback();
   }
 
+  Future<int> countActiveCorrectionFeedback() {
+    return _correctionFeedbackDao.countActiveCorrectionFeedback();
+  }
+
   @override
   Stream<List<CorrectionFeedback>> watchActiveCorrectionFeedback() {
     return _correctionFeedbackDao.watchActiveCorrectionFeedback();

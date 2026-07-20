@@ -40,6 +40,16 @@ class CorrectionFeedbackDao extends DatabaseAccessor<db.AppDatabase> {
     return rows.map(_mapper.fromRow).toList(growable: false);
   }
 
+  Future<int> countActiveCorrectionFeedback() async {
+    final QueryRow row = await customSelect(
+      'SELECT COUNT(*) AS c FROM correction_feedbacks WHERE deleted_at IS NULL',
+      readsFrom: <TableInfo<Object?, Object?>>{
+        attachedDatabase.correctionFeedbacks,
+      },
+    ).getSingle();
+    return row.read<int>('c');
+  }
+
   Future<void> upsertCorrectionFeedbackRow(
     CorrectionFeedback item, {
     String? updatedAt,

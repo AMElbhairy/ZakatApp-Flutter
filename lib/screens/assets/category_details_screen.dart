@@ -866,7 +866,15 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                                 _selectedDateFilter == filter;
                             String label = filter;
                             if (filter == 'All Time') {
-                              label = context.l10n.tr('all');
+                              label = context.l10n.tr('all_time');
+                            } else if (filter == '30D') {
+                              label = context.l10n.tr('period_30d');
+                            } else if (filter == '90D') {
+                              label = context.l10n.tr('period_90d');
+                            } else if (filter == 'YTD') {
+                              label = context.l10n.tr('period_ytd');
+                            } else if (filter == 'Custom') {
+                              label = context.l10n.tr('period_custom');
                             }
                             if (filter == 'Custom' &&
                                 _customDateRange != null &&
@@ -1688,7 +1696,9 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                                   const SizedBox(width: 4),
                                   Expanded(
                                     child: Text(
-                                      'Installments: ${ZakatEngineService.formatCurrency(unpaidLiabilityMain, mainCurrency, isArabic: isArabic)} remaining',
+                                      isArabic
+                                          ? 'الأقساط: ${ZakatEngineService.formatCurrency(unpaidLiabilityMain, mainCurrency, isArabic: isArabic)} متبقية'
+                                          : 'Installments: ${ZakatEngineService.formatCurrency(unpaidLiabilityMain, mainCurrency, isArabic: isArabic)} remaining',
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
                                       style: const TextStyle(
@@ -1928,7 +1938,9 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        'Installment Schedule - ${latestAsset.location}',
+                        isArabic
+                            ? 'جدول الأقساط - ${latestAsset.location}'
+                            : 'Installment Schedule - ${latestAsset.location}',
                         style: Theme.of(context).textTheme.titleMedium
                             ?.copyWith(
                               fontWeight: FontWeight.bold,
@@ -1938,7 +1950,9 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Remaining Liability: ${ZakatEngineService.formatCurrency(unpaidLiabilityMain, mainCurrency, isArabic: isArabic)}',
+                        isArabic
+                            ? 'الالتزامات المتبقية: ${ZakatEngineService.formatCurrency(unpaidLiabilityMain, mainCurrency, isArabic: isArabic)}'
+                            : 'Remaining Liability: ${ZakatEngineService.formatCurrency(unpaidLiabilityMain, mainCurrency, isArabic: isArabic)}',
                         style: TextStyle(
                           color: tokens.colors.textSecondary,
                           fontSize: 13,
@@ -1947,7 +1961,13 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                       const SizedBox(height: 16),
                       Expanded(
                         child: plan.isEmpty
-                            ? Center(child: Text('No installments scheduled.'))
+                            ? Center(
+                                child: Text(
+                                  isArabic
+                                      ? 'لا توجد أقساط مجدولة.'
+                                      : 'No installments scheduled.',
+                                ),
+                              )
                             : ListView.builder(
                                 controller: scrollController,
                                 itemCount: plan.length,

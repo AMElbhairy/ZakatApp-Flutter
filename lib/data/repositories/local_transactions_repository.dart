@@ -6,6 +6,7 @@ import '../local/daos/transactions_dao.dart';
 
 abstract class TransactionsLocalStore {
   Future<List<Transaction>> getActiveTransactions();
+  Future<int> countActiveTransactions();
   Stream<List<Transaction>> watchActiveTransactions();
   Future<void> replaceAllForLocalMirror(Iterable<Transaction> transactions);
   Future<void> saveTransaction(
@@ -43,6 +44,11 @@ class LocalTransactionsRepository implements TransactionsLocalStore {
   @override
   Future<List<Transaction>> getActiveTransactions() {
     return _transactionsDao.getActiveTransactions();
+  }
+
+  @override
+  Future<int> countActiveTransactions() {
+    return _transactionsDao.countActiveTransactions();
   }
 
   @override

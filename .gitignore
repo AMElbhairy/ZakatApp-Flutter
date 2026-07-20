@@ -51,3 +51,13 @@ ios/Flutter/Generated*.xcconfig
 ios/Flutter/flutter_export_environment*.sh
 .flutter-plugins-dependencies*
 .DS_Store
+
+# Android signing / keystore files
+**/android/key.properties
+*.jks
+
+# Gradle build cache directories
+.gradle/
+.gradle-native/
+**/android/.gradle/
+

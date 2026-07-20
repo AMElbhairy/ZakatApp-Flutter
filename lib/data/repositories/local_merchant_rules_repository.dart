@@ -6,6 +6,7 @@ import '../local/daos/sync_queue_dao.dart';
 
 abstract class MerchantRulesLocalStore {
   Future<Map<String, MerchantRule>> getActiveMerchantRules();
+  Future<int> countActiveMerchantRules();
   Stream<Map<String, MerchantRule>> watchActiveMerchantRules();
   Future<void> replaceAllForLocalMirror(Iterable<MerchantRule> rules);
   Future<void> saveMerchantRule(MerchantRule rule, {String? now});
@@ -33,6 +34,11 @@ class LocalMerchantRulesRepository implements MerchantRulesLocalStore {
       for (final MerchantRule rule in rules)
         rule.merchantName.toLowerCase().trim(): rule,
     };
+  }
+
+  @override
+  Future<int> countActiveMerchantRules() {
+    return _merchantRulesDao.countActiveMerchantRules();
   }
 
   @override

@@ -38,6 +38,16 @@ class RecurringTransactionsDao extends DatabaseAccessor<db.AppDatabase> {
     return rows.map(_mapper.fromRow).toList(growable: false);
   }
 
+  Future<int> countActiveRecurringTransactions() async {
+    final QueryRow row = await customSelect(
+      'SELECT COUNT(*) AS c FROM recurring_transactions WHERE deleted_at IS NULL',
+      readsFrom: <TableInfo<Object?, Object?>>{
+        attachedDatabase.recurringTransactions,
+      },
+    ).getSingle();
+    return row.read<int>('c');
+  }
+
   Future<void> upsertRecurringTransactionRow(
     RecurringTransaction recurring, {
     String? updatedAt,

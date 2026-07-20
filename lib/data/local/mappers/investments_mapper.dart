@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart';
 
+import '../../../core/utils/amount_parser.dart';
 import '../../../models/investment_asset.dart' as model;
 import '../app_database.dart' as db;
 
@@ -92,7 +93,7 @@ class InvestmentsMapper {
         .toList(growable: false);
   }
 
-  double _toDouble(String value) => double.tryParse(value) ?? 0;
+  double _toDouble(String value) => tryParseAmount(value) ?? 0;
 
   String _decimalText(num value) {
     if (value is int) return value.toString();

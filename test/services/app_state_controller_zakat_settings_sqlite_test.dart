@@ -134,6 +134,30 @@ void main() {
   );
 
   test(
+    'switching from hawl to annual seeds the default annual date',
+    () async {
+      final controller = await _makeController(
+        database: database,
+        initialValues: <String, Object>{
+          'zakatAppData':
+              '{"transactions":[],"savings":[],"recurringTransactions":[],"investments":[],"financialPlans":[],"pendingTransactions":[],"lastRollover":"","categories":{"income":[],"expense":[]},"zakatPaidMonths":[],"processedExpenseIds":[],"mainCurrency":"USD","defaultEntryCurrency":"USD","zakatExpenseIds":{},"zakatMethod":"hawl","zakatAnnualDate":"","zakatNisabBasis":"gold85","zakatScheduleFilter":"unpaid","marketData":{},"marketHistory":[],"syncHealth":{"lastSuccessAt":"","lastFailureAt":"","lastError":"","pendingWrites":0},"lastModifiedAt":"","languagePreference":"en","themeMode":"system","biometricLockEnabled":false,"biometricHideWealthEnabled":false,"biometricExportEnabled":false,"biometricRestoreEnabled":false,"biometricAutoLockDelay":"1_minute","merchantRules":{},"merchantAliases":{},"captureAnalytics":{"parsedMessages":0,"autoApprovedMessages":0,"duplicateMessages":0,"ignoredMessages":0,"correctedMessages":0,"learnedRules":0,"autoApprovedRules":0,"capturedFromAppleShortcuts":0,"capturedFromAppleShortcutsAutoApproved":0,"capturedFromAppleShortcutsIgnored":0},"correctionFeedback":[],"merchantConfirmations":[],"smartCaptureEnabled":true,"smartCaptureAutoApproveEnabled":false}',
+        },
+      );
+
+      await controller.updateZakatMethod('annual');
+
+      expect(controller.state.zakatMethod, 'annual');
+      expect(controller.state.zakatAnnualDate, '09-01');
+
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final String? raw = prefs.getString('zakatAppData');
+      expect(raw, isNotNull);
+      expect(raw!, contains('"zakatMethod":"annual"'));
+      expect(raw, contains('"zakatAnnualDate":"09-01"'));
+    },
+  );
+
+  test(
     'runtime persistence keeps full collections while backup export remains full-fidelity',
     skip: true, () async {
       final controller = await _makeController(

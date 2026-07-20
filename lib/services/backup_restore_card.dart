@@ -19,7 +19,8 @@ class BackupRestoreCard extends StatelessWidget {
   final AppStateController controller;
 
   Future<void> _exportBackup(BuildContext context) async {
-    if (controller.state.biometricExportEnabled &&
+    if ((controller.state.biometricLockEnabled ||
+            controller.state.biometricExportEnabled) &&
         await BiometricService.canAuthenticate()) {
       final auth = await BiometricService.authenticate(
         reason: 'Confirm identity to export local backup JSON file',
@@ -58,7 +59,8 @@ class BackupRestoreCard extends StatelessWidget {
   }
 
   Future<void> _importBackup(BuildContext context) async {
-    if (controller.state.biometricRestoreEnabled &&
+    if ((controller.state.biometricLockEnabled ||
+            controller.state.biometricRestoreEnabled) &&
         await BiometricService.canAuthenticate()) {
       final auth = await BiometricService.authenticate(
         reason: 'Confirm identity to import a backup JSON file',
@@ -223,7 +225,8 @@ class BackupRestoreCard extends StatelessWidget {
     BackupPreview preview, {
     required bool replace,
   }) async {
-    if (controller.state.biometricRestoreEnabled &&
+    if ((controller.state.biometricLockEnabled ||
+            controller.state.biometricRestoreEnabled) &&
         await BiometricService.canAuthenticate()) {
       final auth = await BiometricService.authenticate(
         reason:

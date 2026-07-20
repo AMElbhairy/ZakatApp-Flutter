@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart';
 
+import '../../../core/utils/amount_parser.dart';
 import '../../../models/merchant_rule.dart';
 import '../app_database.dart' as db;
 
@@ -42,7 +43,7 @@ class MerchantRuleMapper {
       defaultType: row.defaultType,
       autoApprove: row.autoApprove,
       usageCount: row.usageCount,
-      confidence: double.tryParse(row.confidenceText) ?? 0,
+      confidence: tryParseAmount(row.confidenceText) ?? 0,
       lastUsed: row.lastUsed,
       source: row.source,
       aliases: _decodeAliases(row.aliasesJson),

@@ -6,6 +6,7 @@ import '../local/daos/sync_queue_dao.dart';
 
 abstract class FinancialPlansLocalStore {
   Future<List<FinancialPlan>> getActiveFinancialPlans();
+  Future<int> countActiveFinancialPlans();
   Stream<List<FinancialPlan>> watchActiveFinancialPlans();
   Future<void> replaceAllForLocalMirror(Iterable<FinancialPlan> plans);
   Future<void> saveFinancialPlan(FinancialPlan plan, {String? now});
@@ -24,6 +25,11 @@ class LocalFinancialPlansRepository implements FinancialPlansLocalStore {
   @override
   Future<List<FinancialPlan>> getActiveFinancialPlans() {
     return _financialPlansDao.getActiveFinancialPlans();
+  }
+
+  @override
+  Future<int> countActiveFinancialPlans() {
+    return _financialPlansDao.countActiveFinancialPlans();
   }
 
   @override

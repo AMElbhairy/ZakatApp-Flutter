@@ -7,6 +7,7 @@ import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/theme/app_theme_extensions.dart';
 import '../../models/merchant_rule.dart';
+import '../../core/privacy/app_privacy.dart';
 import '../../services/app_state_controller.dart';
 import '../../services/smart_capture_parser.dart';
 import '../../core/i18n/app_localizations.dart';
@@ -35,6 +36,9 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
 
     showDialog(
       context: context,
+      routeSettings: const AppPrivacyRouteSettings(
+        privacy: ScreenPrivacyClassification.sensitive,
+      ),
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setState) {
@@ -46,7 +50,7 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
                 side: BorderSide(color: tokens.colors.divider),
               ),
               title: Text(
-                'Add Custom Rule',
+                context.l10n.tr('merchant_rules_add_custom'),
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
                   color: tokens.colors.textPrimary,
                 ),
@@ -57,7 +61,7 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Merchant Name',
+                      context.l10n.tr('merchant_rules_merchant_name'),
                       style: TextStyle(color: tokens.colors.textSecondary),
                     ),
                     const SizedBox(height: 6),
@@ -66,25 +70,25 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
                       style: TextStyle(color: tokens.colors.textPrimary),
                       decoration: _fieldDecoration(
                         context,
-                        hintText: 'e.g. Talabat',
+                        hintText: context.l10n.tr(
+                          'merchant_rules_example_merchant_name',
+                        ),
                       ),
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'Transaction Type',
+                      context.l10n.tr('merchant_rules_transaction_type'),
                       style: TextStyle(color: tokens.colors.textSecondary),
                     ),
                     const SizedBox(height: 6),
                     CompactDropdownFormField<String>(
                       value: selectedType,
-                      labelText: 'Transaction Type',
+                      labelText: context.l10n.tr(
+                        'merchant_rules_transaction_type',
+                      ),
                       floatingLabelBehavior: FloatingLabelBehavior.never,
                       items: const <String>['expense', 'income'],
-                      itemLabel: (String value) => switch (value) {
-                        'expense' => 'Expense',
-                        'income' => 'Income',
-                        _ => value,
-                      },
+                      itemLabel: (String value) => context.l10n.tr(value),
                       onChanged: (String value) {
                         setState(() {
                           selectedType = value;
@@ -99,13 +103,13 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'Category',
+                      context.l10n.tr('merchant_rules_category'),
                       style: TextStyle(color: tokens.colors.textSecondary),
                     ),
                     const SizedBox(height: 6),
                     CompactDropdownFormField<String>(
                       value: selectedCategory,
-                      labelText: 'Category',
+                      labelText: context.l10n.tr('merchant_rules_category'),
                       floatingLabelBehavior: FloatingLabelBehavior.never,
                       items: selectedType == 'expense'
                           ? controller.state.categories.expense
@@ -120,7 +124,7 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
                     const SizedBox(height: 16),
                     SwitchListTile(
                       title: Text(
-                        'Auto Approve',
+                        context.l10n.tr('merchant_rules_auto_approve'),
                         style: TextStyle(
                           color: tokens.colors.textPrimary,
                           fontSize: 14,
@@ -141,8 +145,10 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
                       style: TextStyle(color: tokens.colors.textPrimary),
                       decoration: _fieldDecoration(
                         context,
-                        labelText: 'Aliases',
-                        hintText: 'merchant.com, merchant app',
+                        labelText: context.l10n.tr('merchant_rules_aliases'),
+                        hintText: context.l10n.tr(
+                          'merchant_rules_example_aliases',
+                        ),
                       ),
                     ),
                   ],
@@ -152,7 +158,7 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
                 TextButton(
                   onPressed: () => Navigator.pop(context),
                   child: Text(
-                    'Cancel',
+                    context.l10n.tr('cancel'),
                     style: TextStyle(color: tokens.colors.textSecondary),
                   ),
                 ),
@@ -182,7 +188,7 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
                     );
                     Navigator.pop(context);
                   },
-                  child: const Text('Add'),
+                  child: Text(context.l10n.tr('merchant_rules_add')),
                 ),
               ],
             );
@@ -228,7 +234,7 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
               side: BorderSide(color: tokens.colors.divider),
             ),
             title: Text(
-              'Edit Merchant Rule',
+              context.l10n.tr('merchant_rules_edit'),
               style: TextStyle(color: tokens.colors.textPrimary),
             ),
             content: SingleChildScrollView(
@@ -240,7 +246,7 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
                     Padding(
                       padding: const EdgeInsets.only(bottom: 16),
                       child: Text(
-                        'Based on built-in template',
+                        context.l10n.tr('merchant_rules_based_on_builtin'),
                         style: TextStyle(color: tokens.colors.gold),
                       ),
                     ),
@@ -249,20 +255,20 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
                     style: TextStyle(color: tokens.colors.textPrimary),
                     decoration: _fieldDecoration(
                       context,
-                      labelText: 'Merchant Name',
+                      labelText: context.l10n.tr(
+                        'merchant_rules_merchant_name',
+                      ),
                     ),
                   ),
                   const SizedBox(height: 16),
                   CompactDropdownFormField<String>(
                     value: selectedType,
-                    labelText: 'Transaction Type',
+                    labelText: context.l10n.tr(
+                      'merchant_rules_transaction_type',
+                    ),
                     floatingLabelBehavior: FloatingLabelBehavior.never,
                     items: const <String>['expense', 'income'],
-                    itemLabel: (String value) => switch (value) {
-                      'expense' => 'Expense',
-                      'income' => 'Income',
-                      _ => value,
-                    },
+                    itemLabel: (String value) => context.l10n.tr(value),
                     onChanged: (String value) {
                       setDialogState(() => selectedType = value);
                     },
@@ -270,7 +276,7 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
                   const SizedBox(height: 16),
                   CompactDropdownFormField<String>(
                     value: selectedCategory,
-                    labelText: 'Category',
+                    labelText: context.l10n.tr('merchant_rules_category'),
                     floatingLabelBehavior: FloatingLabelBehavior.never,
                     items: categories,
                     itemLabel: context.l10n.translateCategory,
@@ -284,14 +290,16 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
                     style: TextStyle(color: tokens.colors.textPrimary),
                     decoration: _fieldDecoration(
                       context,
-                      labelText: 'Aliases',
-                      hintText: 'talabat.com, talabat app, طلبات',
+                      labelText: context.l10n.tr('merchant_rules_aliases'),
+                      hintText: context.l10n.tr(
+                        'merchant_rules_example_aliases',
+                      ),
                     ),
                   ),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
                     title: Text(
-                      'Auto Approve',
+                      context.l10n.tr('merchant_rules_auto_approve'),
                       style: TextStyle(color: tokens.colors.textPrimary),
                     ),
                     value: autoApprove,
@@ -302,7 +310,7 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
                     title: Text(
-                      'Rule Enabled',
+                      context.l10n.tr('merchant_rules_rule_enabled'),
                       style: TextStyle(color: tokens.colors.textPrimary),
                     ),
                     value: enabled,
@@ -322,11 +330,11 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
                     );
                     if (context.mounted) Navigator.pop(context);
                   },
-                  child: const Text('Reset to Built-in Defaults'),
+                  child: Text(context.l10n.tr('merchant_rules_reset_builtin')),
                 ),
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
+                child: Text(context.l10n.tr('cancel')),
               ),
               ElevatedButton(
                 onPressed: () async {
@@ -357,7 +365,7 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
                   );
                   if (context.mounted) Navigator.pop(context);
                 },
-                child: const Text('Save'),
+                child: Text(context.l10n.tr('save')),
               ),
             ],
           );
@@ -444,7 +452,7 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
 
     return Scaffold(
       backgroundColor: tokens.colors.background,
-      appBar: AppBar(title: const Text('Merchant Rules')),
+      appBar: AppBar(title: Text(context.l10n.tr('merchant_rules_title'))),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showAddCustomRuleDialog(context, controller),
         elevation: 10,
@@ -468,12 +476,12 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
             builtinCount: builtinRules.length,
           ),
           const SizedBox(height: AppSpacing.lg),
-            if (displayedRules.isEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 72),
-                child: Center(
+          if (displayedRules.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 72),
+              child: Center(
                 child: Text(
-                  'No rules in this section',
+                  context.l10n.tr('merchant_rules_no_rules'),
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                     color: tokens.colors.textSecondary,
                   ),
@@ -485,7 +493,7 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
               children: <Widget>[
                 _buildRuleGroup(
                   context,
-                  title: 'Custom Rules',
+                  title: context.l10n.tr('merchant_rules_custom_rules'),
                   rules: customRules,
                   controller: controller,
                   showHeader: true,
@@ -493,7 +501,7 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
                 const SizedBox(height: AppSpacing.lg),
                 _buildRuleGroup(
                   context,
-                  title: 'Learned Rules',
+                  title: context.l10n.tr('merchant_rules_learned_rules'),
                   rules: learnedRules,
                   controller: controller,
                   showHeader: true,
@@ -501,7 +509,7 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
                 const SizedBox(height: AppSpacing.lg),
                 _buildRuleGroup(
                   context,
-                  title: 'Built-in Rules',
+                  title: context.l10n.tr('merchant_rules_builtin_rules'),
                   rules: builtinRules,
                   controller: controller,
                   showHeader: true,
@@ -511,7 +519,7 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
           else
             _buildRuleGroup(
               context,
-              title: 'Results',
+              title: context.l10n.tr('merchant_rules_results'),
               rules: displayedRules,
               controller: controller,
               showHeader: false,
@@ -550,7 +558,7 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
             children: <Widget>[
               Expanded(
                 child: Text(
-                  'Enable Auto Approval',
+                  context.l10n.tr('merchant_rules_enable_auto_approval'),
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     color: tokens.colors.textPrimary,
                     fontWeight: FontWeight.w700,
@@ -569,7 +577,7 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
           Align(
             alignment: AlignmentDirectional.centerStart,
             child: Text(
-              'Transactions matching rules with >=95% confidence are approved automatically.',
+              context.l10n.tr('merchant_rules_auto_approval_description'),
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: tokens.colors.textSecondary.withValues(alpha: 0.95),
                 height: 1.35,
@@ -588,7 +596,7 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
               context,
             ).textTheme.bodyMedium?.copyWith(color: tokens.colors.textPrimary),
             decoration: InputDecoration(
-              hintText: 'Search merchants...',
+              hintText: context.l10n.tr('merchant_rules_search_merchants'),
               hintStyle: TextStyle(
                 color: tokens.colors.textSecondary.withValues(alpha: 0.92),
               ),
@@ -643,29 +651,54 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
     final Color inactiveColor = tokens.colors.textSecondary;
     return Row(
       children: <Widget>[
-        _buildSectionTab(context, 'All', null, inactiveColor),
+        _buildSectionTab(
+          context,
+          key: 'All',
+          label: context.l10n.tr('merchant_rules_all'),
+          count: null,
+          inactiveColor: inactiveColor,
+        ),
         const SizedBox(width: AppSpacing.md),
-        _buildSectionTab(context, 'Custom', customCount, inactiveColor),
+        _buildSectionTab(
+          context,
+          key: 'Custom',
+          label: context.l10n.tr('merchant_rules_custom'),
+          count: customCount,
+          inactiveColor: inactiveColor,
+        ),
         const SizedBox(width: AppSpacing.md),
-        _buildSectionTab(context, 'Learned', learnedCount, inactiveColor),
+        _buildSectionTab(
+          context,
+          key: 'Learned',
+          label: context.l10n.tr('merchant_rules_learned'),
+          count: learnedCount,
+          inactiveColor: inactiveColor,
+        ),
         const SizedBox(width: AppSpacing.md),
-        _buildSectionTab(context, 'Built-in', builtinCount, inactiveColor),
+        _buildSectionTab(
+          context,
+          key: 'Built-in',
+          label: context.l10n.tr('merchant_rules_builtin'),
+          count: builtinCount,
+          inactiveColor: inactiveColor,
+        ),
       ],
     );
   }
 
   Widget _buildSectionTab(
-    BuildContext context,
-    String label,
-    int? count,
-    Color inactiveColor,
-  ) {
+    BuildContext context, {
+    required String key,
+    required String label,
+    required int? count,
+    required Color inactiveColor,
+  }) {
     final tokens = context.premiumTokens;
-    final bool selected = _selectedSection == label;
+    final bool selected = _selectedSection == key;
     final String text = count == null ? label : '$label ($count)';
     return Expanded(
       child: InkWell(
-        onTap: () => setState(() => _selectedSection = label),
+        onTap: () => setState(() => _selectedSection = key),
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 10),
@@ -716,7 +749,7 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
         padding: const EdgeInsets.only(top: 72),
         child: Center(
           child: Text(
-            'No rules in this section',
+            context.l10n.tr('merchant_rules_no_rules'),
             style: Theme.of(
               context,
             ).textTheme.bodyLarge?.copyWith(color: tokens.colors.textSecondary),
@@ -761,7 +794,7 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
             Padding(
               padding: const EdgeInsets.all(AppSpacing.md),
               child: Text(
-                'No rules yet',
+                context.l10n.tr('merchant_rules_no_rules'),
                 style: TextStyle(color: tokens.colors.textSecondary),
               ),
             )
@@ -798,10 +831,10 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
         : AppColors.backgroundHeroDark;
     final Color subdued = tokens.colors.textSecondary;
     final String sourceLabel = rule.source == 'builtin'
-        ? 'Built-in'
+        ? context.l10n.tr('merchant_rules_builtin')
         : rule.source == 'learned'
-        ? 'Learned'
-        : 'Custom';
+        ? context.l10n.tr('merchant_rules_learned')
+        : context.l10n.tr('merchant_rules_custom');
     final Color sourceColor = switch (rule.source) {
       'builtin' => tokens.colors.textSecondary,
       'learned' => tokens.colors.warning,
@@ -831,7 +864,7 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Category: ${rule.categoryId} • Type: ${rule.defaultType.toUpperCase()}',
+                  '${context.l10n.tr('merchant_rules_category')}: ${context.l10n.translateCategory(rule.categoryId)} • ${context.l10n.tr('merchant_rules_type')}: ${context.l10n.tr(rule.defaultType)}',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(
@@ -855,7 +888,9 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
                     ),
                     _smallBadge(
                       context,
-                      label: rule.enabled ? 'Enabled' : 'Disabled',
+                      label: rule.enabled
+                          ? context.l10n.tr('enabled')
+                          : context.l10n.tr('disabled'),
                       color: rule.enabled
                           ? tokens.colors.success
                           : tokens.colors.textSecondary,
@@ -910,7 +945,7 @@ class _MerchantRulesScreenState extends State<MerchantRulesScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Delete',
+                    context.l10n.tr('delete'),
                     maxLines: 1,
                     softWrap: false,
                     overflow: TextOverflow.visible,
