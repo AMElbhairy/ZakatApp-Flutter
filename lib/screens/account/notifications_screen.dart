@@ -3,17 +3,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/i18n/app_localizations.dart';
+import '../../core/privacy/app_privacy.dart';
+import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/theme/app_theme_extensions.dart';
 import '../../core/widgets/app_ui.dart';
+import '../../models/app_state.dart';
 import '../../models/pending_transaction.dart';
+import '../../models/transaction.dart';
 import '../../services/app_state_controller.dart';
 import 'review_pending_transaction_screen.dart';
 import 'add_smart_capture_message_screen.dart';
 import 'merchant_rules_screen.dart';
 
-enum _CaptureStatusFilter { pending, approved, rejected }
+enum CaptureInboxStatusFilter { pending, approved, rejected }
 
 enum _CaptureDateFilter {
   allTime,
@@ -25,11 +30,16 @@ enum _CaptureDateFilter {
 }
 
 class NotificationsScreen extends StatefulWidget {
-  const NotificationsScreen({super.key});
+  const NotificationsScreen({super.key, this.initialStatus});
 
-  static Route<void> route() {
+  final CaptureInboxStatusFilter? initialStatus;
+
+  static Route<void> route({CaptureInboxStatusFilter? initialStatus}) {
     return CupertinoPageRoute<void>(
-      builder: (_) => const NotificationsScreen(),
+      settings: const AppPrivacyRouteSettings(
+        privacy: ScreenPrivacyClassification.sensitive,
+      ),
+      builder: (_) => NotificationsScreen(initialStatus: initialStatus),
     );
   }
 
@@ -38,8 +48,7 @@ class NotificationsScreen extends StatefulWidget {
 }
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
-  static const String _screenTitle = 'Capture Inbox';
-  _CaptureStatusFilter _selectedStatus = _CaptureStatusFilter.approved;
+  CaptureInboxStatusFilter _selectedStatus = CaptureInboxStatusFilter.approved;
   _CaptureDateFilter _selectedDateFilter = _CaptureDateFilter.allTime;
   DateTimeRange? _customRange;
   final bool _isEditMode = false;
@@ -47,12 +56,18 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   @override
   void initState() {
     super.initState();
-    final AppStateController controller = context.read<AppStateController>();
-    final int pendingCount = controller.state.pendingTransactions
-        .where((PendingTransaction t) => t.status == CaptureStatus.pendingReview)
-        .length;
-    if (pendingCount > 0) {
-      _selectedStatus = _CaptureStatusFilter.pending;
+    if (widget.initialStatus != null) {
+      _selectedStatus = widget.initialStatus!;
+    } else {
+      final AppStateController controller = context.read<AppStateController>();
+      final int pendingCount = controller.state.pendingTransactions
+          .where(
+            (PendingTransaction t) => t.status == CaptureStatus.pendingReview,
+          )
+          .length;
+      if (pendingCount > 0) {
+        _selectedStatus = CaptureInboxStatusFilter.pending;
+      }
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -171,12 +186,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   bool _matchesStatusFilter(PendingTransaction item) {
     switch (_selectedStatus) {
-      case _CaptureStatusFilter.pending:
+      case CaptureInboxStatusFilter.pending:
         return item.status == CaptureStatus.pendingReview;
-      case _CaptureStatusFilter.approved:
+      case CaptureInboxStatusFilter.approved:
         return item.status == CaptureStatus.autoApproved ||
             item.status == CaptureStatus.manuallyApproved;
-      case _CaptureStatusFilter.rejected:
+      case CaptureInboxStatusFilter.rejected:
         return item.status == CaptureStatus.ignored;
     }
   }
@@ -209,38 +224,46 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   void _clearIgnoredWithConfirmation(AppStateController controller) {
     final tokens = context.premiumTokens;
+    final bool isArabic = _isArabic(context);
     showDialog(
       context: context,
+      routeSettings: const AppPrivacyRouteSettings(
+        privacy: ScreenPrivacyClassification.sensitive,
+      ),
       builder: (context) => AlertDialog(
         backgroundColor: tokens.colors.hero,
-        title: const Text('Clear Ignored Captures'),
+        title: Text(
+          isArabic ? 'مسح العناصر المتجاهلة' : 'Clear Ignored Captures',
+        ),
         titleTextStyle: Theme.of(
           context,
-        ).textTheme.titleLarge?.copyWith(color: Colors.white),
+        ).textTheme.titleLarge?.copyWith(color: AppColors.white),
         content: Text(
-          'Are you sure you want to permanently clear all ignored captures?',
+          isArabic
+              ? 'هل تريد بالتأكيد مسح جميع العناصر المتجاهلة بشكل دائم؟'
+              : 'Are you sure you want to permanently clear all ignored captures?',
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: Colors.white.withValues(alpha: 0.78),
+            color: AppColors.white.withValues(alpha: 0.78),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: Text(
-              'Cancel',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.78)),
+              isArabic ? 'إلغاء' : 'Cancel',
+              style: TextStyle(color: AppColors.white.withValues(alpha: 0.78)),
             ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: tokens.colors.danger,
-              foregroundColor: Colors.white,
+              foregroundColor: AppColors.white,
             ),
             onPressed: () {
               Navigator.pop(context);
               controller.deleteIgnoredPendingTransactions();
             },
-            child: const Text('Clear All'),
+            child: Text(isArabic ? 'مسح الكل' : 'Clear All'),
           ),
         ],
       ),
@@ -286,16 +309,18 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     return Scaffold(
       backgroundColor: tokens.colors.background,
       appBar: AppBar(
-        title: Text(_screenTitle),
+        title: Text(_isArabic(context) ? 'صندوق الالتقاط' : 'Capture Inbox'),
         actions: [
           IconButton(
             icon: Icon(Icons.date_range_rounded, color: tokens.colors.gold),
-            tooltip: 'Filter by date',
+            tooltip: _isArabic(context)
+                ? 'تصفية حسب التاريخ'
+                : 'Filter by date',
             onPressed: () => _showDateFilterSheet(context),
           ),
           IconButton(
             icon: Icon(Icons.rule, color: tokens.colors.gold),
-            tooltip: 'Rules Config',
+            tooltip: _isArabic(context) ? 'إعداد القواعد' : 'Rules Config',
             onPressed: () {
               Navigator.push(
                 context,
@@ -307,7 +332,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           ),
           IconButton(
             icon: Icon(Icons.add, color: tokens.colors.gold),
-            tooltip: 'Test Message',
+            tooltip: _isArabic(context) ? 'رسالة اختبار' : 'Test Message',
             onPressed: () {
               Navigator.push(
                 context,
@@ -328,7 +353,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             rejectedCount: rejectedCount,
           ),
 
-          if (_selectedStatus == _CaptureStatusFilter.rejected &&
+          if (_selectedStatus == CaptureInboxStatusFilter.rejected &&
               ignoredItems.isNotEmpty &&
               !_isEditMode)
             Padding(
@@ -343,7 +368,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     size: 18,
                   ),
                   label: Text(
-                    'Clear Rejected',
+                    _isArabic(context) ? 'مسح المرفوضة' : 'Clear Rejected',
                     style: TextStyle(
                       color: tokens.colors.danger,
                       fontSize: 13,
@@ -358,7 +383,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             child: activeRows.isEmpty
                 ? Center(
                     child: Text(
-                      'No items match the selected filters',
+                      _isArabic(context)
+                          ? 'لا توجد عناصر تطابق المرشحات المحددة'
+                          : 'No items match the selected filters',
                       style: Theme.of(context).textTheme.bodyLarge,
                     ),
                   )
@@ -404,10 +431,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     final Color surfaceColor = dark
         ? tokens.colors.surface.withValues(alpha: 0.74)
-        : const Color(0xFFF9F7F0);
+        : AppColors.sharedContainer;
     final Color fieldColor = dark
         ? tokens.colors.card.withValues(alpha: 0.88)
-        : const Color(0xFFEBE7DD);
+        : AppColors.neutral40;
     final int resultsCount = _sortedNewestFirst(
       controller.state.pendingTransactions,
     ).where(_matchesDateFilter).where(_matchesStatusFilter).length;
@@ -434,7 +461,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             children: <Widget>[
               Expanded(
                 child: Text(
-                  'Smart Capture Log',
+                  context.l10n.tr('smart_capture_log'),
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     color: tokens.colors.textPrimary,
                     fontWeight: FontWeight.w800,
@@ -455,33 +482,35 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             children: <Widget>[
               Expanded(
                 child: _buildStatusTab(
-                  label: 'Pending',
+                  label: _isArabic(context) ? 'معلّق' : 'Pending',
                   count: pendingCount,
-                  selected: _selectedStatus == _CaptureStatusFilter.pending,
+                  selected: _selectedStatus == CaptureInboxStatusFilter.pending,
                   onTap: () => setState(
-                    () => _selectedStatus = _CaptureStatusFilter.pending,
+                    () => _selectedStatus = CaptureInboxStatusFilter.pending,
                   ),
                 ),
               ),
               const SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: _buildStatusTab(
-                  label: 'Approved',
+                  label: _isArabic(context) ? 'مقبول' : 'Approved',
                   count: approvedCount,
-                  selected: _selectedStatus == _CaptureStatusFilter.approved,
+                  selected:
+                      _selectedStatus == CaptureInboxStatusFilter.approved,
                   onTap: () => setState(
-                    () => _selectedStatus = _CaptureStatusFilter.approved,
+                    () => _selectedStatus = CaptureInboxStatusFilter.approved,
                   ),
                 ),
               ),
               const SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: _buildStatusTab(
-                  label: 'Rejected',
+                  label: _isArabic(context) ? 'مرفوض' : 'Rejected',
                   count: rejectedCount,
-                  selected: _selectedStatus == _CaptureStatusFilter.rejected,
+                  selected:
+                      _selectedStatus == CaptureInboxStatusFilter.rejected,
                   onTap: () => setState(
-                    () => _selectedStatus = _CaptureStatusFilter.rejected,
+                    () => _selectedStatus = CaptureInboxStatusFilter.rejected,
                   ),
                 ),
               ),
@@ -492,7 +521,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             readOnly: true,
             onTap: () => _showDateFilterSheet(context),
             decoration: InputDecoration(
-              hintText: _dateFilterLabel(),
+              hintText: _dateFilterLabel(context),
               prefixIcon: Icon(Icons.tune_rounded, color: tokens.colors.gold),
               filled: true,
               fillColor: fieldColor,
@@ -517,20 +546,20 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     );
   }
 
-  String _dateFilterLabel() {
+  String _dateFilterLabel(BuildContext context) {
     switch (_selectedDateFilter) {
       case _CaptureDateFilter.allTime:
-        return 'All Time';
+        return _isArabic(context) ? 'الكل' : 'All Time';
       case _CaptureDateFilter.today:
-        return 'Today';
+        return _isArabic(context) ? 'اليوم' : 'Today';
       case _CaptureDateFilter.thisWeek:
-        return 'This Week';
+        return _isArabic(context) ? 'هذا الأسبوع' : 'This Week';
       case _CaptureDateFilter.thisMonth:
-        return 'This Month';
+        return _isArabic(context) ? 'هذا الشهر' : 'This Month';
       case _CaptureDateFilter.previousMonth:
-        return 'Previous Month';
+        return _isArabic(context) ? 'الشهر السابق' : 'Previous Month';
       case _CaptureDateFilter.custom:
-        return 'Custom Range';
+        return _isArabic(context) ? 'نطاق مخصص' : 'Custom Range';
     }
   }
 
@@ -553,7 +582,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 Text(
-                  'Filter by Date',
+                  _isArabic(context) ? 'التصفية حسب التاريخ' : 'Filter by Date',
                   style: theme.textTheme.titleMedium?.copyWith(
                     color: tokens.colors.textPrimary,
                     fontWeight: FontWeight.w800,
@@ -563,7 +592,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 ...<Widget>[
                   _dateOptionTile(
                     context,
-                    label: 'All Time',
+                    label: _isArabic(context) ? 'الكل' : 'All Time',
                     onTap: () => _applyDateFilter(
                       controller,
                       context,
@@ -572,7 +601,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   ),
                   _dateOptionTile(
                     context,
-                    label: 'Today',
+                    label: _isArabic(context) ? 'اليوم' : 'Today',
                     onTap: () => _applyDateFilter(
                       controller,
                       context,
@@ -581,7 +610,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   ),
                   _dateOptionTile(
                     context,
-                    label: 'This Week',
+                    label: _isArabic(context) ? 'هذا الأسبوع' : 'This Week',
                     onTap: () => _applyDateFilter(
                       controller,
                       context,
@@ -590,7 +619,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   ),
                   _dateOptionTile(
                     context,
-                    label: 'This Month',
+                    label: _isArabic(context) ? 'هذا الشهر' : 'This Month',
                     onTap: () => _applyDateFilter(
                       controller,
                       context,
@@ -599,7 +628,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   ),
                   _dateOptionTile(
                     context,
-                    label: 'Previous Month',
+                    label: _isArabic(context)
+                        ? 'الشهر السابق'
+                        : 'Previous Month',
                     onTap: () => _applyDateFilter(
                       controller,
                       context,
@@ -608,7 +639,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   ),
                   _dateOptionTile(
                     context,
-                    label: 'Custom Range',
+                    label: _isArabic(context) ? 'نطاق مخصص' : 'Custom Range',
                     onTap: () async {
                       Navigator.pop(context);
                       final DateTimeRange? picked = await showDateRangePicker(
@@ -683,19 +714,19 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     final Color surfaceColor = dark
         ? tokens.colors.surface.withValues(alpha: 0.78)
-        : const Color(0xFFFAF8F2);
+        : AppColors.sharedContainer;
     final Color titleColor = dark
         ? tokens.colors.textPrimary
-        : const Color(0xFF042F2B);
+        : AppColors.backgroundHeroDark;
     final Color subtitleColor = tokens.colors.textSecondary;
     final String amount = item.suggestedAmount != null
         ? '${item.suggestedCurrency ?? 'EGP'} ${item.suggestedAmount!.toStringAsFixed(2)}'
         : '';
     final String statusLabel = switch (item.status) {
-      CaptureStatus.pendingReview => 'PENDING',
-      CaptureStatus.autoApproved => 'AUTO',
-      CaptureStatus.manuallyApproved => 'MANUAL',
-      CaptureStatus.ignored => 'REJECTED',
+      CaptureStatus.pendingReview => _isArabic(context) ? 'معلّق' : 'PENDING',
+      CaptureStatus.autoApproved => _isArabic(context) ? 'تلقائي' : 'AUTO',
+      CaptureStatus.manuallyApproved => _isArabic(context) ? 'يدوي' : 'MANUAL',
+      CaptureStatus.ignored => _isArabic(context) ? 'مرفوض' : 'REJECTED',
     };
     final Color statusColor = switch (item.status) {
       CaptureStatus.pendingReview => tokens.colors.warning,
@@ -703,6 +734,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       CaptureStatus.manuallyApproved => tokens.colors.emerald,
       CaptureStatus.ignored => tokens.colors.danger,
     };
+    final String displayCategory =
+        _resolvedCaptureCategory(controller.state, item) ??
+        item.suggestedCategory ??
+        'Other';
 
     final SlidableActionData actions = switch (item.status) {
       CaptureStatus.pendingReview => SlidableActionData(
@@ -710,7 +745,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           _slideAction(
             context,
             icon: Icons.edit_rounded,
-            label: 'Edit',
+            label: _isArabic(context) ? 'تعديل' : 'Edit',
             color: tokens.colors.gold,
             onTap: () {
               Navigator.push(
@@ -725,7 +760,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           _slideAction(
             context,
             icon: Icons.delete_outline_rounded,
-            label: 'Delete',
+            label: _isArabic(context) ? 'حذف' : 'Delete',
             color: tokens.colors.danger,
             onTap: () {
               controller.deletePendingTransactionsBulk(<String>[item.id]);
@@ -739,7 +774,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           _slideAction(
             context,
             icon: Icons.edit_rounded,
-            label: 'Edit',
+            label: _isArabic(context) ? 'تعديل' : 'Edit',
             color: tokens.colors.gold,
             onTap: () {
               Navigator.push(
@@ -754,13 +789,15 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           _slideAction(
             context,
             icon: Icons.undo_rounded,
-            label: 'Undo',
+            label: _isArabic(context) ? 'تراجع' : 'Undo',
             color: tokens.colors.warning,
             onTap: () {
               controller.undoPendingTransaction(item.id);
               showTopSnackBar(
                 context,
-                'Approval undone. Transaction returned to Needs Review.',
+                _isArabic(context)
+                    ? 'تم التراجع عن الموافقة. أُعيدت العملية إلى قيد المراجعة.'
+                    : 'Approval undone. Transaction returned to Needs Review.',
                 kind: AppToastKind.info,
               );
             },
@@ -768,7 +805,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           _slideAction(
             context,
             icon: Icons.delete_outline_rounded,
-            label: 'Delete',
+            label: _isArabic(context) ? 'حذف' : 'Delete',
             color: tokens.colors.danger,
             onTap: () {
               controller.deletePendingTransactionsBulk(<String>[item.id]);
@@ -781,7 +818,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           _slideAction(
             context,
             icon: Icons.restore_rounded,
-            label: 'Restore',
+            label: _isArabic(context) ? 'استعادة' : 'Restore',
             color: tokens.colors.gold,
             onTap: () {
               controller.restorePendingTransactionsBulk(<String>[item.id]);
@@ -790,7 +827,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           _slideAction(
             context,
             icon: Icons.delete_outline_rounded,
-            label: 'Delete',
+            label: _isArabic(context) ? 'حذف' : 'Delete',
             color: tokens.colors.danger,
             onTap: () {
               controller.deletePendingTransactionsBulk(<String>[item.id]);
@@ -865,7 +902,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          '${item.suggestedType.toUpperCase()} • ${item.suggestedCategory ?? 'Other'}',
+                          '${item.suggestedType.toUpperCase()} • $displayCategory',
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(color: subtitleColor, height: 1.2),
                         ),
@@ -877,7 +914,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                             _badge(context, statusLabel, statusColor),
                             _badge(
                               context,
-                              'Confidence ${(item.confidence * 100).toStringAsFixed(0)}%',
+                              _isArabic(context)
+                                  ? 'الثقة ${(item.confidence * 100).toStringAsFixed(0)}%'
+                                  : 'Confidence ${(item.confidence * 100).toStringAsFixed(0)}%',
                               tokens.colors.textSecondary,
                             ),
                             _badge(
@@ -911,6 +950,22 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         ),
       ),
     );
+  }
+
+  String? _resolvedCaptureCategory(
+    AppStateModel state,
+    PendingTransaction item,
+  ) {
+    final String? linkedId = item.linkedTransactionId;
+    if (linkedId == null || linkedId.isEmpty) return item.suggestedCategory;
+
+    final List<Transaction> matches = state.transactions
+        .where((Transaction tx) => tx.id == linkedId)
+        .toList(growable: false);
+    if (matches.isNotEmpty && matches.first.category.trim().isNotEmpty) {
+      return matches.first.category;
+    }
+    return item.suggestedCategory;
   }
 
   Widget _slideAction(
@@ -978,7 +1033,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         decoration: BoxDecoration(
           border: Border(
             bottom: BorderSide(
-              color: selected ? tokens.colors.gold : Colors.transparent,
+              color: selected ? tokens.colors.gold : AppColors.transparent,
               width: 2.5,
             ),
           ),
@@ -995,7 +1050,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               style: Theme.of(context).textTheme.titleSmall?.copyWith(
                 color: selected
                     ? tokens.colors.gold
-                    : (isDark ? Colors.white : tokens.colors.hero),
+                    : (isDark ? AppColors.white : tokens.colors.hero),
                 fontWeight: FontWeight.w700,
                 fontSize: 13.5,
               ),
@@ -1004,6 +1059,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         ),
       ),
     );
+  }
+
+  bool _isArabic(BuildContext context) {
+    return Localizations.localeOf(context).languageCode.toLowerCase() == 'ar';
   }
 }
 

@@ -13,7 +13,9 @@ import 'auth_brand_ui.dart';
 import 'auth_service.dart';
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
+  const LoginPage({super.key, this.showLegacyAuthUi = false});
+
+  final bool showLegacyAuthUi;
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -49,6 +51,7 @@ class _LoginPageState extends State<LoginPage> {
     final auth = context.watch<AuthController>();
     final AppLocalizations l10n = context.l10n;
     final bool isLoading = auth.isLoading;
+    final bool showLegacyAuthUi = widget.showLegacyAuthUi;
 
     return AuthBrandShell(
       tone: AuthBackdropTone.hero,
@@ -87,9 +90,11 @@ class _LoginPageState extends State<LoginPage> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: <Widget>[
                           Text(
-                            _createAccountMode
-                                ? l10n.tr('create_account_title')
-                                : l10n.tr('login_intro'),
+                            showLegacyAuthUi
+                                ? (_createAccountMode
+                                      ? l10n.tr('create_account_title')
+                                      : l10n.tr('login_intro'))
+                                : l10n.tr('google_sign_in_only_intro'),
                             textAlign: TextAlign.center,
                             style: Theme.of(context).textTheme.titleLarge
                                 ?.copyWith(
@@ -98,157 +103,130 @@ class _LoginPageState extends State<LoginPage> {
                                 ),
                           ),
                           const SizedBox(height: AppSpacing.md),
-                          if (_createAccountMode) ...<Widget>[
-                            TextField(
-                              controller: _nameController,
-                              textInputAction: TextInputAction.next,
-                              decoration: InputDecoration(
-                                labelText: l10n.tr('full_name'),
-                              ),
-                            ),
-                            const SizedBox(height: AppSpacing.sm),
-                          ],
-                          TextField(
-                            key: const Key('emailField'),
-                            controller: _emailController,
-                            keyboardType: TextInputType.emailAddress,
-                            textInputAction: TextInputAction.next,
-                            autofillHints: const <String>[
-                              AutofillHints.username,
-                              AutofillHints.email,
-                            ],
-                            autocorrect: false,
-                            decoration: InputDecoration(
-                              labelText: l10n.tr('email_address'),
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.sm),
-                          TextField(
-                            key: const Key('passwordField'),
-                            controller: _passwordController,
-                            obscureText: _passwordObscured,
-                            textInputAction: _createAccountMode
-                                ? TextInputAction.next
-                                : TextInputAction.done,
-                            autofillHints: <String>[
-                              _createAccountMode
-                                  ? AutofillHints.newPassword
-                                  : AutofillHints.password,
-                            ],
-                            decoration: InputDecoration(
-                              labelText: l10n.tr('password'),
-                              helperText: _createAccountMode
-                                  ? l10n.tr('password_requirements')
-                                  : null,
-                              suffixIcon: IconButton(
-                                onPressed: () {
-                                  setState(() {
-                                    _passwordObscured = !_passwordObscured;
-                                  });
-                                },
-                                icon: Icon(
-                                  _passwordObscured
-                                      ? Icons.visibility_off_outlined
-                                      : Icons.visibility_outlined,
+                          if (showLegacyAuthUi) ...<Widget>[
+                            if (_createAccountMode) ...<Widget>[
+                              TextField(
+                                controller: _nameController,
+                                textInputAction: TextInputAction.next,
+                                decoration: InputDecoration(
+                                  labelText: l10n.tr('full_name'),
                                 ),
                               ),
+                              const SizedBox(height: AppSpacing.sm),
+                            ],
+                            TextField(
+                              key: const Key('emailField'),
+                              controller: _emailController,
+                              keyboardType: TextInputType.emailAddress,
+                              textInputAction: TextInputAction.next,
+                              autofillHints: const <String>[
+                                AutofillHints.username,
+                                AutofillHints.email,
+                              ],
+                              autocorrect: false,
+                              decoration: InputDecoration(
+                                labelText: l10n.tr('email_address'),
+                              ),
                             ),
-                          ),
-                          if (_createAccountMode) ...<Widget>[
                             const SizedBox(height: AppSpacing.sm),
                             TextField(
-                              key: const Key('confirmPasswordField'),
-                              controller: _confirmPasswordController,
-                              obscureText: _confirmPasswordObscured,
-                              textInputAction: TextInputAction.done,
+                              key: const Key('passwordField'),
+                              controller: _passwordController,
+                              obscureText: _passwordObscured,
+                              textInputAction: _createAccountMode
+                                  ? TextInputAction.next
+                                  : TextInputAction.done,
+                              autofillHints: <String>[
+                                _createAccountMode
+                                    ? AutofillHints.newPassword
+                                    : AutofillHints.password,
+                              ],
                               decoration: InputDecoration(
-                                labelText: l10n.tr('confirm_password'),
+                                labelText: l10n.tr('password'),
+                                helperText: _createAccountMode
+                                    ? l10n.tr('password_requirements')
+                                    : null,
                                 suffixIcon: IconButton(
                                   onPressed: () {
                                     setState(() {
-                                      _confirmPasswordObscured =
-                                          !_confirmPasswordObscured;
+                                      _passwordObscured = !_passwordObscured;
                                     });
                                   },
                                   icon: Icon(
-                                    _confirmPasswordObscured
+                                    _passwordObscured
                                         ? Icons.visibility_off_outlined
                                         : Icons.visibility_outlined,
                                   ),
                                 ),
                               ),
                             ),
-                          ],
-                          const SizedBox(height: AppSpacing.md),
-                          AuthBrandPrimaryButton(
-                            key: const Key('emailAuthButton'),
-                            label: _createAccountMode
-                                ? l10n.tr('create_account')
-                                : l10n.tr('sign_in_with_email'),
-                            isLoading: isLoading,
-                            leading: const Icon(Icons.mail_outline_rounded),
-                            onPressed: () => _submitEmailAuth(context),
-                          ),
-                          const SizedBox(height: AppSpacing.xs),
-                          if (!_createAccountMode)
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: TextButton(
-                                onPressed: isLoading
-                                    ? null
-                                    : () => _sendResetEmail(context),
-                                child: Text(l10n.tr('forgot_password')),
-                              ),
-                            ),
-                          Align(
-                            alignment: Alignment.center,
-                            child: TextButton(
-                              onPressed: isLoading
-                                  ? null
-                                  : () {
+                            if (_createAccountMode) ...<Widget>[
+                              const SizedBox(height: AppSpacing.sm),
+                              TextField(
+                                key: const Key('confirmPasswordField'),
+                                controller: _confirmPasswordController,
+                                obscureText: _confirmPasswordObscured,
+                                textInputAction: TextInputAction.done,
+                                decoration: InputDecoration(
+                                  labelText: l10n.tr('confirm_password'),
+                                  suffixIcon: IconButton(
+                                    onPressed: () {
                                       setState(() {
-                                        _createAccountMode =
-                                            !_createAccountMode;
-                                        _validationMessage = null;
+                                        _confirmPasswordObscured =
+                                            !_confirmPasswordObscured;
                                       });
                                     },
-                              child: Text(
-                                _createAccountMode
-                                    ? l10n.tr('already_have_account')
-                                    : l10n.tr('need_account'),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.sm),
-                          Row(
-                            children: <Widget>[
-                              Expanded(
-                                child: Divider(
-                                  color: secondaryTextColor.withValues(
-                                    alpha: 0.3,
-                                  ),
-                                ),
-                              ),
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: AppSpacing.sm,
-                                ),
-                                child: Text(
-                                  l10n.tr('or_continue_with'),
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(color: secondaryTextColor),
-                                ),
-                              ),
-                              Expanded(
-                                child: Divider(
-                                  color: secondaryTextColor.withValues(
-                                    alpha: 0.3,
+                                    icon: Icon(
+                                      _confirmPasswordObscured
+                                          ? Icons.visibility_off_outlined
+                                          : Icons.visibility_outlined,
+                                    ),
                                   ),
                                 ),
                               ),
                             ],
-                          ),
-                          const SizedBox(height: AppSpacing.sm),
+                            const SizedBox(height: AppSpacing.md),
+                            AuthBrandPrimaryButton(
+                              key: const Key('emailAuthButton'),
+                              label: _createAccountMode
+                                  ? l10n.tr('create_account')
+                                  : l10n.tr('sign_in_with_email'),
+                              isLoading: isLoading,
+                              leading: const Icon(Icons.mail_outline_rounded),
+                              onPressed: () => _submitEmailAuth(context),
+                            ),
+                            const SizedBox(height: AppSpacing.xs),
+                            if (!_createAccountMode)
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: TextButton(
+                                  onPressed: isLoading
+                                      ? null
+                                      : () => _sendResetEmail(context),
+                                  child: Text(l10n.tr('forgot_password')),
+                                ),
+                              ),
+                            Align(
+                              alignment: Alignment.center,
+                              child: TextButton(
+                                onPressed: isLoading
+                                    ? null
+                                    : () {
+                                        setState(() {
+                                          _createAccountMode =
+                                              !_createAccountMode;
+                                          _validationMessage = null;
+                                        });
+                                      },
+                                child: Text(
+                                  _createAccountMode
+                                      ? l10n.tr('already_have_account')
+                                      : l10n.tr('need_account'),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.sm),
+                          ],
                           AuthBrandSecondaryButton(
                             key: const Key('googleSignInButton'),
                             label: l10n.tr('continue_with_google'),
@@ -260,6 +238,20 @@ class _LoginPageState extends State<LoginPage> {
                                     provider: AuthProvider.google,
                                   ),
                           ),
+                          if (showLegacyAuthUi) ...<Widget>[
+                            const SizedBox(height: AppSpacing.sm),
+                            AuthBrandSecondaryButton(
+                              key: const Key('appleSignInButton'),
+                              label: l10n.tr('continue_with_apple'),
+                              leading: const Icon(Icons.apple),
+                              foregroundColor: tokens.colors.textPrimary,
+                              onPressed: isLoading
+                                  ? null
+                                  : () => context.read<AuthController>().signIn(
+                                      provider: AuthProvider.apple,
+                                    ),
+                            ),
+                          ],
                           const SizedBox(height: AppSpacing.md),
                           Text(
                             l10n.tr('login_note'),
@@ -302,6 +294,7 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _submitEmailAuth(BuildContext context) async {
+    if (!widget.showLegacyAuthUi) return;
     final String email = _emailController.text.trim();
     final String password = _passwordController.text.trim();
     final String name = _nameController.text.trim();
@@ -324,9 +317,8 @@ class _LoginPageState extends State<LoginPage> {
       if (!context.mounted) return;
       final AuthController auth = context.read<AuthController>();
       if (auth.error == null) {
-        final bool shouldSave = await authController.shouldPromptToSaveCredentials(
-          email,
-        );
+        final bool shouldSave = await authController
+            .shouldPromptToSaveCredentials(email);
         TextInput.finishAutofillContext(shouldSave: shouldSave);
         if (shouldSave) {
           await authController.markCredentialsSavePrompted(email);
@@ -340,15 +332,11 @@ class _LoginPageState extends State<LoginPage> {
       }
       return;
     }
-    await authController.signInWithEmail(
-      email: email,
-      password: password,
-    );
+    await authController.signInWithEmail(email: email, password: password);
     if (!context.mounted) return;
     if (authController.error == null) {
-      final bool shouldSave = await authController.shouldPromptToSaveCredentials(
-        email,
-      );
+      final bool shouldSave = await authController
+          .shouldPromptToSaveCredentials(email);
       TextInput.finishAutofillContext(shouldSave: shouldSave);
       if (shouldSave) {
         await authController.markCredentialsSavePrompted(email);
@@ -357,6 +345,7 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _sendResetEmail(BuildContext context) async {
+    if (!widget.showLegacyAuthUi) return;
     final String email = _emailController.text.trim();
     if (email.isEmpty) {
       showTopSnackBar(

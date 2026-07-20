@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../core/theme/app_colors.dart';
 import '../core/widgets/app_ui.dart';
 import '../models/backup_preview.dart';
 import 'app_state_controller.dart';
@@ -18,7 +19,8 @@ class BackupRestoreCard extends StatelessWidget {
   final AppStateController controller;
 
   Future<void> _exportBackup(BuildContext context) async {
-    if (controller.state.biometricExportEnabled &&
+    if ((controller.state.biometricLockEnabled ||
+            controller.state.biometricExportEnabled) &&
         await BiometricService.canAuthenticate()) {
       final auth = await BiometricService.authenticate(
         reason: 'Confirm identity to export local backup JSON file',
@@ -57,7 +59,8 @@ class BackupRestoreCard extends StatelessWidget {
   }
 
   Future<void> _importBackup(BuildContext context) async {
-    if (controller.state.biometricRestoreEnabled &&
+    if ((controller.state.biometricLockEnabled ||
+            controller.state.biometricRestoreEnabled) &&
         await BiometricService.canAuthenticate()) {
       final auth = await BiometricService.authenticate(
         reason: 'Confirm identity to import a backup JSON file',
@@ -97,7 +100,7 @@ class BackupRestoreCard extends StatelessWidget {
                 const Text(
                   'This file is not a valid backup and cannot be restored.',
                   style: TextStyle(
-                    color: Colors.red,
+                    color: AppColors.redStrong,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -105,7 +108,7 @@ class BackupRestoreCard extends StatelessWidget {
                 const Text(
                   'Legacy backup detected. Migration will be applied before restore.',
                   style: TextStyle(
-                    color: Colors.orange,
+                    color: AppColors.orange,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -174,7 +177,31 @@ class BackupRestoreCard extends StatelessWidget {
             TextButton(
               onPressed: () async {
                 Navigator.pop(ctx);
-                await _executeRestore(context, preview, replace: true);
+                final bool? confirm = await showDialog<bool>(
+                  context: context,
+                  builder: (BuildContext c) => AlertDialog(
+                    title: const Text('Confirm Replacement'),
+                    content: const Text(
+                      'Warning: Replacing everything will overwrite all local data. '
+                      'Any unsynced local changes will be permanently lost and replaced. '
+                      'Do you want to proceed?',
+                    ),
+                    actions: <Widget>[
+                      TextButton(
+                        onPressed: () => Navigator.pop(c, false),
+                        child: const Text('Cancel'),
+                      ),
+                      ElevatedButton(
+                        onPressed: () => Navigator.pop(c, true),
+                        child: const Text('Confirm Replace'),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirm == true) {
+                  if (!context.mounted) return;
+                  await _executeRestore(context, preview, replace: true);
+                }
               },
               child: const Text('Replace Everything'),
             ),
@@ -198,7 +225,8 @@ class BackupRestoreCard extends StatelessWidget {
     BackupPreview preview, {
     required bool replace,
   }) async {
-    if (controller.state.biometricRestoreEnabled &&
+    if ((controller.state.biometricLockEnabled ||
+            controller.state.biometricRestoreEnabled) &&
         await BiometricService.canAuthenticate()) {
       final auth = await BiometricService.authenticate(
         reason:

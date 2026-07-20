@@ -1,5 +1,8 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 
+import '../motion/app_motion.dart';
 import 'app_colors.dart';
 import 'app_radii.dart';
 import 'app_spacing.dart';
@@ -11,43 +14,118 @@ class AppTheme {
 
   static ThemeData get light => _build(Brightness.light);
   static ThemeData get dark => _build(Brightness.dark);
+  static ThemeData lightForLocale({Locale? locale}) =>
+      _build(Brightness.light, locale: locale);
+  static ThemeData darkForLocale({Locale? locale}) =>
+      _build(Brightness.dark, locale: locale);
 
-  static ThemeData _build(Brightness brightness) {
+  static ThemeData _build(Brightness brightness, {Locale? locale}) {
     final bool isDark = brightness == Brightness.dark;
     final AppColorTokens c = isDark ? AppColors.dark : AppColors.light;
-    final PremiumThemeTokens preset = isDark ? PremiumThemePresets.dark : PremiumThemePresets.light;
+    final PremiumThemeTokens preset = isDark
+        ? PremiumThemePresets.dark
+        : PremiumThemePresets.light;
+    final String family = AppTypography.familyFor(locale);
+    final TextTheme textTheme = AppTypography.build(
+      brightness: brightness,
+      locale: locale,
+    );
+    final Typography baseTypography = Typography.material2021(
+      platform: defaultTargetPlatform,
+    );
 
     final ColorScheme scheme = ColorScheme(
       brightness: brightness,
       primary: c.emerald,
-      onPrimary: Colors.white,
+      onPrimary: AppColors.white,
       secondary: c.gold,
-      onSecondary: isDark ? Colors.black : Colors.white,
+      onSecondary: isDark ? AppColors.black : AppColors.white,
       error: c.danger,
-      onError: Colors.white,
+      onError: AppColors.white,
       surface: c.surface,
-      onSurface: c.textPrimary,
+      onSurface: c.primaryText,
     );
 
     return ThemeData(
       useMaterial3: true,
+      fontFamily: family,
       colorScheme: scheme,
-      scaffoldBackgroundColor: c.background,
-      textTheme: AppTypography.build(brightness),
-      dividerColor: c.divider,
+      scaffoldBackgroundColor: c.primarySurface,
+      textTheme: textTheme,
+      primaryTextTheme: textTheme,
+      typography: baseTypography,
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: <TargetPlatform, PageTransitionsBuilder>{
+          TargetPlatform.android: AppPageTransitionsBuilder(),
+          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.macOS: AppPageTransitionsBuilder(),
+          TargetPlatform.windows: AppPageTransitionsBuilder(),
+          TargetPlatform.linux: AppPageTransitionsBuilder(),
+          TargetPlatform.fuchsia: AppPageTransitionsBuilder(),
+        },
+      ),
+      dividerColor: c.border,
       extensions: <ThemeExtension<dynamic>>[preset],
       appBarTheme: AppBarTheme(
         centerTitle: false,
-        backgroundColor: c.background,
-        foregroundColor: c.textPrimary,
+        backgroundColor: c.primarySurface,
+        foregroundColor: c.primaryText,
         elevation: 0,
+        titleTextStyle: textTheme.titleLarge,
+        toolbarTextStyle: textTheme.titleMedium,
+      ),
+      dialogTheme: DialogThemeData(
+        titleTextStyle: textTheme.titleLarge,
+        contentTextStyle: textTheme.bodyLarge,
+      ),
+      bottomSheetTheme: const BottomSheetThemeData(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(AppRadii.xl),
+          ),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          textStyle: textTheme.labelLarge,
+          foregroundColor: c.emerald,
+        ),
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(textStyle: textTheme.labelLarge),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(textStyle: textTheme.labelLarge),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(textStyle: textTheme.labelLarge),
+      ),
+      chipTheme: ChipThemeData(
+        labelStyle: textTheme.labelMedium,
+        secondaryLabelStyle: textTheme.labelMedium,
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+        side: BorderSide(color: c.border),
+        backgroundColor: c.secondarySurface,
+        selectedColor: c.gold.withValues(alpha: isDark ? 0.18 : 0.22),
+      ),
+      dataTableTheme: DataTableThemeData(
+        dataTextStyle: textTheme.bodyMedium,
+        headingTextStyle: textTheme.titleMedium,
+      ),
+      menuTheme: const MenuThemeData(),
+      tooltipTheme: TooltipThemeData(
+        textStyle: textTheme.bodySmall?.copyWith(color: AppColors.white),
+        decoration: BoxDecoration(
+          color: c.primaryText,
+          borderRadius: BorderRadius.circular(AppRadii.sm),
+        ),
       ),
       cardTheme: CardThemeData(
         elevation: 0,
-        color: c.card,
+        color: c.cardSurface,
         shape: RoundedRectangleBorder(
           borderRadius: AppRadii.card,
-          side: BorderSide(color: c.divider),
+          side: BorderSide(color: c.border),
         ),
         margin: EdgeInsets.zero,
       ),
@@ -57,15 +135,20 @@ class AppTheme {
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: const BorderRadius.all(Radius.circular(AppRadii.md)),
-          borderSide: BorderSide(color: c.divider),
+          borderSide: BorderSide(color: c.border),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: const BorderRadius.all(Radius.circular(AppRadii.md)),
           borderSide: BorderSide(color: c.emerald, width: 1.2),
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: AppSpacing.sm),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm,
+          vertical: AppSpacing.sm,
+        ),
         filled: true,
-        fillColor: c.surface,
+        fillColor: c.secondarySurface,
+        labelStyle: textTheme.bodyMedium,
+        hintStyle: textTheme.bodyMedium?.copyWith(color: c.secondaryText),
       ),
       segmentedButtonTheme: SegmentedButtonThemeData(
         style: ButtonStyle(
@@ -76,25 +159,19 @@ class AppTheme {
           ),
         ),
       ),
-      bottomSheetTheme: const BottomSheetThemeData(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadii.xl)),
-        ),
-      ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
-        backgroundColor: c.hero,
-        foregroundColor: Colors.white,
+        backgroundColor: c.heroSurface,
+        foregroundColor: AppColors.white,
         elevation: 0,
       ),
       navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: c.surface,
+        backgroundColor: c.secondarySurface,
         indicatorColor: c.gold.withValues(alpha: isDark ? 0.18 : 0.22),
         labelTextStyle: WidgetStateProperty.resolveWith<TextStyle?>((states) {
           final bool selected = states.contains(WidgetState.selected);
-          return TextStyle(
-            fontSize: 12,
+          return textTheme.labelSmall?.copyWith(
             fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-            color: selected ? c.emerald : c.textSecondary,
+            color: selected ? c.emerald : c.secondaryText,
           );
         }),
       ),

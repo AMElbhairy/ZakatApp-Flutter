@@ -19,14 +19,22 @@ import 'package:zakatapp_flutter/services/plan_health_service.dart';
 import 'package:zakatapp_flutter/services/projection_service.dart';
 
 class _FakeAuthService implements AuthService {
+  static const UserProfile _defaultUser = UserProfile(
+    id: 'test-user',
+    email: 'test@example.com',
+    displayName: 'Test User',
+    provider: 'google',
+    accessToken: 'token',
+  );
+
   @override
   Future<bool> ensureSession() async => true;
   @override
-  Future<UserProfile?> restoreSession() async => null;
+  Future<UserProfile?> restoreSession() async => _defaultUser;
   @override
   Future<UserProfile?> signIn({
     AuthProvider provider = AuthProvider.google,
-  }) async => null;
+  }) async => _defaultUser;
   @override
   Future<void> signOut() async {}
 
@@ -45,7 +53,11 @@ Widget _buildApp() {
   return MultiProvider(
     providers: <ChangeNotifierProvider<dynamic>>[
       ChangeNotifierProvider<AppStateController>(
-        create: (_) => AppStateController(repository: repository),
+        create: (_) => AppStateController(
+          repository: repository,
+          enableBackgroundSync: false,
+          enableMarketAutoRefresh: false,
+        ),
       ),
       ChangeNotifierProvider<AuthController>(
         create: (_) => AuthController(
@@ -54,9 +66,12 @@ Widget _buildApp() {
         ),
       ),
     ],
-    child: const ZakatApp(),
+    child: ZakatApp(preferences: _sharedPrefs),
   );
 }
+
+late SharedPreferences _sharedPrefs;
+
 
 Future<void> _openPlans(WidgetTester tester) async {
   await tester.tap(find.byIcon(AppIcons.plans).first);
@@ -113,6 +128,10 @@ Future<void> _addPlan(
 }
 
 void main() {
+  setUp(() async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    _sharedPrefs = await SharedPreferences.getInstance();
+  });
   group('Unit Tests: Services', () {
     final MarketData marketData = MarketData.fromJson(const <String, dynamic>{
       'GOLD_PRICE_24K_EGP': 3200.0,
@@ -344,6 +363,7 @@ void main() {
 
       SharedPreferences.setMockInitialValues(<String, Object>{});
       await tester.pumpWidget(_buildApp());
+      await tester.pump(const Duration(seconds: 2));
       await tester.pumpAndSettle();
 
       await _addPlan(
@@ -376,6 +396,7 @@ void main() {
 
         SharedPreferences.setMockInitialValues(<String, Object>{});
         await tester.pumpWidget(_buildApp());
+        await tester.pump(const Duration(seconds: 2));
         await tester.pumpAndSettle();
 
         // Creates a snapshot plan (default)

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_app_name">Zakah Wealth</string>
+    <string name="widget_today_label">TODAY</string>
+    <string name="widget_this_month_label">THIS MONTH</string>
+    <string name="widget_net_worth_label">NET WORTH</string>
+    <string name="widget_open_app_to_sync">Open app to sync</string>
+    <string name="widget_open_app">Open app</string>
+    <string name="widget_no_spending_today">No spending today</string>
+    <string name="widget_above_nisab">Above Nisab</string>
+    <string name="widget_below_nisab">Below Nisab</string>
+    <string name="widget_zakah_not_scheduled">Zakah not scheduled</string>
+    <string name="widget_due_today">Due today</string>
+    <string name="widget_days_to_zakah">%1$d days to Zakah</string>
+    <string name="widget_in_currency">In %1$s</string>
+    <string name="widget_at_currency">At %1$s</string>
+</resources>

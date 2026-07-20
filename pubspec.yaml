@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0+1
+version: 1.0.3+4
 
 environment:
   sdk: ^3.12.0
@@ -41,19 +41,32 @@ dependencies:
   flutter_secure_storage: ^9.2.2
   intl: ^0.20.2
   uuid: ^4.5.1
+  drift: ^2.28.1
+  sqlite3_flutter_libs: ^0.5.39
   google_sign_in: 6.3.0
   http: ^1.2.2
-  file_picker: ^8.1.4
+  path: ^1.9.1
+  # Local override keeps the iOS FileUtils -> ZWFileUtils rename durable.
+  # Prevents the duplicate-class warning with OSAnalytics.framework on iOS.
+  file_picker:
+    path: third_party/file_picker
   share_plus: ^10.1.2
   path_provider: ^2.1.5
   flutter_slidable: ^3.0.1
   image_picker: ^1.2.2
   local_auth: ^3.0.1
   app_links: ^6.4.0
+  flutter_local_notifications: ^22.0.1
+  flutter_app_badger:
+    path: third_party/flutter_app_badger
   firebase_core: ^4.11.0
   firebase_auth: ^6.5.3
   cloud_firestore: ^6.6.0
   sign_in_with_apple: ^8.1.0
+  googleapis: ^16.0.0
+  googleapis_auth: ^2.3.2
+  cryptography: ^2.9.0
+  home_widget: ^0.9.3
 
 dev_dependencies:
   flutter_test:
@@ -62,6 +75,9 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   fake_cloud_firestore: ^4.1.1
   firebase_auth_mocks: ^0.15.2
+  drift_dev: ^2.28.1
+  build_runner: ^2.8.0
+  flutter_native_splash: ^2.4.8
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -80,6 +96,39 @@ flutter:
     - assets/images/hero_pattern_watermark.png
     - assets/images/app_icon.png
     - assets/images/google-logo.png
+    - assets/images/onboarding_vault.jpeg
+    - assets/images/onboarding_features.webp
+    - assets/images/onboarding_language.webp
+    - assets/images/onboarding_currency.webp
+    - assets/images/onboarding_capture.webp
+    - assets/images/onboarding_backup.webp
+    - assets/images/onboarding_ready.jpeg
+    - assets/images/setup/
+
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/inter/Inter-Variable.ttf
+          weight: 400
+        - asset: assets/fonts/inter/Inter-Variable.ttf
+          weight: 500
+        - asset: assets/fonts/inter/Inter-Variable.ttf
+          weight: 600
+        - asset: assets/fonts/inter/Inter-Variable.ttf
+          weight: 700
+        - asset: assets/fonts/inter/Inter-Italic-Variable.ttf
+          style: italic
+          weight: 400
+    - family: IBMPlexSansArabic
+      fonts:
+        - asset: assets/fonts/ibm_plex_sans_arabic/IBMPlexSansArabic-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/ibm_plex_sans_arabic/IBMPlexSansArabic-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/ibm_plex_sans_arabic/IBMPlexSansArabic-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/ibm_plex_sans_arabic/IBMPlexSansArabic-Bold.ttf
+          weight: 700
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
@@ -111,3 +160,19 @@ flutter_launcher_icons:
   android: "launcher_icon"
   ios: true
   image_path: "assets/images/app_icon.png"
+  remove_alpha_ios: true
+
+flutter_native_splash:
+  color: "#F9F8F3"
+  color_dark: "#04110F"
+  image: "assets/images/splash_logo.png"
+  image_dark: "assets/images/splash_logo.png"
+  android: true
+  ios: true
+  android_12:
+    color: "#F9F8F3"
+    color_dark: "#04110F"
+    image: "assets/images/splash_logo.png"
+    image_dark: "assets/images/splash_logo.png"
+    icon_background_color: "#F9F8F3"
+    icon_background_color_dark: "#04110F"

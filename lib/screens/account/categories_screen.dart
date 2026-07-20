@@ -3,10 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/theme/app_theme_extensions.dart';
 import '../../core/i18n/app_localizations.dart';
+import '../../core/widgets/app_ui.dart';
+import '../../core/utils/category_visuals.dart';
+import '../../models/app_state.dart';
 import '../../services/app_state_controller.dart';
 
 class CategoriesScreen extends StatefulWidget {
@@ -24,68 +28,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
   String _selectedSection = 'Expense';
 
   void _showAddCategoryDialog(BuildContext context, String type) {
-    final TextEditingController nameController = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (context) {
-        final tokens = context.premiumTokens;
-        return AlertDialog(
-          backgroundColor: tokens.colors.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: AppRadii.card,
-            side: BorderSide(color: tokens.colors.divider),
-          ),
-          title: Text(
-            'Add Category',
-            style: Theme.of(
-              context,
-            ).textTheme.titleLarge?.copyWith(color: tokens.colors.textPrimary),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Category Name',
-                style: TextStyle(color: tokens.colors.textSecondary),
-              ),
-              const SizedBox(height: 6),
-              TextField(
-                controller: nameController,
-                autofocus: true,
-                style: TextStyle(color: tokens.colors.textPrimary),
-                decoration: _fieldDecoration(
-                  context,
-                  hintText: 'e.g. Shopping',
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(
-                'Cancel',
-                style: TextStyle(color: tokens.colors.textSecondary),
-              ),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                final String name = nameController.text.trim();
-                if (name.isNotEmpty) {
-                  await context.read<AppStateController>().addCategory(
-                    type: type.toLowerCase(),
-                    name: name,
-                  );
-                  if (context.mounted) Navigator.pop(context);
-                }
-              },
-              child: const Text('Add'),
-            ),
-          ],
-        );
-      },
-    );
+    _showCategoryEditorSheet(context, type: type);
   }
 
   void _showEditCategoryDialog(
@@ -93,65 +36,339 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
     String type,
     String oldName,
   ) {
+    _showCategoryEditorSheet(context, type: type, initialName: oldName);
+  }
+
+  void _showCategoryEditorSheet(
+    BuildContext context, {
+    required String type,
+    String? initialName,
+  }) {
+    final AppStateController controller = context.read<AppStateController>();
+    final String normalizedType = type.toLowerCase();
+    final bool isIncome = normalizedType == 'income';
+    final AppCategories categories = controller.state.categories;
     final TextEditingController nameController = TextEditingController(
-      text: oldName,
+      text: initialName ?? '',
     );
-    showDialog(
+    final CategoryVisual defaultVisual = initialName == null
+        ? CategoryVisuals.resolveTypeFallback(normalizedType)
+        : CategoryVisuals.resolveCategoryVisual(
+            categories: categories,
+            type: normalizedType,
+            categoryName: initialName,
+          );
+    final CategoryVisual? existingCustom = initialName == null
+        ? null
+        : categories.metadataFor(type: normalizedType, name: initialName);
+    final String initialIconKey =
+        existingCustom?.iconKey ?? defaultVisual.iconKey ?? 'neutral';
+    final int initialColorValue =
+        existingCustom?.colorValue ?? defaultVisual.colorValue ?? 0xFF94A3B8;
+
+    showModalBottomSheet<void>(
       context: context,
-      builder: (context) {
-        final tokens = context.premiumTokens;
-        return AlertDialog(
-          backgroundColor: tokens.colors.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: AppRadii.card,
-            side: BorderSide(color: tokens.colors.divider),
-          ),
-          title: Text(
-            'Edit Category',
-            style: Theme.of(
-              context,
-            ).textTheme.titleLarge?.copyWith(color: tokens.colors.textPrimary),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Category Name',
-                style: TextStyle(color: tokens.colors.textSecondary),
-              ),
-              const SizedBox(height: 6),
-              TextField(
-                controller: nameController,
-                autofocus: true,
-                style: TextStyle(color: tokens.colors.textPrimary),
-                decoration: _fieldDecoration(context),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(
-                'Cancel',
-                style: TextStyle(color: tokens.colors.textSecondary),
-              ),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                final String newName = nameController.text.trim();
-                if (newName.isNotEmpty && newName != oldName) {
-                  await context.read<AppStateController>().renameCategory(
-                    type: type.toLowerCase(),
-                    from: oldName,
-                    to: newName,
-                  );
-                }
-                if (context.mounted) Navigator.pop(context);
+      isScrollControlled: true,
+      backgroundColor: AppColors.transparent,
+      builder: (BuildContext sheetContext) {
+        final tokens = sheetContext.premiumTokens;
+        String query = '';
+        String selectedIconKey = initialIconKey;
+        int selectedColorValue = initialColorValue;
+
+        CategoryVisual currentSelection() {
+          return CategoryVisual(
+            iconKey: selectedIconKey,
+            colorValue: selectedColorValue,
+          );
+        }
+
+        bool shouldPersistStyle() {
+          final CategoryVisual selected = currentSelection();
+          final bool sameAsDefault =
+              selected.iconKey == defaultVisual.iconKey &&
+              selected.colorValue == defaultVisual.colorValue;
+          if (initialName == null) {
+            return !sameAsDefault;
+          }
+          if (existingCustom != null) return true;
+          return !sameAsDefault;
+        }
+
+        return StatefulBuilder(
+          builder:
+              (BuildContext context, void Function(void Function()) setState) {
+                final bool dark =
+                    Theme.of(context).brightness == Brightness.dark;
+                final List<CategoryIconChoice> icons = CategoryVisuals
+                    .iconChoices
+                    .where(
+                      (CategoryIconChoice choice) =>
+                          choice.label.toLowerCase().contains(
+                            query.toLowerCase(),
+                          ) ||
+                          choice.key.toLowerCase().contains(
+                            query.toLowerCase(),
+                          ),
+                    )
+                    .toList(growable: false);
+                final CategoryVisual selected = currentSelection();
+                return SafeArea(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: tokens.colors.background,
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(28),
+                      ),
+                      border: Border.all(color: tokens.colors.divider),
+                    ),
+                    padding: EdgeInsets.only(
+                      left: 16,
+                      right: 16,
+                      top: 20,
+                      bottom: 16 + MediaQuery.paddingOf(context).bottom,
+                    ),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          Center(
+                            child: Container(
+                              width: 42,
+                              height: 4,
+                              decoration: BoxDecoration(
+                                color: tokens.colors.textSecondary.withValues(
+                                  alpha: 0.25,
+                                ),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Row(
+                            children: <Widget>[
+                              IconButton(
+                                icon: const Icon(Icons.close_rounded),
+                                onPressed: () => Navigator.pop(context),
+                              ),
+                              const Spacer(),
+                              Text(
+                                initialName == null
+                                    ? context.l10n.tr('create_category')
+                                    : context.l10n.tr('edit_category'),
+                                style: Theme.of(context).textTheme.titleLarge
+                                    ?.copyWith(
+                                      color: tokens.colors.textPrimary,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                              ),
+                              const Spacer(),
+                              TextButton(
+                                onPressed: () async {
+                                  final String name = nameController.text
+                                      .trim();
+                                  if (name.isEmpty) return;
+                                  if (initialName == null) {
+                                    await controller.addCategory(
+                                      type: normalizedType,
+                                      name: name,
+                                      iconKey: shouldPersistStyle()
+                                          ? selected.iconKey
+                                          : null,
+                                      colorValue: shouldPersistStyle()
+                                          ? selected.colorValue
+                                          : null,
+                                    );
+                                  } else {
+                                    if (name != initialName) {
+                                      await controller.renameCategory(
+                                        type: normalizedType,
+                                        from: initialName,
+                                        to: name,
+                                      );
+                                    }
+                                    if (shouldPersistStyle()) {
+                                      await controller.updateCategoryMetadata(
+                                        type: normalizedType,
+                                        name: name,
+                                        iconKey: selected.iconKey,
+                                        colorValue: selected.colorValue,
+                                      );
+                                    }
+                                  }
+                                  if (context.mounted) Navigator.pop(context);
+                                },
+                                child: Text(context.l10n.tr('save')),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          _CategoryPreviewCard(
+                            name: nameController.text.trim().isEmpty
+                                ? context.l10n.tr('category_preview')
+                                : nameController.text.trim(),
+                            typeLabel: isIncome
+                                ? context.l10n.tr('income')
+                                : context.l10n.tr('expense'),
+                            visual: selected,
+                          ),
+                          const SizedBox(height: 16),
+                          TextField(
+                            controller: nameController,
+                            onChanged: (_) => setState(() {}),
+                            decoration: _fieldDecoration(
+                              context,
+                              labelText: context.l10n.tr('category_name'),
+                              hintText: 'e.g. Shopping',
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            context.l10n.tr('choose_icon'),
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(
+                                  color: tokens.colors.textPrimary,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            decoration:
+                                _fieldDecoration(
+                                  context,
+                                  hintText: context.l10n.tr('search_icons'),
+                                ).copyWith(
+                                  prefixIcon: const Icon(Icons.search_rounded),
+                                ),
+                            onChanged: (String value) {
+                              setState(() => query = value);
+                            },
+                          ),
+                          const SizedBox(height: 10),
+                          GridView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: icons.length,
+                            gridDelegate:
+                                const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 4,
+                                  mainAxisSpacing: 8,
+                                  crossAxisSpacing: 8,
+                                  childAspectRatio: 1,
+                                ),
+                            itemBuilder: (BuildContext context, int index) {
+                              final CategoryIconChoice choice = icons[index];
+                              final bool isSelected =
+                                  selectedIconKey == choice.key;
+                              return InkWell(
+                                borderRadius: BorderRadius.circular(18),
+                                onTap: () => setState(
+                                  () => selectedIconKey = choice.key,
+                                ),
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: isSelected
+                                        ? tokens.colors.gold.withValues(
+                                            alpha: 0.14,
+                                          )
+                                        : tokens.colors.surface,
+                                    borderRadius: BorderRadius.circular(18),
+                                    border: Border.all(
+                                      color: isSelected
+                                          ? tokens.colors.gold
+                                          : tokens.colors.divider,
+                                    ),
+                                  ),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: <Widget>[
+                                      Icon(
+                                        choice.icon,
+                                        color: isSelected
+                                            ? (dark
+                                                  ? tokens.colors.textPrimary
+                                                  : tokens.colors.hero)
+                                            : tokens.colors.textSecondary,
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        choice.label,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: isSelected
+                                              ? FontWeight.w700
+                                              : FontWeight.w500,
+                                          color: isSelected
+                                              ? (dark
+                                                    ? tokens.colors.textPrimary
+                                                    : tokens.colors.hero)
+                                              : tokens.colors.textSecondary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            context.l10n.tr('choose_color'),
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(
+                                  color: tokens.colors.textPrimary,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 10,
+                            runSpacing: 10,
+                            children: CategoryVisuals.palette
+                                .map((CategoryColorChoice choice) {
+                                  final int choiceValue = choice.value
+                                      .toARGB32();
+                                  final bool isSelected =
+                                      selectedColorValue == choiceValue;
+                                  return InkWell(
+                                    borderRadius: BorderRadius.circular(999),
+                                    onTap: () => setState(
+                                      () => selectedColorValue = choiceValue,
+                                    ),
+                                    child: Container(
+                                      width: 42,
+                                      height: 42,
+                                      decoration: BoxDecoration(
+                                        color: choice.value,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: isSelected
+                                              ? tokens.colors.hero
+                                              : AppColors.transparent,
+                                          width: 2,
+                                        ),
+                                      ),
+                                      child: isSelected
+                                          ? const Icon(
+                                              Icons.check_rounded,
+                                              color: AppColors.white,
+                                              size: 18,
+                                            )
+                                          : null,
+                                    ),
+                                  );
+                                })
+                                .toList(growable: false),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
               },
-              child: const Text('Save'),
-            ),
-          ],
         );
       },
     );
@@ -165,7 +382,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     final Color bgColor = dark
         ? tokens.colors.background
-        : const Color(0xFFF0EBE0);
+        : AppColors.mutedContainer;
 
     final List<String> categories = _selectedSection == 'Expense'
         ? state.categories.expense
@@ -174,7 +391,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
     return Scaffold(
       backgroundColor: bgColor,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        backgroundColor: AppColors.transparent,
         elevation: 0,
         centerTitle: true,
         title: Text(
@@ -194,7 +411,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
       ),
       floatingActionButton: FloatingActionButton(
         backgroundColor: tokens.colors.hero,
-        child: const Icon(Icons.add, color: Colors.white),
+        child: const Icon(Icons.add, color: AppColors.white),
         onPressed: () => _showAddCategoryDialog(context, _selectedSection),
       ),
       body: SafeArea(
@@ -276,7 +493,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
                 height: 2,
                 width: 26,
                 decoration: BoxDecoration(
-                  color: selected ? tokens.colors.gold : Colors.transparent,
+                  color: selected ? tokens.colors.gold : AppColors.transparent,
                   borderRadius: BorderRadius.circular(99),
                 ),
               ),
@@ -297,7 +514,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     final Color groupColor = dark
         ? tokens.colors.surface.withValues(alpha: 0.78)
-        : const Color(0xFFFAF8F2);
+        : AppColors.sharedContainer;
 
     if (categories.isEmpty) {
       return Padding(
@@ -323,7 +540,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
         itemCount: categories.length,
-        onReorder: (int oldIndex, int newIndex) {
+        onReorderItem: (int oldIndex, int newIndex) {
           controller.reorderCategories(
             type: _selectedSection.toLowerCase(),
             oldIndex: oldIndex,
@@ -359,7 +576,14 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     final Color titleColor = dark
         ? tokens.colors.textPrimary
-        : const Color(0xFF042F2B);
+        : AppColors.backgroundHeroDark;
+    final CategoryVisual visual = CategoryVisuals.resolveCategoryVisual(
+      categories: controller.state.categories,
+      type: _selectedSection.toLowerCase(),
+      categoryName: categoryName,
+    );
+    final Color accent = CategoryVisuals.colorFromValue(visual.colorValue);
+    final IconData iconData = CategoryVisuals.iconForKey(visual.iconKey);
 
     final Widget rowContent = Padding(
       padding: const EdgeInsets.symmetric(
@@ -369,10 +593,14 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: <Widget>[
-          Icon(
-            Icons.drag_indicator_rounded,
-            color: tokens.colors.textSecondary.withValues(alpha: 0.4),
-            size: 20,
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: 0.14),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(iconData, color: accent, size: 18),
           ),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
@@ -387,6 +615,22 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
               ),
             ),
           ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              _selectedSection,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: accent,
+              ),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
           Icon(
             Icons.chevron_right_rounded,
             color: tokens.colors.textSecondary.withValues(alpha: 0.5),
@@ -409,11 +653,10 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
                 name: categoryName,
               );
               if (!success && context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: const Text('Cannot delete category in use.'),
-                    backgroundColor: tokens.colors.danger,
-                  ),
+                showTopSnackBar(
+                  context,
+                  'Cannot delete category in use.',
+                  kind: AppToastKind.error,
                 );
               }
             },
@@ -443,6 +686,80 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
         onTap: () =>
             _showEditCategoryDialog(context, _selectedSection, categoryName),
         child: rowContent,
+      ),
+    );
+  }
+}
+
+class _CategoryPreviewCard extends StatelessWidget {
+  const _CategoryPreviewCard({
+    required this.name,
+    required this.typeLabel,
+    required this.visual,
+  });
+
+  final String name;
+  final String typeLabel;
+  final CategoryVisual visual;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.premiumTokens;
+    final Color accent = CategoryVisuals.colorFromValue(visual.colorValue);
+    final IconData icon = CategoryVisuals.iconForKey(visual.iconKey);
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: tokens.colors.surface,
+        borderRadius: AppRadii.card,
+        border: Border.all(color: tokens.colors.divider),
+      ),
+      child: Row(
+        children: <Widget>[
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: 0.14),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: accent, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  name,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: tokens.colors.textPrimary,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    typeLabel,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: accent,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

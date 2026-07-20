@@ -166,6 +166,7 @@ class FirebaseAuthService implements AuthService, AuthGateStateSource {
     required String password,
   }) async {
     try {
+      await _clearGoogleSession();
       final UserCredential userCredential = await _firebaseAuth
           .signInWithEmailAndPassword(email: email, password: password);
       final User? user = userCredential.user;
@@ -189,6 +190,7 @@ class FirebaseAuthService implements AuthService, AuthGateStateSource {
     required String displayName,
   }) async {
     try {
+      await _clearGoogleSession();
       final UserCredential userCredential = await _firebaseAuth
           .createUserWithEmailAndPassword(email: email, password: password);
       final User? user = userCredential.user;
@@ -260,6 +262,14 @@ class FirebaseAuthService implements AuthService, AuthGateStateSource {
     await _firebaseAuth.signOut();
   }
 
+  Future<void> _clearGoogleSession() async {
+    try {
+      await _googleSignIn.signOut();
+    } catch (_) {
+      // Best-effort cleanup before switching away from any prior Google account.
+    }
+  }
+
   @override
   Future<void> deleteAccount() async {
     final User? currentUser = _firebaseAuth.currentUser;
@@ -284,8 +294,11 @@ class FirebaseAuthService implements AuthService, AuthGateStateSource {
         _authGateStateController.add(
           const AuthGateState(status: AuthGateStatus.tokenExpired),
         );
+        return false;
       }
-      return false;
+      return true;
+    } catch (_) {
+      return true;
     }
   }
 
@@ -293,19 +306,11 @@ class FirebaseAuthService implements AuthService, AuthGateStateSource {
   Future<UserProfile?> restoreSession() async {
     final User? current = _firebaseAuth.currentUser;
     if (current == null) return null;
-    try {
-      await current.reload();
-      final User? reloaded = _firebaseAuth.currentUser;
-      if (reloaded == null) return null;
-      return _toProfile(reloaded, provider: _inferProvider(reloaded));
-    } on FirebaseAuthException catch (error) {
-      if (_isTokenExpired(error)) {
-        _authGateStateController.add(
-          const AuthGateState(status: AuthGateStatus.tokenExpired),
-        );
-      }
-      return null;
-    }
+    return _toProfile(
+      current,
+      provider: _inferProvider(current),
+      resolveAccessToken: false,
+    );
   }
 
   Future<UserProfile?> _signInGoogle() async {
@@ -368,8 +373,16 @@ class FirebaseAuthService implements AuthService, AuthGateStateSource {
     User user, {
     required AuthProvider provider,
     String? accessToken,
+    bool resolveAccessToken = true,
   }) async {
-    final String? idToken = await user.getIdToken();
+    String? idToken = accessToken;
+    if (idToken == null && resolveAccessToken) {
+      try {
+        idToken = await user.getIdToken();
+      } catch (_) {
+        idToken = null;
+      }
+    }
     return UserProfile(
       id: user.uid,
       email: user.email ?? '',

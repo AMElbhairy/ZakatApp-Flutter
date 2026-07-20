@@ -308,11 +308,14 @@ class ZakatScheduleService {
     String? lastRollover,
     String? zakatNisabBasis,
   }) {
-    if (zakatAnnualDate.isEmpty || !zakatAnnualDate.contains('-')) {
+    final String effectiveAnnualDate = zakatAnnualDate.isEmpty
+        ? kDefaultAnnualZakatDate
+        : zakatAnnualDate;
+    if (!effectiveAnnualDate.contains('-')) {
       return <Map<String, dynamic>>[];
     }
 
-    final List<String> parts = zakatAnnualDate.split('-');
+    final List<String> parts = effectiveAnnualDate.split('-');
     final int? hm = int.tryParse(parts[0]);
     final int? hd = int.tryParse(parts[1]);
     if (hm == null ||

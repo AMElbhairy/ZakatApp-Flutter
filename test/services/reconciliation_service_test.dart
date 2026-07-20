@@ -673,6 +673,156 @@ void main() {
     },
   );
 
+  test('mark installment paid does not create an expense', () {
+    final state = AppStateModel.fromJson(<String, dynamic>{
+      ...AppStateDefaults.create().toJson(),
+      'investments': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'id': 'inv-mark',
+          'investmentType': 'company_investment',
+          'assetSubtype': 'company',
+          'ownershipType': 'installment',
+          'valuationMode': 'manual',
+          'currency': 'EGP',
+          'originalPrice': 1000,
+          'totalInterest': 0,
+          'totalPayable': 1000,
+          'paidAmount': 0,
+          'remainingAmount': 1000,
+          'installmentPlan': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'date': '2026-01-01',
+              'amount': 200,
+              'currency': 'EGP',
+              'isPaid': false,
+            },
+          ],
+          'valuationDate': '2026-01-01',
+          'marketValue': 1000,
+          'marketValueDate': '2026-01-01',
+          'valuationSource': 'manual',
+          'loanBalance': 1000,
+          'loanAsOfDate': '2026-01-01',
+          'paidAmountToDate': 0,
+          'ownershipSharePct': 100,
+          'country': '',
+          'location': 'Test',
+          'inflationRateAnnual': 0,
+          'estimatedCurrentValue': 1000,
+          'description': '',
+          'noZakat': false,
+          'createdAt': '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    });
+
+    final out = service
+        .markInstallmentPaid(
+          input: state,
+          assetId: 'inv-mark',
+          installmentIndex: 0,
+          marketData: const MarketData(
+            goldPrice24kEgp: 0,
+            silverPriceEgp: 0,
+            usdToEgp: 50,
+            sarToEgp: 13,
+            ratesToEgp: <String, double>{'EGP': 1},
+          ),
+        )
+        .state;
+
+    expect(out.investments.first.installmentPlan.single['isPaid'], isTrue);
+    expect(
+      out.transactions.where(
+        (t) => t.description.contains('Installment payment'),
+      ),
+      isEmpty,
+    );
+  });
+
+  test('pay installment rejects when cash balance is insufficient', () {
+    final state = AppStateModel.fromJson(<String, dynamic>{
+      ...AppStateDefaults.create().toJson(),
+      'investments': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'id': 'inv-pay',
+          'investmentType': 'company_investment',
+          'assetSubtype': 'company',
+          'ownershipType': 'installment',
+          'valuationMode': 'manual',
+          'currency': 'EGP',
+          'originalPrice': 1000,
+          'totalInterest': 0,
+          'totalPayable': 1000,
+          'paidAmount': 0,
+          'remainingAmount': 1000,
+          'installmentPlan': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'date': '2026-01-01',
+              'amount': 200,
+              'currency': 'EGP',
+              'isPaid': false,
+            },
+          ],
+          'valuationDate': '2026-01-01',
+          'marketValue': 1000,
+          'marketValueDate': '2026-01-01',
+          'valuationSource': 'manual',
+          'loanBalance': 1000,
+          'loanAsOfDate': '2026-01-01',
+          'paidAmountToDate': 0,
+          'ownershipSharePct': 100,
+          'country': '',
+          'location': 'Test',
+          'inflationRateAnnual': 0,
+          'estimatedCurrentValue': 1000,
+          'description': '',
+          'noZakat': false,
+          'createdAt': '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    });
+
+    expect(
+      () => service.payInstallment(
+        input: state,
+        assetId: 'inv-pay',
+        installmentIndex: 0,
+        paymentCategory: 'Housing & Rent',
+        marketData: const MarketData(
+          goldPrice24kEgp: 0,
+          silverPriceEgp: 0,
+          usdToEgp: 50,
+          sarToEgp: 13,
+          ratesToEgp: <String, double>{'EGP': 1},
+        ),
+      ),
+      throwsA(isA<StateError>()),
+    );
+  });
+
+  test('mark zakat paid does not create an expense', () {
+    final out = service
+        .markZakatPaid(input: AppStateDefaults.create(), monthKey: '2026-06')
+        .state;
+
+    expect(out.zakatPaidMonths, contains('2026-06'));
+    expect(out.transactions.where((t) => t.category == 'Zakat'), isEmpty);
+  });
+
+  test('pay zakat rejects when cash balance is insufficient', () {
+    expect(
+      () => service.payZakat(
+        input: AppStateDefaults.create(),
+        monthKey: '2026-06',
+        zakatAmountMainCurrency: 500,
+        mainCurrency: 'EGP',
+        paymentDate: '2026-06-01',
+      ),
+      throwsA(isA<StateError>()),
+    );
+  });
+
   test('currency exchange creates linked pair and moves balances', () {
     final AppStateModel base = AppStateDefaults.create();
     final AppStateModel state = AppStateModel.fromJson(<String, dynamic>{

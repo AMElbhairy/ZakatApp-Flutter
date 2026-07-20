@@ -166,9 +166,90 @@ void main() {
     expect(roundtrip.transactions.length, appState.transactions.length);
     expect(roundtrip.savings.length, appState.savings.length);
     expect(roundtrip.mainCurrency, appState.mainCurrency);
+    expect(roundtrip.financialMonthCycle, appState.financialMonthCycle);
+    expect(roundtrip.financialMonthStartDay, appState.financialMonthStartDay);
     expect(roundtrip.zakatMethod, appState.zakatMethod);
     expect(roundtrip.zakatAnnualDate, appState.zakatAnnualDate);
     expect(roundtrip.zakatNisabBasis, appState.zakatNisabBasis);
+  });
+
+  test('arabic-encoded asset values survive model reload parsing', () {
+    final Saving saving = Saving.fromJson(<String, dynamic>{
+      'id': 'saving-ar',
+      'assetType': 'cash',
+      'dateAcquired': '2026-06-11',
+      'amount': '١٢٣٤٫٥٠',
+      'remainingAmount': '٩٨٧٫٥٠',
+      'unit': 'EGP',
+      'description': 'Arabic digits',
+      'purchaseCurrency': 'EGP',
+      'purchaseAmount': '١٢٣٤٫٥٠',
+      'createdAt': '2026-06-11T00:00:00Z',
+    });
+    final InvestmentAsset investment = InvestmentAsset.fromJson(
+      <String, dynamic>{
+        'id': 'investment-ar',
+        'investmentType': 'real_estate',
+        'assetSubtype': 'apartment',
+        'ownershipType': 'fully_owned',
+        'valuationMode': 'net_fair',
+        'currency': 'EGP',
+        'originalPrice': '١٠٠٠٠٠',
+        'totalInterest': '٠',
+        'totalPayable': '١٠٠٠٠٠',
+        'paidAmount': '٩٠٠٠٠',
+        'remainingAmount': '١٠٠٠٠',
+        'installmentPlan': const <Map<String, dynamic>>[],
+        'valuationDate': '2026-06-11',
+        'marketValue': '١٢٥٠٠٠',
+        'marketValueDate': '2026-06-11',
+        'valuationSource': 'manual',
+        'loanBalance': '٠',
+        'loanAsOfDate': '2026-06-11',
+        'paidAmountToDate': '٩٠٠٠٠',
+        'ownershipSharePct': '١٠٠',
+        'country': 'EG',
+        'location': 'Cairo',
+        'inflationRateAnnual': '١٠',
+        'estimatedCurrentValue': '١٢٥٠٠٠',
+        'description': 'Arabic digits',
+        'noZakat': true,
+        'createdAt': '2026-06-11T00:00:00Z',
+      },
+    );
+    final FinancialPlan plan = FinancialPlan.fromJson(<String, dynamic>{
+      'id': 'plan-ar',
+      'name': 'Arabic digits',
+      'startDate': '2026-06-11',
+      'projectionCurrency': 'EGP',
+      'startingBalance': '١٠٠٠٠',
+      'startingBalanceDate': '2026-06-11',
+      'startingBalanceMode': 'manual',
+      'snapshotWealthCurrency': 'EGP',
+      'monthlyIncome': '٢٥٠٠٠',
+      'monthlyExpenses': '١٢٠٠٠',
+      'includeInstallments': true,
+      'includeZakat': true,
+      'durationYears': '٣',
+      'createdAt': '2026-06-11T00:00:00Z',
+      'startingAssets': '٢٠٠٠٠',
+      'startingLiabilities': '٥٠٠٠',
+      'startingNetWorth': '١٥٠٠٠',
+      'startingNisabSnapshot': '٨٥٠٠',
+      'startingGoldPriceSnapshot': '٦٥٠٠',
+    });
+
+    expect(saving.amount, 1234.50);
+    expect(saving.remainingAmount, 987.50);
+    expect(saving.purchaseAmount, 1234.50);
+    expect(investment.originalPrice, 100000);
+    expect(investment.remainingAmount, 10000);
+    expect(investment.marketValue, 125000);
+    expect(plan.startingBalance, 10000);
+    expect(plan.monthlyIncome, 25000);
+    expect(plan.monthlyExpenses, 12000);
+    expect(plan.durationYears, 3);
+    expect(plan.startingNetWorth, 15000);
   });
 
   test('market snapshot fromJson/toJson', () {

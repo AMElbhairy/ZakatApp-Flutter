@@ -1,32 +1,46 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../core/privacy/app_privacy.dart';
 import '../core/i18n/app_localizations.dart';
 import '../core/theme/app_icons.dart';
 import '../core/theme/app_radii.dart';
+import '../core/theme/app_colors.dart';
 import '../core/theme/app_theme_extensions.dart';
+import '../core/theme/app_typography.dart';
 import '../core/widgets/app_ui.dart';
 
 import 'account/account_screen.dart';
 import 'activity/activity_screen.dart';
+import 'analysis/expenses_analysis_screen.dart';
 import 'assets/assets_screen.dart';
 import 'dashboard/dashboard_screen.dart';
 import 'entry/add_investment_screen.dart';
 import 'entry/add_financial_plan_screen.dart';
 import 'entry/add_saving_screen.dart';
 import 'entry/add_transaction_screen.dart';
+import 'entry/currency_exchange_screen.dart';
 import 'plans/plans_screen.dart';
+import '../services/smart_capture_alert_service.dart';
+import '../widgets/sensitive_content_scope.dart';
 
 class AppShell extends StatefulWidget {
-  const AppShell({super.key});
+  const AppShell({super.key, this.initialIndex = 2, this.onIndexChanged});
+
+  final int initialIndex;
+  final ValueChanged<int>? onIndexChanged;
 
   @override
   State<AppShell> createState() => _AppShellState();
 }
 
 class _AppShellState extends State<AppShell> {
-  int _index = 2;
+  late int _index;
   final GlobalKey<ActivityScreenState> _activityKey =
       GlobalKey<ActivityScreenState>();
+  final List<Widget?> _tabCache = List<Widget?>.filled(5, null);
   final List<ScrollController> _tabScrollControllers =
       List<ScrollController>.generate(
         5,
@@ -38,6 +52,22 @@ class _AppShellState extends State<AppShell> {
   double? _edgeDragDistance;
 
   @override
+  void initState() {
+    super.initState();
+    _index = widget.initialIndex;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      try {
+        final SmartCaptureAlertService alerts = context
+            .read<SmartCaptureAlertService>();
+        unawaited(alerts.flushPendingNotificationLaunch());
+      } catch (_) {
+        // The shell can run without notification plumbing in tests or embeds.
+      }
+    });
+  }
+
+  @override
   void dispose() {
     for (final ScrollController controller in _tabScrollControllers) {
       controller.dispose();
@@ -47,7 +77,7 @@ class _AppShellState extends State<AppShell> {
 
   void _handleTabTap(int index) {
     if (index != _index) {
-      setState(() => _index = index);
+      _setIndex(index);
       return;
     }
 
@@ -60,62 +90,101 @@ class _AppShellState extends State<AppShell> {
     );
   }
 
+  void _setIndex(int index) {
+    if (_index == index) return;
+    _ensureTabBuilt(index);
+    setState(() => _index = index);
+    widget.onIndexChanged?.call(index);
+  }
+
+  void _ensureTabBuilt(int index) {
+    if (_tabCache[index] != null) return;
+    _tabCache[index] = _buildTab(index);
+  }
+
+  Widget _buildTab(int index) {
+    switch (index) {
+      case 0:
+        return AssetsScreen(
+          onViewAllActivity: () {
+            _setIndex(1);
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _activityKey.currentState?.showTransactions();
+            });
+          },
+        );
+      case 1:
+        return ActivityScreen(key: _activityKey);
+      case 2:
+        return DashboardScreen(
+          onViewAllActivity: () {
+            _setIndex(1);
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _activityKey.currentState?.showTransactions();
+            });
+          },
+          onOpenAddActions: () => _showAddActions(context),
+          onOpenZakatSchedule: () {
+            _setIndex(1);
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _activityKey.currentState?.showSchedule();
+            });
+          },
+          onOpenAddTransaction: (String type) {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                settings: const AppPrivacyRouteSettings(
+                  privacy: ScreenPrivacyClassification.sensitive,
+                ),
+                builder: (_) => AddTransactionScreen(initialType: type),
+              ),
+            );
+          },
+          onOpenAddAsset: () => _showAddAssetActions(context),
+          onViewAssets: () => _setIndex(0),
+          onOpenExpenseAnalysis: () {
+            Navigator.of(context).push(ExpenseAnalysisScreen.route());
+          },
+        );
+      case 3:
+        return const PlansScreen();
+      case 4:
+        return const AccountScreen();
+      default:
+        return const SizedBox.shrink();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final tokens = context.premiumTokens;
     final double bottomInset = MediaQuery.paddingOf(context).bottom;
-    final List<Widget> tabContents = <Widget>[
-      AssetsScreen(
-        onViewAllActivity: () {
-          setState(() => _index = 1);
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _activityKey.currentState?.showTransactions();
-          });
-        },
-      ),
-      ActivityScreen(key: _activityKey),
-      DashboardScreen(
-        onViewAllActivity: () {
-          setState(() => _index = 1);
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _activityKey.currentState?.showTransactions();
-          });
-        },
-        onOpenAddActions: () => _showAddActions(context),
-        onOpenZakatSchedule: () {
-          setState(() => _index = 1);
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _activityKey.currentState?.showSchedule();
-          });
-        },
-        onOpenAddTransaction: (String type) {
-          Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => AddTransactionScreen(initialType: type),
-            ),
-          );
-        },
-        onOpenAddAsset: () => _showAddAssetActions(context),
-        onViewAssets: () => setState(() => _index = 0),
-      ),
-      const PlansScreen(),
-      const AccountScreen(),
-    ];
-    final List<Widget> tabs = List<Widget>.generate(
-      tabContents.length,
-      (int index) => PrimaryScrollController(
+    _ensureTabBuilt(_index);
+    final List<Widget> tabs = List<Widget>.generate(5, (int index) {
+      final Widget child = _tabCache[index] ?? const SizedBox.shrink();
+      final Widget tabContent = PrimaryScrollController(
         controller: _tabScrollControllers[index],
-        child: tabContents[index],
-      ),
-    );
+        child: child,
+      );
+      if (index >= 0 && index <= 3) {
+        return SensitiveContentScope(
+          active: _index == index,
+          child: tabContent,
+        );
+      }
+      return tabContent;
+    });
 
     final double navTouchBlockHeight = 90 + bottomInset;
     final bool allowEdgeSwipe = defaultTargetPlatform == TargetPlatform.iOS;
+    final String family = AppTypography.familyFor(
+      Localizations.localeOf(context),
+    );
     return PopScope<void>(
       canPop: _index == 2,
       onPopInvokedWithResult: (bool didPop, void _) {
         if (!didPop && _index != 2) {
-          setState(() => _index = 2);
+          _setIndex(2);
         }
       },
       child: Scaffold(
@@ -127,7 +196,10 @@ class _AppShellState extends State<AppShell> {
           children: <Widget>[
             SafeArea(
               bottom: false,
-              child: IndexedStack(index: _index, children: tabs),
+              child: Stack(
+                fit: StackFit.expand,
+                children: <Widget>[IndexedStack(index: _index, children: tabs)],
+              ),
             ),
             if (allowEdgeSwipe && _index != 2)
               PositionedDirectional(
@@ -147,7 +219,7 @@ class _AppShellState extends State<AppShell> {
                     _edgeDragDistance =
                         (_edgeDragDistance ?? 0) + (isRtl ? -delta : delta);
                     if ((_edgeDragDistance ?? 0) > 56) {
-                      setState(() => _index = 2);
+                      _setIndex(2);
                       _edgeDragDistance = null;
                     }
                   },
@@ -159,7 +231,7 @@ class _AppShellState extends State<AppShell> {
                         ? velocity < -500
                         : velocity > 500;
                     if (swipedBack) {
-                      setState(() => _index = 2);
+                      _setIndex(2);
                     }
                     _edgeDragDistance = null;
                   },
@@ -235,23 +307,23 @@ class _AppShellState extends State<AppShell> {
                             ),
                             decoration: BoxDecoration(
                               borderRadius: AppRadii.pill,
-                              color: const Color(0xFF02201A),
+                              color: AppColors.emeraldCore,
                               border: Border.all(
-                                color: const Color(
-                                  0xFFC5A059,
-                                ).withValues(alpha: 0.30),
+                                color: AppColors.goldMuted.withValues(
+                                  alpha: 0.30,
+                                ),
                               ),
                               boxShadow: <BoxShadow>[
                                 BoxShadow(
-                                  color: const Color(
-                                    0xFFD4AF37,
-                                  ).withValues(alpha: 0.12),
+                                  color: AppColors.gold.withValues(alpha: 0.12),
                                   blurRadius: 10,
                                   spreadRadius: 0.5,
                                   offset: const Offset(0, 1),
                                 ),
                                 BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.12),
+                                  color: AppColors.black.withValues(
+                                    alpha: 0.12,
+                                  ),
                                   blurRadius: 12,
                                   offset: const Offset(0, 4),
                                 ),
@@ -286,10 +358,9 @@ class _AppShellState extends State<AppShell> {
                                                               BoxShape.circle,
                                                           boxShadow: <BoxShadow>[
                                                             BoxShadow(
-                                                              color:
-                                                                  const Color(
-                                                                    0xFFD4AF37,
-                                                                  ).withValues(
+                                                              color: AppColors
+                                                                  .gold
+                                                                  .withValues(
                                                                     alpha: 0.18,
                                                                   ),
                                                               blurRadius: 8,
@@ -302,12 +373,8 @@ class _AppShellState extends State<AppShell> {
                                                     item.icon,
                                                     size: 18,
                                                     color: selected
-                                                        ? const Color(
-                                                            0xFFD4AF37,
-                                                          )
-                                                        : const Color(
-                                                            0xFFA3B8B5,
-                                                          ),
+                                                        ? AppColors.gold
+                                                        : AppColors.slateMuted,
                                                   ),
                                                 ),
                                                 const SizedBox(height: 2),
@@ -316,28 +383,23 @@ class _AppShellState extends State<AppShell> {
                                                   maxLines: 1,
                                                   overflow:
                                                       TextOverflow.ellipsis,
-                                                  style: Theme.of(context)
-                                                      .textTheme
-                                                      .labelSmall
-                                                      ?.copyWith(
-                                                        fontSize: 10.5,
-                                                        fontWeight: selected
-                                                            ? FontWeight.w700
-                                                            : FontWeight.w500,
+                                                  style:
+                                                      AppTypography.navigationLabelCompact(
                                                         color: selected
-                                                            ? const Color(
-                                                                0xFFD4AF37,
-                                                              )
-                                                            : const Color(
-                                                                0xFFA3B8B5,
-                                                              ),
+                                                            ? AppColors.gold
+                                                            : AppColors
+                                                                  .slateMuted,
+                                                        family: family,
+                                                        fallbackFamily:
+                                                            AppTypography
+                                                                .englishFamily,
+                                                      ).copyWith(
                                                         shadows: selected
                                                             ? <Shadow>[
                                                                 Shadow(
-                                                                  color:
-                                                                      const Color(
-                                                                        0xFFD4AF37,
-                                                                      ).withValues(
+                                                                  color: AppColors
+                                                                      .gold
+                                                                      .withValues(
                                                                         alpha:
                                                                             0.28,
                                                                       ),
@@ -377,41 +439,42 @@ class _AppShellState extends State<AppShell> {
                 ),
               ),
             ),
-            PositionedDirectional(
-              start: 22,
-              bottom: 75 + bottomInset,
-              child: SizedBox(
-                width: 64,
-                height: 64,
-                child: FloatingActionButton(
-                  key: const Key('addEntryFab'),
-                  onPressed: () => _showAddActions(context),
-                  backgroundColor: const Color(0xFF012E26),
-                  foregroundColor: const Color(0xFFD4AF37),
-                  elevation: 0,
-                  shape: CircleBorder(
-                    side: BorderSide(
-                      color: const Color(0xFFC5A059).withValues(alpha: 0.45),
-                      width: 1.2,
+            if (_index == 1)
+              PositionedDirectional(
+                start: 22,
+                bottom: 75 + bottomInset,
+                child: SizedBox(
+                  width: 64,
+                  height: 64,
+                  child: FloatingActionButton(
+                    key: const Key('addEntryFab'),
+                    onPressed: () => _showAddActions(context),
+                    backgroundColor: AppColors.deepEmerald,
+                    foregroundColor: AppColors.gold,
+                    elevation: 0,
+                    shape: CircleBorder(
+                      side: BorderSide(
+                        color: AppColors.goldMuted.withValues(alpha: 0.45),
+                        width: 1.2,
+                      ),
                     ),
-                  ),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      boxShadow: <BoxShadow>[
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.22),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
+                    child: Container(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        boxShadow: <BoxShadow>[
+                          BoxShadow(
+                            color: AppColors.black.withValues(alpha: 0.22),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      alignment: Alignment.center,
+                      child: const Icon(AppIcons.add, size: 28),
                     ),
-                    alignment: Alignment.center,
-                    child: const Icon(AppIcons.add, size: 28),
                   ),
                 ),
               ),
-            ),
           ],
         ),
       ),
@@ -424,28 +487,31 @@ class _AppShellState extends State<AppShell> {
     required double width,
     required double height,
   }) {
+    final String family = AppTypography.familyFor(
+      Localizations.localeOf(context),
+    );
     return Container(
       width: width,
       height: height,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(23),
-        color: const Color(0xFF012E26),
+        color: AppColors.deepEmerald,
         border: Border.all(
           color: selected
-              ? const Color(0xFFC5A059)
-              : const Color(0xFF0B4A43).withValues(alpha: 0.85),
+              ? AppColors.goldMuted
+              : AppColors.deepTeal.withValues(alpha: 0.85),
           width: 1.0,
         ),
         boxShadow: <BoxShadow>[
           if (selected)
             BoxShadow(
-              color: const Color(0xFFD4AF37).withValues(alpha: 0.22),
+              color: AppColors.gold.withValues(alpha: 0.22),
               blurRadius: 12,
               spreadRadius: 1.0,
               offset: const Offset(0, 1),
             ),
           BoxShadow(
-            color: Colors.black.withValues(alpha: selected ? 0.25 : 0.12),
+            color: AppColors.black.withValues(alpha: selected ? 0.25 : 0.12),
             blurRadius: selected ? 8 : 6,
             offset: const Offset(0, 3),
           ),
@@ -460,7 +526,7 @@ class _AppShellState extends State<AppShell> {
                     shape: BoxShape.circle,
                     boxShadow: <BoxShadow>[
                       BoxShadow(
-                        color: const Color(0xFFD4AF37).withValues(alpha: 0.12),
+                        color: AppColors.gold.withValues(alpha: 0.12),
                         blurRadius: 6,
                         spreadRadius: 0.15,
                       ),
@@ -469,9 +535,7 @@ class _AppShellState extends State<AppShell> {
                 : null,
             child: Icon(
               item.icon,
-              color: selected
-                  ? const Color(0xFFD4AF37)
-                  : const Color(0xFFA3B8B5),
+              color: selected ? AppColors.gold : AppColors.slateMuted,
               size: 23,
             ),
           ),
@@ -480,21 +544,21 @@ class _AppShellState extends State<AppShell> {
             item.label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              fontSize: 10.5,
-              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-              color: selected
-                  ? const Color(0xFFD4AF37)
-                  : const Color(0xFFA3B8B5),
-              shadows: selected
-                  ? <Shadow>[
-                      Shadow(
-                        color: const Color(0xFFD4AF37).withValues(alpha: 0.18),
-                        blurRadius: 5,
-                      ),
-                    ]
-                  : null,
-            ),
+            style:
+                AppTypography.navigationLabelCompact(
+                  color: selected ? AppColors.gold : AppColors.slateMuted,
+                  family: family,
+                  fallbackFamily: AppTypography.englishFamily,
+                ).copyWith(
+                  shadows: selected
+                      ? <Shadow>[
+                          Shadow(
+                            color: AppColors.gold.withValues(alpha: 0.18),
+                            blurRadius: 5,
+                          ),
+                        ]
+                      : null,
+                ),
           ),
         ],
       ),
@@ -529,6 +593,9 @@ class _AppShellState extends State<AppShell> {
                     Navigator.of(context).pop();
                     Navigator.of(this.context).push(
                       MaterialPageRoute<void>(
+                        settings: const AppPrivacyRouteSettings(
+                          privacy: ScreenPrivacyClassification.sensitive,
+                        ),
                         builder: (_) =>
                             const AddTransactionScreen(initialType: 'income'),
                       ),
@@ -547,8 +614,31 @@ class _AppShellState extends State<AppShell> {
                     Navigator.of(context).pop();
                     Navigator.of(this.context).push(
                       MaterialPageRoute<void>(
+                        settings: const AppPrivacyRouteSettings(
+                          privacy: ScreenPrivacyClassification.sensitive,
+                        ),
                         builder: (_) =>
                             const AddTransactionScreen(initialType: 'expense'),
+                      ),
+                    );
+                  },
+                ),
+                // Currency Exchange
+                ListTile(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  key: const Key('actionAddExchange'),
+                  leading: const Icon(Icons.currency_exchange_outlined),
+                  title: Text(context.l10n.tr('currency_exchange')),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    Navigator.of(this.context).push(
+                      MaterialPageRoute<void>(
+                        settings: const AppPrivacyRouteSettings(
+                          privacy: ScreenPrivacyClassification.sensitive,
+                        ),
+                        builder: (_) => const CurrencyExchangeScreen(),
                       ),
                     );
                   },
@@ -565,6 +655,9 @@ class _AppShellState extends State<AppShell> {
                     Navigator.of(context).pop();
                     Navigator.of(this.context).push(
                       MaterialPageRoute<void>(
+                        settings: const AppPrivacyRouteSettings(
+                          privacy: ScreenPrivacyClassification.sensitive,
+                        ),
                         builder: (_) => const AddSavingScreen(),
                       ),
                     );
@@ -582,6 +675,9 @@ class _AppShellState extends State<AppShell> {
                     Navigator.of(context).pop();
                     Navigator.of(this.context).push(
                       MaterialPageRoute<void>(
+                        settings: const AppPrivacyRouteSettings(
+                          privacy: ScreenPrivacyClassification.sensitive,
+                        ),
                         builder: (_) => const AddInvestmentScreen(),
                       ),
                     );
@@ -599,6 +695,9 @@ class _AppShellState extends State<AppShell> {
                     Navigator.of(context).pop();
                     Navigator.of(this.context).push(
                       MaterialPageRoute<void>(
+                        settings: const AppPrivacyRouteSettings(
+                          privacy: ScreenPrivacyClassification.sensitive,
+                        ),
                         builder: (_) => const AddFinancialPlanScreen(),
                       ),
                     );
@@ -638,6 +737,9 @@ class _AppShellState extends State<AppShell> {
                     Navigator.of(context).pop();
                     Navigator.of(this.context).push(
                       MaterialPageRoute<void>(
+                        settings: const AppPrivacyRouteSettings(
+                          privacy: ScreenPrivacyClassification.sensitive,
+                        ),
                         builder: (_) => const AddSavingScreen(),
                       ),
                     );
@@ -653,6 +755,9 @@ class _AppShellState extends State<AppShell> {
                     Navigator.of(context).pop();
                     Navigator.of(this.context).push(
                       MaterialPageRoute<void>(
+                        settings: const AppPrivacyRouteSettings(
+                          privacy: ScreenPrivacyClassification.sensitive,
+                        ),
                         builder: (_) => const AddInvestmentScreen(),
                       ),
                     );

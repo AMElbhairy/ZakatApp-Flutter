@@ -2,7 +2,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../main.dart';
 import '../../core/i18n/app_localizations.dart';
+import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_theme_extensions.dart';
@@ -64,8 +66,8 @@ class AuthBrandBackdrop extends StatelessWidget {
                   center: spec.glowCenter,
                   radius: spec.glowRadius,
                   colors: <Color>[
-                    Colors.white.withValues(alpha: spec.glowOpacity),
-                    Colors.transparent,
+                    AppColors.white.withValues(alpha: spec.glowOpacity),
+                    AppColors.transparent,
                   ],
                 ),
               ),
@@ -76,8 +78,8 @@ class AuthBrandBackdrop extends StatelessWidget {
                   center: Alignment.center,
                   radius: 1.18,
                   colors: <Color>[
-                    Colors.transparent,
-                    Colors.black.withValues(alpha: spec.vignetteOpacity),
+                    AppColors.transparent,
+                    AppColors.black.withValues(alpha: spec.vignetteOpacity),
                   ],
                   stops: const <double>[0.46, 1],
                 ),
@@ -96,9 +98,9 @@ class AuthBrandBackdrop extends StatelessWidget {
         case AuthBackdropTone.hero:
           return const _AuthBackdropSpec(
             background: <Color>[
-              Color(0xFF063B35),
-              Color(0xFF075E54),
-              Color(0xFF042F2B),
+              AppColors.brandForest,
+              AppColors.brandForestAlt,
+              AppColors.backgroundHeroDark,
             ],
             backgroundStops: <double>[0, 0.43, 1],
             textureOpacity: 0.07,
@@ -110,9 +112,9 @@ class AuthBrandBackdrop extends StatelessWidget {
         case AuthBackdropTone.shared:
           return const _AuthBackdropSpec(
             background: <Color>[
-              Color(0xFF063B35),
-              Color(0xFF075E54),
-              Color(0xFF042F2B),
+              AppColors.brandForest,
+              AppColors.brandForestAlt,
+              AppColors.backgroundHeroDark,
             ],
             backgroundStops: <double>[0, 0.42, 1],
             textureOpacity: 0.055,
@@ -128,10 +130,10 @@ class AuthBrandBackdrop extends StatelessWidget {
       case AuthBackdropTone.hero:
         return const _AuthBackdropSpec(
           background: <Color>[
-            Color(0xFF0A5A52),
-            Color(0xFF0C6B60),
-            Color(0xFFF2EFE7),
-            Color(0xFFF6F3EA),
+            AppColors.brandTeal,
+            AppColors.brandTealAlt,
+            AppColors.brandSand,
+            AppColors.brandSandAlt,
           ],
           backgroundStops: <double>[0, 0.26, 0.72, 1],
           textureOpacity: 0.06,
@@ -143,10 +145,10 @@ class AuthBrandBackdrop extends StatelessWidget {
       case AuthBackdropTone.shared:
         return const _AuthBackdropSpec(
           background: <Color>[
-            Color(0xFF0A5A52),
-            Color(0xFF0C6B60),
-            Color(0xFFF3F0E8),
-            Color(0xFFF6F3EB),
+            AppColors.brandTeal,
+            AppColors.brandTealAlt,
+            AppColors.brandSandSoft,
+            AppColors.brandSandSoftAlt,
           ],
           backgroundStops: <double>[0, 0.18, 0.74, 1],
           textureOpacity: 0.04,
@@ -174,7 +176,7 @@ class AuthBrandShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: context.premiumTokens.colors.background,
+      backgroundColor: context.premiumTokens.colors.primarySurface,
       body: Stack(
         children: <Widget>[
           AuthBrandBackdrop(tone: tone),
@@ -277,7 +279,7 @@ class AuthBrandBodyCard extends StatelessWidget {
         color: tokens.colors.surface.withValues(alpha: dark ? 0.72 : 0.64),
         borderRadius: AppRadii.card,
         border: Border.all(
-          color: tokens.colors.divider.withValues(alpha: dark ? 0.52 : 0.38),
+          color: tokens.colors.border.withValues(alpha: dark ? 0.52 : 0.38),
         ),
         boxShadow: tokens.softShadow,
       ),
@@ -372,9 +374,9 @@ class AuthBrandSecondaryButton extends StatelessWidget {
         style: OutlinedButton.styleFrom(
           foregroundColor: foregroundColor,
           side: BorderSide(
-            color: tokens.colors.divider.withValues(alpha: 0.82),
+            color: tokens.colors.border.withValues(alpha: 0.82),
           ),
-          backgroundColor: tokens.colors.surface.withValues(alpha: 0.45),
+          backgroundColor: tokens.colors.secondarySurface.withValues(alpha: 0.45),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(18),
           ),
@@ -415,11 +417,12 @@ class AuthChecklistItem extends StatelessWidget {
             child: CircularProgressIndicator(
               strokeWidth: 1.8,
               color: tokens.colors.gold,
+              value: ZakatApp.isTesting ? 0.5 : null,
             ),
           )
         : Icon(
             isDone ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
-            color: isDone ? tokens.colors.gold : tokens.colors.textSecondary,
+            color: isDone ? tokens.colors.gold : tokens.colors.secondaryText,
             size: 18,
           );
 
@@ -456,10 +459,10 @@ class AuthStatChip extends StatelessWidget {
         vertical: AppSpacing.xs,
       ),
       decoration: BoxDecoration(
-        color: tokens.colors.background.withValues(alpha: 0.34),
+        color: tokens.colors.primarySurface.withValues(alpha: 0.34),
         borderRadius: AppRadii.pill,
         border: Border.all(
-          color: tokens.colors.divider.withValues(alpha: 0.72),
+          color: tokens.colors.border.withValues(alpha: 0.72),
         ),
       ),
       child: Column(
@@ -478,7 +481,7 @@ class AuthStatChip extends StatelessWidget {
             textAlign: TextAlign.center,
             style: Theme.of(
               context,
-            ).textTheme.bodySmall?.copyWith(color: tokens.colors.textSecondary),
+            ).textTheme.bodySmall?.copyWith(color: tokens.colors.secondaryText),
           ),
         ],
       ),
@@ -491,52 +494,13 @@ class AuthPrivacyOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = context.premiumTokens;
-    final bool dark = Theme.of(context).brightness == Brightness.dark;
-    final AppLocalizations l10n = context.l10n;
-    return Positioned.fill(
-      child: IgnorePointer(
-        child: Stack(
-          fit: StackFit.expand,
-          children: <Widget>[
-            const AuthBrandBackdrop(tone: AuthBackdropTone.shared),
-            Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 240),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: <Widget>[
-                      _BrandLogo(size: 58, framed: false),
-                      const SizedBox(height: AppSpacing.sm),
-                      Text(
-                        l10n.tr('protected_by_app_lock'),
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(
-                              color: tokens.colors.textPrimary,
-                              fontWeight: FontWeight.w800,
-                            ),
-                      ),
-                      const SizedBox(height: AppSpacing.xs),
-                      Text(
-                        l10n.tr('biometric_lock_enabled'),
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: dark
-                              ? tokens.colors.textSecondary
-                              : tokens.colors.hero,
-                          fontWeight: FontWeight.w600,
-                          height: 1.2,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
+    return ColoredBox(
+      color: context.premiumTokens.colors.primarySurface,
+      child: Center(
+        child: Image.asset(
+          'assets/images/app_icon.png',
+          width: 96,
+          fit: BoxFit.contain,
         ),
       ),
     );

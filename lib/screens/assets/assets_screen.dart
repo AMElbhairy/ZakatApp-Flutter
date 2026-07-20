@@ -6,6 +6,7 @@ import '../../core/services/zakat_engine.dart';
 import '../../core/widgets/app_ui.dart';
 import '../../core/theme/app_theme_extensions.dart';
 import '../../core/theme/app_radii.dart';
+import '../../core/widgets/responsive_layout.dart';
 import '../../models/investment_asset.dart';
 import '../../models/saving.dart';
 import '../../models/transaction.dart';
@@ -364,11 +365,19 @@ class _AssetsScreenState extends State<AssetsScreen> {
         : 0.0;
 
     final tokens = context.premiumTokens;
+    final bool compact = ResponsiveLayout.isCompact(context);
+    final bool veryCompact = ResponsiveLayout.isVeryCompact(context);
+    final EdgeInsetsGeometry horizontalPadding = EdgeInsets.fromLTRB(
+      ResponsiveLayout.compactHorizontalPadding(context),
+      20,
+      ResponsiveLayout.compactHorizontalPadding(context),
+      navSafeBottomPadding,
+    );
 
     return Container(
       color: tokens.colors.background,
       child: ListView(
-        padding: EdgeInsets.fromLTRB(16, 20, 16, navSafeBottomPadding),
+        padding: horizontalPadding,
         children: <Widget>[
           _AssetsHeader(
             title: context.l10n.tr('assets'),
@@ -408,10 +417,10 @@ class _AssetsScreenState extends State<AssetsScreen> {
                             end: gradientEnd,
                             colors: <Color>[
                               Colors.white.withValues(
-                                alpha: isDark ? 0.20 : 0.38,
+                                alpha: isDark ? 0.18 : 0.34,
                               ),
                               Colors.white.withValues(
-                                alpha: isDark ? 0.01 : 0.05,
+                                alpha: isDark ? 0.0 : 0.04,
                               ),
                             ],
                             stops: const <double>[0.0, 1.0],
@@ -427,7 +436,9 @@ class _AssetsScreenState extends State<AssetsScreen> {
                     ),
                   ),
                   Padding(
-                    padding: const EdgeInsets.all(20),
+                    padding: EdgeInsets.all(
+                      compact ? (veryCompact ? 14 : 16) : 20,
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
@@ -451,18 +462,24 @@ class _AssetsScreenState extends State<AssetsScreen> {
                                     ),
                                   ),
                                   const SizedBox(height: 8),
-                                  Text(
-                                    balancesHidden
-                                        ? '••••••'
-                                        : ZakatEngineService.formatCurrency(
-                                            totalWealthMain,
-                                            mainCurrency,
-                                            isArabic: isArabic,
-                                          ),
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 26,
-                                      fontWeight: FontWeight.bold,
+                                  FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: AlignmentDirectional.centerStart,
+                                    child: Text(
+                                      balancesHidden
+                                          ? '••••••'
+                                          : ZakatEngineService.formatCurrency(
+                                              totalWealthMain,
+                                              mainCurrency,
+                                              isArabic: isArabic,
+                                            ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 26,
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                   ),
                                   const SizedBox(height: 4),
@@ -470,8 +487,10 @@ class _AssetsScreenState extends State<AssetsScreen> {
                                     balancesHidden
                                         ? '≈ ••••••'
                                         : '≈ ${ZakatEngineService.formatCurrency(altCurrencyVal, altCurrency, isArabic: isArabic)}',
-                                    style: const TextStyle(
-                                      color: Colors.white70,
+                                    style: TextStyle(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.75,
+                                      ),
                                       fontSize: 13,
                                     ),
                                   ),
@@ -488,18 +507,24 @@ class _AssetsScreenState extends State<AssetsScreen> {
                                     ),
                                   ),
                                   const SizedBox(height: 4),
-                                  Text(
-                                    balancesHidden
-                                        ? '••••••'
-                                        : ZakatEngineService.formatCurrency(
-                                            totalLiabilitiesMain,
-                                            mainCurrency,
-                                            isArabic: isArabic,
-                                          ),
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
+                                  FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: AlignmentDirectional.centerStart,
+                                    child: Text(
+                                      balancesHidden
+                                          ? '••••••'
+                                          : ZakatEngineService.formatCurrency(
+                                              totalLiabilitiesMain,
+                                              mainCurrency,
+                                              isArabic: isArabic,
+                                            ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -548,17 +573,23 @@ class _AssetsScreenState extends State<AssetsScreen> {
                                   ),
                                   Text(
                                     context.l10n.tr('this_year'),
-                                    style: const TextStyle(
-                                      color: Colors.white70,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.75,
+                                      ),
                                       fontSize: 11,
                                     ),
                                   ),
                                   const SizedBox(height: 12),
                                   Row(
                                     children: <Widget>[
-                                      const Icon(
+                                      Icon(
                                         Icons.layers_outlined,
-                                        color: Colors.white70,
+                                        color: Colors.white.withValues(
+                                          alpha: 0.75,
+                                        ),
                                         size: 14,
                                       ),
                                       const SizedBox(width: 6),
@@ -574,9 +605,11 @@ class _AssetsScreenState extends State<AssetsScreen> {
                                   const SizedBox(height: 6),
                                   Row(
                                     children: <Widget>[
-                                      const Icon(
+                                      Icon(
                                         Icons.public_outlined,
-                                        color: Colors.white70,
+                                        color: Colors.white.withValues(
+                                          alpha: 0.75,
+                                        ),
                                         size: 14,
                                       ),
                                       const SizedBox(width: 6),
@@ -618,7 +651,7 @@ class _AssetsScreenState extends State<AssetsScreen> {
                         size: 20,
                         color: tokens.colors.textPrimary,
                       ),
-                      const SizedBox(width: 8),
+                      SizedBox(width: compact ? 6 : 8),
                       ...<String>[
                         'All Time',
                         '30D',
@@ -629,7 +662,15 @@ class _AssetsScreenState extends State<AssetsScreen> {
                         final bool isSelected = _selectedDateFilter == filter;
                         String label = filter;
                         if (filter == 'All Time') {
-                          label = context.l10n.tr('all');
+                          label = context.l10n.tr('all_time');
+                        } else if (filter == '30D') {
+                          label = context.l10n.tr('period_30d');
+                        } else if (filter == '90D') {
+                          label = context.l10n.tr('period_90d');
+                        } else if (filter == 'YTD') {
+                          label = context.l10n.tr('period_ytd');
+                        } else if (filter == 'Custom') {
+                          label = context.l10n.tr('period_custom');
                         }
                         if (filter == 'Custom' &&
                             _customDateRange != null &&
@@ -645,10 +686,7 @@ class _AssetsScreenState extends State<AssetsScreen> {
                           padding: const EdgeInsets.symmetric(horizontal: 2),
                           child: ChoiceChip(
                             labelPadding: EdgeInsets.zero,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 7,
-                            ),
+                            padding: ResponsiveLayout.chipPadding(context),
                             visualDensity: const VisualDensity(
                               horizontal: -1,
                               vertical: -1,
@@ -822,7 +860,7 @@ class _AssetsScreenState extends State<AssetsScreen> {
             icon: Icons.show_chart,
             iconColor: const Color(0xFF6B21A8),
             iconBg: const Color(0xFFF3E8FF),
-            subtitle: 'Stocks, Funds, etc.',
+            subtitle: context.l10n.tr('stocks_funds_etc'),
             value: investmentsTotalMain,
             percentage: pct(investmentsTotalEgp),
             balancesHidden: balancesHidden,
@@ -843,7 +881,7 @@ class _AssetsScreenState extends State<AssetsScreen> {
             icon: Icons.home_outlined,
             iconColor: const Color(0xFFC2410C),
             iconBg: const Color(0xFFFFEDD5),
-            subtitle: '${propertyList.length} Property',
+            subtitle: '${propertyList.length} ${context.l10n.tr('properties')}',
             value: propertyTotalMain,
             percentage: pct(propertyTotalEgp),
             balancesHidden: balancesHidden,
@@ -906,6 +944,8 @@ class _AssetsScreenState extends State<AssetsScreen> {
                     children: <Widget>[
                       Text(
                         title,
+                        maxLines: ResponsiveLayout.isCompact(context) ? 2 : 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 15,
@@ -922,17 +962,26 @@ class _AssetsScreenState extends State<AssetsScreen> {
                   ),
                 ),
                 Column(
+                  mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: <Widget>[
-                    Text(
-                      balancesHidden ? '••••••' : formattedValue,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: AlignmentDirectional.centerEnd,
+                      child: Text(
+                        balancesHidden ? '••••••' : formattedValue,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
                       ),
                     ),
                     Text(
-                      '${percentage.toStringAsFixed(1)}% of total',
+                      '${percentage.toStringAsFixed(1)}% ${context.l10n.tr('of_total')}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: Theme.of(context).hintColor,
                         fontSize: 11,
@@ -976,13 +1025,15 @@ class _AssetsHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final tokens = context.premiumTokens;
     final textTheme = Theme.of(context).textTheme;
-
+    final bool compact = ResponsiveLayout.isCompact(context);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: <Widget>[
         Expanded(
           child: Text(
             title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: textTheme.headlineMedium?.copyWith(
               color: tokens.colors.textPrimary,
               fontWeight: FontWeight.w900,
@@ -1001,7 +1052,7 @@ class _AssetsHeader extends StatelessWidget {
               iconColor: tokens.colors.textPrimary,
               onPressed: onTogglePrivacy,
             ),
-            const SizedBox(width: 10),
+            SizedBox(width: compact ? 8 : 10),
             Stack(
               clipBehavior: Clip.none,
               children: <Widget>[
@@ -1050,6 +1101,7 @@ class _HeaderCircleButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
+    final bool compact = ResponsiveLayout.isCompact(context);
     return Material(
       color: dark
           ? Colors.white.withValues(alpha: 0.03)
@@ -1058,12 +1110,12 @@ class _HeaderCircleButton extends StatelessWidget {
       elevation: dark ? 0 : 5,
       shadowColor: Colors.black.withValues(alpha: 0.08),
       child: SizedBox(
-        width: 52,
-        height: 52,
+        width: compact ? 48 : 52,
+        height: compact ? 48 : 52,
         child: IconButton(
           onPressed: onPressed,
-          icon: Icon(icon, color: iconColor, size: 24),
-          splashRadius: 24,
+          icon: Icon(icon, color: iconColor, size: compact ? 22 : 24),
+          splashRadius: compact ? 22 : 24,
         ),
       ),
     );

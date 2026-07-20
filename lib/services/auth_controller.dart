@@ -81,16 +81,12 @@ class AuthController extends ChangeNotifier {
       }
 
       final UserProfile? persistedUser = _currentUser;
-      if (persistedUser != null &&
-          AuthProviderX.parse(persistedUser.provider) == AuthProvider.apple) {
-        // Apple sign-in is restored from local profile state; there is no silent
-        // Apple session to rehydrate on startup.
-      } else {
-        final UserProfile? restored = await authService.restoreSession();
-        if (restored != null) {
-          _currentUser = restored;
-          await _persistCurrentUser();
-        }
+      final UserProfile? restored = await authService.restoreSession();
+      if (restored != null) {
+        _currentUser = restored;
+        await _persistCurrentUser();
+      } else if (persistedUser != null) {
+        _currentUser = persistedUser;
       }
     } catch (error, stackTrace) {
       debugPrint('AuthController.load failed: $error');
@@ -276,21 +272,27 @@ class AuthController extends ChangeNotifier {
     final String? userIdAtDelete = _currentUser?.id;
     notifyListeners();
 
+    bool deleted = false;
     try {
       await authService.deleteAccount();
+      deleted = true;
+      _currentUser = null;
     } catch (error, stackTrace) {
       debugPrint('AuthController.deleteAccount failed: $error');
       debugPrintStack(stackTrace: stackTrace);
       _error = _presentableError(error);
       rethrow;
     } finally {
-      _currentUser = null;
-      final String? scopedKey = StorageKeys.appStateKeyForUser(userIdAtDelete);
-      if (scopedKey != null) {
-        await localStorage.remove(scopedKey);
+      if (deleted) {
+        final String? scopedKey = StorageKeys.appStateKeyForUser(
+          userIdAtDelete,
+        );
+        if (scopedKey != null) {
+          await localStorage.remove(scopedKey);
+        }
+        await localStorage.remove(StorageKeys.appStateAnonymousKey);
+        await localStorage.remove(StorageKeys.userProfileKey);
       }
-      await localStorage.remove(StorageKeys.appStateAnonymousKey);
-      await localStorage.remove(StorageKeys.userProfileKey);
       _isLoading = false;
       notifyListeners();
     }
@@ -309,10 +311,8 @@ class AuthController extends ChangeNotifier {
         _currentUser = restored;
         await _persistCurrentUser();
         return true;
-      } else {
-        await signOut();
-        return false;
       }
+      return _currentUser != null;
     }
     return true;
   }

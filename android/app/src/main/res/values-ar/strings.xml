@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_app_name">Zakah Wealth</string>
+    <string name="widget_today_label">اليوم</string>
+    <string name="widget_this_month_label">هذا الشهر</string>
+    <string name="widget_net_worth_label">صافي الثروة</string>
+    <string name="widget_open_app_to_sync">افتح التطبيق للمزامنة</string>
+    <string name="widget_open_app">افتح التطبيق</string>
+    <string name="widget_no_spending_today">لا مصروفات اليوم</string>
+    <string name="widget_above_nisab">فوق النصاب</string>
+    <string name="widget_below_nisab">تحت النصاب</string>
+    <string name="widget_zakah_not_scheduled">الزكاة غير مجدولة</string>
+    <string name="widget_due_today">اليوم</string>
+    <string name="widget_days_to_zakah">%1$d يوم حتى الزكاة</string>
+    <string name="widget_in_currency">في %1$s</string>
+    <string name="widget_at_currency">عند %1$s</string>
+</resources>

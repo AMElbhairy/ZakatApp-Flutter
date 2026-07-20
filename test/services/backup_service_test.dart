@@ -44,6 +44,44 @@ void main() {
       expect(counts['financialPlans'], 0);
     });
 
+    test('exportBackup normalizes language preference in stored app state', () {
+      final Map<String, dynamic> englishState = <String, dynamic>{
+        ...mockAppState,
+        'languagePreference': 'en',
+      };
+      final Map<String, dynamic> arabicState = <String, dynamic>{
+        ...mockAppState,
+        'languagePreference': 'ar',
+      };
+
+      final Map<String, dynamic> englishExport = jsonDecode(
+        BackupService.exportBackup(
+          englishState,
+          userId: 'user-1',
+          provider: 'google',
+          email: 'user@example.com',
+        ),
+      ) as Map<String, dynamic>;
+      final Map<String, dynamic> arabicExport = jsonDecode(
+        BackupService.exportBackup(
+          arabicState,
+          userId: 'user-1',
+          provider: 'google',
+          email: 'user@example.com',
+        ),
+      ) as Map<String, dynamic>;
+
+      expect(englishExport['appState'], arabicExport['appState']);
+      expect(
+        (englishExport['appState'] as Map<String, dynamic>)['languagePreference'],
+        'en',
+      );
+      expect(
+        (arabicExport['appState'] as Map<String, dynamic>)['languagePreference'],
+        'en',
+      );
+    });
+
     test('parseBackupPreview parses current Flutter format correctly', () {
       final String jsonStr = BackupService.exportBackup(
         mockAppState,

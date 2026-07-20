@@ -58,14 +58,22 @@ Map<String, dynamic> _seedStateWithMarketData() {
 }
 
 class _FakeAuthService implements AuthService {
+  static const UserProfile _defaultUser = UserProfile(
+    id: 'test-user',
+    email: 'test@example.com',
+    displayName: 'Test User',
+    provider: 'google',
+    accessToken: 'token',
+  );
+
   @override
   Future<bool> ensureSession() async => true;
   @override
-  Future<UserProfile?> restoreSession() async => null;
+  Future<UserProfile?> restoreSession() async => _defaultUser;
   @override
   Future<UserProfile?> signIn({
     AuthProvider provider = AuthProvider.google,
-  }) async => null;
+  }) async => _defaultUser;
   @override
   Future<void> signOut() async {}
 
@@ -81,10 +89,15 @@ Widget _buildApp() {
   final AppStateRepository repository = AppStateRepository(
     localStorage: localStorage,
   );
+  final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
   return MultiProvider(
     providers: <ChangeNotifierProvider<dynamic>>[
       ChangeNotifierProvider<AppStateController>(
-        create: (_) => AppStateController(repository: repository),
+        create: (_) => AppStateController(
+          repository: repository,
+          enableBackgroundSync: false,
+          enableMarketAutoRefresh: false,
+        ),
       ),
       ChangeNotifierProvider<AuthController>(
         create: (_) => AuthController(
@@ -93,11 +106,15 @@ Widget _buildApp() {
         ),
       ),
     ],
-    child: const ZakatApp(),
+    child: ZakatApp(navigatorKey: navigatorKey, preferences: _sharedPrefs),
   );
 }
 
+late SharedPreferences _sharedPrefs;
+
 Future<void> _openTransactionForm(WidgetTester tester) async {
+  await tester.tap(find.byKey(const Key('bottomNavTab_1')));
+  await tester.pumpAndSettle();
   await tester.tap(find.byKey(const Key('addEntryFab')));
   await tester.pumpAndSettle();
   await tester.tap(find.byKey(const Key('actionAddIncome')));
@@ -105,6 +122,10 @@ Future<void> _openTransactionForm(WidgetTester tester) async {
 }
 
 void main() {
+  setUp(() async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    _sharedPrefs = await SharedPreferences.getInstance();
+  });
   test('receipt scan errors are concise and classify transient statuses', () {
     expect(isTransientReceiptScanStatus(503), isTrue);
     expect(isTransientReceiptScanStatus(429), isTrue);
@@ -244,9 +265,36 @@ void main() {
     await tester.tap(find.byKey(const Key('saveTransactionButton')));
     await tester.pumpAndSettle();
 
+    await tester.tap(find.byKey(const Key('bottomNavDashboardTab')));
+    await tester.pumpAndSettle();
+
     // Verify the hero card shows total wealth including the new transaction
     expect(find.text('TOTAL WEALTH'), findsOneWidget);
     expect(find.textContaining('100'), findsWidgets);
+  });
+
+  testWidgets('save transaction uses the default visible category', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'zakatAppData': jsonEncode(_seedStateWithMarketData()),
+    });
+
+    await tester.pumpWidget(_buildApp());
+    await tester.pumpAndSettle();
+
+    await _openTransactionForm(tester);
+
+    await tester.enterText(find.byKey(const Key('amountField')), '75');
+
+    await tester.tap(find.byKey(const Key('saveTransactionButton')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('bottomNavDashboardTab')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('TOTAL WEALTH'), findsOneWidget);
+    expect(find.textContaining('75'), findsWidgets);
   });
 
   testWidgets('persistence survives reload', (WidgetTester tester) async {

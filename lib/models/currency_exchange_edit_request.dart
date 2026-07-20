@@ -73,7 +73,7 @@ CurrencyExchangeEditRequest? resolveCurrencyExchangeEditRequest({
       oldActivityId: '',
       oldTargetSavingIds: <String>[item.id],
       oldSourceSavingDeductions: sourceSavingDeductions,
-      date: item.dateAcquired,
+      date: normalizeDateText(item.dateAcquired),
       sourceCurrency: parsed?.currency ?? 'USD',
       targetCurrency: item.unit,
       sourceAmount: parsed?.amount ?? 0,
@@ -170,12 +170,12 @@ CurrencyExchangeEditRequest? _buildFromActivityId({
       ? targetTransaction!.currency
       : (targetSaving?.unit ?? '');
   final String date = _firstNonEmpty(<String?>[
-    sourceTransaction?.date,
-    targetTransaction?.date,
-    targetSaving?.dateAcquired,
-    _datePart(sourceTransaction?.createdAt),
-    _datePart(targetTransaction?.createdAt),
-    _datePart(targetSaving?.createdAt),
+    normalizeDateText(sourceTransaction?.date),
+    normalizeDateText(targetTransaction?.date),
+    normalizeDateText(targetSaving?.dateAcquired),
+    normalizeDateText(_datePart(sourceTransaction?.createdAt)),
+    normalizeDateText(_datePart(targetTransaction?.createdAt)),
+    normalizeDateText(_datePart(targetSaving?.createdAt)),
     DateTime.now().toUtc().toIso8601String().split('T').first,
   ]);
 

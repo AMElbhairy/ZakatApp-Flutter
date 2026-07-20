@@ -8,6 +8,8 @@ import 'merchant_rule.dart';
 import 'merchant_confirmation.dart';
 import 'capture_analytics.dart';
 import 'correction_feedback.dart';
+import '../core/utils/category_visuals.dart';
+import '../core/utils/amount_parser.dart';
 
 class AppStateModel {
   const AppStateModel({
@@ -23,6 +25,8 @@ class AppStateModel {
     required this.processedExpenseIds,
     required this.mainCurrency,
     required this.defaultEntryCurrency,
+    required this.financialMonthCycle,
+    required this.financialMonthStartDay,
     required this.zakatExpenseIds,
     required this.zakatMethod,
     required this.zakatAnnualDate,
@@ -56,6 +60,7 @@ class AppStateModel {
     required this.merchantConfirmations,
     required this.smartCaptureEnabled,
     required this.smartCaptureAutoApproveEnabled,
+    this.androidSmsAutoCaptureEnabled = false,
   });
 
   final List<Transaction> transactions;
@@ -70,6 +75,8 @@ class AppStateModel {
   final List<String> processedExpenseIds;
   final String mainCurrency;
   final String defaultEntryCurrency;
+  final String financialMonthCycle;
+  final int financialMonthStartDay;
   final Map<String, dynamic> zakatExpenseIds;
   final String zakatMethod;
   final String zakatAnnualDate;
@@ -104,6 +111,7 @@ class AppStateModel {
   final List<MerchantConfirmation> merchantConfirmations;
   final bool smartCaptureEnabled;
   final bool smartCaptureAutoApproveEnabled;
+  final bool androidSmsAutoCaptureEnabled;
 
   factory AppStateModel.fromJson(Map<String, dynamic> json) {
     return AppStateModel(
@@ -135,6 +143,12 @@ class AppStateModel {
       ).map((dynamic e) => e.toString()).toList(growable: false),
       mainCurrency: (json['mainCurrency'] ?? '').toString(),
       defaultEntryCurrency: (json['defaultEntryCurrency'] ?? '').toString(),
+      financialMonthCycle: _normalizeFinancialMonthCycle(
+        json['financialMonthCycle'],
+      ),
+      financialMonthStartDay: _normalizeFinancialMonthStartDay(
+        json['financialMonthStartDay'],
+      ),
       zakatExpenseIds: _asMap(json['zakatExpenseIds']),
       zakatMethod: (json['zakatMethod'] ?? '').toString(),
       zakatAnnualDate: (json['zakatAnnualDate'] ?? '').toString(),
@@ -201,6 +215,9 @@ class AppStateModel {
           json['smartCaptureAutoApproveEnabled'] != null
           ? _asBool(json['smartCaptureAutoApproveEnabled'])
           : false,
+      androidSmsAutoCaptureEnabled: json['androidSmsAutoCaptureEnabled'] != null
+          ? _asBool(json['androidSmsAutoCaptureEnabled'])
+          : false,
     );
   }
 
@@ -226,6 +243,8 @@ class AppStateModel {
       'processedExpenseIds': processedExpenseIds,
       'mainCurrency': mainCurrency,
       'defaultEntryCurrency': defaultEntryCurrency,
+      'financialMonthCycle': financialMonthCycle,
+      'financialMonthStartDay': financialMonthStartDay,
       'zakatExpenseIds': zakatExpenseIds,
       'zakatMethod': zakatMethod,
       'zakatAnnualDate': zakatAnnualDate,
@@ -265,6 +284,7 @@ class AppStateModel {
           .toList(),
       'smartCaptureEnabled': smartCaptureEnabled,
       'smartCaptureAutoApproveEnabled': smartCaptureAutoApproveEnabled,
+      'androidSmsAutoCaptureEnabled': androidSmsAutoCaptureEnabled,
     };
   }
 
@@ -278,6 +298,20 @@ class AppStateModel {
   static String _normalizeZakatNisabBasis(dynamic value) {
     final String raw = (value ?? '').toString().trim();
     return raw == 'silver595' ? 'silver595' : 'gold85';
+  }
+
+  static String _normalizeFinancialMonthCycle(dynamic value) {
+    final String raw = (value ?? '').toString().trim().toLowerCase();
+    return raw == 'custom' ? 'custom' : 'calendar';
+  }
+
+  static int _normalizeFinancialMonthStartDay(dynamic value) {
+    final int parsed = value is int
+        ? value
+        : value is num
+        ? value.toInt()
+        : int.tryParse(normalizeAmountText(value?.toString())) ?? 1;
+    return parsed.clamp(1, 28);
   }
 
   static List<dynamic> _asList(dynamic value) {
@@ -294,12 +328,25 @@ class AppStateModel {
 }
 
 class AppCategories {
-  const AppCategories({required this.income, required this.expense});
+  const AppCategories({
+    required this.income,
+    required this.expense,
+    this.incomeMetadata = const <String, CategoryVisual>{},
+    this.expenseMetadata = const <String, CategoryVisual>{},
+  });
 
   final List<String> income;
   final List<String> expense;
+  final Map<String, CategoryVisual> incomeMetadata;
+  final Map<String, CategoryVisual> expenseMetadata;
 
   factory AppCategories.fromJson(Map<String, dynamic> json) {
+    final Map<String, dynamic> incomeMetaJson = _asMap(
+      json['incomeMetadata'] ?? json['incomeStyles'] ?? json['income_meta'],
+    );
+    final Map<String, dynamic> expenseMetaJson = _asMap(
+      json['expenseMetadata'] ?? json['expenseStyles'] ?? json['expense_meta'],
+    );
     return AppCategories(
       income: (json['income'] as List<dynamic>? ?? const <dynamic>[])
           .map((dynamic e) => e.toString())
@@ -307,12 +354,64 @@ class AppCategories {
       expense: (json['expense'] as List<dynamic>? ?? const <dynamic>[])
           .map((dynamic e) => e.toString())
           .toList(growable: false),
+      incomeMetadata: incomeMetaJson.map(
+        (String key, dynamic value) => MapEntry<String, CategoryVisual>(
+          key,
+          CategoryVisual.fromJson(_asMap(value)),
+        ),
+      ),
+      expenseMetadata: expenseMetaJson.map(
+        (String key, dynamic value) => MapEntry<String, CategoryVisual>(
+          key,
+          CategoryVisual.fromJson(_asMap(value)),
+        ),
+      ),
     );
   }
 
   Map<String, dynamic> toJson() {
-    return <String, dynamic>{'income': income, 'expense': expense};
+    return <String, dynamic>{
+      'income': income,
+      'expense': expense,
+      'incomeMetadata': incomeMetadata.map(
+        (String key, CategoryVisual value) =>
+            MapEntry<String, dynamic>(key, value.toJson()),
+      ),
+      'expenseMetadata': expenseMetadata.map(
+        (String key, CategoryVisual value) =>
+            MapEntry<String, dynamic>(key, value.toJson()),
+      ),
+    };
   }
+
+  CategoryVisual? metadataFor({required String type, required String name}) {
+    final Map<String, CategoryVisual> map =
+        type.trim().toLowerCase() == 'income'
+        ? incomeMetadata
+        : expenseMetadata;
+    return map[name.trim()];
+  }
+
+  AppCategories copyWith({
+    List<String>? income,
+    List<String>? expense,
+    Map<String, CategoryVisual>? incomeMetadata,
+    Map<String, CategoryVisual>? expenseMetadata,
+  }) {
+    return AppCategories(
+      income: income ?? this.income,
+      expense: expense ?? this.expense,
+      incomeMetadata: incomeMetadata ?? this.incomeMetadata,
+      expenseMetadata: expenseMetadata ?? this.expenseMetadata,
+    );
+  }
+}
+
+Map<String, dynamic> _asMap(dynamic value) {
+  if (value is Map) {
+    return Map<String, dynamic>.from(value);
+  }
+  return <String, dynamic>{};
 }
 
 class SyncHealth {
@@ -496,6 +595,6 @@ class SyncHealth {
   static int _asInt(dynamic value) {
     if (value is int) return value;
     if (value is num) return value.toInt();
-    return int.tryParse(value?.toString() ?? '') ?? 0;
+    return int.tryParse(normalizeAmountText(value?.toString())) ?? 0;
   }
 }

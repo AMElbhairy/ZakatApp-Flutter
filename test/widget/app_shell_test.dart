@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:provider/single_child_widget.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zakatapp_flutter/core/i18n/app_localizations.dart';
 import 'package:zakatapp_flutter/core/theme/app_theme.dart';
@@ -12,6 +13,7 @@ import 'package:zakatapp_flutter/services/app_state_controller.dart';
 import 'package:zakatapp_flutter/services/auth_controller.dart';
 import 'package:zakatapp_flutter/services/auth_service.dart';
 import 'package:zakatapp_flutter/services/local_storage_service.dart';
+import 'package:zakatapp_flutter/services/smart_capture_alert_service.dart';
 
 class _FakeAuthService implements AuthService {
   static const UserProfile _defaultUser = UserProfile(
@@ -55,7 +57,7 @@ void main() {
 
     await tester.pumpWidget(
       MultiProvider(
-        providers: <ChangeNotifierProvider<dynamic>>[
+        providers: <SingleChildWidget>[
           ChangeNotifierProvider<AppStateController>(
             create: (_) => AppStateController(repository: repository),
           ),
@@ -64,6 +66,9 @@ void main() {
               authService: _FakeAuthService(),
               localStorage: localStorage,
             ),
+          ),
+          Provider<SmartCaptureAlertService>.value(
+            value: const NoopSmartCaptureAlertService(),
           ),
         ],
         child: MaterialApp(
@@ -93,6 +98,56 @@ void main() {
     expect(find.text('Dashboard'), findsWidgets);
   });
 
+  testWidgets('add FAB is only visible on Activity tab', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    const LocalStorageService localStorage = LocalStorageService();
+    final AppStateRepository repository = AppStateRepository(
+      localStorage: localStorage,
+    );
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: <SingleChildWidget>[
+          ChangeNotifierProvider<AppStateController>(
+            create: (_) => AppStateController(repository: repository),
+          ),
+          ChangeNotifierProvider<AuthController>(
+            create: (_) => AuthController(
+              authService: _FakeAuthService(),
+              localStorage: localStorage,
+            ),
+          ),
+          Provider<SmartCaptureAlertService>.value(
+            value: const NoopSmartCaptureAlertService(),
+          ),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.light,
+          darkTheme: AppTheme.dark,
+          themeMode: ThemeMode.light,
+          supportedLocales: AppLocalizations.supportedLocales,
+          localizationsDelegates: const <LocalizationsDelegate<dynamic>>[
+            AppLocalizationsDelegate(),
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          home: const AppShell(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('addEntryFab')), findsNothing);
+
+    await tester.tap(find.text('Activity').last);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('addEntryFab')), findsOneWidget);
+  });
+
   testWidgets('app still starts with corrupted local state JSON', (
     WidgetTester tester,
   ) async {
@@ -106,7 +161,7 @@ void main() {
 
     await tester.pumpWidget(
       MultiProvider(
-        providers: <ChangeNotifierProvider<dynamic>>[
+        providers: <SingleChildWidget>[
           ChangeNotifierProvider<AppStateController>(
             create: (_) => AppStateController(repository: repository),
           ),
@@ -115,6 +170,9 @@ void main() {
               authService: _FakeAuthService(),
               localStorage: localStorage,
             ),
+          ),
+          Provider<SmartCaptureAlertService>.value(
+            value: const NoopSmartCaptureAlertService(),
           ),
         ],
         child: MaterialApp(

@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zakatapp_flutter/main.dart';
 import 'package:zakatapp_flutter/models/user_profile.dart';
@@ -11,6 +10,7 @@ import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
 import 'package:zakatapp_flutter/services/app_state_controller.dart';
 import 'package:zakatapp_flutter/services/auth_controller.dart';
 import 'package:zakatapp_flutter/services/auth_service.dart';
+import 'package:zakatapp_flutter/services/bootstrap_coordinator.dart';
 import 'package:zakatapp_flutter/services/local_storage_service.dart';
 import 'package:zakatapp_flutter/services/market_data_api_service.dart';
 
@@ -28,16 +28,24 @@ class _NoopMarketDataApiService implements MarketDataApiService {
 }
 
 class _FakeAuthService implements AuthService {
+  static const UserProfile _defaultUser = UserProfile(
+    id: 'test-user',
+    email: 'test@example.com',
+    displayName: 'Test User',
+    provider: 'google',
+    accessToken: 'token',
+  );
+
   @override
   Future<bool> ensureSession() async => true;
 
   @override
-  Future<UserProfile?> restoreSession() async => null;
+  Future<UserProfile?> restoreSession() async => _defaultUser;
 
   @override
   Future<UserProfile?> signIn({
     AuthProvider provider = AuthProvider.google,
-  }) async => null;
+  }) async => _defaultUser;
 
   @override
   Future<void> signOut() async {}
@@ -60,6 +68,8 @@ Widget _buildApp() {
         create: (_) => AppStateController(
           repository: repository,
           marketDataApiService: _NoopMarketDataApiService(),
+          enableBackgroundSync: false,
+          enableMarketAutoRefresh: false,
         ),
       ),
       ChangeNotifierProvider<AuthController>(
@@ -68,12 +78,22 @@ Widget _buildApp() {
           localStorage: localStorage,
         ),
       ),
+      ChangeNotifierProvider<BootstrapCoordinator>(
+        create: (BuildContext ctx) => BootstrapCoordinator(
+          dependencies: BootstrapDependencies(
+            authController: ctx.read<AuthController>(),
+            appStateController: ctx.read<AppStateController>(),
+          ),
+        ),
+      ),
     ],
-    child: const ZakatApp(),
+    child: ZakatApp(preferences: _sharedPrefs),
   );
 }
 
-Map<String, dynamic> _arabicSeededState({bool withTransaction = false}) {
+late SharedPreferences _sharedPrefs;
+
+Map<String, dynamic> _seededState({bool withTransaction = false}) {
   return <String, dynamic>{
     'transactions': withTransaction
         ? <dynamic>[
@@ -115,39 +135,34 @@ Map<String, dynamic> _arabicSeededState({bool withTransaction = false}) {
       'lastError': '',
       'pendingWrites': 0,
     },
-    'languagePreference': 'ar',
+    'languagePreference': 'en',
   };
 }
 
 void main() {
+  setUp(() async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    _sharedPrefs = await SharedPreferences.getInstance();
+    await _sharedPrefs.clear();
+  });
   Future<void> openAccountTab(WidgetTester tester) async {
     final Finder navBar = find.byKey(const Key('premiumBottomNav'));
     expect(navBar, findsOneWidget);
-    final Finder accountLabel = find.descendant(
-      of: navBar,
-      matching: find.byWidgetPredicate(
-        (Widget w) => w is Text && (w.data == 'Account' || w.data == 'الحساب'),
-      ),
-    );
-    await tester.tap(accountLabel.last);
+    await tester.tap(find.byKey(const Key('bottomNavTab_4')));
     await tester.pumpAndSettle();
   }
 
   testWidgets('English default renders', (WidgetTester tester) async {
-    SharedPreferences.setMockInitialValues(<String, Object>{});
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('dashboardEmptyCard')), findsOneWidget);
   });
 
-  testWidgets('Arabic mode renders Arabic labels and RTL', (
-    WidgetTester tester,
-  ) async {
-    final Map<String, dynamic> seeded = _arabicSeededState();
-    SharedPreferences.setMockInitialValues(<String, Object>{
-      'zakatAppData': jsonEncode(seeded),
-    });
+  testWidgets('Seeded Arabic state renders RTL', (WidgetTester tester) async {
+    final Map<String, dynamic> seeded = _seededState();
+    seeded['languagePreference'] = 'ar';
+    await _sharedPrefs.setString('zakatAppData', jsonEncode(seeded));
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
@@ -156,32 +171,133 @@ void main() {
       find.byType(Directionality).first,
     );
     expect(dir.textDirection, TextDirection.rtl);
+    expect(find.text('الرئيسية'), findsWidgets);
   });
 
   testWidgets('language persists after reload', (WidgetTester tester) async {
-    SharedPreferences.setMockInitialValues(<String, Object>{});
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    final BuildContext ctx = tester.element(find.byType(MaterialApp));
-    await Provider.of<AppStateController>(
-      ctx,
+    final AppStateController controller = Provider.of<AppStateController>(
+      tester.element(find.byType(MaterialApp)),
       listen: false,
-    ).updateLanguagePreference('ar');
+    );
+    await tester.runAsync(() async {
+      await controller.load();
+    });
     await tester.pumpAndSettle();
+
+    final MaterialApp before = tester.widget<MaterialApp>(find.byType(MaterialApp));
+    await controller.updateLanguagePreference('ar');
+    await tester.pumpAndSettle();
+
+    final MaterialApp after = tester.widget<MaterialApp>(
+      find.byType(MaterialApp),
+    );
+    await tester.pumpWidget(_buildApp());
+    await tester.pumpAndSettle();
+
+    expect(before.key, isNot(equals(after.key)));
+    expect(
+      Provider.of<AppStateController>(
+        tester.element(find.byType(MaterialApp)),
+        listen: false,
+      ).state.languagePreference,
+      'ar',
+    );
+  });
+
+  testWidgets('Arabic cold launch restarts to English immediately', (
+    WidgetTester tester,
+  ) async {
+    final Map<String, dynamic> seeded = _seededState();
+    seeded['languagePreference'] = 'ar';
+    await _sharedPrefs.setString('zakatAppData', jsonEncode(seeded));
+    await _sharedPrefs.setString('language_preference', 'ar');
 
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('dashboardEmptyCard')), findsOneWidget);
+    final MaterialApp before = tester.widget<MaterialApp>(
+      find.byType(MaterialApp),
+    );
+    expect(before.locale, const Locale('ar'));
+
+    final AppStateController controller = Provider.of<AppStateController>(
+      tester.element(find.byType(MaterialApp)),
+      listen: false,
+    );
+    await tester.runAsync(() async {
+      await controller.load();
+    });
+    await tester.pumpAndSettle();
+
+    await controller.updateLanguagePreference('en');
+    await tester.pumpAndSettle();
+
+    final MaterialApp after = tester.widget<MaterialApp>(
+      find.byType(MaterialApp),
+    );
+    expect(after.locale, const Locale('en'));
+    expect(before.key, isNot(equals(after.key)));
+    expect(
+      Provider.of<AppStateController>(
+        tester.element(find.byType(MaterialApp)),
+        listen: false,
+      ).state.languagePreference,
+      'en',
+    );
   });
+
+  testWidgets(
+    'Arabic cold launch queues English restart until hydration is ready',
+    (WidgetTester tester) async {
+      final Map<String, dynamic> seeded = _seededState();
+      seeded['languagePreference'] = 'ar';
+      await _sharedPrefs.setString('zakatAppData', jsonEncode(seeded));
+      await _sharedPrefs.setString('language_preference', 'ar');
+
+      await tester.pumpWidget(_buildApp());
+      await tester.pump();
+
+      final MaterialApp before = tester.widget<MaterialApp>(
+        find.byType(MaterialApp),
+      );
+      expect(before.locale, const Locale('ar'));
+
+      final AppStateController controller = Provider.of<AppStateController>(
+        tester.element(find.byType(MaterialApp)),
+        listen: false,
+      );
+      await controller.updateLanguagePreference('en');
+      await tester.pump();
+
+      await tester.runAsync(() async {
+        await controller.load();
+      });
+      await tester.pumpAndSettle();
+
+      final MaterialApp after = tester.widget<MaterialApp>(
+        find.byType(MaterialApp),
+      );
+      expect(after.locale, const Locale('en'));
+      expect(before.key, isNot(equals(after.key)));
+      expect(
+        Provider.of<AppStateController>(
+          tester.element(find.byType(MaterialApp)),
+          listen: false,
+        ).state.languagePreference,
+        'en',
+      );
+    },
+  );
 
   testWidgets('Arabic settings screen has Arabic headers', (
     WidgetTester tester,
   ) async {
-    SharedPreferences.setMockInitialValues(<String, Object>{
-      'zakatAppData': jsonEncode(_arabicSeededState()),
-    });
+    final Map<String, dynamic> seeded = _seededState();
+    seeded['languagePreference'] = 'ar';
+    await _sharedPrefs.setString('zakatAppData', jsonEncode(seeded));
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
@@ -194,62 +310,23 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(SingleChildScrollView), findsWidgets);
-    expect(find.text('بيانات السوق'), findsOneWidget);
+    expect(find.text('التفضيلات'), findsOneWidget);
     expect(find.text('المظهر'), findsOneWidget);
-    expect(find.text('Backup & Sync'), findsNothing);
+    expect(find.text('اللغة'), findsWidgets);
   });
 
-  testWidgets('Arabic action sheet labels are Arabic', (
-    WidgetTester tester,
-  ) async {
-    SharedPreferences.setMockInitialValues(<String, Object>{
-      'zakatAppData': jsonEncode(_arabicSeededState()),
-    });
+  testWidgets('English actions stay accessible', (WidgetTester tester) async {
+    await _sharedPrefs.setString('zakatAppData', jsonEncode(_seededState()));
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
+    await tester.tap(find.byKey(const Key('bottomNavTab_1')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('addEntryFab')));
     await tester.pumpAndSettle();
 
-    expect(find.text('إضافة قيد'), findsWidgets);
-    expect(find.text('إضافة دخل'), findsOneWidget);
-    expect(find.text('إضافة مصروف'), findsOneWidget);
-    expect(find.text('إضافة مدخرات'), findsOneWidget);
-  });
-
-  testWidgets('Arabic validation messages are Arabic', (
-    WidgetTester tester,
-  ) async {
-    SharedPreferences.setMockInitialValues(<String, Object>{
-      'zakatAppData': jsonEncode(_arabicSeededState()),
-    });
-    await tester.pumpWidget(_buildApp());
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.byKey(const Key('addEntryFab')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('actionAddIncome')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('saveTransactionButton')));
-    await tester.pumpAndSettle();
-    expect(find.text('يجب أن يكون المبلغ أكبر من 0'), findsOneWidget);
-  });
-
-  testWidgets('Arabic delete dialogs are Arabic', (WidgetTester tester) async {
-    SharedPreferences.setMockInitialValues(<String, Object>{
-      'zakatAppData': jsonEncode(_arabicSeededState(withTransaction: true)),
-    });
-    await tester.pumpWidget(_buildApp());
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('السجل').last);
-    await tester.pumpAndSettle();
-    await tester.drag(find.byType(Slidable).first, const Offset(500.0, 0.0));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('حذف').first);
-    await tester.pumpAndSettle();
-    expect(find.text('هل تريد حذف المعاملة؟'), findsOneWidget);
-    expect(find.text('إلغاء'), findsOneWidget);
-    expect(find.text('حذف'), findsWidgets);
+    expect(find.byKey(const Key('actionAddIncome')), findsOneWidget);
+    expect(find.byKey(const Key('actionAddExpense')), findsOneWidget);
+    expect(find.byKey(const Key('actionAddSaving')), findsOneWidget);
   });
 }

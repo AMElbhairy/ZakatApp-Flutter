@@ -20,6 +20,11 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
   // This helps debugging when running from Xcode where dart-define may be missing.
   void _logApiKeyPresence() {
     try {
+      if (_goldApiKey.trim().isEmpty) {
+        debugPrint(
+          'MarketDataApiService: GOLD_API_KEY missing; live metal prices will use unauthenticated requests and cached fallback if available.',
+        );
+      }
       debugPrint(
         'MarketDataApiService: GOLD_API_KEY configured: ${_goldApiKey.trim().isNotEmpty}',
       );
@@ -204,6 +209,9 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
         final DateTime? lastRl = DateTime.tryParse(rlRaw);
         if (lastRl != null &&
             DateTime.now().difference(lastRl) < _metalCooldown) {
+          debugPrint(
+            'MarketDataApiService: rate limited for $symbol; using cached value.',
+          );
           return cached;
         }
       }
@@ -220,7 +228,7 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
         final http.Response response = await _httpClient.get(
           uri,
           headers: headers,
-        );
+        ).timeout(const Duration(seconds: 3));
         final String body = response.body;
 
         if (response.statusCode != 200) {
@@ -263,6 +271,11 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
         debugPrint(
           'MarketDataApiService: gold-api request failed for $symbol: $error',
         );
+        if (cached == null) {
+          debugPrint(
+            'MarketDataApiService: no cached $symbol price available after failure; returning null.',
+          );
+        }
         return cached;
       }
     })();
@@ -323,7 +336,7 @@ class MarketDataApiServiceImpl implements MarketDataApiService {
       final http.Response response = await _httpClient.get(
         uri,
         headers: headers,
-      );
+      ).timeout(const Duration(seconds: 3));
       if (response.statusCode != 200) {
         // ignore: avoid_print
         print(

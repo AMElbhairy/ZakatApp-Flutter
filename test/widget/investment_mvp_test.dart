@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:zakatapp_flutter/core/constants/storage_keys.dart';
 import 'package:zakatapp_flutter/main.dart';
+import 'package:zakatapp_flutter/screens/dashboard/dashboard_screen.dart';
 import 'package:zakatapp_flutter/models/saving.dart';
 import 'package:zakatapp_flutter/models/user_profile.dart';
 import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
@@ -15,6 +17,14 @@ import 'package:zakatapp_flutter/services/market_data_api_service.dart';
 import 'package:zakatapp_flutter/services/sync_controller.dart';
 
 class _FakeAuthService implements AuthService {
+  static const UserProfile _defaultUser = UserProfile(
+    id: 'test-user',
+    email: 'test@example.com',
+    displayName: 'Test User',
+    provider: 'google',
+    accessToken: 'token',
+  );
+
   @override
   Future<bool> ensureSession() async => true;
 
@@ -25,7 +35,7 @@ class _FakeAuthService implements AuthService {
     AuthProvider provider = AuthProvider.google,
   }) async => user;
   @override
-  Future<UserProfile?> restoreSession() async => user;
+  Future<UserProfile?> restoreSession() async => user ?? _defaultUser;
   @override
   Future<void> signOut() async {}
 
@@ -68,6 +78,8 @@ void main() {
     final appStateController = AppStateController(
       repository: repository,
       marketDataApiService: _FakeMarketDataApiService(),
+      enableBackgroundSync: false,
+      enableMarketAutoRefresh: false,
     );
     final authController = AuthController(
       authService: _FakeAuthService(null),
@@ -78,6 +90,8 @@ void main() {
       authController: authController,
       googleSheetsService: _FakeSheets(),
     );
+    final SharedPreferences preferences = await SharedPreferences.getInstance();
+    await preferences.setBool(StorageKeys.onboardingCompletedKey, true);
 
     await appStateController.load();
 
@@ -107,7 +121,7 @@ void main() {
           ChangeNotifierProvider.value(value: authController),
           ChangeNotifierProvider.value(value: syncController),
         ],
-        child: const ZakatApp(),
+        child: ZakatApp(preferences: preferences),
       ),
     );
     await tester.pumpAndSettle();
@@ -127,5 +141,17 @@ void main() {
     appStateController.dispose();
     authController.dispose();
     syncController.dispose();
+  });
+
+  test('next unpaid zakat date skips paid months', () {
+    final List<Map<String, dynamic>> schedule = <Map<String, dynamic>>[
+      <String, dynamic>{'monthKey': '2026-01', 'paymentDate': '2026-01-01'},
+      <String, dynamic>{'monthKey': '2026-02', 'paymentDate': '2026-02-01'},
+      <String, dynamic>{'monthKey': '2026-03', 'paymentDate': '2026-03-01'},
+    ];
+
+    final Set<String> paidMonths = <String>{'2026-01', '2026-02'};
+
+    expect(findNextUnpaidZakatDate(schedule, paidMonths), '01 Mar 2026');
   });
 }

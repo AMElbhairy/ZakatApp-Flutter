@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../widgets/sensitive_content_scope.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/i18n/app_localizations.dart';
+import '../../core/widgets/compact_dropdown.dart';
+import '../../core/utils/currency_presentation.dart';
+import '../../core/utils/amount_parser.dart';
 import '../../core/services/zakat_engine.dart';
 import '../../core/widgets/app_ui.dart';
 import '../../models/saving.dart';
@@ -127,7 +131,8 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
         defaultEntryCurrency != 'EGP') {
       _cashCurrency = defaultEntryCurrency;
     }
-    return Scaffold(
+    return SensitiveContentScope(
+      child: Scaffold(
       appBar: AppBar(
         title: Text(
           widget.isEditMode
@@ -143,29 +148,18 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                DropdownButtonFormField<String>(
+                CompactDropdownFormField<String>(
                   key: const Key('savingTypeField'),
-                  initialValue: _assetType,
-                  decoration: InputDecoration(
-                    labelText: context.l10n.tr('type'),
-                    border: OutlineInputBorder(),
-                  ),
-                  items: <DropdownMenuItem<String>>[
-                    DropdownMenuItem<String>(
-                      value: 'cash',
-                      child: Text(context.l10n.tr('cash')),
-                    ),
-                    DropdownMenuItem<String>(
-                      value: 'gold',
-                      child: Text(context.l10n.tr('gold')),
-                    ),
-                    DropdownMenuItem<String>(
-                      value: 'silver',
-                      child: Text(context.l10n.tr('silver')),
-                    ),
-                  ],
-                  onChanged: (String? value) {
-                    if (value == null) return;
+                  value: _assetType,
+                  labelText: context.l10n.tr('type'),
+                  items: const <String>['cash', 'gold', 'silver'],
+                  itemLabel: (String value) => switch (value) {
+                    'cash' => context.l10n.tr('cash'),
+                    'gold' => context.l10n.tr('gold'),
+                    'silver' => context.l10n.tr('silver'),
+                    _ => value,
+                  },
+                  onChanged: (String value) {
                     setState(() {
                       _assetType = value;
                       if (_assetType == 'cash') {
@@ -188,40 +182,27 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
                     border: const OutlineInputBorder(),
                   ),
                   validator: (String? value) {
-                    final double amount =
-                        double.tryParse((value ?? '').trim()) ?? 0;
+                    final double amount = tryParseAmount(value) ?? 0;
                     if (amount <= 0) return context.l10n.tr('amount_gt_zero');
                     return null;
                   },
                 ),
                 const SizedBox(height: 16),
                 if (_assetType == 'cash')
-                  DropdownButtonFormField<String>(
+                  CompactDropdownFormField<String>(
                     key: const Key('savingCurrencyField'),
-                    initialValue: _cashCurrency,
-                    decoration: InputDecoration(
-                      labelText: context.l10n.tr('currency'),
-                      border: OutlineInputBorder(),
-                    ),
-                    items: ZakatEngineService.supportedCurrencies
-                        .map(
-                          (String currency) => DropdownMenuItem<String>(
-                            value: currency,
-                            child: Text(
-                              ZakatEngineService.getCurrencySymbol(
-                                currency,
-                                isArabic:
-                                    Localizations.localeOf(
-                                      context,
-                                    ).languageCode.toLowerCase() ==
-                                    'ar',
-                              ),
-                            ),
-                          ),
-                        )
-                        .toList(growable: false),
-                    onChanged: (String? value) {
-                      if (value == null) return;
+                    value: _cashCurrency,
+                    labelText: context.l10n.tr('currency'),
+                    items: ZakatEngineService.supportedCurrencies,
+                    itemLabel: (String currency) =>
+                        CurrencyPresentation.selectorLabel(
+                          currency,
+                          isRtl:
+                              Localizations.localeOf(
+                                context,
+                              ).languageCode.toLowerCase() == 'ar',
+                        ),
+                    onChanged: (String value) {
                       setState(() => _cashCurrency = value);
                     },
                     validator: (String? value) {
@@ -232,19 +213,13 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
                     },
                   ),
                 if (_assetType == 'gold')
-                  DropdownButtonFormField<String>(
+                  CompactDropdownFormField<String>(
                     key: const Key('savingGoldPurityField'),
-                    initialValue: _goldPurity,
-                    decoration: InputDecoration(
-                      labelText: context.l10n.tr('gold_purity'),
-                      border: OutlineInputBorder(),
-                    ),
-                    items: const <DropdownMenuItem<String>>[
-                      DropdownMenuItem<String>(value: '24', child: Text('24K')),
-                      DropdownMenuItem<String>(value: '21', child: Text('21K')),
-                      DropdownMenuItem<String>(value: '18', child: Text('18K')),
-                    ],
-                    onChanged: (String? value) {
+                    value: _goldPurity,
+                    labelText: context.l10n.tr('gold_purity'),
+                    items: const <String>['24', '21', '18'],
+                    itemLabel: (String value) => '${value}K',
+                    onChanged: (String value) {
                       setState(() => _goldPurity = value);
                     },
                     validator: (String? value) {
@@ -261,23 +236,13 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
                   ),
                 if (_assetType != 'cash') ...<Widget>[
                   const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
+                  CompactDropdownFormField<String>(
                     key: const Key('savingPurchaseCurrencyField'),
-                    initialValue: _purchaseCurrency,
-                    decoration: const InputDecoration(
-                      labelText: 'Purchase currency',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: ZakatEngineService.supportedCurrencies
-                        .map(
-                          (String currency) => DropdownMenuItem<String>(
-                            value: currency,
-                            child: Text(currency),
-                          ),
-                        )
-                        .toList(growable: false),
-                    onChanged: (String? value) {
-                      if (value == null) return;
+                    value: _purchaseCurrency,
+                    labelText: context.l10n.tr('purchase_currency'),
+                    items: ZakatEngineService.supportedCurrencies,
+                    itemLabel: (String currency) => currency,
+                    onChanged: (String value) {
                       setState(() {
                         _purchaseCurrency = value;
                         _autoAllocateFunding();
@@ -291,8 +256,8 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: true,
                     ),
-                    decoration: const InputDecoration(
-                      labelText: 'Purchase amount',
+                    decoration: InputDecoration(
+                      labelText: context.l10n.tr('purchase_amount'),
                       border: OutlineInputBorder(),
                     ),
                     onChanged: (_) {
@@ -301,8 +266,7 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
                       }
                     },
                     validator: (String? value) {
-                      final double amount =
-                          double.tryParse((value ?? '').trim()) ?? 0;
+                      final double amount = tryParseAmount(value) ?? 0;
                       if (_assetType != 'cash' && amount <= 0) {
                         return context.l10n.tr('amount_gt_zero');
                       }
@@ -314,7 +278,9 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
                     key: const Key('linkMetalPurchaseToCashEntries'),
                     contentPadding: EdgeInsets.zero,
                     value: _linkPurchaseToCashEntries,
-                    title: const Text('Link this purchase to cash entries'),
+                    title: Text(
+                      context.l10n.tr('link_this_purchase_to_cash_entries'),
+                    ),
                     onChanged: (bool? value) {
                       setState(() {
                         _linkPurchaseToCashEntries = value ?? false;
@@ -376,7 +342,7 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
           ),
         ),
       ),
-    );
+    ));
   }
 
   Future<void> _submit() async {
@@ -404,6 +370,20 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
         'Funding allocations must equal purchase amount.',
       );
       return;
+    }
+    if (_linkPurchaseToCashEntries) {
+      final double availableFunding = _fundingSources().fold<double>(
+        0,
+        (double sum, _FundingSource source) => sum + source.available,
+      );
+      if (purchaseAmount - availableFunding > 0.01) {
+        setState(() => _saving = false);
+        showTopSnackBar(
+          context,
+          'Cannot link this purchase to more cash than is currently available.',
+        );
+        return;
+      }
     }
 
     final Saving? original = widget.initialSaving;
@@ -434,12 +414,19 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
     );
 
     final AppStateController controller = context.read<AppStateController>();
-    if (widget.isEditMode) {
-      await controller.updateSaving(entry);
-    } else if (fundingAllocations.isNotEmpty) {
-      await controller.addSavingWithFundingAllocations(entry);
-    } else {
-      await controller.addSaving(entry);
+    try {
+      if (widget.isEditMode) {
+        await controller.updateSaving(entry);
+      } else if (fundingAllocations.isNotEmpty) {
+        await controller.addSavingWithFundingAllocations(entry);
+      } else {
+        await controller.addSaving(entry);
+      }
+    } on StateError catch (error) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      showTopSnackBar(context, error.message);
+      return;
     }
 
     if (!mounted) return;
@@ -471,10 +458,12 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
       );
     }
 
-    final List<_FundingSource> linkedSources =
-        sources.where((_FundingSource s) => s.isHistorical).toList();
-    final List<_FundingSource> additionalSources =
-        sources.where((_FundingSource s) => !s.isHistorical).toList();
+    final List<_FundingSource> linkedSources = sources
+        .where((_FundingSource s) => s.isHistorical)
+        .toList();
+    final List<_FundingSource> additionalSources = sources
+        .where((_FundingSource s) => !s.isHistorical)
+        .toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -486,7 +475,9 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
           ),
           const SizedBox(height: 8),
-          ...linkedSources.map((_FundingSource source) => _buildSourceCard(context, source)),
+          ...linkedSources.map(
+            (_FundingSource source) => _buildSourceCard(context, source),
+          ),
         ],
         if (additionalSources.isNotEmpty) ...<Widget>[
           const SizedBox(height: 16),
@@ -495,7 +486,9 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
           ),
           const SizedBox(height: 8),
-          ...additionalSources.map((_FundingSource source) => _buildSourceCard(context, source)),
+          ...additionalSources.map(
+            (_FundingSource source) => _buildSourceCard(context, source),
+          ),
         ],
       ],
     );
@@ -529,8 +522,7 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
                 border: OutlineInputBorder(),
               ),
               validator: (String? value) {
-                final double amount =
-                    double.tryParse((value ?? '').trim()) ?? 0;
+                final double amount = tryParseAmount(value) ?? 0;
                 if (amount < 0) return 'Invalid amount';
                 if (amount - source.available > 0.01) {
                   return 'Cannot exceed available amount';
@@ -637,7 +629,7 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
   void _autoAllocateFunding() {
     _clearAllocations();
     final double purchaseAmount =
-        double.tryParse(_purchaseAmountController.text.trim()) ?? 0;
+        tryParseAmount(_purchaseAmountController.text) ?? 0;
     if (purchaseAmount <= 0) return;
 
     double remaining = purchaseAmount;
@@ -669,7 +661,7 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
         in _allocationControllers.entries) {
       final _FundingSource? source = byId[entry.key];
       if (source == null) continue;
-      final double amount = double.tryParse(entry.value.text.trim()) ?? 0;
+      final double amount = tryParseAmount(entry.value.text) ?? 0;
       if (amount <= 0.005) continue;
       allocations.add(<String, dynamic>{
         'sourceType': source.sourceType,
@@ -684,7 +676,7 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
 
   static double _asDouble(dynamic value) {
     if (value is num) return value.toDouble();
-    return double.tryParse(value?.toString() ?? '') ?? 0;
+    return tryParseAmount(value?.toString()) ?? 0;
   }
 }
 

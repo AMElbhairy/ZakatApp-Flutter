@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -12,7 +13,7 @@ class AuthGate extends StatelessWidget {
   Widget build(BuildContext context) {
     final AuthController auth = context.watch<AuthController>();
     if (auth.currentUser == null) {
-      return const LoginPage();
+      return LoginPage(showLegacyAuthUi: kDebugMode);
     }
     return const AppShell();
   }

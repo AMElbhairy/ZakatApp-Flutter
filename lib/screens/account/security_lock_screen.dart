@@ -7,25 +7,37 @@ import '../../services/biometric_service.dart';
 import '../../features/auth/auth_brand_ui.dart';
 
 class SecurityLockScreen extends StatefulWidget {
-  const SecurityLockScreen({super.key, required this.onUnlock});
+  const SecurityLockScreen({
+    super.key,
+    required this.onUnlock,
+    required this.autoPrompt,
+  });
 
-  final VoidCallback onUnlock;
+  final Future<void> Function() onUnlock;
+  final bool autoPrompt;
 
   @override
   State<SecurityLockScreen> createState() => _SecurityLockScreenState();
 }
 
-class _SecurityLockScreenState extends State<SecurityLockScreen> {
+class _SecurityLockScreenState extends State<SecurityLockScreen>
+    with WidgetsBindingObserver {
   String _biometricLabel = 'Face ID';
   bool _authenticating = false;
+  bool _autoPromptScheduled = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadBiometricType();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _authenticate();
-    });
+    _scheduleAutoAuthenticate();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   Future<void> _loadBiometricType() async {
@@ -36,16 +48,41 @@ class _SecurityLockScreenState extends State<SecurityLockScreen> {
     });
   }
 
-  Future<void> _authenticate() async {
-    if (_authenticating) return;
-    setState(() => _authenticating = true);
-    final bool success = await BiometricService.authenticate(
-      reason: 'Unlock Zakah Wealth',
-      isSensitiveAction: true,
-    );
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _scheduleAutoAuthenticate(force: true);
+    }
+  }
+
+  void _scheduleAutoAuthenticate({bool force = false}) {
     if (!mounted) return;
-    setState(() => _authenticating = false);
-    if (success) widget.onUnlock();
+    if (_autoPromptScheduled || _authenticating) return;
+    if (!force && !widget.autoPrompt) return;
+    _autoPromptScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      _autoPromptScheduled = false;
+      await _authenticate();
+    });
+  }
+
+  Future<void> _authenticate() async {
+    if (_authenticating) {
+      return;
+    }
+    setState(() {
+      _authenticating = true;
+    });
+    try {
+      await widget.onUnlock();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _authenticating = false;
+        });
+      }
+    }
   }
 
   @override
@@ -85,7 +122,7 @@ class _SecurityLockScreenState extends State<SecurityLockScreen> {
                 AuthBrandPrimaryButton(
                   label: l10n.tr('unlock'),
                   leading: const Icon(Icons.lock_open_rounded, size: 20),
-                  onPressed: _authenticate,
+                  onPressed: () => _authenticate(),
                   isLoading: _authenticating,
                 ),
                 const SizedBox(height: AppSpacing.sm),

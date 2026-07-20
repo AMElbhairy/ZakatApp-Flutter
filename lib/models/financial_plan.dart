@@ -1,3 +1,5 @@
+import '../core/utils/amount_parser.dart';
+
 class FinancialPlan {
   const FinancialPlan({
     required this.id,
@@ -69,10 +71,12 @@ class FinancialPlan {
     return FinancialPlan(
       id: (json['id'] ?? '').toString(),
       name: (json['name'] ?? '').toString(),
-      startDate: (json['startDate'] ?? '').toString(),
+      startDate: normalizeDateText(json['startDate']?.toString()),
       projectionCurrency: (json['projectionCurrency'] ?? json['currency'] ?? 'EGP').toString().trim().toUpperCase(),
       startingBalance: balance,
-      startingBalanceDate: (json['startingBalanceDate'] ?? json['startDate'] ?? '').toString(),
+      startingBalanceDate: normalizeDateText(
+        (json['startingBalanceDate'] ?? json['startDate'] ?? '').toString(),
+      ),
       startingBalanceMode: (json['startingBalanceMode'] ?? 'manual').toString(),
       snapshotWealthCurrency: (json['snapshotWealthCurrency'] ?? json['currency'] ?? 'EGP').toString().trim().toUpperCase(),
       startingAssetBreakdown: parsedBreakdown,
@@ -81,7 +85,7 @@ class FinancialPlan {
       includeInstallments: _asBool(json['includeInstallments']),
       includeZakat: json['includeZakat'] == null ? true : _asBool(json['includeZakat']),
       durationYears: _asInt(json['durationYears']),
-      createdAt: (json['createdAt'] ?? '').toString(),
+      createdAt: normalizeTimestampText(json['createdAt']?.toString()),
       isActive: json['isActive'] == null ? true : _asBool(json['isActive']),
       startingAssets: _asDouble(json['startingAssets'] ?? balance),
       startingLiabilities: _asDouble(json['startingLiabilities']),
@@ -121,13 +125,13 @@ class FinancialPlan {
 
   static double _asDouble(dynamic value) {
     if (value is num) return value.toDouble();
-    return double.tryParse(value?.toString() ?? '') ?? 0;
+    return tryParseAmount(value?.toString()) ?? 0;
   }
 
   static int _asInt(dynamic value) {
     if (value is int) return value;
     if (value is num) return value.toInt();
-    return int.tryParse(value?.toString() ?? '') ?? 0;
+    return int.tryParse(normalizeAmountText(value?.toString())) ?? 0;
   }
 
   static bool _asBool(dynamic value) {

@@ -16,14 +16,22 @@ import 'package:zakatapp_flutter/services/auth_service.dart';
 import 'package:zakatapp_flutter/services/local_storage_service.dart';
 
 class _FakeAuthService implements AuthService {
+  static const UserProfile _defaultUser = UserProfile(
+    id: 'test-user',
+    email: 'test@example.com',
+    displayName: 'Test User',
+    provider: 'google',
+    accessToken: 'token',
+  );
+
   @override
   Future<bool> ensureSession() async => true;
   @override
-  Future<UserProfile?> restoreSession() async => null;
+  Future<UserProfile?> restoreSession() async => _defaultUser;
   @override
   Future<UserProfile?> signIn({
     AuthProvider provider = AuthProvider.google,
-  }) async => null;
+  }) async => _defaultUser;
   @override
   Future<void> signOut() async {}
 
@@ -34,15 +42,20 @@ class _FakeAuthService implements AuthService {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-Widget _buildApp() {
+Future<Widget> _buildApp() async {
   const LocalStorageService localStorage = LocalStorageService();
+  final SharedPreferences preferences = await SharedPreferences.getInstance();
   final AppStateRepository repository = AppStateRepository(
     localStorage: localStorage,
   );
   return MultiProvider(
     providers: <ChangeNotifierProvider<dynamic>>[
       ChangeNotifierProvider<AppStateController>(
-        create: (_) => AppStateController(repository: repository),
+        create: (_) => AppStateController(
+          repository: repository,
+          enableBackgroundSync: false,
+          enableMarketAutoRefresh: false,
+        ),
       ),
       ChangeNotifierProvider<AuthController>(
         create: (_) => AuthController(
@@ -51,7 +64,7 @@ Widget _buildApp() {
         ),
       ),
     ],
-    child: const ZakatApp(),
+    child: ZakatApp(preferences: preferences),
   );
 }
 
@@ -62,6 +75,8 @@ Future<void> _addTx(
   required bool income,
   String notes = '',
 }) async {
+  await tester.tap(find.byKey(const Key('bottomNavTab_1')));
+  await tester.pumpAndSettle();
   await tester.tap(find.byKey(const Key('addEntryFab')));
   await tester.pumpAndSettle();
   if (income) {
@@ -79,8 +94,9 @@ Future<void> _addTx(
   if (notes.isNotEmpty) {
     await tester.enterText(find.byKey(const Key('notesField')), notes);
   }
+  await tester.ensureVisible(find.byKey(const Key('saveTransactionButton')));
   await tester.tap(find.byKey(const Key('saveTransactionButton')));
-  await tester.pumpAndSettle();
+  await tester.pump(const Duration(milliseconds: 250));
 }
 
 void main() {
@@ -89,8 +105,9 @@ void main() {
   ) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
 
-    await tester.pumpWidget(_buildApp());
-    await tester.pumpAndSettle();
+    await tester.pumpWidget(await _buildApp());
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump(const Duration(milliseconds: 250));
 
     await _addTx(tester, amount: '100', category: 'Salary', income: true);
     await _addTx(
@@ -101,18 +118,22 @@ void main() {
     );
 
     await tester.tap(find.text('Activity').first);
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 250));
 
-    expect(find.byType(ListTile), findsNWidgets(2));
+    expect(find.byKey(const Key('activityTypeChips')), findsOneWidget);
+    expect(find.byKey(const Key('activityDateChips')), findsOneWidget);
+    expect(find.byKey(const Key('activityCategorySearchRow')), findsOneWidget);
+    expect(find.byKey(const Key('activitySummaryCard')), findsOneWidget);
+    expect(find.byType(Slidable), findsNWidgets(2));
 
     await tester.tap(find.text('Income').first);
-    await tester.pumpAndSettle();
-    expect(find.byType(ListTile), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(find.byType(Slidable), findsOneWidget);
     expect(find.textContaining('E£ +100.00'), findsOneWidget);
 
     await tester.tap(find.text('Expense').first);
-    await tester.pumpAndSettle();
-    expect(find.byType(ListTile), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(find.byType(Slidable), findsOneWidget);
     expect(find.textContaining('E£ -40.00'), findsOneWidget);
 
     for (final String label in <String>['Income', 'Expense', 'Transfer']) {
@@ -127,8 +148,9 @@ void main() {
     (WidgetTester tester) async {
       SharedPreferences.setMockInitialValues(<String, Object>{});
 
-      await tester.pumpWidget(_buildApp());
-      await tester.pumpAndSettle();
+      await tester.pumpWidget(await _buildApp());
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pump(const Duration(milliseconds: 250));
 
       await _addTx(
         tester,
@@ -153,24 +175,25 @@ void main() {
       );
 
       await tester.tap(find.text('Activity').first);
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 250));
 
+      expect(find.byKey(const Key('activitySummaryCard')), findsOneWidget);
       await tester.enterText(
         find.byKey(const Key('activitySearchField')),
         'LUNCH',
       );
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 250));
 
       expect(find.textContaining('Team lunch downtown'), findsOneWidget);
       expect(find.textContaining('June consulting payment'), findsNothing);
       expect(find.textContaining('Coffee beans'), findsNothing);
 
       await tester.tap(find.text('Income').first);
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 250));
       expect(find.byKey(const Key('activityEmptyState')), findsOneWidget);
 
       await tester.tap(find.byKey(const Key('clearActivitySearch')));
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 250));
       expect(find.textContaining('June consulting payment'), findsOneWidget);
     },
   );
@@ -180,22 +203,23 @@ void main() {
   ) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
 
-    await tester.pumpWidget(_buildApp());
-    await tester.pumpAndSettle();
+    await tester.pumpWidget(await _buildApp());
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump(const Duration(milliseconds: 250));
 
     await _addTx(tester, amount: '100', category: 'Salary', income: true);
 
     await tester.tap(find.text('Activity').first);
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 250));
 
-    expect(find.byType(ListTile), findsOneWidget);
+    expect(find.byType(Slidable), findsOneWidget);
 
     await tester.drag(find.byType(Slidable).first, const Offset(-500.0, 0.0));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 250));
     await tester.tap(find.text('Delete').first);
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 250));
     await tester.tap(find.text('Delete').last);
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 250));
 
     expect(find.byKey(const Key('activityEmptyState')), findsOneWidget);
   });
@@ -205,28 +229,30 @@ void main() {
   ) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
 
-    await tester.pumpWidget(_buildApp());
-    await tester.pumpAndSettle();
+    await tester.pumpWidget(await _buildApp());
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump(const Duration(milliseconds: 250));
 
     await _addTx(tester, amount: '100', category: 'Salary', income: true);
 
     await tester.tap(find.text('Activity').first);
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 250));
 
-    await tester.tap(find.byType(ListTile).first);
+    await tester.tap(find.byType(Slidable).first);
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byKey(const Key('amountField')), '250');
     await tester.tap(find.byKey(const Key('saveTransactionButton')));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 250));
 
     expect(find.textContaining('E£ +250.00'), findsOneWidget);
 
-    await tester.pumpWidget(_buildApp());
-    await tester.pumpAndSettle();
+    await tester.pumpWidget(await _buildApp());
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump(const Duration(milliseconds: 250));
 
     await tester.tap(find.text('Activity').first);
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 250));
 
     expect(find.textContaining('E£ +250.00'), findsOneWidget);
   });
@@ -235,8 +261,9 @@ void main() {
     WidgetTester tester,
   ) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
-    await tester.pumpWidget(_buildApp());
-    await tester.pumpAndSettle();
+    await tester.pumpWidget(await _buildApp());
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump(const Duration(milliseconds: 250));
 
     final AppStateController controller = Provider.of<AppStateController>(
       tester.element(find.byType(ZakatApp)),
@@ -262,22 +289,22 @@ void main() {
       sourceAmount: 40,
       targetAmount: 2000,
     );
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 250));
 
     await tester.tap(find.text('Activity').first);
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 250));
     expect(find.text('Currency Exchange'), findsOneWidget);
 
     await tester.tap(find.text('Income').first);
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 250));
     expect(find.text('Currency Exchange'), findsNothing);
 
     await tester.tap(find.text('Expense').first);
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 250));
     expect(find.text('Currency Exchange'), findsNothing);
 
     await tester.tap(find.text('Transfer').first);
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 250));
     expect(find.text('Currency Exchange'), findsOneWidget);
     expect(
       find.textContaining('\u200E\$ 40.00 → \u200EE£ 2,000.00'),
@@ -289,8 +316,9 @@ void main() {
     WidgetTester tester,
   ) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
-    await tester.pumpWidget(_buildApp());
-    await tester.pumpAndSettle();
+    await tester.pumpWidget(await _buildApp());
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump(const Duration(milliseconds: 250));
 
     final AppStateController controller = Provider.of<AppStateController>(
       tester.element(find.byType(ZakatApp)),
@@ -331,12 +359,12 @@ void main() {
         ],
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 250));
 
     await tester.tap(find.text('Activity').first);
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 250));
     await tester.tap(find.text('Transfer').first);
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 250));
 
     expect(find.text('Gold Purchase'), findsOneWidget);
     expect(find.textContaining('2g Gold • \u200EE£ 10,000.00'), findsOneWidget);
@@ -397,26 +425,27 @@ void main() {
         'zakatAppData': jsonEncode(seeded),
       });
 
-      await tester.pumpWidget(_buildApp());
-      await tester.pumpAndSettle();
+      await tester.pumpWidget(await _buildApp());
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pump(const Duration(milliseconds: 250));
 
       await tester.tap(find.text('Activity').first);
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 250));
 
       expect(find.text('Gold Sale'), findsOneWidget);
       expect(find.text('Currency Exchange'), findsNothing);
       expect(find.text('Gold Sale proceeds'), findsNothing);
 
       await tester.tap(find.text('Income').first);
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 250));
       expect(find.text('Gold Sale'), findsNothing);
 
       await tester.tap(find.text('Expense').first);
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 250));
       expect(find.text('Gold Sale'), findsNothing);
 
       await tester.tap(find.text('Transfer').first);
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 250));
       expect(find.text('Gold Sale'), findsOneWidget);
       expect(
         find.textContaining('5g Gold • \u200EE£ 40,000.00'),

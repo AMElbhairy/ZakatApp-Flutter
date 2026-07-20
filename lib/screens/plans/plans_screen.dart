@@ -221,6 +221,7 @@ class _PlansScreenState extends State<PlansScreen> {
       actualWealth: actualWealth,
       projectedEndBalance: planEndGoal,
       targetDate: targetDate,
+      isArabic: isArabic,
     );
 
     double projectedLifetimeZakat = 0.0;
@@ -606,7 +607,7 @@ class _JourneyHero extends StatelessWidget {
             width: 240,
             height: 240,
             child: Opacity(
-              opacity: 0.15,
+              opacity: 0.135,
               child: Transform.scale(
                 scale: 1.5,
                 child: Transform.flip(
@@ -670,7 +671,7 @@ class _JourneyHero extends StatelessWidget {
                       ? 'صافي الثروة المتوقع عند تاريخ الهدف'
                       : 'Projected net worth at goal date',
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.68),
+                    color: Colors.white.withValues(alpha: 0.73),
                     fontSize: 12,
                   ),
                 ),
@@ -1017,7 +1018,7 @@ class _ConfidenceCard extends StatelessWidget {
                 isArabic ? 'الانحراف المالي' : 'Financial Variance',
                 style: TextStyle(
                   color: Theme.of(context).brightness == Brightness.dark
-                      ? Colors.white60
+                      ? Colors.white.withValues(alpha: 0.65)
                       : _muted,
                   fontSize: 11,
                 ),
@@ -1196,7 +1197,7 @@ class _BreakdownCardState extends State<_BreakdownCard> {
                           style: TextStyle(
                             color:
                                 Theme.of(context).brightness == Brightness.dark
-                                ? Colors.white60
+                                ? Colors.white.withValues(alpha: 0.65)
                                 : _muted,
                             fontSize: 10,
                           ),
@@ -1340,7 +1341,7 @@ class _ZakatLifetimeCardState extends State<_ZakatLifetimeCard> {
                           : 'Year ${index + 1}',
                       style: TextStyle(
                         color: Theme.of(context).brightness == Brightness.dark
-                            ? Colors.white60
+                            ? Colors.white.withValues(alpha: 0.65)
                             : _muted,
                         fontSize: 12,
                       ),
@@ -1449,7 +1450,7 @@ class _MilestonesCard extends StatelessWidget {
                               milestone.date != null
                                   ? '${isArabic ? "متوقع" : "Estimated"} ${DateFormat('MMM yyyy').format(milestone.date!)}'
                                   : (balancesHidden
-                                        ? '${isArabic ? "متبقية" : "to go"}'
+                                        ? (isArabic ? 'متبقية' : 'to go')
                                         : '${_compactMoney(milestone.remaining, currencyCode)} ${isArabic ? "متبقية" : "to go"}'),
                               style: TextStyle(
                                 color:
@@ -1751,7 +1752,7 @@ class _DashboardCard extends StatelessWidget {
                   ),
                 ),
               ),
-              if (trailing != null) trailing!,
+              trailing ?? const SizedBox.shrink(),
             ],
           ),
           const SizedBox(height: 18),
@@ -1835,7 +1836,7 @@ class _MetricBlock extends StatelessWidget {
             label,
             maxLines: 2,
             style: TextStyle(
-              color: isDark ? Colors.white60 : _muted,
+              color: isDark ? Colors.white.withValues(alpha: 0.65) : _muted,
               fontSize: 10,
               height: 1.2,
             ),
@@ -2028,7 +2029,7 @@ class _DetailRow extends StatelessWidget {
             child: Text(
               label,
               style: TextStyle(
-                color: isDark ? Colors.white60 : _muted,
+                color: isDark ? Colors.white.withValues(alpha: 0.65) : _muted,
                 fontSize: 11,
               ),
             ),
@@ -2071,7 +2072,7 @@ class _Legend extends StatelessWidget {
           label,
           style: TextStyle(
             color: Theme.of(context).brightness == Brightness.dark
-                ? Colors.white60
+                ? Colors.white.withValues(alpha: 0.65)
                 : _muted,
             fontSize: 10,
           ),
@@ -2612,6 +2613,7 @@ List<_Milestone> _buildMilestones({
   required double actualWealth,
   required double projectedEndBalance,
   required DateTime targetDate,
+  required bool isArabic,
 }) {
   final double journey = projectedEndBalance - actualWealth;
   final List<double> goals = <double>[];
@@ -2672,7 +2674,9 @@ List<_Milestone> _buildMilestones({
 
     result.add(
       _Milestone(
-        title: 'Net Worth ${_shortNumber(goal)}',
+        title: isArabic
+            ? 'صافي الثروة ${_shortNumber(goal)}'
+            : 'Net Worth ${_shortNumber(goal)}',
         remaining: math.max(0, goal - actualWealth),
         reached: actualWealth >= goal,
         date: actualWealth >= goal ? DateTime.now() : match?.date,
@@ -2682,7 +2686,7 @@ List<_Milestone> _buildMilestones({
 
   result.add(
     _Milestone(
-      title: 'Target Achieved',
+      title: isArabic ? 'تم الوصول إلى الهدف' : 'Target Achieved',
       remaining: math.max(0, projectedEndBalance - actualWealth),
       reached: actualWealth >= projectedEndBalance,
       date: targetDate,

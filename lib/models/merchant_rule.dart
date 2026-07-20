@@ -1,3 +1,5 @@
+import '../core/utils/amount_parser.dart';
+
 class MerchantRule {
   const MerchantRule({
     required this.merchantName,
@@ -37,7 +39,7 @@ class MerchantRule {
       confidence: json['confidence'] is num
           ? (json['confidence'] as num).toDouble()
           : 1.0,
-      lastUsed: json['lastUsed']?.toString(),
+      lastUsed: normalizeNullableTimestampText(json['lastUsed']?.toString()),
       source: (json['source'] ?? 'learned').toString(),
       aliases: json['aliases'] is List
           ? (json['aliases'] as List)

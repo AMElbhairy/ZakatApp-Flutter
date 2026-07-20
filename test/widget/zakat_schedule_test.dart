@@ -28,16 +28,24 @@ class _NoopMarketDataApiService implements MarketDataApiService {
 }
 
 class _FakeAuthService implements AuthService {
+  static const UserProfile _defaultUser = UserProfile(
+    id: 'test-user',
+    email: 'test@example.com',
+    displayName: 'Test User',
+    provider: 'google',
+    accessToken: 'token',
+  );
+
   @override
   Future<bool> ensureSession() async => true;
 
   @override
-  Future<UserProfile?> restoreSession() async => null;
+  Future<UserProfile?> restoreSession() async => _defaultUser;
 
   @override
   Future<UserProfile?> signIn({
     AuthProvider provider = AuthProvider.google,
-  }) async => null;
+  }) async => _defaultUser;
 
   @override
   Future<void> signOut() async {}
@@ -60,6 +68,8 @@ Widget _buildApp() {
         create: (_) => AppStateController(
           repository: repository,
           marketDataApiService: _NoopMarketDataApiService(),
+          enableBackgroundSync: false,
+          enableMarketAutoRefresh: false,
         ),
       ),
       ChangeNotifierProvider<AuthController>(
@@ -69,9 +79,11 @@ Widget _buildApp() {
         ),
       ),
     ],
-    child: const ZakatApp(),
+    child: ZakatApp(preferences: _sharedPrefs),
   );
 }
+
+late SharedPreferences _sharedPrefs;
 
 Map<String, dynamic> _baseState() {
   return <String, dynamic>{
@@ -98,7 +110,6 @@ Map<String, dynamic> _baseState() {
       'SILVER_PRICE_EGP': 40,
       'USD_TO_EGP': 50,
       'SAR_TO_EGP': 13.5,
-      'RATES_TO_EGP': <String, dynamic>{'EGP': 1, 'USD': 50, 'SAR': 13.5},
     },
     'marketHistory': <dynamic>[],
     'syncHealth': <String, dynamic>{
@@ -107,12 +118,7 @@ Map<String, dynamic> _baseState() {
       'lastError': '',
       'pendingWrites': 0,
     },
-    'aiSettings': <String, dynamic>{
-      'keys': <String>['', ''],
-      'defaultKeyIndex': 0,
-    },
-    'cloudHydrated': false,
-    'hasUnsyncedAuthChanges': false,
+    'languagePreference': 'en',
   };
 }
 
@@ -130,6 +136,10 @@ Future<void> _openScheduleTab(WidgetTester tester) async {
 }
 
 void main() {
+  setUp(() async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    _sharedPrefs = await SharedPreferences.getInstance();
+  });
   testWidgets('schedule tab appears', (WidgetTester tester) async {
     await _seedState(_baseState());
     await tester.pumpWidget(_buildApp());
@@ -167,6 +177,8 @@ void main() {
 
     await _openScheduleTab(tester);
 
+    expect(find.byKey(const Key('upcomingZakatSummaryCard')), findsOneWidget);
+    expect(find.byKey(const Key('zakatFilterRow')), findsOneWidget);
     expect(find.byKey(const Key('zakatScheduleList')), findsOneWidget);
     expect(find.byType(ExpansionTile), findsWidgets);
   });
@@ -197,6 +209,7 @@ void main() {
 
     await _openScheduleTab(tester);
 
+    expect(find.byKey(const Key('upcomingZakatSummaryCard')), findsOneWidget);
     expect(find.byKey(const Key('zakatScheduleList')), findsOneWidget);
     expect(find.byType(ExpansionTile), findsWidgets);
   });
