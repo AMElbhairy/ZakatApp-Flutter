@@ -1156,6 +1156,7 @@ class WidgetDataService {
     final List<_MonthlyTotals> out = <_MonthlyTotals>[];
     final MarketData marketData = _toMarketData(marketSnapshot);
     for (final Transaction tx in transactions) {
+      if (tx.isTransferActivity) continue;
       final DateTime? parsed = DateTime.tryParse(normalizeDateText(tx.date));
       if (parsed == null) continue;
       final DateTime day = DateUtils.dateOnly(parsed);
@@ -1197,6 +1198,7 @@ class WidgetDataService {
     final Map<String, double> totals = <String, double>{};
     for (final Transaction tx in transactions) {
       if (tx.type != 'expense') continue;
+      if (tx.isTransferActivity) continue;
       final DateTime? parsed = DateTime.tryParse(normalizeDateText(tx.date));
       if (parsed == null) continue;
       final DateTime day = DateUtils.dateOnly(parsed);
@@ -1386,6 +1388,7 @@ class WidgetDataService {
     }
     for (final Transaction tx in transactions) {
       if (tx.type != 'expense') continue;
+      if (tx.isTransferActivity) continue;
       final DateTime? parsed = DateTime.tryParse(normalizeDateText(tx.date));
       if (parsed == null) continue;
       final DateTime day = DateUtils.dateOnly(parsed);
@@ -1433,6 +1436,7 @@ class WidgetDataService {
     final MarketData marketData = _toMarketData(marketSnapshot);
     final List<WidgetRecentItem> items = <WidgetRecentItem>[];
     for (final Transaction tx in transactions) {
+      if (tx.isTransferActivity) continue;
       final DateTime? parsed = DateTime.tryParse(normalizeDateText(tx.date));
       if (parsed == null) continue;
       final DateTime day = DateUtils.dateOnly(parsed);
@@ -1661,6 +1665,7 @@ class WidgetDataService {
 
     for (final Transaction tx in transactions) {
       if (tx.type != 'expense') continue;
+      if (tx.isTransferActivity) continue;
       final DateTime? parsed = DateTime.tryParse(normalizeDateText(tx.date));
       if (parsed == null) continue;
       final DateTime day = DateUtils.dateOnly(parsed);

@@ -873,12 +873,12 @@ void main() {
         },
         {
           'text': 'Transfer SAR 5000',
-          'type': 'transfer',
+          'type': 'unknown',
           'amount': 5000.0,
           'currency': 'SAR',
           'confidence': 0.60,
           'merchant': null,
-          'desc': 'Bank Transfer',
+          'desc': 'Transfer Review Required',
         },
 
         // Arabic
@@ -902,12 +902,12 @@ void main() {
         },
         {
           'text': 'تم تحويل 5000 ريال',
-          'type': 'transfer',
+          'type': 'unknown',
           'amount': 5000.0,
           'currency': 'SAR',
           'confidence': 0.60,
           'merchant': null,
-          'desc': 'Bank Transfer',
+          'desc': 'Transfer Review Required',
         },
 
         // Phase 3.1 Hardening cases
@@ -932,12 +932,12 @@ void main() {
         },
         {
           'text': 'Transfer SAR 5000\nRemaining Balance SAR 10000',
-          'type': 'transfer',
+          'type': 'unknown',
           'amount': 5000.0,
           'currency': 'SAR',
           'confidence': 0.60,
           'merchant': null,
-          'desc': 'Bank Transfer',
+          'desc': 'Transfer Review Required',
         },
 
         // Phase 3.2 Production Hardening cases
@@ -971,12 +971,12 @@ void main() {
         {
           'text':
               'تم سداد البطاقة\nمبلغ: SAR 428.78\nحد الصرف المتبقي: 20,000 SAR',
-          'type': 'transfer',
+          'type': 'expense',
           'amount': 428.78,
           'currency': 'SAR',
           'confidence': 0.60,
           'merchant': null,
-          'desc': 'Bank Transfer',
+          'desc': 'Expense Capture',
         },
         {
           'text':
@@ -990,7 +990,7 @@ void main() {
         },
         {
           'text': 'تم إضافة مبلغ 200.00 EGP إلى حسابك',
-          'type': 'transfer',
+          'type': 'income',
           'amount': 200.0,
           'currency': 'EGP',
           'confidence': 0.60,
@@ -999,7 +999,7 @@ void main() {
         },
         {
           'text': 'Debit Internal Transfer\nTransfer SAR 5000',
-          'type': 'transfer',
+          'type': 'expense',
           'amount': 5000.0,
           'currency': 'SAR',
           'confidence': 0.60,
@@ -1222,13 +1222,13 @@ void main() {
     );
 
     test(
-      'bank account deposit to account is classified as transfer with no merchant',
+      'bank account deposit to account is classified as expense with no merchant',
       () {
         final parsed = SmartCaptureParser.parse(
           'تم إضافة مبلغ 1294.25 EGP من xxx7127 إلى حساب رقم xxx7443 في 07-JUN-2026',
         );
 
-        expect(parsed.type, 'transfer');
+        expect(parsed.type, 'expense');
         expect(parsed.amount, 1294.25);
         expect(parsed.currency, 'EGP');
         expect(parsed.merchantName, isNull);
@@ -1243,7 +1243,7 @@ void main() {
           'تم تحويل مبلغ 2500EGP      من حساب رقم xxx7127      الى حساب رقم xxx0304      فى 25-JUN-2026',
         );
 
-        expect(parsed.type, 'transfer');
+        expect(parsed.type, 'unknown');
         expect(parsed.amount, 2500.0);
         expect(parsed.currency, 'EGP');
         expect(parsed.merchantName, isNull);

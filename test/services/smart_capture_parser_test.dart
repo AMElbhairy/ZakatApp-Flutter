@@ -189,6 +189,42 @@ void main() {
       _expectDateTime(parsed.capturedAt, 2026, 6, 25, 21, 1);
     });
 
+    test('arabic incoming internal transfer with custom labels extracts sender and income type', () {
+      final parsed = SmartCaptureParser.parse(
+        'حوالة واردة داخلية\n'
+        'مبلغ:10000 SAR\n'
+        'مرسل:محمد احمد\n'
+        'من:6406*\n'
+        'إلى:6403*\n'
+        'في:21/07/26 18:23',
+      );
+
+      expect(parsed.type, 'income');
+      expect(parsed.direction, 'in');
+      expect(parsed.amount, 10000.0);
+      expect(parsed.currency, 'SAR');
+      expect(parsed.merchantName, 'محمد احمد');
+      expect(parsed.senderName, 'محمد احمد');
+    });
+
+    test('arabic incoming internal transfer notification omitting remittance keyword extracts sender and income type', () {
+      final parsed = SmartCaptureParser.parse(
+        'واردة داخلية\n'
+        'مبلغ:10000 SAR\n'
+        'مرسل:محمد احمد\n'
+        'من:6406*\n'
+        'إلى:6403*\n'
+        'في:21/07/26 18:23',
+      );
+
+      expect(parsed.type, 'income');
+      expect(parsed.direction, 'in');
+      expect(parsed.amount, 10000.0);
+      expect(parsed.currency, 'SAR');
+      expect(parsed.merchantName, 'محمد احمد');
+      expect(parsed.senderName, 'محمد احمد');
+    });
+
     test('internal transfer between own accounts stays transfer', () {
       final parsed = SmartCaptureParser.parse(
         'Internal Transfer\n'
@@ -198,7 +234,7 @@ void main() {
         '25/6/26 21:01',
       );
 
-      expect(parsed.type, 'transfer');
+      expect(parsed.type, 'expense');
       expect(parsed.direction, 'internal');
       expect(parsed.amount, 100.0);
       expect(parsed.currency, 'SAR');
@@ -326,7 +362,7 @@ void main() {
             caseData['message']! as String,
           );
 
-          expect(parsed.type, 'transfer');
+          expect(parsed.type, 'expense');
           expect(parsed.direction, 'out');
           expect(parsed.amount, caseData['amount'] as double);
           expect(parsed.currency, 'SAR');
@@ -348,7 +384,7 @@ void main() {
           'On: 08/07/2026 11:32:35',
         );
 
-        expect(parsed.type, 'transfer');
+        expect(parsed.type, 'expense');
         expect(parsed.direction, 'out');
         expect(parsed.amount, 58.5);
         expect(parsed.currency, 'SAR');

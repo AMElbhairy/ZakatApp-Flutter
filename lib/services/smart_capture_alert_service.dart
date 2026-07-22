@@ -459,11 +459,11 @@ class PlatformSmartCaptureAlertService extends SmartCaptureAlertService {
   static String? _extractMerchantFromMessage(String message) {
     final List<RegExp> patterns = <RegExp>[
       RegExp(
-        r"\b(?:at|merchant|store|from|to)\s*[:\-]?\s*([A-Za-z0-9&'().\-\u0600-\u06FF ]{2,80})",
+        r"\b(?:at|merchant|store|from|to|sender)\s*[:\-]?\s*([A-Za-z0-9&'().\-\u0600-\u06FF ]{2,80})",
         caseSensitive: false,
       ),
       RegExp(
-        r"\b(?:عند|لدى|من|إلى|الى)\s*[:\-]?\s*([A-Za-z0-9&'().\-\u0600-\u06FF ]{2,80})",
+        r"\b(?:عند|لدى|من|إلى|الى|المرسل|مرسل)\s*[:\-]?\s*([A-Za-z0-9&'().\-\u0600-\u06FF ]{2,80})",
         caseSensitive: false,
       ),
     ];

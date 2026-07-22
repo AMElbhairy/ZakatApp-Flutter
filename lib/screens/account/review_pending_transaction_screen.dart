@@ -42,7 +42,7 @@ class _ReviewPendingTransactionScreenState
   String? _selectedCategory;
 
   // Type definitions.
-  final List<String> _types = const <String>['expense', 'income', 'transfer'];
+  final List<String> _types = const <String>['expense', 'income'];
 
   @override
   void initState() {
@@ -636,6 +636,7 @@ class _ReviewPendingTransactionScreenState
                       ? _currencyController.text.trim().toUpperCase()
                       : 'EGP',
                   labelText: context.l10n.tr('merchant_rules_currency'),
+                  floatingLabelBehavior: FloatingLabelBehavior.never,
                   currencies: CurrencyPresentation.marketCurrencyCodes,
                   onChanged: (String value) {
                     setState(() => _currencyController.text = value);

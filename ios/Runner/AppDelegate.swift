@@ -796,7 +796,7 @@ protocol FlutterImplicitEngineDelegate {}
       .filter { !$0.isEmpty }
 
     let inlinePatterns: [String] = [
-      #"(?i)(?:(?<![A-Za-z0-9])(?:at|merchant|store)(?![A-Za-z0-9])|لدى|عند|في)\s*[:\-]?\s*([A-Za-z\u0600-\u06FF0-9][A-Za-z0-9\u0600-\u06FF&*.,\- ]{1,80})"#
+      #"(?i)(?:(?<![A-Za-z0-9])(?:at|merchant|store|sender)(?![A-Za-z0-9])|المرسل|مرسل|لدى|عند|في)\s*[:\-]?\s*([A-Za-z\u0600-\u06FF0-9][A-Za-z0-9\u0600-\u06FF&*.,\- ]{1,80})"#
     ]
     for pattern in inlinePatterns {
       if let candidate = nativeShortcutValidatedMerchant(
@@ -808,8 +808,8 @@ protocol FlutterImplicitEngineDelegate {}
     }
 
     let fieldPatterns: [String] = [
-      #"(?i)^\s*(?:merchant|at|to|from|in)\s*[:\-]?\s*(.+)$"#,
-      #"(?i)^\s*(?:عند|إلى|الى|من)\s*[:\-]?\s*(.+)$"#,
+      #"(?i)^\s*(?:merchant|at|to|from|in|sender)\s*[:\-]?\s*(.+)$"#,
+      #"(?i)^\s*(?:المرسل|مرسل|عند|إلى|الى|من)\s*[:\-]?\s*(.+)$"#,
     ]
     for line in lines {
       for pattern in fieldPatterns {

@@ -2395,11 +2395,11 @@ class _AboutCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final String version = const String.fromEnvironment(
       'APP_VERSION',
-      defaultValue: '1.0.0',
+      defaultValue: '1.0.4',
     );
     final String buildNumber = const String.fromEnvironment(
       'APP_BUILD_NUMBER',
-      defaultValue: '1',
+      defaultValue: '5',
     );
 
     return _CompactSectionCard(

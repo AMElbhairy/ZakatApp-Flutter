@@ -10,12 +10,14 @@ class CurrencyDropdownFormField extends StatelessWidget {
     required this.labelText,
     required this.currencies,
     required this.onChanged,
+    this.floatingLabelBehavior = FloatingLabelBehavior.always,
   });
 
   final String value;
   final String labelText;
   final List<String> currencies;
   final ValueChanged<String> onChanged;
+  final FloatingLabelBehavior floatingLabelBehavior;
 
   @override
   Widget build(BuildContext context) {
@@ -34,7 +36,7 @@ class CurrencyDropdownFormField extends StatelessWidget {
         return InputDecorator(
           decoration: InputDecoration(
             labelText: labelText,
-            floatingLabelBehavior: FloatingLabelBehavior.always,
+            floatingLabelBehavior: floatingLabelBehavior,
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 12,
               vertical: 16,

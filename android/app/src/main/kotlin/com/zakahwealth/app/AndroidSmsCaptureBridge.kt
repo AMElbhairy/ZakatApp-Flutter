@@ -664,7 +664,7 @@ object AndroidSmsCaptureBridge {
 
         val inlinePatterns = listOf(
             Regex(
-                """(?i)(?:at|merchant|store|from|to|لدى|عند|من|إلى|الى)\s*[:\-]?\s*([A-Za-z0-9&'().\-\u0600-\u06FF ]{2,80})""",
+                """(?i)(?:at|merchant|store|from|to|المرسل|مرسل|لدى|عند|من|إلى|الى)\s*[:\-]?\s*([A-Za-z0-9&'().\-\u0600-\u06FF ]{2,80})""",
             ),
         )
         for (pattern in inlinePatterns) {
@@ -676,7 +676,7 @@ object AndroidSmsCaptureBridge {
 
         val linePatterns = listOf(
             Regex("""(?i)^\s*(?:merchant|at|to|from|store)\s*[:\-]?\s*(.+)$"""),
-            Regex("""(?i)^\s*(?:عند|لدى|من|إلى|الى)\s*[:\-]?\s*(.+)$"""),
+            Regex("""(?i)^\s*(?:المرسل|مرسل|عند|لدى|من|إلى|الى)\s*[:\-]?\s*(.+)$"""),
         )
         for (line in lines) {
             for (pattern in linePatterns) {
