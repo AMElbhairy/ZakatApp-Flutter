@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -12,6 +13,23 @@ import '../core/services/zakat_engine.dart';
 import '../screens/account/notifications_screen.dart';
 import '../models/pending_transaction.dart';
 import 'smart_capture_parser.dart';
+
+int smartCaptureNotificationId({
+  required String source,
+  required String rawMessage,
+}) {
+  final String normalizedSource = source.trim().toLowerCase();
+  final String normalizedMessage = rawMessage
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+  final List<int> bytes = utf8.encode('$normalizedSource|$normalizedMessage');
+  int hash = 0x811c9dc5;
+  for (final int byte in bytes) {
+    hash ^= byte;
+    hash = (hash * 0x01000193) & 0xffffffff;
+  }
+  return hash & 0x7fffffff;
+}
 
 abstract class SmartCaptureAlertService {
   const SmartCaptureAlertService();
@@ -32,11 +50,13 @@ abstract class SmartCaptureAlertService {
 
   Future<void> notifyCaptureState({
     required PendingTransaction pendingTransaction,
+    bool replaceExisting = false,
   });
 
   Future<void> notifyPendingReview({
     required PendingTransaction pendingTransaction,
     required int pendingReviewCount,
+    bool replaceExisting = false,
   });
 }
 
@@ -66,12 +86,14 @@ class NoopSmartCaptureAlertService extends SmartCaptureAlertService {
   @override
   Future<void> notifyCaptureState({
     required PendingTransaction pendingTransaction,
+    bool replaceExisting = false,
   }) async {}
 
   @override
   Future<void> notifyPendingReview({
     required PendingTransaction pendingTransaction,
     required int pendingReviewCount,
+    bool replaceExisting = false,
   }) async {}
 
   @override
@@ -122,10 +144,7 @@ class PlatformSmartCaptureAlertService extends SmartCaptureAlertService {
         macOS: darwin,
       );
 
-      await _notifications.initialize(
-        settings: settings,
-        onDidReceiveNotificationResponse: handleNotificationResponse,
-      );
+      await _notifications.initialize(settings: settings);
       final AndroidFlutterLocalNotificationsPlugin? androidPlugin =
           _notifications
               .resolvePlatformSpecificImplementation<
@@ -134,16 +153,6 @@ class PlatformSmartCaptureAlertService extends SmartCaptureAlertService {
       await androidPlugin?.createNotificationChannel(_channel);
       await _requestNotificationPermissions();
       _notificationsAvailable = true;
-
-      final NotificationAppLaunchDetails? launchDetails = await _notifications
-          .getNotificationAppLaunchDetails();
-      if (launchDetails?.didNotificationLaunchApp == true) {
-        final NotificationResponse? response =
-            launchDetails?.notificationResponse;
-        if (response != null) {
-          await handleNotificationResponse(response);
-        }
-      }
       await flushPendingNotificationLaunch();
     } on PlatformException catch (error, stackTrace) {
       debugPrint('SmartCaptureAlertService initialize failed: $error');
@@ -302,6 +311,7 @@ class PlatformSmartCaptureAlertService extends SmartCaptureAlertService {
   @override
   Future<void> notifyCaptureState({
     required PendingTransaction pendingTransaction,
+    bool replaceExisting = false,
   }) async {
     await initialize();
     if (!_notificationsAvailable) return;
@@ -319,13 +329,14 @@ class PlatformSmartCaptureAlertService extends SmartCaptureAlertService {
     final SmartCaptureParseResult parsed = SmartCaptureParser.parse(
       pendingTransaction.rawMessage,
     );
-    final CaptureStatus displayStatus =
-        parsed.isValid ? pendingTransaction.status : CaptureStatus.ignored;
+    final CaptureStatus displayStatus = parsed.isValid
+        ? pendingTransaction.status
+        : CaptureStatus.ignored;
     final String amountStr = pendingTransaction.suggestedAmount != null
-        ? '${_formatCaptureAmount(pendingTransaction.suggestedAmount!)} ${ZakatEngineService.getCurrencySymbol(currencyCode)}'
+        ? '${_formatCaptureAmount(pendingTransaction.suggestedAmount!)} ${_notificationCurrencyLabel(currencyCode)}'
         : parsed.amount != null
-            ? '${_formatCaptureAmount(parsed.amount!)} ${ZakatEngineService.getCurrencySymbol(parsed.currency?.trim().isNotEmpty == true ? parsed.currency!.trim() : currencyCode)}'
-            : 'Amount not captured';
+        ? '${_formatCaptureAmount(parsed.amount!)} ${_notificationCurrencyLabel(parsed.currency?.trim().isNotEmpty == true ? parsed.currency!.trim() : currencyCode)}'
+        : 'Amount not captured';
     final String merchant = _notificationMerchantText(
       pendingTransaction,
       parsed,
@@ -341,6 +352,10 @@ class PlatformSmartCaptureAlertService extends SmartCaptureAlertService {
         .where((String line) => line.trim().isNotEmpty)
         .map((String line) => _localizedNotificationLine(line: line))
         .join('\n');
+    final int notificationId = smartCaptureNotificationId(
+      source: pendingTransaction.source,
+      rawMessage: pendingTransaction.rawMessage,
+    );
 
     final NotificationDetails details = NotificationDetails(
       android: AndroidNotificationDetails(
@@ -365,8 +380,11 @@ class PlatformSmartCaptureAlertService extends SmartCaptureAlertService {
     );
 
     try {
+      if (replaceExisting) {
+        await _notifications.cancel(id: notificationId);
+      }
       await _notifications.show(
-        id: pendingTransaction.id.hashCode & 0x7fffffff,
+        id: notificationId,
         title: title,
         body: body,
         notificationDetails: details,
@@ -386,8 +404,12 @@ class PlatformSmartCaptureAlertService extends SmartCaptureAlertService {
   Future<void> notifyPendingReview({
     required PendingTransaction pendingTransaction,
     required int pendingReviewCount,
+    bool replaceExisting = false,
   }) async {
-    await notifyCaptureState(pendingTransaction: pendingTransaction);
+    await notifyCaptureState(
+      pendingTransaction: pendingTransaction,
+      replaceExisting: replaceExisting,
+    );
   }
 
   static String _formatCaptureAmount(double amount) {
@@ -413,9 +435,7 @@ class PlatformSmartCaptureAlertService extends SmartCaptureAlertService {
     return 'en';
   }
 
-  static String _localizedNotificationLine({
-    required String line,
-  }) {
+  static String _localizedNotificationLine({required String line}) {
     final String trimmed = line.trim();
     if (trimmed.isEmpty) return trimmed;
     return '\u200E$trimmed';
@@ -435,14 +455,6 @@ class PlatformSmartCaptureAlertService extends SmartCaptureAlertService {
       return parsedMerchant;
     }
 
-    final String rawMessage = pendingTransaction.rawMessage.trim();
-    if (rawMessage.isNotEmpty) {
-      final String? extracted = _extractMerchantFromMessage(rawMessage);
-      if (extracted != null && extracted.isNotEmpty) {
-        return extracted;
-      }
-    }
-
     final String parsedDescription = parsed.description.trim();
     if (parsedDescription.isNotEmpty) {
       return parsedDescription;
@@ -456,46 +468,11 @@ class PlatformSmartCaptureAlertService extends SmartCaptureAlertService {
     return pendingTransaction.sourceDisplayLabel;
   }
 
-  static String? _extractMerchantFromMessage(String message) {
-    final List<RegExp> patterns = <RegExp>[
-      RegExp(
-        r"\b(?:at|merchant|store|from|to|sender)\s*[:\-]?\s*([A-Za-z0-9&'().\-\u0600-\u06FF ]{2,80})",
-        caseSensitive: false,
-      ),
-      RegExp(
-        r"\b(?:عند|لدى|من|إلى|الى|المرسل|مرسل)\s*[:\-]?\s*([A-Za-z0-9&'().\-\u0600-\u06FF ]{2,80})",
-        caseSensitive: false,
-      ),
-    ];
-    for (final RegExp pattern in patterns) {
-      final Match? match = pattern.firstMatch(message);
-      final String? candidate = match?.group(1)?.trim();
-      if (candidate != null && candidate.isNotEmpty) {
-        return candidate;
-      }
+  static String _notificationCurrencyLabel(String currencyCode) {
+    final String code = currencyCode.trim().toUpperCase();
+    if (code == 'SAR' && defaultTargetPlatform == TargetPlatform.android) {
+      return 'SAR';
     }
-
-    final List<String> lines = message
-        .replaceAll('\r', '\n')
-        .split('\n')
-        .map((String line) => line.trim())
-        .where((String line) => line.isNotEmpty)
-        .toList(growable: false);
-    for (final String line in lines) {
-      final String lower = line.toLowerCase();
-      if (lower.contains('otp') ||
-          lower.contains('verification') ||
-          lower.contains('code') ||
-          lower.contains('amount') ||
-          lower.contains('مبلغ') ||
-          lower.contains('الرصيد')) {
-        continue;
-      }
-      if (RegExp(r'[A-Za-z\u0600-\u06FF]').hasMatch(line) &&
-          !RegExp(r'^\d+([.,]\d+)?$').hasMatch(line)) {
-        return line;
-      }
-    }
-    return null;
+    return ZakatEngineService.getCurrencySymbol(code);
   }
 }

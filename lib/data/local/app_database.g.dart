@@ -5892,6 +5892,60 @@ class $RecurringTransactionsTable extends RecurringTransactions
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _autoAddMeta = const VerificationMeta(
+    'autoAdd',
+  );
+  @override
+  late final GeneratedColumn<bool> autoAdd = GeneratedColumn<bool>(
+    'auto_add',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("auto_add" IN (0, 1))',
+    ),
+    defaultValue: const Constant(true),
+  );
+  static const VerificationMeta _reminderEnabledMeta = const VerificationMeta(
+    'reminderEnabled',
+  );
+  @override
+  late final GeneratedColumn<bool> reminderEnabled = GeneratedColumn<bool>(
+    'reminder_enabled',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("reminder_enabled" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _reminderDayOffsetMeta = const VerificationMeta(
+    'reminderDayOffset',
+  );
+  @override
+  late final GeneratedColumn<int> reminderDayOffset = GeneratedColumn<int>(
+    'reminder_day_offset',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _reminderTimeMeta = const VerificationMeta(
+    'reminderTime',
+  );
+  @override
+  late final GeneratedColumn<String> reminderTime = GeneratedColumn<String>(
+    'reminder_time',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('09:00'),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -5909,6 +5963,10 @@ class $RecurringTransactionsTable extends RecurringTransactions
     createdAt,
     updatedAt,
     deletedAt,
+    autoAdd,
+    reminderEnabled,
+    reminderDayOffset,
+    reminderTime,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -6044,6 +6102,39 @@ class $RecurringTransactionsTable extends RecurringTransactions
         deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
       );
     }
+    if (data.containsKey('auto_add')) {
+      context.handle(
+        _autoAddMeta,
+        autoAdd.isAcceptableOrUnknown(data['auto_add']!, _autoAddMeta),
+      );
+    }
+    if (data.containsKey('reminder_enabled')) {
+      context.handle(
+        _reminderEnabledMeta,
+        reminderEnabled.isAcceptableOrUnknown(
+          data['reminder_enabled']!,
+          _reminderEnabledMeta,
+        ),
+      );
+    }
+    if (data.containsKey('reminder_day_offset')) {
+      context.handle(
+        _reminderDayOffsetMeta,
+        reminderDayOffset.isAcceptableOrUnknown(
+          data['reminder_day_offset']!,
+          _reminderDayOffsetMeta,
+        ),
+      );
+    }
+    if (data.containsKey('reminder_time')) {
+      context.handle(
+        _reminderTimeMeta,
+        reminderTime.isAcceptableOrUnknown(
+          data['reminder_time']!,
+          _reminderTimeMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -6113,6 +6204,22 @@ class $RecurringTransactionsTable extends RecurringTransactions
         DriftSqlType.string,
         data['${effectivePrefix}deleted_at'],
       ),
+      autoAdd: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}auto_add'],
+      )!,
+      reminderEnabled: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}reminder_enabled'],
+      )!,
+      reminderDayOffset: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}reminder_day_offset'],
+      )!,
+      reminderTime: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}reminder_time'],
+      )!,
     );
   }
 
@@ -6139,6 +6246,10 @@ class RecurringTransaction extends DataClass
   final String createdAt;
   final String updatedAt;
   final String? deletedAt;
+  final bool autoAdd;
+  final bool reminderEnabled;
+  final int reminderDayOffset;
+  final String reminderTime;
   const RecurringTransaction({
     required this.id,
     required this.name,
@@ -6155,6 +6266,10 @@ class RecurringTransaction extends DataClass
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,
+    required this.autoAdd,
+    required this.reminderEnabled,
+    required this.reminderDayOffset,
+    required this.reminderTime,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -6178,6 +6293,10 @@ class RecurringTransaction extends DataClass
     if (!nullToAbsent || deletedAt != null) {
       map['deleted_at'] = Variable<String>(deletedAt);
     }
+    map['auto_add'] = Variable<bool>(autoAdd);
+    map['reminder_enabled'] = Variable<bool>(reminderEnabled);
+    map['reminder_day_offset'] = Variable<int>(reminderDayOffset);
+    map['reminder_time'] = Variable<String>(reminderTime);
     return map;
   }
 
@@ -6202,6 +6321,10 @@ class RecurringTransaction extends DataClass
       deletedAt: deletedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(deletedAt),
+      autoAdd: Value(autoAdd),
+      reminderEnabled: Value(reminderEnabled),
+      reminderDayOffset: Value(reminderDayOffset),
+      reminderTime: Value(reminderTime),
     );
   }
 
@@ -6226,6 +6349,10 @@ class RecurringTransaction extends DataClass
       createdAt: serializer.fromJson<String>(json['createdAt']),
       updatedAt: serializer.fromJson<String>(json['updatedAt']),
       deletedAt: serializer.fromJson<String?>(json['deletedAt']),
+      autoAdd: serializer.fromJson<bool>(json['autoAdd']),
+      reminderEnabled: serializer.fromJson<bool>(json['reminderEnabled']),
+      reminderDayOffset: serializer.fromJson<int>(json['reminderDayOffset']),
+      reminderTime: serializer.fromJson<String>(json['reminderTime']),
     );
   }
   @override
@@ -6247,6 +6374,10 @@ class RecurringTransaction extends DataClass
       'createdAt': serializer.toJson<String>(createdAt),
       'updatedAt': serializer.toJson<String>(updatedAt),
       'deletedAt': serializer.toJson<String?>(deletedAt),
+      'autoAdd': serializer.toJson<bool>(autoAdd),
+      'reminderEnabled': serializer.toJson<bool>(reminderEnabled),
+      'reminderDayOffset': serializer.toJson<int>(reminderDayOffset),
+      'reminderTime': serializer.toJson<String>(reminderTime),
     };
   }
 
@@ -6266,6 +6397,10 @@ class RecurringTransaction extends DataClass
     String? createdAt,
     String? updatedAt,
     Value<String?> deletedAt = const Value.absent(),
+    bool? autoAdd,
+    bool? reminderEnabled,
+    int? reminderDayOffset,
+    String? reminderTime,
   }) => RecurringTransaction(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -6284,6 +6419,10 @@ class RecurringTransaction extends DataClass
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+    autoAdd: autoAdd ?? this.autoAdd,
+    reminderEnabled: reminderEnabled ?? this.reminderEnabled,
+    reminderDayOffset: reminderDayOffset ?? this.reminderDayOffset,
+    reminderTime: reminderTime ?? this.reminderTime,
   );
   RecurringTransaction copyWithCompanion(RecurringTransactionsCompanion data) {
     return RecurringTransaction(
@@ -6310,6 +6449,16 @@ class RecurringTransaction extends DataClass
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+      autoAdd: data.autoAdd.present ? data.autoAdd.value : this.autoAdd,
+      reminderEnabled: data.reminderEnabled.present
+          ? data.reminderEnabled.value
+          : this.reminderEnabled,
+      reminderDayOffset: data.reminderDayOffset.present
+          ? data.reminderDayOffset.value
+          : this.reminderDayOffset,
+      reminderTime: data.reminderTime.present
+          ? data.reminderTime.value
+          : this.reminderTime,
     );
   }
 
@@ -6330,7 +6479,11 @@ class RecurringTransaction extends DataClass
           ..write('skipMonth: $skipMonth, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
-          ..write('deletedAt: $deletedAt')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('autoAdd: $autoAdd, ')
+          ..write('reminderEnabled: $reminderEnabled, ')
+          ..write('reminderDayOffset: $reminderDayOffset, ')
+          ..write('reminderTime: $reminderTime')
           ..write(')'))
         .toString();
   }
@@ -6352,6 +6505,10 @@ class RecurringTransaction extends DataClass
     createdAt,
     updatedAt,
     deletedAt,
+    autoAdd,
+    reminderEnabled,
+    reminderDayOffset,
+    reminderTime,
   );
   @override
   bool operator ==(Object other) =>
@@ -6371,7 +6528,11 @@ class RecurringTransaction extends DataClass
           other.skipMonth == this.skipMonth &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
-          other.deletedAt == this.deletedAt);
+          other.deletedAt == this.deletedAt &&
+          other.autoAdd == this.autoAdd &&
+          other.reminderEnabled == this.reminderEnabled &&
+          other.reminderDayOffset == this.reminderDayOffset &&
+          other.reminderTime == this.reminderTime);
 }
 
 class RecurringTransactionsCompanion
@@ -6391,6 +6552,10 @@ class RecurringTransactionsCompanion
   final Value<String> createdAt;
   final Value<String> updatedAt;
   final Value<String?> deletedAt;
+  final Value<bool> autoAdd;
+  final Value<bool> reminderEnabled;
+  final Value<int> reminderDayOffset;
+  final Value<String> reminderTime;
   final Value<int> rowid;
   const RecurringTransactionsCompanion({
     this.id = const Value.absent(),
@@ -6408,6 +6573,10 @@ class RecurringTransactionsCompanion
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.deletedAt = const Value.absent(),
+    this.autoAdd = const Value.absent(),
+    this.reminderEnabled = const Value.absent(),
+    this.reminderDayOffset = const Value.absent(),
+    this.reminderTime = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   RecurringTransactionsCompanion.insert({
@@ -6426,6 +6595,10 @@ class RecurringTransactionsCompanion
     required String createdAt,
     required String updatedAt,
     this.deletedAt = const Value.absent(),
+    this.autoAdd = const Value.absent(),
+    this.reminderEnabled = const Value.absent(),
+    this.reminderDayOffset = const Value.absent(),
+    this.reminderTime = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        name = Value(name),
@@ -6456,6 +6629,10 @@ class RecurringTransactionsCompanion
     Expression<String>? createdAt,
     Expression<String>? updatedAt,
     Expression<String>? deletedAt,
+    Expression<bool>? autoAdd,
+    Expression<bool>? reminderEnabled,
+    Expression<int>? reminderDayOffset,
+    Expression<String>? reminderTime,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -6474,6 +6651,10 @@ class RecurringTransactionsCompanion
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (deletedAt != null) 'deleted_at': deletedAt,
+      if (autoAdd != null) 'auto_add': autoAdd,
+      if (reminderEnabled != null) 'reminder_enabled': reminderEnabled,
+      if (reminderDayOffset != null) 'reminder_day_offset': reminderDayOffset,
+      if (reminderTime != null) 'reminder_time': reminderTime,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -6494,6 +6675,10 @@ class RecurringTransactionsCompanion
     Value<String>? createdAt,
     Value<String>? updatedAt,
     Value<String?>? deletedAt,
+    Value<bool>? autoAdd,
+    Value<bool>? reminderEnabled,
+    Value<int>? reminderDayOffset,
+    Value<String>? reminderTime,
     Value<int>? rowid,
   }) {
     return RecurringTransactionsCompanion(
@@ -6512,6 +6697,10 @@ class RecurringTransactionsCompanion
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       deletedAt: deletedAt ?? this.deletedAt,
+      autoAdd: autoAdd ?? this.autoAdd,
+      reminderEnabled: reminderEnabled ?? this.reminderEnabled,
+      reminderDayOffset: reminderDayOffset ?? this.reminderDayOffset,
+      reminderTime: reminderTime ?? this.reminderTime,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -6564,6 +6753,18 @@ class RecurringTransactionsCompanion
     if (deletedAt.present) {
       map['deleted_at'] = Variable<String>(deletedAt.value);
     }
+    if (autoAdd.present) {
+      map['auto_add'] = Variable<bool>(autoAdd.value);
+    }
+    if (reminderEnabled.present) {
+      map['reminder_enabled'] = Variable<bool>(reminderEnabled.value);
+    }
+    if (reminderDayOffset.present) {
+      map['reminder_day_offset'] = Variable<int>(reminderDayOffset.value);
+    }
+    if (reminderTime.present) {
+      map['reminder_time'] = Variable<String>(reminderTime.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -6588,6 +6789,10 @@ class RecurringTransactionsCompanion
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
+          ..write('autoAdd: $autoAdd, ')
+          ..write('reminderEnabled: $reminderEnabled, ')
+          ..write('reminderDayOffset: $reminderDayOffset, ')
+          ..write('reminderTime: $reminderTime, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -13784,6 +13989,10 @@ typedef $$RecurringTransactionsTableCreateCompanionBuilder =
       required String createdAt,
       required String updatedAt,
       Value<String?> deletedAt,
+      Value<bool> autoAdd,
+      Value<bool> reminderEnabled,
+      Value<int> reminderDayOffset,
+      Value<String> reminderTime,
       Value<int> rowid,
     });
 typedef $$RecurringTransactionsTableUpdateCompanionBuilder =
@@ -13803,6 +14012,10 @@ typedef $$RecurringTransactionsTableUpdateCompanionBuilder =
       Value<String> createdAt,
       Value<String> updatedAt,
       Value<String?> deletedAt,
+      Value<bool> autoAdd,
+      Value<bool> reminderEnabled,
+      Value<int> reminderDayOffset,
+      Value<String> reminderTime,
       Value<int> rowid,
     });
 
@@ -13887,6 +14100,26 @@ class $$RecurringTransactionsTableFilterComposer
 
   ColumnFilters<String> get deletedAt => $composableBuilder(
     column: $table.deletedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get autoAdd => $composableBuilder(
+    column: $table.autoAdd,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get reminderEnabled => $composableBuilder(
+    column: $table.reminderEnabled,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get reminderDayOffset => $composableBuilder(
+    column: $table.reminderDayOffset,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get reminderTime => $composableBuilder(
+    column: $table.reminderTime,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -13974,6 +14207,26 @@ class $$RecurringTransactionsTableOrderingComposer
     column: $table.deletedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<bool> get autoAdd => $composableBuilder(
+    column: $table.autoAdd,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get reminderEnabled => $composableBuilder(
+    column: $table.reminderEnabled,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get reminderDayOffset => $composableBuilder(
+    column: $table.reminderDayOffset,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get reminderTime => $composableBuilder(
+    column: $table.reminderTime,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$RecurringTransactionsTableAnnotationComposer
@@ -14037,6 +14290,24 @@ class $$RecurringTransactionsTableAnnotationComposer
 
   GeneratedColumn<String> get deletedAt =>
       $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get autoAdd =>
+      $composableBuilder(column: $table.autoAdd, builder: (column) => column);
+
+  GeneratedColumn<bool> get reminderEnabled => $composableBuilder(
+    column: $table.reminderEnabled,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get reminderDayOffset => $composableBuilder(
+    column: $table.reminderDayOffset,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get reminderTime => $composableBuilder(
+    column: $table.reminderTime,
+    builder: (column) => column,
+  );
 }
 
 class $$RecurringTransactionsTableTableManager
@@ -14100,6 +14371,10 @@ class $$RecurringTransactionsTableTableManager
                 Value<String> createdAt = const Value.absent(),
                 Value<String> updatedAt = const Value.absent(),
                 Value<String?> deletedAt = const Value.absent(),
+                Value<bool> autoAdd = const Value.absent(),
+                Value<bool> reminderEnabled = const Value.absent(),
+                Value<int> reminderDayOffset = const Value.absent(),
+                Value<String> reminderTime = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => RecurringTransactionsCompanion(
                 id: id,
@@ -14117,6 +14392,10 @@ class $$RecurringTransactionsTableTableManager
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
+                autoAdd: autoAdd,
+                reminderEnabled: reminderEnabled,
+                reminderDayOffset: reminderDayOffset,
+                reminderTime: reminderTime,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -14136,6 +14415,10 @@ class $$RecurringTransactionsTableTableManager
                 required String createdAt,
                 required String updatedAt,
                 Value<String?> deletedAt = const Value.absent(),
+                Value<bool> autoAdd = const Value.absent(),
+                Value<bool> reminderEnabled = const Value.absent(),
+                Value<int> reminderDayOffset = const Value.absent(),
+                Value<String> reminderTime = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => RecurringTransactionsCompanion.insert(
                 id: id,
@@ -14153,6 +14436,10 @@ class $$RecurringTransactionsTableTableManager
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
+                autoAdd: autoAdd,
+                reminderEnabled: reminderEnabled,
+                reminderDayOffset: reminderDayOffset,
+                reminderTime: reminderTime,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

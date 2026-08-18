@@ -510,6 +510,56 @@ void main() {
         expect(parsed.merchantName, 'Thamara & Resha Establish');
       },
     );
+
+    test(
+      'investment account deposit in Arabic is treated as account funding and suppresses merchant extraction',
+      () {
+        final parsed = SmartCaptureParser.parse(
+          'إيداع إلى حساب استثماري\n'
+          'رقم: 4454\n'
+          'SAR المبلغ: 10000\n'
+          'في: 2026-08-03 12:36:05\n'
+          'أويس المالية',
+        );
+
+        expect(parsed.type, 'expense');
+        expect(parsed.amount, 10000.0);
+        expect(parsed.currency, 'SAR');
+        expect(parsed.merchantName, isNull);
+        expect(parsed.description, 'Account Deposit');
+      },
+    );
+
+    test('subscription activation messages are rejected before parsing', () {
+      final parsed = SmartCaptureParser.parse(
+        'مرحبا احمد البحيرى،\n'
+        'تم تفعيل اشتراكك في Mobily Welcome Prepaid بنجاح.\n'
+        'سعر الباقة: 0 ريال (تم احتساب الضريبة عند شحن الرصيد).\n'
+        'Dear Ahmed,\n'
+        'You have successfully subscribed to Mobily Welcome Prepaid.\n'
+        'Bundle price: SAR 0 (VAT has already been paid upon recharging).',
+      );
+
+      expect(parsed.isValid, isFalse);
+      expect(parsed.ignoreReason, 'Subscription Activation Message');
+      expect(parsed.description, 'Subscription Activation Message');
+      expect(parsed.amount, isNull);
+      expect(parsed.currency, isNull);
+      expect(parsed.merchantName, isNull);
+    });
+
+    test(
+      'instapay instant transfer in Arabic is captured as income',
+      () {
+        final parsed = SmartCaptureParser.parse(
+          'تم اضافة مبلغ 30000EGP      الى حساب رقم xxx7127      فى 26-JUL-2026  عن طريق التحويل اللحظي',
+        );
+
+        expect(parsed.type, 'income');
+        expect(parsed.amount, 30000.0);
+        expect(parsed.currency, 'EGP');
+      },
+    );
   });
 }
 

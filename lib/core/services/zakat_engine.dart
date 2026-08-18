@@ -176,6 +176,10 @@ class ZakatEngineService {
         return '€';
       case 'GBP':
         return '£';
+      case 'AUD':
+        return r'A$';
+      case 'CAD':
+        return r'C$';
       case 'TRY':
         return '₺';
       case 'MYR':
@@ -193,11 +197,11 @@ class ZakatEngineService {
     if (!Platform.isAndroid) {
       return '⃁';
     }
-    final Match? match = RegExp(r'Android (\d+)').firstMatch(
-      Platform.operatingSystemVersion,
-    );
+    final Match? match = RegExp(
+      r'Android (\d+)',
+    ).firstMatch(Platform.operatingSystemVersion);
     final int androidVersion = int.tryParse(match?.group(1) ?? '') ?? 0;
-    return androidVersion >= 16 ? '⃁' : 'SR';
+    return androidVersion >= 16 ? '⃁' : 'SAR';
   }
 
   static String formatCurrency(
@@ -236,6 +240,8 @@ class ZakatEngineService {
     'SAR',
     'EUR',
     'GBP',
+    'AUD',
+    'CAD',
     'AED',
     'KWD',
     'QAR',

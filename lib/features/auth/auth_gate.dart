@@ -13,7 +13,7 @@ class AuthGate extends StatelessWidget {
   Widget build(BuildContext context) {
     final AuthController auth = context.watch<AuthController>();
     if (auth.currentUser == null) {
-      return LoginPage(showLegacyAuthUi: kDebugMode);
+      return const LoginPage(showLegacyAuthUi: true);
     }
     return const AppShell();
   }

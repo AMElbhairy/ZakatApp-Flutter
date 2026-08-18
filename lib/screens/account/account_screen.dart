@@ -21,6 +21,10 @@ import 'merchant_rules_screen.dart';
 import 'recurring_transactions_screen.dart';
 import 'diagnostics_screen.dart';
 import 'cloud_backup_screen.dart';
+import 'zakat_calculation_explanation_screen.dart';
+import 'about_zakah_wealth_screen.dart';
+import 'shortcut_setup_guide_screen.dart';
+import 'policy_detail_screen.dart';
 import '../../core/services/zakat_engine.dart';
 import '../../models/user_profile.dart';
 import '../../services/app_state_controller.dart';
@@ -328,7 +332,7 @@ class _AccountScreenState extends State<AccountScreen> {
                         ).push(RecurringTransactionsScreen.route());
                       },
                     ),
-                    if (defaultTargetPlatform == TargetPlatform.android)
+                    if (defaultTargetPlatform == TargetPlatform.android) ...[
                       _ToggleSettingTile(
                         key: const Key('settingsSmsCaptureToggle'),
                         icon: Icons.sms_outlined,
@@ -364,6 +368,42 @@ class _AccountScreenState extends State<AccountScreen> {
                           await context
                               .read<AppStateController>()
                               .setAndroidSmsAutoCaptureEnabled(enabled);
+                        },
+                      ),
+                      _ActionSettingTile(
+                        key: const Key('settingsSmsCaptureGuide'),
+                        icon: Icons.assignment_outlined,
+                        title: isArabic
+                            ? 'دليل إعداد التقاط الرسائل'
+                            : 'SMS Capture Setup Guide',
+                        subtitle: isArabic
+                            ? 'إعداد وضبط أذونات التقاط الرسائل'
+                            : 'Configure SMS capture permissions',
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const AndroidSmartCaptureSetupScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                    if (defaultTargetPlatform == TargetPlatform.iOS)
+                      _ActionSettingTile(
+                        key: const Key('settingsShortcutGuide'),
+                        icon: Icons.shortcut_outlined,
+                        title: isArabic
+                            ? 'دليل تفعيل الاختصارات'
+                            : 'Shortcut Activation Guide',
+                        subtitle: isArabic
+                            ? 'ربط وتفعيل اختصارات Siri للرسائل البنكية'
+                            : 'Link and configure Siri Shortcuts for bank alerts',
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const ShortcutSetupGuideScreen(),
+                            ),
+                          );
                         },
                       ),
                   ],
@@ -1564,6 +1604,15 @@ class _WealthZakatCard extends StatelessWidget {
               if (selected != null) onNisabBasisChanged(selected);
             },
           ),
+          _ActionSettingTile(
+            key: const Key('settingsZakatExplanationField'),
+            icon: Icons.info_outline,
+            title: context.l10n.tr('how_calculation_works'),
+            subtitle: context.l10n.tr('how_calculation_works_subtitle'),
+            onTap: () {
+              Navigator.of(context).push(ZakatCalculationExplanationScreen.route());
+            },
+          ),
           if (zakatMethod == 'annual') ...<Widget>[
             Column(
               key: const Key('settingsAnnualDateSection'),
@@ -2395,11 +2444,11 @@ class _AboutCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final String version = const String.fromEnvironment(
       'APP_VERSION',
-      defaultValue: '1.0.4',
+      defaultValue: '1.2.0',
     );
     final String buildNumber = const String.fromEnvironment(
       'APP_BUILD_NUMBER',
-      defaultValue: '5',
+      defaultValue: '16',
     );
 
     return _CompactSectionCard(
@@ -2412,20 +2461,16 @@ class _AboutCard extends StatelessWidget {
           subtitle: isArabic
               ? 'رفيق متميز للزكاة وإدارة الثروة'
               : 'A premium zakah and wealth companion',
-          onTap: () {},
+          onTap: () {
+            Navigator.of(context).push(
+              AboutZakahWealthScreen.route(
+                version: version,
+                buildNumber: buildNumber,
+              ),
+            );
+          },
         ),
-        _ActionSettingTile(
-          icon: Icons.info_outline,
-          title: isArabic ? 'الإصدار' : 'Version',
-          subtitle: version,
-          onTap: () {},
-        ),
-        _ActionSettingTile(
-          icon: Icons.build_outlined,
-          title: isArabic ? 'البناء' : 'Build',
-          subtitle: buildNumber,
-          onTap: () {},
-        ),
+
         _ActionSettingTile(
           icon: Icons.privacy_tip_outlined,
           title: isArabic ? 'سياسة الخصوصية' : 'Privacy Policy',
@@ -2433,14 +2478,7 @@ class _AboutCard extends StatelessWidget {
               ? 'اقرأ كيف تتم معالجة بياناتك'
               : 'Read how your data is handled',
           onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => _PolicyDetailScreen(
-                  title: isArabic ? 'سياسة الخصوصية' : 'Privacy Policy',
-                  content: isArabic ? _privacyPolicyAr : _privacyPolicyEn,
-                ),
-              ),
-            );
+            Navigator.of(context).push(PolicyDetailScreen.route(type: 'privacy'));
           },
         ),
         _ActionSettingTile(
@@ -2448,14 +2486,7 @@ class _AboutCard extends StatelessWidget {
           title: isArabic ? 'شروط الخدمة' : 'Terms of Service',
           subtitle: isArabic ? 'راجع شروط الاستخدام' : 'Review the usage terms',
           onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => _PolicyDetailScreen(
-                  title: isArabic ? 'شروط الخدمة' : 'Terms of Service',
-                  content: isArabic ? _termsOfServiceAr : _termsOfServiceEn,
-                ),
-              ),
-            );
+            Navigator.of(context).push(PolicyDetailScreen.route(type: 'terms'));
           },
         ),
         _ActionSettingTile(
@@ -2465,14 +2496,7 @@ class _AboutCard extends StatelessWidget {
               ? 'أرسل ملاحظاتك أو احصل على المساعدة'
               : 'Send feedback or get help',
           onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => _PolicyDetailScreen(
-                  title: isArabic ? 'الدعم والملاحظات' : 'Support & Feedback',
-                  content: isArabic ? _supportFeedbackAr : _supportFeedbackEn,
-                ),
-              ),
-            );
+            Navigator.of(context).push(PolicyDetailScreen.route(type: 'support'));
           },
         ),
         Padding(
@@ -2907,123 +2931,4 @@ class _ProfileChip extends StatelessWidget {
   }
 }
 
-class _PolicyDetailScreen extends StatelessWidget {
-  const _PolicyDetailScreen({required this.title, required this.content});
 
-  final String title;
-  final String content;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(title)),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: Text(
-            content,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(height: 1.5),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-const String _privacyPolicyEn = '''
-Privacy Policy for Zakah Wealth
-
-Zakah Wealth ("we", "us", "our") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, and safeguard your information.
-
-1. Information Collection and Use
-- SMS Data Capture: Zakah Wealth features an optional automatic SMS capture function. This is designed to read bank transaction SMS messages locally on your device to help you track your wealth and Zakat obligations.
-- On-Device Processing: All SMS parsing and data storage happen entirely locally on your device. We do not upload, transmit, or share your bank SMS messages or transactions with external servers or third parties.
-- Personal and OTP Messages: The app explicitly ignores any personal messages, OTPs, or non-financial codes.
-
-2. Permissions
-- RECEIVE_SMS: This permission is requested exclusively to monitor bank transaction alerts. You can disable this feature at any time in the app settings.
-
-3. Data Security
-- Your Zakat data is stored securely in a local database and can be optionally backed up to your personal Google Drive in an encrypted format.
-
-Contact Support: support@zakahwealth.com
-''';
-
-const String _privacyPolicyAr = '''
-سياسة الخصوصية لـ Zakah Wealth
-
-تلتزم Zakah Wealth ("نحن"، "نا") بحماية خصوصيتك. توضح سياسة الخصوصية هذه كيفية جمع معلوماتك واستخدامها وحمايتها.
-
-1. جمع المعلومات واستخدامها
-- التقاط بيانات الرسائل النصية القصيرة: تتميز Zakah Wealth بوظيفة اختيارية للالتقاط التلقائي للرسائل النصية. تم تصميم هذا لقراءة رسائل المعاملات البنكية محليًا على جهازك لمساعدتك في تتبع ثروتك والتزامات الزكاة.
-- المعالجة على الجهاز: تتم جميع عمليات معالجة الرسائل وتخزين البيانات محليًا بالكامل على جهازك. نحن لا نقوم برفع أو نقل أو مشاركة رسائل المعاملات البنكية الخاصة بك مع خوادم خارجية أو أطراف ثالثة.
-- الرسائل الشخصية ورسائل OTP: يتجاهل التطبيق تمامًا أي رسائل شخصية أو رموز التحقق (OTP) أو الرموز غير المالية.
-
-2. الأذونات
-- RECEIVE_SMS: يُطلب هذا الإذن حصريًا لمراقبة تنبيهات المعاملات البنكية. يمكنك تعطيل هذه الميزة في أي وقت من إعدادات التطبيق.
-
-3. أمن البيانات
-- يتم تخزين بيانات الزكاة الخاصة بك بشكل آمن في قاعدة بيانات محلية، ويمكن نسخها احتياطيًا اختياريًا إلى حساب Google Drive الشخصي الخاص بك بتنسيق مشفر.
-
-للتواصل مع الدعم: support@zakahwealth.com
-''';
-
-const String _termsOfServiceEn = '''
-Terms of Service for Zakah Wealth
-
-By using Zakah Wealth, you agree to these terms:
-
-1. Scope of Service
-Zakah Wealth provides local financial tracking and Zakat calculations. The calculations provided are for informational and planning purposes only and do not constitute formal religious or financial advice.
-
-2. Privacy and Data
-Your data is processed and stored locally. You are responsible for maintaining the security of your device and your personal Google Drive backups.
-
-3. Limitation of Liability
-Zakah Wealth is provided "as is" without warranties. We are not liable for any financial decisions or inaccuracies in calculations.
-''';
-
-const String _termsOfServiceAr = '''
-شروط الخدمة لـ Zakah Wealth
-
-باستخدام Zakah Wealth، فإنك توافق على هذه الشروط:
-
-1. نطاق الخدمة
-توفر Zakah Wealth تتبعًا ماليًا محليًا وحسابات الزكاة. الحسابات المقدمة هي لأغراض إعلامية وتخطيطية فقط ولا تشكل مشورة دينية أو مالية رسمية.
-
-2. الخصوصية والبيانات
-يتم معالجة بياناتك وتخزينها محليًا. أنت مسؤول عن الحفاظ على أمان جهازك ونسخك الاحتياطية الشخصية على Google Drive.
-
-3. حدود المسؤولية
-يتم تقديم Zakah Wealth "كما هي" دون أي ضمانات. نحن لسنا مسؤولين عن أي قرارات مالية أو عدم دقة في الحسابات.
-''';
-
-const String _supportFeedbackEn = '''
-Support & Feedback
-
-We are here to help you. If you have any questions, feedback, or need assistance, please feel free to reach out to us.
-
-Contact Email:
-support@zakahwealth.com
-
-Frequently Asked Questions:
-- All calculations and data stay secure on your device.
-- You can turn automatic SMS capturing on or off in the Account screen.
-- You can sync your data securely via Google Drive backups.
-''';
-
-const String _supportFeedbackAr = '''
-الدعم والملاحظات
-
-نحن هنا لمساعدتك. إذا كان لديك أي أسئلة أو ملاحظات أو تحتاج إلى مساعدة، فلا تتردد في التواصل معنا.
-
-البريد الإلكتروني للتواصل:
-support@zakahwealth.com
-
-الأسئلة الشائعة:
-- تظل جميع الحسابات والبيانات آمنة على جهازك.
-- يمكنك تشغيل أو إيقاف الالتقاط التلقائي للرسائل النصية في شاشة الحساب.
-- يمكنك مزامنة بياناتك بشكل آمن عبر النسخ الاحتياطي على Google Drive.
-''';

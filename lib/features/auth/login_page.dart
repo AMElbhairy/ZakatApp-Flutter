@@ -13,7 +13,7 @@ import 'auth_brand_ui.dart';
 import 'auth_service.dart';
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key, this.showLegacyAuthUi = false});
+  const LoginPage({super.key, this.showLegacyAuthUi = true});
 
   final bool showLegacyAuthUi;
 
@@ -238,12 +238,16 @@ class _LoginPageState extends State<LoginPage> {
                                     provider: AuthProvider.google,
                                   ),
                           ),
-                          if (showLegacyAuthUi) ...<Widget>[
+                          if (Theme.of(context).platform == TargetPlatform.iOS || Theme.of(context).platform == TargetPlatform.macOS) ...[
                             const SizedBox(height: AppSpacing.sm),
                             AuthBrandSecondaryButton(
                               key: const Key('appleSignInButton'),
                               label: l10n.tr('continue_with_apple'),
-                              leading: const Icon(Icons.apple),
+                              leading: Icon(
+                                Icons.apple,
+                                color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.black,
+                                size: 20,
+                              ),
                               foregroundColor: tokens.colors.textPrimary,
                               onPressed: isLoading
                                   ? null

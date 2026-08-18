@@ -395,6 +395,38 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
         showProfitLoss = true;
       }
     }
+    double categoryLiabilitiesMain = 0.0;
+    if (widget.categoryType == 'investments' || widget.categoryType == 'property') {
+      double totalLiabsEgp = 0.0;
+      for (final item in filteredItems) {
+        if (item is InvestmentAsset) {
+          final double unpaidLiabilityEgp = item.installmentPlan.isNotEmpty
+              ? item.installmentPlan.where((inst) => inst['isPaid'] != true).fold(
+                  0.0,
+                  (sum, inst) {
+                    final String instCurrency =
+                        (inst['currency']?.toString().isNotEmpty == true)
+                        ? inst['currency'].toString()
+                        : item.currency;
+                    final double amount = ((inst['amount'] ?? 0) as num).toDouble();
+                    return sum +
+                        ZakatEngineService.convertToEgp(amount, instCurrency, market);
+                  },
+                )
+              : ZakatEngineService.convertToEgp(
+                  item.loanBalance,
+                  item.currency,
+                  market,
+                );
+          totalLiabsEgp += unpaidLiabilityEgp;
+        }
+      }
+      categoryLiabilitiesMain = ZakatEngineService.convertFromEgp(
+        totalLiabsEgp,
+        mainCurrency,
+        market,
+      );
+    }
 
     final tokens = context.premiumTokens;
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
@@ -636,192 +668,175 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                                         ),
                                       ],
                                     ),
-                                  ),
+                                   ),
                                 ],
                               )
-                            : Column(
+                            : Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: <Widget>[
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: <Widget>[
-                                      Row(
-                                        children: [
-                                          CircleAvatar(
-                                            backgroundColor: Colors.white
-                                                .withValues(alpha: 0.15),
-                                            radius: 18,
-                                            child: Icon(
-                                              headerIcon,
-                                              color: Colors.white,
-                                              size: 18,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Text(
-                                            context.l10n
-                                                .tr('total_assets')
-                                                .toUpperCase(),
-                                            style: const TextStyle(
-                                              color: Color(0xFFFFC928),
-                                              fontWeight: FontWeight.w700,
-                                              letterSpacing: 1.0,
-                                              fontSize: 11,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      if (widget.categoryType == 'gold' &&
-                                          totalGold24kGrams > 0)
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 10,
-                                            vertical: 4,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: Colors.white.withValues(
-                                              alpha: 0.1,
-                                            ),
-                                            borderRadius: BorderRadius.circular(
-                                              12,
-                                            ),
-                                            border: Border.all(
-                                              color: const Color(
-                                                0xFFFFC928,
-                                              ).withValues(alpha: 0.3),
-                                              width: 1,
-                                            ),
-                                          ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Text(
-                                                '${totalGold24kGrams.toStringAsFixed(1)} g',
-                                                style: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 13,
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                              ),
-                                              const SizedBox(width: 4),
-                                              Text(
-                                                '24K EQUIV',
-                                                style: TextStyle(
-                                                  color: const Color(
-                                                    0xFFFFC928,
-                                                  ),
-                                                  fontWeight: FontWeight.w800,
-                                                  fontSize: 8,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      if (widget.categoryType == 'silver' &&
-                                          totalSilverGrams > 0)
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 10,
-                                            vertical: 4,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: Colors.white.withValues(
-                                              alpha: 0.1,
-                                            ),
-                                            borderRadius: BorderRadius.circular(
-                                              12,
-                                            ),
-                                            border: Border.all(
-                                              color: const Color(
-                                                0xFFFFC928,
-                                              ).withValues(alpha: 0.3),
-                                              width: 1,
-                                            ),
-                                          ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Text(
-                                                '${totalSilverGrams.toStringAsFixed(1)} g',
-                                                style: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 13,
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                              ),
-                                              const SizedBox(width: 4),
-                                              Text(
-                                                'SILVER',
-                                                style: TextStyle(
-                                                  color: const Color(
-                                                    0xFFFFC928,
-                                                  ),
-                                                  fontWeight: FontWeight.w800,
-                                                  fontSize: 8,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 12),
-                                  SizedBox(
-                                    width: double.infinity,
-                                    child: FittedBox(
-                                      fit: BoxFit.scaleDown,
-                                      alignment:
-                                          AlignmentDirectional.centerStart,
-                                      child: Text(
-                                        formattedTotal,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 28,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: <Widget>[
-                                      Text(
-                                        '${filteredItems.length} ${context.l10n.tr('entries')}',
-                                        style: const TextStyle(
-                                          color: Colors.white60,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                      if (showProfitLoss)
+                                  // Left Column
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: <Widget>[
                                         Row(
-                                          mainAxisSize: MainAxisSize.min,
                                           children: <Widget>[
-                                            Icon(
-                                              profitAmount >= 0
-                                                  ? Icons.trending_up
-                                                  : Icons.trending_down,
-                                              color: profitAmount >= 0
-                                                  ? Colors.greenAccent
-                                                  : Colors.redAccent,
-                                              size: 16,
+                                            CircleAvatar(
+                                              backgroundColor: Colors.white.withValues(alpha: 0.15),
+                                              radius: 16,
+                                              child: Icon(
+                                                headerIcon,
+                                                color: Colors.white,
+                                                size: 16,
+                                              ),
                                             ),
-                                            const SizedBox(width: 4),
-                                            Text(
-                                              '${ZakatEngineService.formatCurrency(profitAmount, mainCurrency, isArabic: isArabic, showSign: true)} (${profitAmount >= 0 ? '+' : ''}${profitPct.toStringAsFixed(1)}%)',
-                                              style: TextStyle(
-                                                color: profitAmount >= 0
-                                                    ? Colors.greenAccent
-                                                    : Colors.redAccent,
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 13,
+                                            const SizedBox(width: 8),
+                                            Expanded(
+                                              child: Text(
+                                                context.l10n.tr('total_assets').toUpperCase(),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  color: Color(0xFFFFC928),
+                                                  fontWeight: FontWeight.w700,
+                                                  letterSpacing: 1.0,
+                                                  fontSize: 11,
+                                                ),
                                               ),
                                             ),
                                           ],
                                         ),
-                                    ],
+                                        const SizedBox(height: 10),
+                                        FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          alignment: AlignmentDirectional.centerStart,
+                                          child: Text(
+                                            formattedTotal,
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 26,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                        if (widget.categoryType == 'investments' || widget.categoryType == 'property') ...[
+                                          const SizedBox(height: 10),
+                                          Text(
+                                            context.l10n.tr('liabilities').toUpperCase(),
+                                            style: const TextStyle(
+                                              color: Color(0xFFFFC928),
+                                              fontWeight: FontWeight.w700,
+                                              letterSpacing: 1.0,
+                                              fontSize: 9,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            alignment: AlignmentDirectional.centerStart,
+                                            child: Text(
+                                              ZakatEngineService.formatCurrency(
+                                                categoryLiabilitiesMain,
+                                                mainCurrency,
+                                                isArabic: isArabic,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 18,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                  // Right Column
+                                  Container(
+                                    padding: const EdgeInsetsDirectional.only(start: 12),
+                                    decoration: const BoxDecoration(
+                                      border: BorderDirectional(
+                                        start: BorderSide(
+                                          color: Colors.white24,
+                                          width: 1,
+                                        ),
+                                      ),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: <Widget>[
+                                        Row(
+                                          children: <Widget>[
+                                            Icon(
+                                              Icons.layers_outlined,
+                                              color: Colors.white.withValues(alpha: 0.75),
+                                              size: 14,
+                                            ),
+                                            const SizedBox(width: 6),
+                                            Text(
+                                              '${filteredItems.length} ${context.l10n.tr('entries')}',
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        if (widget.categoryType == 'gold' && totalGold24kGrams > 0) ...[
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            '${totalGold24kGrams.toStringAsFixed(1)} g 24K',
+                                            style: const TextStyle(
+                                              color: Colors.white70,
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ],
+                                        if (widget.categoryType == 'silver' && totalSilverGrams > 0) ...[
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            '${totalSilverGrams.toStringAsFixed(1)} g SILVER',
+                                            style: const TextStyle(
+                                              color: Colors.white70,
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ],
+                                        if (showProfitLoss) ...[
+                                          const SizedBox(height: 8),
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: <Widget>[
+                                              Icon(
+                                                profitAmount >= 0
+                                                    ? Icons.trending_up
+                                                    : Icons.trending_down,
+                                                color: profitAmount >= 0
+                                                    ? Colors.greenAccent
+                                                    : Colors.redAccent,
+                                                size: 14,
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                '${profitAmount >= 0 ? '+' : ''}${profitPct.toStringAsFixed(1)}%',
+                                                style: TextStyle(
+                                                  color: profitAmount >= 0
+                                                      ? Colors.greenAccent
+                                                      : Colors.redAccent,
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 11,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ],
+                                    ),
                                   ),
                                 ],
                               ),
@@ -1078,14 +1093,50 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                     ? context.l10n.tr('gold')
                     : context.l10n.tr('silver')));
 
+    final bool isMetal = saving.assetType == 'gold' || saving.assetType == 'silver';
+    final String karatSuffix = saving.assetType == 'gold' ? ' | ${saving.unit}K' : (saving.assetType == 'silver' ? ' | 999' : '');
+    final String metalTitle = isMetal ? '$displayTitle$karatSuffix' : displayTitle;
+    final String rightSubText = isMetal ? '${saving.remainingAmount.toStringAsFixed(2)} g' : originalAmountStr;
+
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 8),
       child: Slidable(
         key: Key('dismiss_saving_${saving.id}'),
         endActionPane: ActionPane(
           motion: const ScrollMotion(),
-          extentRatio: 0.28,
+          extentRatio: isMetal ? 0.56 : 0.28,
           children: [
+            if (isMetal)
+              CustomSlidableAction(
+                key: Key('sell_action_saving_${saving.id}'),
+                onPressed: (BuildContext slidableContext) {
+                  openSellMetalDialog(context, saving: saving);
+                },
+                backgroundColor: const Color(0xFF10B981),
+                foregroundColor: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.sell_outlined,
+                      color: Colors.white,
+                      size: 22,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      saving.assetType == 'gold'
+                          ? context.l10n.tr('sell_gold')
+                          : context.l10n.tr('sell_silver'),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             CustomSlidableAction(
               key: Key('delete_action_saving_${saving.id}'),
               onPressed: (BuildContext slidableContext) {
@@ -1117,6 +1168,7 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
           ],
         ),
         child: PremiumCard(
+          padding: const EdgeInsets.all(10.0),
           onTap: () {
             if (saving.exchangeSourceSavingId != null &&
                 saving.exchangeSourceSavingId!.isNotEmpty) {
@@ -1130,98 +1182,116 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
             }
           },
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: <Widget>[
+              if (saving.assetType == 'gold')
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFD4AF37).withValues(alpha: 0.14),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.layers_rounded,
+                    color: Color(0xFFD4AF37),
+                    size: 22,
+                  ),
+                )
+              else if (saving.assetType == 'silver')
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF94A3B8).withValues(alpha: 0.14),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.layers_rounded,
+                    color: Color(0xFF94A3B8),
+                    size: 22,
+                  ),
+                )
+              else
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.14),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.account_balance_wallet_outlined,
+                    color: Theme.of(context).colorScheme.primary,
+                    size: 22,
+                  ),
+                ),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
-                    Text(
-                      displayTitle,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 16,
-                      ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: <Widget>[
+                        Expanded(
+                          child: Text(
+                            metalTitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 14.0,
+                              fontWeight: FontWeight.w700,
+                              color: Theme.of(context).brightness == Brightness.dark
+                                  ? Colors.white
+                                  : const Color(0xFF1F2937),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          formattedValue,
+                          style: TextStyle(
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w800,
+                            color: Theme.of(context).brightness == Brightness.dark
+                                ? const Color(0xFF34D399)
+                                : const Color(0xFF065F46),
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${_savingDisplayDate(saving).split('T').first} • $originalAmountStr',
-                      style: TextStyle(
-                        color: Theme.of(context).hintColor,
-                        fontSize: 13,
-                      ),
+                    const SizedBox(height: 3),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: <Widget>[
+                        Text(
+                          _savingDisplayDate(saving).split('T').first,
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w500,
+                            color: Theme.of(context).brightness == Brightness.dark
+                                ? const Color(0xFFA3B8B5)
+                                : const Color(0xFF6B7280),
+                          ),
+                        ),
+                        Text(
+                          rightSubText,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: Theme.of(context).brightness == Brightness.dark
+                                ? const Color(0xFFA3B8B5)
+                                : const Color(0xFF475569),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: <Widget>[
-                  Text(
-                    formattedValue,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 15,
-                    ),
-                  ),
-                  if (saving.assetType == 'gold' ||
-                      saving.assetType == 'silver')
-                    PopupMenuButton<String>(
-                      icon: const Icon(Icons.more_vert, size: 20),
-                      onSelected: (String val) {
-                        if (val == 'buy_more') {
-                          Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => AddSavingScreen(
-                                initialAssetType: saving.assetType,
-                              ),
-                            ),
-                          );
-                        } else if (val == 'sell') {
-                          openSellMetalDialog(context, saving: saving);
-                        } else if (val == 'edit') {
-                          Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) =>
-                                  AddSavingScreen(initialSaving: saving),
-                            ),
-                          );
-                        } else if (val == 'delete') {
-                          _confirmDeleteSaving(context, saving);
-                        }
-                      },
-                      itemBuilder: (BuildContext ctx) =>
-                          <PopupMenuEntry<String>>[
-                            PopupMenuItem<String>(
-                              value: 'buy_more',
-                              child: Text(
-                                saving.assetType == 'gold'
-                                    ? context.l10n.tr('buy_more_gold')
-                                    : context.l10n.tr('buy_more_silver'),
-                              ),
-                            ),
-                            PopupMenuItem<String>(
-                              value: 'sell',
-                              child: Text(
-                                saving.assetType == 'gold'
-                                    ? context.l10n.tr('sell_gold')
-                                    : context.l10n.tr('sell_silver'),
-                              ),
-                            ),
-                            PopupMenuItem<String>(
-                              value: 'edit',
-                              child: Text(
-                                saving.assetType == 'gold'
-                                    ? context.l10n.tr('edit_gold')
-                                    : context.l10n.tr('edit_silver'),
-                              ),
-                            ),
-                            PopupMenuItem<String>(
-                              value: 'delete',
-                              child: Text(context.l10n.tr('delete')),
-                            ),
-                          ],
-                    ),
-                ],
               ),
             ],
           ),
@@ -1259,6 +1329,46 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
     final String title = source.description.trim().isEmpty
         ? context.l10n.tr('cash')
         : source.description;
+    
+    String displayTitle = title;
+    String? amountExchangedText;
+
+    final String lowerTitle = title.toLowerCase().trim();
+    if (lowerTitle.startsWith('currency exchange in:')) {
+      displayTitle = isArabic ? 'تحويل عملة' : 'Currency exchange';
+      final String afterIn = title.substring(lowerTitle.indexOf('currency exchange in:') + 'currency exchange in:'.length).trim();
+      final List<String> parts = afterIn.split(RegExp(r'→|->|–|-'));
+      if (parts.isNotEmpty) {
+        final String originalExchanged = parts[0].trim();
+        amountExchangedText = isArabic 
+            ? 'المبلغ المحول: $originalExchanged' 
+            : 'Amount Exchanged : $originalExchanged';
+      }
+    } else {
+      final List<String> parts = title.split(RegExp(r'\s+from\s+', caseSensitive: false));
+      if (parts.length > 1) {
+        final String rawPrefix = parts[0].trim();
+        final String rawSuffix = parts[1].trim();
+        final String lowerPrefix = rawPrefix.toLowerCase();
+        
+        if (lowerPrefix.contains('bank transfer')) {
+          displayTitle = isArabic ? 'تحويل بنكي' : 'Bank Transfer';
+        } else if (lowerPrefix.contains('account deposit') || lowerPrefix.contains('salary deposit')) {
+          displayTitle = isArabic ? 'إيداع في الحساب' : 'Account Deposit';
+        } else if (lowerPrefix.contains('deposit')) {
+          displayTitle = isArabic ? 'إيداع' : 'Deposit';
+        } else if (lowerPrefix.contains('transfer')) {
+          displayTitle = isArabic ? 'تحويل' : 'Transfer';
+        } else if (lowerPrefix.contains('income')) {
+          displayTitle = isArabic ? 'دخل' : 'Income';
+        } else {
+          displayTitle = rawPrefix;
+        }
+        
+        amountExchangedText = isArabic ? 'من: $rawSuffix' : 'From: $rawSuffix';
+      }
+    }
+
     final AppStateController controller = context.read<AppStateController>();
     final Saving? saving = source.sourceType == 'savings'
         ? controller.state.savings
@@ -1272,7 +1382,7 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
         : null;
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 8),
       child: Slidable(
         key: Key('dismiss_cash_source_${source.sourceType}_${source.id}'),
         endActionPane: (saving != null || transaction != null)
@@ -1316,6 +1426,7 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
               )
             : null,
         child: PremiumCard(
+          padding: const EdgeInsets.all(10.0),
           onTap: () {
             if (saving != null) {
               Navigator.of(context).push(
@@ -1334,33 +1445,158 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
               );
             }
           },
-          child: ListTile(
-            key: Key('cashSource_${source.sourceType}_${source.id}'),
-            contentPadding: EdgeInsets.zero,
-            leading: const CircleAvatar(
-              child: Icon(Icons.account_balance_wallet_outlined),
-            ),
-            title: Text(
-              title,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-            subtitle: Text(
-              '${source.date.split('T').first} • Original: $original • Remaining: $remaining',
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(
-                  ZakatEngineService.formatCurrency(
-                    valueInMain,
-                    mainCurrency,
-                    isArabic: isArabic,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: <Widget>[
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10B981).withValues(alpha: 0.14),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.account_balance_wallet_rounded,
+                      color: Color(0xFF10B981),
+                      size: 22,
+                    ),
                   ),
-                  style: const TextStyle(fontWeight: FontWeight.bold),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: <Widget>[
+                            Expanded(
+                              child: Text(
+                                displayTitle,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 14.0,
+                                  fontWeight: FontWeight.w700,
+                                  color: Theme.of(context).brightness == Brightness.dark
+                                      ? Colors.white
+                                      : const Color(0xFF1F2937),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              ZakatEngineService.formatCurrency(
+                                valueInMain,
+                                mainCurrency,
+                                isArabic: isArabic,
+                              ),
+                              style: TextStyle(
+                                fontSize: 14.5,
+                                fontWeight: FontWeight.w800,
+                                color: Theme.of(context).brightness == Brightness.dark
+                                    ? const Color(0xFF34D399)
+                                    : const Color(0xFF065F46),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: <Widget>[
+                            Text(
+                              source.date.split('T').first,
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w500,
+                                color: Theme.of(context).brightness == Brightness.dark
+                                    ? const Color(0xFFA3B8B5)
+                                    : const Color(0xFF6B7280),
+                              ),
+                            ),
+                            if (amountExchangedText != null)
+                              Text(
+                                amountExchangedText,
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w500,
+                                  color: Theme.of(context).brightness == Brightness.dark
+                                      ? const Color(0xFFA3B8B5)
+                                      : const Color(0xFF6B7280),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Center(
+                child: Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: <Widget>[
+                    _buildBadge(
+                      label: '${isArabic ? 'الأصلي' : 'Original'}: ${original.replaceAll(RegExp(r'\.\d{2}'), '')}',
+                      textColor: const Color(0xFFB45309),
+                      bgColor: const Color(0xFFFEF3C7),
+                      darkTextColor: const Color(0xFFFBBF24),
+                      darkBgColor: const Color(0xFF2C220E),
+                      isDark: Theme.of(context).brightness == Brightness.dark,
+                    ),
+                    _buildBadge(
+                      label: '${isArabic ? 'المتبقي' : 'Remaining'}: ${remaining.replaceAll(RegExp(r'\.\d{2}'), '')}',
+                      textColor: const Color(0xFF0F766E),
+                      bgColor: const Color(0xFFCCFBF1),
+                      darkTextColor: const Color(0xFF99F6E4),
+                      darkBgColor: const Color(0xFF042F2E),
+                      isDark: Theme.of(context).brightness == Brightness.dark,
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBadge({
+    required String label,
+    required Color textColor,
+    required Color bgColor,
+    required Color darkTextColor,
+    required Color darkBgColor,
+    required bool isDark,
+  }) {
+    final resolvedTextColor = isDark ? darkTextColor : textColor;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: isDark ? darkBgColor : bgColor,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: resolvedTextColor.withValues(alpha: 0.25),
+          width: 0.5,
+        ),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: resolvedTextColor,
         ),
       ),
     );
@@ -1437,6 +1673,7 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
           ],
         ),
         child: PremiumCard(
+          padding: const EdgeInsets.all(10.0),
           onTap: () {
             if (tx.category == 'Currency Exchange') {
               _openEditCurrencyExchangeDialog(context, tx);
@@ -1457,16 +1694,16 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                 backgroundColor: isExpense
                     ? const Color(0xFFFFE4E6)
                     : const Color(0xFFD1FAE5),
-                radius: 18,
+                radius: 22,
                 child: Icon(
                   _cashCategoryIcon(tx.category),
                   color: isExpense
                       ? const Color(0xFFBE123C)
                       : const Color(0xFF047857),
-                  size: 16,
+                  size: 22,
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1581,6 +1818,24 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
       isArabic: isArabic,
     );
 
+    double paidInstallmentsInAssetCurrency = 0.0;
+    for (final Map<String, dynamic> item in asset.installmentPlan) {
+      if (item['isPaid'] == true) {
+        final String itemCurrency = (item['currency']?.toString().isNotEmpty == true)
+            ? item['currency'].toString()
+            : asset.currency;
+        final double amount = ((item['amount'] ?? 0) as num).toDouble();
+        if (itemCurrency == asset.currency) {
+          paidInstallmentsInAssetCurrency += amount;
+        } else {
+          final double amountEgp = ZakatEngineService.convertToEgp(amount, itemCurrency, market);
+          paidInstallmentsInAssetCurrency += ZakatEngineService.convertFromEgp(amountEgp, asset.currency, market);
+        }
+      }
+    }
+    final double totalPaidAssetCurrency = asset.paidAmount + paidInstallmentsInAssetCurrency;
+    final String paidValueFormatted = ZakatEngineService.formatCurrency(totalPaidAssetCurrency, asset.currency, isArabic: isArabic);
+
     final String displayTitle = asset.location.isNotEmpty
         ? asset.location
         : (ZakatEngineService.isCompanyInvestmentType(asset.investmentType)
@@ -1626,6 +1881,7 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
           ],
         ),
         child: PremiumCard(
+          padding: const EdgeInsets.all(10.0),
           onTap: () {
             Navigator.of(context).push(
               MaterialPageRoute<void>(
@@ -1634,88 +1890,172 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
             );
           },
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: <Widget>[
+              if (widget.categoryType == 'investments')
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10B981).withValues(alpha: 0.14),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.pie_chart_rounded,
+                    color: Color(0xFF10B981),
+                    size: 22,
+                  ),
+                )
+              else
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFD97706).withValues(alpha: 0.14),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.home_work_rounded,
+                    color: Color(0xFFD97706),
+                    size: 22,
+                  ),
+                ),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
-                    Text(
-                      displayTitle,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 16,
-                      ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: <Widget>[
+                        Expanded(
+                          child: Text(
+                            displayTitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 14.0,
+                              fontWeight: FontWeight.w700,
+                              color: Theme.of(context).brightness == Brightness.dark
+                                  ? Colors.white
+                                  : const Color(0xFF1F2937),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          formattedValue,
+                          style: TextStyle(
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w800,
+                            color: Theme.of(context).brightness == Brightness.dark
+                                ? const Color(0xFF34D399)
+                                : const Color(0xFF065F46),
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${asset.valuationDate} • ${asset.ownershipSharePct.toStringAsFixed(0)}% • '
-                      '${ZakatEngineService.formatCurrency(asset.marketValue, asset.currency, isArabic: isArabic)}',
-                      style: TextStyle(
-                        color: Theme.of(context).hintColor,
-                        fontSize: 13,
-                      ),
+                    const SizedBox(height: 3),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: <Widget>[
+                        Text(
+                          '${asset.valuationDate} • ${asset.ownershipSharePct.toStringAsFixed(0)}%',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w500,
+                            color: Theme.of(context).brightness == Brightness.dark
+                                ? const Color(0xFFA3B8B5)
+                                : const Color(0xFF6B7280),
+                          ),
+                        ),
+                        if (asset.paidAmount >= 0) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).brightness == Brightness.dark
+                                  ? const Color(0xFF042F2E)
+                                  : const Color(0xFF0F766E),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: Theme.of(context).brightness == Brightness.dark
+                                    ? const Color(0xFF99F6E4).withValues(alpha: 0.25)
+                                    : Colors.transparent,
+                                width: 0.5,
+                              ),
+                            ),
+                            child: Text(
+                              isArabic ? 'مدفوع: $paidValueFormatted' : 'Paid: $paidValueFormatted',
+                              style: TextStyle(
+                                color: Theme.of(context).brightness == Brightness.dark
+                                    ? const Color(0xFF99F6E4)
+                                    : Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                     if (unpaidLiabilityMain > 0) ...[
                       const SizedBox(height: 6),
-                      Align(
-                        alignment: AlignmentDirectional.centerStart,
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: () => _showInstallmentSchedule(
-                              context,
-                              asset,
-                              mainCurrency,
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () => _showInstallmentSchedule(
+                            context,
+                            asset,
+                            mainCurrency,
+                          ),
+                          borderRadius: BorderRadius.circular(6),
+                          child: Ink(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 6,
                             ),
-                            borderRadius: BorderRadius.circular(6),
-                            child: Ink(
-                              width: double.infinity,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFC928).withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: const Color(0xFFFFC928).withValues(alpha: 0.45),
+                                width: 0.7,
                               ),
-                              decoration: BoxDecoration(
-                                color: const Color(
-                                  0xFFFFC928,
-                                ).withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(
-                                  color: const Color(
-                                    0xFFFFC928,
-                                  ).withValues(alpha: 0.45),
-                                  width: 0.7,
+                            ),
+                            child: Row(
+                              children: <Widget>[
+                                const Icon(
+                                  Icons.calendar_today,
+                                  color: Color(0xFFFFC928),
+                                  size: 12,
                                 ),
-                              ),
-                              child: Row(
-                                children: <Widget>[
-                                  const Icon(
-                                    Icons.calendar_today,
-                                    color: Color(0xFFFFC928),
-                                    size: 10,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Expanded(
-                                    child: Text(
-                                      isArabic
-                                          ? 'الأقساط: ${ZakatEngineService.formatCurrency(unpaidLiabilityMain, mainCurrency, isArabic: isArabic)} متبقية'
-                                          : 'Installments: ${ZakatEngineService.formatCurrency(unpaidLiabilityMain, mainCurrency, isArabic: isArabic)} remaining',
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: Color(0xFFFFC928),
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
-                                      ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    isArabic
+                                        ? 'الأقساط: ${ZakatEngineService.formatCurrency(unpaidLiabilityMain, mainCurrency, isArabic: isArabic)} متبقية'
+                                        : 'Installments: ${ZakatEngineService.formatCurrency(unpaidLiabilityMain, mainCurrency, isArabic: isArabic)} remaining',
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: Color(0xFFFFC928),
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
                                     ),
                                   ),
-                                  const SizedBox(width: 4),
-                                  const Icon(
-                                    Icons.arrow_forward_ios,
-                                    color: Color(0xFFFFC928),
-                                    size: 8,
-                                  ),
-                                ],
-                              ),
+                                ),
+                                const SizedBox(width: 6),
+                                const Icon(
+                                  Icons.arrow_forward_ios,
+                                  color: Color(0xFFFFC928),
+                                  size: 9,
+                                ),
+                              ],
                             ),
                           ),
                         ),
@@ -1723,19 +2063,6 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                     ],
                   ],
                 ),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: <Widget>[
-                  Text(
-                    formattedValue,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 15,
-                    ),
-                  ),
-                ],
               ),
             ],
           ),

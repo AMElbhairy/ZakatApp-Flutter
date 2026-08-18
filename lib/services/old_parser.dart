@@ -311,17 +311,13 @@ class SmartCaptureParser {
               'cashback',
               'repayment',
               'تم الإيداع',
-              'تم الايداع',
               'تم إضافة مبلغ',
-              'تم اضافة مبلغ',
               'حوالة واردة',
               'تحويل وارد',
               'راتب',
               'تم استلام',
               'تم تحويل إليك',
-              'تم تحويل اليك',
               'تم إضافة',
-              'تم اضافة',
               'added',
               'ايداع',
               'إيداع',
@@ -363,10 +359,10 @@ class SmartCaptureParser {
 
     String type = 'unknown';
     if (isInternalTransfer) {
-      type = 'expense';
-    } else if (isAccountDepositMessage) {
-      type = 'expense';
+      type = 'transfer';
     } else if (isWalletTopUp) {
+      type = 'transfer';
+    } else if (isAccountDepositMessage) {
       type = 'expense';
     } else if (isOutgoingTransfer) {
       type = 'expense';
@@ -815,13 +811,6 @@ class SmartCaptureParser {
       merchantName = null;
     }
 
-    final bool isTransferMessage =
-        type == 'transfer' ||
-        isInternalTransfer;
-    if (isTransferMessage && !isWalletTopUp) {
-      merchantName = null;
-    }
-
     final DateTime? capturedAt = _extractCapturedAt(rawMessage);
     final String? paymentMethod = _extractPaymentMethod(rawMessage);
     final String? cardReference = _extractCardReference(rawMessage);
@@ -907,25 +896,6 @@ class SmartCaptureParser {
     String description = 'Captured message';
     if (isAccountDepositMessage) {
       description = 'Account Deposit';
-    } else if (isWalletTopUp ||
-        isInternalTransfer ||
-        type == 'transfer' ||
-        transferDetails.isTransferMessage) {
-      if (isWalletTopUp) {
-        description = 'Wallet Top Up';
-      } else if (_hasMatch(text, [
-        'تم إضافة مبلغ',
-        'تم الإيداع',
-        'deposit',
-        'credited',
-        'received',
-        'incoming transfer',
-        'تم تحويل إليك',
-      ])) {
-        description = 'Account Deposit';
-      } else {
-        description = 'Bank Transfer';
-      }
     } else if (type == 'expense') {
       if (direction == 'out') {
         description = merchantName != null
@@ -958,6 +928,24 @@ class SmartCaptureParser {
       } else {
         description = 'Account Deposit';
       }
+    } else if (type == 'transfer') {
+      if (isWalletTopUp) {
+        description = 'Wallet Top Up';
+      } else if (_hasMatch(text, [
+        'تم إضافة مبلغ',
+        'تم الإيداع',
+        'deposit',
+        'credited',
+        'received',
+        'incoming transfer',
+        'تم تحويل إليك',
+      ])) {
+        description = 'Account Deposit';
+      } else {
+        description = 'Bank Transfer';
+      }
+    } else if (transferDetails.isTransferMessage) {
+      description = 'Transfer Review Required';
     }
 
     return SmartCaptureParseResult(
@@ -1161,9 +1149,9 @@ class SmartCaptureParser {
   ) {
     final String key = merchantName.toLowerCase().trim();
     final MerchantRule? direct = merchantRules[key];
-    if (direct != null) return direct;
+    if (direct != null && direct.enabled) return direct;
     for (final MerchantRule rule in merchantRules.values) {
-      if (rule.merchantName.toLowerCase().trim() == key) {
+      if (rule.enabled && rule.merchantName.toLowerCase().trim() == key) {
         return rule;
       }
     }
@@ -1312,7 +1300,6 @@ class SmartCaptureParser {
       'from account',
       'from',
       'المرسل',
-      'مرسل',
       'من حساب',
       'من',
     ]);
@@ -1334,14 +1321,13 @@ class SmartCaptureParser {
           'from account',
           'to account',
           'المرسل',
-          'مرسل',
           'المستفيد',
           'من حساب',
           'إلى حساب',
         ]);
     final bool hasTransferKeywords = _hasMatch(
       rawMessage.toLowerCase(),
-      <String>['transfer', 'remittance', 'bank transfer', 'تحويل', 'حوالة', 'واردة', 'وارد', 'صادرة', 'صادر'],
+      <String>['transfer', 'remittance', 'bank transfer', 'تحويل', 'حوالة'],
     );
     final bool isInternalTransfer =
         _hasMatch(rawMessage.toLowerCase(), <String>[
@@ -1488,10 +1474,6 @@ class SmartCaptureParser {
       'سحب',
       'دفع',
       'تحويل صادر',
-      'حوالة صادرة',
-      'حوالة صادر',
-      'صادرة',
-      'صادر',
       'تم التحويل إلى',
     ])) {
       return 'out';
@@ -1501,14 +1483,9 @@ class SmartCaptureParser {
       'credit transfer',
       'transfer received',
       'received from',
-      'transfer from',
       'incoming transfer',
       'إيداع',
       'تحويل وارد',
-      'حوالة واردة',
-      'حوالة وارد',
-      'واردة',
-      'وارد',
       'تم استلام تحويل من',
       'تم الإيداع',
       'تم استلام',

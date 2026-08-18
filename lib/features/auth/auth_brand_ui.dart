@@ -3,7 +3,6 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../main.dart';
-import '../../core/i18n/app_localizations.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/theme/app_spacing.dart';
@@ -537,8 +536,8 @@ class _BrandLogo extends StatelessWidget {
         borderRadius: BorderRadius.circular(math.max(18, size * 0.24)),
         color: tokens.colors.surface.withValues(alpha: 0.22),
         border: Border.all(
-          color: tokens.colors.gold.withValues(alpha: 0.28),
-          width: 1.0,
+          color: tokens.colors.gold,
+          width: 2.0,
         ),
         boxShadow: tokens.heroShadow,
       ),

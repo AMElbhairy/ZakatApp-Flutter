@@ -111,6 +111,7 @@ class AppLocalizations {
       'onboarding_open': 'Open',
       'setup_skip': 'Skip',
       'setup_continue': 'Continue',
+      'setup_ios_open_shortcuts': 'Open Shortcuts',
       'setup_done': 'Done',
       'setup_android_sms_title': 'Enable SMS Access',
       'setup_android_sms_subtitle':
@@ -150,7 +151,7 @@ class AppLocalizations {
       'setup_ios_automation_caption': 'Automation',
       'setup_ios_trigger_title': 'Choose the Trigger',
       'setup_ios_trigger_subtitle':
-          'Create an automation that runs whenever a supported bank message is received.',
+          'Create an automation that runs when a bank message is received. (Tip: set "Message Contains" to your desired currency like EGP/SAR to only parse specific transactions).',
       'setup_ios_message_caption': 'When Message is Received',
       'setup_ios_log_title': 'Add Log Bank Message',
       'setup_ios_log_subtitle':
@@ -391,6 +392,7 @@ class AppLocalizations {
       'cancel': 'Cancel',
       'delete': 'Delete',
       'paid': 'Paid',
+      'paid_amount_optional': 'Paid Amount (Optional)',
       'not_paid': 'Not Paid',
       'mark_paid': 'Mark Paid',
       'undo_paid': 'Undo Paid',
@@ -441,6 +443,8 @@ class AppLocalizations {
       'zakat_calculation_section': 'Zakat Calculation',
       'preferences_section': 'Preferences',
       'cash_nisab': 'Cash Nisab',
+      'how_calculation_works': 'How Zakat Calculation Works',
+      'how_calculation_works_subtitle': 'Learn how your method and Nisab are calculated',
       'nisab_gold_85': '85 g gold 24 k',
       'nisab_silver_595': '595 g silver 999',
       'market_data_section': 'Market Snapshot',
@@ -826,6 +830,7 @@ class AppLocalizations {
       'onboarding_open': 'فتح',
       'setup_skip': 'تخطي',
       'setup_continue': 'متابعة',
+      'setup_ios_open_shortcuts': 'افتح تطبيق الاختصارات',
       'setup_done': 'تم',
       'setup_android_sms_title': 'تفعيل الوصول إلى الرسائل القصيرة',
       'setup_android_sms_subtitle':
@@ -865,7 +870,7 @@ class AppLocalizations {
       'setup_ios_automation_caption': 'Automation',
       'setup_ios_trigger_title': 'اختر المشغّل',
       'setup_ios_trigger_subtitle':
-          'أنشئ أتمتة تعمل كلما وصل إشعار من بنك مدعوم.',
+          'أنشئ أتمتة تعمل كلما وصل إشعار من بنك. (تنبيه: اضبط خيار "تحتوي الرسالة على" ليتضمن العملة المطلوبة فقط مثل EGP أو ريال لتصفية هذه المعاملات فقط).',
       'setup_ios_message_caption': 'When Message is Received',
       'setup_ios_log_title': 'إضافة Log Bank Message',
       'setup_ios_log_subtitle': 'ابحث عن إجراء Log Bank Message وأضفه.',
@@ -1104,6 +1109,7 @@ class AppLocalizations {
       'cancel': 'إلغاء',
       'delete': 'حذف',
       'paid': 'مدفوع',
+      'paid_amount_optional': 'المبلغ المدفوع (اختياري)',
       'not_paid': 'غير مدفوع',
       'mark_paid': 'تحديد كمدفوع',
       'undo_paid': 'تراجع عن الدفع',
@@ -1154,6 +1160,8 @@ class AppLocalizations {
       'zakat_calculation_section': 'حساب الزكاة',
       'preferences_section': 'التفضيلات',
       'cash_nisab': 'نصاب النقد',
+      'how_calculation_works': 'كيف يعمل حساب الزكاة؟',
+      'how_calculation_works_subtitle': 'شرح مفصل لطريقة الحساب والنصاب',
       'nisab_gold_85': '٨٥ جرام ذهب عيار ٢٤',
       'nisab_silver_595': '٥٩٥ جرام فضة عيار ٩٩٩',
       'market_data_section': 'أسعار السوق',

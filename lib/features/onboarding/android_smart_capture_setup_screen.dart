@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/i18n/app_localizations.dart';
+import '../../core/theme/app_radii.dart';
 import '../../core/theme/app_spacing.dart';
+import '../../core/theme/app_theme_extensions.dart';
 import '../../features/auth/auth_brand_ui.dart';
 import '../../services/android_sms_capture_service.dart';
 import '../../services/app_state_controller.dart';
@@ -142,8 +144,9 @@ class _AndroidSmartCaptureSetupScreenState
   @override
   Widget build(BuildContext context) {
     final AppLocalizations l10n = context.l10n;
-    final TextTheme textTheme = Theme.of(context).textTheme;
-    final ColorScheme colorScheme = Theme.of(context).colorScheme;
+    final tokens = context.premiumTokens;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color descColor = isDark ? tokens.colors.textSecondary : const Color(0xFF4A5D5A);
     final bool showSettings = _smsKnown && !_smsGranted;
 
     return PopScope<void>(
@@ -152,6 +155,7 @@ class _AndroidSmartCaptureSetupScreenState
         maxWidth: 560,
         tone: AuthBackdropTone.shared,
         child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(vertical: 8.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
@@ -159,40 +163,92 @@ class _AndroidSmartCaptureSetupScreenState
                 title: l10n.tr('onboarding_capture_title'),
                 subtitle: l10n.tr('onboarding_capture_android_body'),
                 centered: true,
-                compact: true,
-                logoSize: 72,
+                compact: false,
+                logoSize: 76,
               ),
-              const SizedBox(height: AppSpacing.lg),
-              _StatusPill(label: _statusLabel(l10n), colorScheme: colorScheme),
-              const SizedBox(height: AppSpacing.lg),
-              Text(
-                _batteryKnown && !_batteryIgnored && _smsGranted
-                    ? l10n.tr('setup_android_battery_retry')
-                    : l10n.tr('setup_android_battery_subtitle'),
-                style: textTheme.titleMedium?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                  height: 1.45,
+              const SizedBox(height: 32),
+              
+              _StatusPill(label: _statusLabel(l10n), tokens: tokens),
+              const SizedBox(height: 24),
+              
+              Container(
+                padding: const EdgeInsets.all(20.0),
+                decoration: BoxDecoration(
+                  color: tokens.colors.card,
+                  borderRadius: BorderRadius.circular(AppRadii.md),
+                  border: Border.all(color: tokens.colors.divider),
+                  boxShadow: tokens.softShadow,
+                ),
+                child: Column(
+                  children: [
+                    CircleAvatar(
+                      backgroundColor: tokens.colors.gold.withValues(alpha: 0.15),
+                      radius: 28,
+                      child: Icon(
+                        Icons.settings_suggest_outlined,
+                        color: tokens.colors.gold,
+                        size: 30,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      _batteryKnown && !_batteryIgnored && _smsGranted
+                          ? l10n.tr('setup_android_battery_retry')
+                          : l10n.tr('setup_android_battery_subtitle'),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: descColor,
+                        fontSize: 13,
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: AppSpacing.xl),
+              const SizedBox(height: 32),
+              
               FilledButton(
                 key: const ValueKey<String>('smart-capture-primary'),
-                onPressed: _busy
-                    ? null
-                    : () => unawaited(_handlePrimaryAction()),
-                child: Text(_primaryLabel(l10n)),
+                onPressed: _busy ? null : () => unawaited(_handlePrimaryAction()),
+                style: FilledButton.styleFrom(
+                  backgroundColor: tokens.colors.gold,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppRadii.md),
+                  ),
+                ),
+                child: Text(
+                  _primaryLabel(l10n),
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                ),
               ),
-              const SizedBox(height: AppSpacing.sm),
+              const SizedBox(height: 12),
+              
               OutlinedButton(
                 key: const ValueKey<String>('smart-capture-not-now'),
                 onPressed: () => Navigator.of(context).pop(false),
-                child: Text(l10n.tr('onboarding_not_now')),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: tokens.colors.gold),
+                  foregroundColor: tokens.colors.gold,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppRadii.md),
+                  ),
+                ),
+                child: Text(
+                  l10n.tr('onboarding_not_now'),
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                ),
               ),
               if (showSettings) ...<Widget>[
-                const SizedBox(height: AppSpacing.sm),
+                const SizedBox(height: 16),
                 TextButton(
                   key: const ValueKey<String>('smart-capture-open-settings'),
                   onPressed: () => unawaited(_openAppSettings()),
+                  style: TextButton.styleFrom(
+                    foregroundColor: tokens.colors.textPrimary.withValues(alpha: 0.6),
+                  ),
                   child: Text(l10n.tr('onboarding_open_settings')),
                 ),
               ],
@@ -205,10 +261,10 @@ class _AndroidSmartCaptureSetupScreenState
 }
 
 class _StatusPill extends StatelessWidget {
-  const _StatusPill({required this.label, required this.colorScheme});
+  const _StatusPill({required this.label, required this.tokens});
 
   final String label;
-  final ColorScheme colorScheme;
+  final PremiumThemeTokens tokens;
 
   @override
   Widget build(BuildContext context) {
@@ -216,10 +272,10 @@ class _StatusPill extends StatelessWidget {
       alignment: AlignmentDirectional.centerStart,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: colorScheme.primary.withValues(alpha: 0.12),
+          color: tokens.colors.gold.withValues(alpha: 0.15),
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
-            color: colorScheme.primary.withValues(alpha: 0.26),
+            color: tokens.colors.gold.withValues(alpha: 0.3),
           ),
         ),
         child: Padding(
@@ -229,9 +285,10 @@ class _StatusPill extends StatelessWidget {
           ),
           child: Text(
             label,
-            style: Theme.of(context).textTheme.labelLarge?.copyWith(
-              color: colorScheme.primary,
-              fontWeight: FontWeight.w700,
+            style: TextStyle(
+              color: tokens.colors.gold,
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
             ),
           ),
         ),

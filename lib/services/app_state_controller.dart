@@ -15,6 +15,7 @@ import '../models/financial_plan.dart';
 import '../models/investment_asset.dart';
 import '../models/market_snapshot.dart';
 import '../models/recurring_transaction.dart';
+import 'recurring_notification_manager.dart';
 import '../models/saving.dart';
 import '../models/transaction.dart';
 import '../models/pending_transaction.dart';
@@ -133,7 +134,9 @@ class AppStateController extends ChangeNotifier {
   final Map<String, CollectionHydrationEvidence> _collectionHydrationEvidence =
       <String, CollectionHydrationEvidence>{};
   Map<String, CollectionHydrationEvidence> get collectionHydrationEvidence =>
-      Map<String, CollectionHydrationEvidence>.unmodifiable(_collectionHydrationEvidence);
+      Map<String, CollectionHydrationEvidence>.unmodifiable(
+        _collectionHydrationEvidence,
+      );
 
   void _setHydrationPhase(AppHydrationPhase phase, {required String reason}) {
     _hydrationPhase = phase;
@@ -347,6 +350,7 @@ class AppStateController extends ChangeNotifier {
     final _StateRef? ref = Zone.current[#hydrationState] as _StateRef?;
     return ref != null ? ref.value : _activeState;
   }
+
   set _state(AppStateModel value) {
     final _StateRef? ref = Zone.current[#hydrationState] as _StateRef?;
     if (ref != null) {
@@ -401,64 +405,72 @@ class AppStateController extends ChangeNotifier {
 
       _collectionHydrationEvidence.clear();
       if (loadResult.source == AppStateLoadSource.missing) {
-        _collectionHydrationEvidence['app_settings'] = const CollectionHydrationEvidence(
-          collectionId: 'app_settings',
-          status: CollectionLoadStatus.missingForNewProfile,
-          loadedCount: 0,
-          storageCount: 0,
-          source: 'JSON',
-          userIdHash: '',
-          profileIdHash: '',
-          databaseIdHash: '',
-          loadCompleted: true,
-          validationPassed: true,
-          failureCode: null,
-        );
+        _collectionHydrationEvidence['app_settings'] =
+            const CollectionHydrationEvidence(
+              collectionId: 'app_settings',
+              status: CollectionLoadStatus.missingForNewProfile,
+              loadedCount: 0,
+              storageCount: 0,
+              source: 'JSON',
+              userIdHash: '',
+              profileIdHash: '',
+              databaseIdHash: '',
+              loadCompleted: true,
+              validationPassed: true,
+              failureCode: null,
+            );
       } else if (loadResult.source == AppStateLoadSource.parseFailed) {
-        _collectionHydrationEvidence['app_settings'] = CollectionHydrationEvidence(
-          collectionId: 'app_settings',
-          status: CollectionLoadStatus.fallbackDefault,
-          loadedCount: 0,
-          storageCount: 0,
-          source: 'JSON',
-          userIdHash: '',
-          profileIdHash: '',
-          databaseIdHash: '',
-          loadCompleted: false,
-          validationPassed: false,
-          failureCode: loadResult.failureCode,
-        );
+        _collectionHydrationEvidence['app_settings'] =
+            CollectionHydrationEvidence(
+              collectionId: 'app_settings',
+              status: CollectionLoadStatus.fallbackDefault,
+              loadedCount: 0,
+              storageCount: 0,
+              source: 'JSON',
+              userIdHash: '',
+              profileIdHash: '',
+              databaseIdHash: '',
+              loadCompleted: false,
+              validationPassed: false,
+              failureCode: loadResult.failureCode,
+            );
       } else if (loadResult.source == AppStateLoadSource.loaded) {
-        _collectionHydrationEvidence['app_settings'] = const CollectionHydrationEvidence(
-          collectionId: 'app_settings',
-          status: CollectionLoadStatus.loadedAuthoritative,
-          loadedCount: 1,
-          storageCount: 1,
-          source: 'JSON',
-          userIdHash: '',
-          profileIdHash: '',
-          databaseIdHash: '',
-          loadCompleted: true,
-          validationPassed: true,
-          failureCode: null,
-        );
-        _collectionHydrationEvidence['transactions'] = CollectionHydrationEvidence(
-          collectionId: 'transactions',
-          status: CollectionLoadStatus.loadedAuthoritative,
-          loadedCount: loadResult.state.transactions.length,
-          storageCount: loadResult.state.transactions.length,
-          source: 'JSON',
-          userIdHash: '',
-          profileIdHash: '',
-          databaseIdHash: '',
-          loadCompleted: true,
-          validationPassed: true,
-          failureCode: null,
-        );
+        _collectionHydrationEvidence['app_settings'] =
+            const CollectionHydrationEvidence(
+              collectionId: 'app_settings',
+              status: CollectionLoadStatus.loadedAuthoritative,
+              loadedCount: 1,
+              storageCount: 1,
+              source: 'JSON',
+              userIdHash: '',
+              profileIdHash: '',
+              databaseIdHash: '',
+              loadCompleted: true,
+              validationPassed: true,
+              failureCode: null,
+            );
+        _collectionHydrationEvidence['transactions'] =
+            CollectionHydrationEvidence(
+              collectionId: 'transactions',
+              status: CollectionLoadStatus.loadedAuthoritative,
+              loadedCount: loadResult.state.transactions.length,
+              storageCount: loadResult.state.transactions.length,
+              source: 'JSON',
+              userIdHash: '',
+              profileIdHash: '',
+              databaseIdHash: '',
+              loadCompleted: true,
+              validationPassed: true,
+              failureCode: null,
+            );
       }
 
-      if (loadResult.source == AppStateLoadSource.parseFailed && loadResult.rawStatePresent) {
-        _setHydrationPhase(AppHydrationPhase.failed, reason: 'validation_failed');
+      if (loadResult.source == AppStateLoadSource.parseFailed &&
+          loadResult.rawStatePresent) {
+        _setHydrationPhase(
+          AppHydrationPhase.failed,
+          reason: 'validation_failed',
+        );
         throw StateError('Hydration validation failed: fallback rejected');
       }
 
@@ -482,19 +494,23 @@ class AppStateController extends ChangeNotifier {
         await _hydrateAppSettingsFromPreferredLocalStore(userId: userId);
         await _hydrateTransactionsFromPreferredLocalStore(userId: userId);
         await _hydrateSavingsFromPreferredLocalStore(userId: userId);
-        await _hydratePendingTransactionsFromPreferredLocalStore(userId: userId);
+        await _hydratePendingTransactionsFromPreferredLocalStore(
+          userId: userId,
+        );
         await _hydrateFinancialPlansFromPreferredLocalStore(userId: userId);
         await _hydrateInvestmentsFromPreferredLocalStore(userId: userId);
         await _hydrateMerchantRulesFromPreferredLocalStore(userId: userId);
-        await _hydrateMerchantConfirmationsFromPreferredLocalStore(userId: userId);
+        await _hydrateMerchantConfirmationsFromPreferredLocalStore(
+          userId: userId,
+        );
         await _hydrateCorrectionFeedbackFromPreferredLocalStore(userId: userId);
-        await _hydrateRecurringTransactionsFromPreferredLocalStore(userId: userId);
+        await _hydrateRecurringTransactionsFromPreferredLocalStore(
+          userId: userId,
+        );
 
         // Swap to the active state atomically at the very end of successful hydration:
         _activeState = ref.value;
-      }, zoneValues: {
-        #hydrationState: ref,
-      });
+      }, zoneValues: {#hydrationState: ref});
 
       _setHydrationPhase(AppHydrationPhase.ready, reason: 'load_complete');
       await processDueRecurringTransactions(reason: 'load');
@@ -661,6 +677,12 @@ class AppStateController extends ChangeNotifier {
 
   Future<void> startMarketAutoRefresh({bool refreshImmediately = true}) async {
     if (!enableMarketAutoRefresh) {
+      return;
+    }
+    // Preserve any existing saved market snapshot so calculations remain tied
+    // to the database/export data unless the user explicitly refreshes.
+    if (currentMarketSnapshot.hasRequiredData ||
+        currentMarketSnapshot.lastUpdated.trim().isNotEmpty) {
       return;
     }
     // Always refresh immediately when the app re-enters the active session.
@@ -3130,6 +3152,9 @@ class AppStateController extends ChangeNotifier {
   Future<void> _refreshStateFromLocalRepositories({
     required String reason,
   }) async {
+    if (localAppSettingsRepository != null) {
+      await _hydrateAppSettingsFromPreferredLocalStore();
+    }
     if (localTransactionsRepository != null && localSavingsRepository != null) {
       final transactions = await localTransactionsRepository!
           .getActiveTransactions();
@@ -3197,6 +3222,7 @@ class AppStateController extends ChangeNotifier {
     if (savingChanged) _skipNextSqliteSavingsMirror = true;
     await _saveStateForCompatibility();
     notifyListeners();
+    unawaited(WidgetDataService.syncFromState(_state));
     if (!_isApplyingRemoteSync) {
       _syncSensitiveCollectionsInBackground(previousState, _state);
       unawaited(triggerSyncPipeline(reason: 'local_write'));
@@ -3544,18 +3570,11 @@ class AppStateController extends ChangeNotifier {
 
   Future<void> addTransaction(Transaction transaction) async {
     if (transaction.type == 'expense') {
-      final double availableBalance = getAvailableBalance(
+      _ensureExpenseHasAvailableBalance(
+        transactionId: transaction.id,
         currency: transaction.currency,
+        amount: transaction.amount,
       );
-      if (availableBalance <= ReconciliationService.minAmount) {
-        if (kDebugMode) {
-          debugPrint(
-            'AppStateController: blocked expense ${transaction.id} '
-            'for ${transaction.currency} because available balance is $availableBalance',
-          );
-        }
-        return;
-      }
     }
     if (_useSqliteLocalStore && localTransactionsRepository != null) {
       await _saveTransactionViaLocalRepository(
@@ -3583,6 +3602,19 @@ class AppStateController extends ChangeNotifier {
   }
 
   Future<void> updateTransaction(Transaction transaction) async {
+    if (transaction.type == 'expense') {
+      final Transaction? originalTx = _state.transactions
+          .where((tx) => tx.id == transaction.id)
+          .firstOrNull;
+      final double originalAmount = originalTx?.amount ?? 0.0;
+      _ensureExpenseHasAvailableBalance(
+        transactionId: transaction.id,
+        currency: transaction.currency,
+        amount: transaction.amount,
+        isUpdate: true,
+        originalAmount: originalAmount,
+      );
+    }
     final List<Transaction> next = _state.transactions
         .map((Transaction tx) => tx.id == transaction.id ? transaction : tx)
         .toList(growable: false);
@@ -4716,6 +4748,7 @@ class AppStateController extends ChangeNotifier {
   }
 
   Future<void> addRecurringTransaction(RecurringTransaction recurring) async {
+    unawaited(RecurringNotificationManager.scheduleReminder(recurring));
     if (_useSqliteLocalStore && localRecurringTransactionsRepository != null) {
       final AppStateModel previousState = _state;
       try {
@@ -4768,6 +4801,7 @@ class AppStateController extends ChangeNotifier {
   Future<void> updateRecurringTransaction(
     RecurringTransaction recurring,
   ) async {
+    unawaited(RecurringNotificationManager.scheduleReminder(recurring));
     if (_useSqliteLocalStore && localRecurringTransactionsRepository != null) {
       final AppStateModel previousState = _state;
       try {
@@ -4830,6 +4864,7 @@ class AppStateController extends ChangeNotifier {
   }
 
   Future<void> deleteRecurringTransaction(String recurringId) async {
+    unawaited(RecurringNotificationManager.cancelNotification(recurringId));
     if (_useSqliteLocalStore && localRecurringTransactionsRepository != null) {
       final AppStateModel previousState = _state;
       try {
@@ -4893,6 +4928,12 @@ class AppStateController extends ChangeNotifier {
       }
 
       final DateTime dueDate = _scheduledRecurringDate(recurring, localNow);
+      if (!recurring.autoAdd) {
+        await updateRecurringTransaction(
+          recurring.copyWith(lastProcessed: _formatDateKey(dueDate)),
+        );
+        continue;
+      }
       final Transaction generated = Transaction(
         id: occurrenceKey,
         type: recurring.type.trim().toLowerCase(),
@@ -5004,13 +5045,15 @@ class AppStateController extends ChangeNotifier {
     if (source.any((String c) => c.toLowerCase() == clean.toLowerCase())) {
       return;
     }
-    final CategoryVisual? visual =
-        iconKey == null && colorValue == null
+    final CategoryVisual? visual = iconKey == null && colorValue == null
         ? null
         : CategoryVisual(iconKey: iconKey, colorValue: colorValue);
-    final Map<String, CategoryVisual> metadata = Map<String, CategoryVisual>.from(
-      income ? _state.categories.incomeMetadata : _state.categories.expenseMetadata,
-    );
+    final Map<String, CategoryVisual> metadata =
+        Map<String, CategoryVisual>.from(
+          income
+              ? _state.categories.incomeMetadata
+              : _state.categories.expenseMetadata,
+        );
     if (visual != null) {
       metadata[clean] = visual;
     }
@@ -5033,10 +5076,11 @@ class AppStateController extends ChangeNotifier {
     if (clean.isEmpty) return;
     final bool income = type == 'income';
     final Map<String, CategoryVisual> source = Map<String, CategoryVisual>.from(
-      income ? _state.categories.incomeMetadata : _state.categories.expenseMetadata,
+      income
+          ? _state.categories.incomeMetadata
+          : _state.categories.expenseMetadata,
     );
-    final CategoryVisual? visual =
-        iconKey == null && colorValue == null
+    final CategoryVisual? visual = iconKey == null && colorValue == null
         ? null
         : CategoryVisual(iconKey: iconKey, colorValue: colorValue);
     if (visual == null) {
@@ -5311,12 +5355,16 @@ class AppStateController extends ChangeNotifier {
     return const <String>['', ''];
   }
 
-  Future<bool> isBiometricLockEnabledForBootstrap({required String userId}) async {
+  Future<bool> isBiometricLockEnabledForBootstrap({
+    required String userId,
+  }) async {
     if (_state.loadedUserId == userId) {
       return _state.biometricLockEnabled;
     }
     try {
-      final AppStateLoadResult loadResult = await repository.loadAppStateResult(userId: userId);
+      final AppStateLoadResult loadResult = await repository.loadAppStateResult(
+        userId: userId,
+      );
       return loadResult.state.biometricLockEnabled;
     } catch (_) {
       return false;
@@ -5465,6 +5513,20 @@ class AppStateController extends ChangeNotifier {
     final String? linkedId = pendingTx.linkedTransactionId;
     if (linkedId == null || linkedId.isEmpty) {
       throw StateError('This capture is not linked to any ledger record.');
+    }
+
+    if (type == 'expense') {
+      final Transaction? originalTx = _state.transactions
+          .where((t) => t.id == linkedId)
+          .firstOrNull;
+      final double originalAmount = originalTx?.amount ?? 0.0;
+      _ensureExpenseHasAvailableBalance(
+        transactionId: linkedId,
+        currency: currency,
+        amount: amount,
+        isUpdate: true,
+        originalAmount: originalAmount,
+      );
     }
 
     AppStateModel nextState = _state;
@@ -5686,6 +5748,13 @@ class AppStateController extends ChangeNotifier {
     AppStateModel nextState = _state;
 
     if (type == 'expense' || type == 'income' || type == 'transfer') {
+      if (type == 'expense') {
+        _ensureExpenseHasAvailableBalance(
+          transactionId: generatedRecordId,
+          currency: currency,
+          amount: amount,
+        );
+      }
       final Transaction newTx = Transaction(
         id: generatedRecordId,
         type: type,
@@ -5895,6 +5964,35 @@ class AppStateController extends ChangeNotifier {
     await updateState(nextState);
   }
 
+  void _ensureExpenseHasAvailableBalance({
+    required String transactionId,
+    required String currency,
+    required double amount,
+    bool isUpdate = false,
+    double originalAmount = 0.0,
+  }) {
+    final String normalizedCurrency = currency.trim().toUpperCase();
+    double availableBalance = getAvailableBalance(
+      currency: normalizedCurrency,
+    );
+    if (isUpdate) {
+      availableBalance += originalAmount;
+    }
+    if (amount - availableBalance <= ReconciliationService.minAmount) {
+      return;
+    }
+    if (kDebugMode) {
+      debugPrint(
+        'AppStateController: blocked expense $transactionId '
+        'for $normalizedCurrency because amount is $amount '
+        'and available balance is $availableBalance',
+      );
+    }
+    throw StateError(
+      'Insufficient available balance in $normalizedCurrency to approve this expense.',
+    );
+  }
+
   Future<void> clearPendingTransactions() async {
     await updateState(
       _state.copyWith(pendingTransactions: const <PendingTransaction>[]),
@@ -6007,14 +6105,16 @@ class AppStateController extends ChangeNotifier {
 
   Future<void> deleteBuiltinMerchantRule(String merchantName) async {
     final String key = merchantName.toLowerCase().trim();
-    final MerchantRule existingRule = _state.merchantRules[key] ??
+    final MerchantRule existingRule =
+        _state.merchantRules[key] ??
         _state.merchantRules.values.firstWhere(
           (MerchantRule candidate) =>
               candidate.merchantName.toLowerCase().trim() == key ||
               candidate.builtinKey?.toLowerCase().trim() == key,
           orElse: () => MerchantRule(
             merchantName: merchantName,
-            categoryId: SmartCaptureParser.builtinMerchantCategoryMap[key] ??
+            categoryId:
+                SmartCaptureParser.builtinMerchantCategoryMap[key] ??
                 'Uncategorized',
             defaultType: 'expense',
             autoApprove: true,
@@ -6044,10 +6144,7 @@ class AppStateController extends ChangeNotifier {
                 disabledRule.merchantName.toLowerCase().trim(),
       );
     await updateState(
-      _state.copyWith(
-        merchantRules: nextRules,
-        merchantAliases: nextAliases,
-      ),
+      _state.copyWith(merchantRules: nextRules, merchantAliases: nextAliases),
     );
   }
 
@@ -6063,16 +6160,12 @@ class AppStateController extends ChangeNotifier {
   }
 
   Future<void> setAndroidSmsAutoCaptureEnabled(bool enabled) async {
-    await updateState(
-      _state.copyWith(androidSmsAutoCaptureEnabled: enabled),
-    );
+    await updateState(_state.copyWith(androidSmsAutoCaptureEnabled: enabled));
     unawaited(AndroidSmsCaptureService.syncEnabled(enabled));
   }
 
   Future<void> updateFinancialMonthCycle(dynamic value) async {
-    await updateState(
-      _state.copyWith(financialMonthCycle: value.toString()),
-    );
+    await updateState(_state.copyWith(financialMonthCycle: value.toString()));
   }
 
   Future<void> updateFinancialMonthStartDay(dynamic value) async {
@@ -6084,9 +6177,7 @@ class AppStateController extends ChangeNotifier {
     } else if (value != null) {
       parsedVal = int.tryParse(value.toString()) ?? 1;
     }
-    await updateState(
-      _state.copyWith(financialMonthStartDay: parsedVal),
-    );
+    await updateState(_state.copyWith(financialMonthStartDay: parsedVal));
   }
 
   DateTime financialMonthStart(DateTime now) {
@@ -6095,11 +6186,15 @@ class AppStateController extends ChangeNotifier {
     final int month = now.month;
 
     final int daysInCurrentMonth = DateTime(year, month + 1, 0).day;
-    final int activeStartDayCurrent = startDay > daysInCurrentMonth ? daysInCurrentMonth : startDay;
+    final int activeStartDayCurrent = startDay > daysInCurrentMonth
+        ? daysInCurrentMonth
+        : startDay;
 
     if (now.day >= activeStartDayCurrent) {
       final int daysInTargetMonth = DateTime(year, month + 1, 0).day;
-      final int day = startDay > daysInTargetMonth ? daysInTargetMonth : startDay;
+      final int day = startDay > daysInTargetMonth
+          ? daysInTargetMonth
+          : startDay;
       return DateTime(year, month, day);
     } else {
       final int prevMonthYear = month == 1 ? year - 1 : year;
@@ -6116,18 +6211,32 @@ class AppStateController extends ChangeNotifier {
     final int month = now.month;
 
     final int daysInCurrentMonth = DateTime(year, month + 1, 0).day;
-    final int activeStartDayCurrent = startDay > daysInCurrentMonth ? daysInCurrentMonth : startDay;
+    final int activeStartDayCurrent = startDay > daysInCurrentMonth
+        ? daysInCurrentMonth
+        : startDay;
 
     if (now.day >= activeStartDayCurrent) {
       final int nextMonthYear = month == 12 ? year + 1 : year;
       final int nextMonth = month == 12 ? 1 : month + 1;
       final int daysInNextMonth = DateTime(nextMonthYear, nextMonth + 1, 0).day;
-      final int nextStartDay = startDay > daysInNextMonth ? daysInNextMonth : startDay;
-      return DateTime(nextMonthYear, nextMonth, nextStartDay).subtract(const Duration(days: 1));
+      final int nextStartDay = startDay > daysInNextMonth
+          ? daysInNextMonth
+          : startDay;
+      return DateTime(
+        nextMonthYear,
+        nextMonth,
+        nextStartDay,
+      ).subtract(const Duration(days: 1));
     } else {
       final int daysInTargetMonth = DateTime(year, month + 1, 0).day;
-      final int activeStartDay = startDay > daysInTargetMonth ? daysInTargetMonth : startDay;
-      return DateTime(year, month, activeStartDay).subtract(const Duration(days: 1));
+      final int activeStartDay = startDay > daysInTargetMonth
+          ? daysInTargetMonth
+          : startDay;
+      return DateTime(
+        year,
+        month,
+        activeStartDay,
+      ).subtract(const Duration(days: 1));
     }
   }
 
@@ -6493,6 +6602,12 @@ class AppStateController extends ChangeNotifier {
           captureAnalytics: nextAnalytics,
         ),
       );
+      if (sendNotification) {
+        await _smartCaptureAlertService.notifyCaptureState(
+          pendingTransaction: transaction,
+          replaceExisting: false,
+        );
+      }
       if (source == PendingTransactionSource.shortcut) {
         _logShortcutStateSnapshot('auto_approved');
       }
@@ -6543,6 +6658,7 @@ class AppStateController extends ChangeNotifier {
                     item.status == CaptureStatus.pendingReview,
               )
               .length,
+          replaceExisting: false,
         );
       }
       if (source == PendingTransactionSource.shortcut) {

@@ -24,6 +24,7 @@ protocol FlutterImplicitEngineDelegate {}
 #endif
   private var shortcutBridgeRegistrationAttempts = 0
   private var appleSignInRegistrationAttempts = 0
+  private var widgetRefreshRegistrationAttempts = 0
   private let appleSignInCoordinator = AppleSignInCoordinator()
 
   private static let shortcutQueueStorageKey = "com.zakahwealth.smartcapture.pendingShortcutMessages"
@@ -62,6 +63,7 @@ protocol FlutterImplicitEngineDelegate {}
 #if canImport(Flutter)
     scheduleShortcutBridgeRegistrationRetry()
     scheduleAppleSignInRegistrationRetry()
+    scheduleWidgetRefreshChannelRegistrationRetry()
 #endif
 
     return didFinishLaunching
@@ -80,6 +82,7 @@ protocol FlutterImplicitEngineDelegate {}
 #if canImport(Flutter)
     scheduleShortcutBridgeRegistrationRetry()
     scheduleAppleSignInRegistrationRetry()
+    scheduleWidgetRefreshChannelRegistrationRetry()
 #endif
   }
 
@@ -134,6 +137,7 @@ protocol FlutterImplicitEngineDelegate {}
     let amount: String?
     let currency: String?
     let languageCode: String
+    let notificationId: Int
   }
 
   private struct NativeSmartCaptureStateSnapshot {
@@ -214,7 +218,7 @@ protocol FlutterImplicitEngineDelegate {}
     content.sound = .default
 
     let request = UNNotificationRequest(
-      identifier: "native_shortcut_capture_\(UUID().uuidString)",
+      identifier: "\(preview.notificationId)",
       content: content,
       trigger: UNTimeIntervalNotificationTrigger(timeInterval: 0.5, repeats: false)
     )
@@ -247,7 +251,11 @@ protocol FlutterImplicitEngineDelegate {}
       merchant: nativeShortcutMerchant(from: messageText),
       amount: nativeShortcutAmount(from: messageText),
       currency: nativeShortcutCurrency(from: messageText),
-      languageCode: languageCode
+      languageCode: languageCode,
+      notificationId: nativeShortcutNotificationId(
+        source: "shortcut",
+        message: messageText
+      )
     )
   }
 
@@ -276,7 +284,8 @@ protocol FlutterImplicitEngineDelegate {}
       )
     }
 
-    if nativeShortcutContainsAny(lowered, [
+    if nativeShortcutContainsSubscriptionActivationIndicators(lowered) ||
+       nativeShortcutContainsAny(lowered, [
       "declined",
       "decline",
       "rejected",
@@ -427,13 +436,12 @@ protocol FlutterImplicitEngineDelegate {}
     }
 
     let normalized = messageText.lowercased()
+    if nativeShortcutContainsSubscriptionActivationIndicators(normalized) {
+      return false
+    }
     if nativeShortcutContainsRejectionIndicators(normalized) {
       return false
     }
-    if nativeShortcutLooksLikeTransferMessage(normalized) {
-      return false
-    }
-
     guard let state = nativeShortcutSmartCaptureStateSnapshot(),
           state.smartCaptureAutoApproveEnabled else {
       return false
@@ -452,6 +460,10 @@ protocol FlutterImplicitEngineDelegate {}
       let autoApprove = (rule["autoApprove"] as? Bool) ?? true
       let defaultType = (rule["defaultType"] as? String ?? "expense").lowercased()
       return enabled && autoApprove && defaultType != "transfer"
+    }
+
+    if nativeShortcutLooksLikeTransferMessage(normalized) {
+      return false
     }
 
     return nativeShortcutBuiltInAutoApproveMerchant(resolvedMerchant)
@@ -551,6 +563,40 @@ protocol FlutterImplicitEngineDelegate {}
       "لم تتم الموافقة",
       "لم يتم الموافقة",
       "لم يتم إتمام العملية",
+    ])
+  }
+
+  private static func nativeShortcutContainsSubscriptionActivationIndicators(_ text: String) -> Bool {
+    return nativeShortcutContainsAny(text, [
+      "subscribe",
+      "subscription",
+      "subscribed",
+      "welcome prepaid",
+      "welcome package",
+      "new activation",
+      "activation successful",
+      "activated successfully",
+      "package details",
+      "bundle price",
+      "service number",
+      "econtract",
+      "contract",
+      "mobily welcome prepaid",
+      "اشتراك",
+      "تم تفعيل اشتراكك",
+      "تم الاشتراك",
+      "تفعيل الاشتراك",
+      "الباقة",
+      "الباقة الترحيبية",
+      "الباقة مسبقة الدفع",
+      "تفاصيل الباقة",
+      "سعر الباقة",
+      "رقم الخدمة",
+      "العقد الإلكتروني",
+      "العقد الالكتروني",
+      "تطبيق موبايلي",
+      "حمّل تطبيق",
+      "حمل تطبيق",
     ])
   }
 
@@ -790,69 +836,145 @@ protocol FlutterImplicitEngineDelegate {}
 
   private static func nativeShortcutMerchant(from messageText: String) -> String? {
     let normalized = messageText.replacingOccurrences(of: "\r", with: "\n")
+    let text = normalized.lowercased()
+    if nativeShortcutIsAccountDepositMessage(text) {
+      return nil
+    }
     let lines = normalized
       .split(separator: "\n")
       .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
       .filter { !$0.isEmpty }
 
-    let inlinePatterns: [String] = [
-      #"(?i)(?:(?<![A-Za-z0-9])(?:at|merchant|store|sender)(?![A-Za-z0-9])|المرسل|مرسل|لدى|عند|في)\s*[:\-]?\s*([A-Za-z\u0600-\u06FF0-9][A-Za-z0-9\u0600-\u06FF&*.,\- ]{1,80})"#
-    ]
-    for pattern in inlinePatterns {
-      if let candidate = nativeShortcutValidatedMerchant(
-        from: normalized,
-        pattern: pattern
+    let effectiveAliases = nativeShortcutEffectiveAliases(
+      state: nativeShortcutSmartCaptureStateSnapshot()
+    )
+    if let intentMerchant = nativeShortcutMerchantFromIntentLabel(from: messageText) {
+      return nativeShortcutNormalizeMerchantName(intentMerchant)
+    }
+
+    if let inlineMerchant = nativeShortcutMerchantFromInlinePatterns(
+      from: messageText,
+      aliases: effectiveAliases
+    ) {
+      return inlineMerchant
+    }
+
+    let transferDetails = nativeShortcutTransferDetails(
+      from: messageText,
+      currentUserName: nil
+    )
+    switch transferDetails.direction {
+    case "out":
+      if let recipient = transferDetails.recipientName {
+        return nativeShortcutResolveAlias(recipient, aliases: effectiveAliases)
+      }
+    case "in":
+      if let sender = transferDetails.senderName {
+        return nativeShortcutResolveAlias(sender, aliases: effectiveAliases)
+      }
+    case "internal":
+      if let sender = transferDetails.senderName {
+        return nativeShortcutResolveAlias(sender, aliases: effectiveAliases)
+      }
+      if let recipient = transferDetails.recipientName {
+        return nativeShortcutResolveAlias(recipient, aliases: effectiveAliases)
+      }
+    default:
+      break
+    }
+
+    if transferDetails.isTransferMessage {
+      if let sender = nativeShortcutMerchantFromFieldLines(
+        lines,
+        aliases: effectiveAliases,
+        labels: ["مرسل", "المرسل", "sender"]
       ) {
-        return candidate
+        return sender
       }
     }
 
-    let fieldPatterns: [String] = [
-      #"(?i)^\s*(?:merchant|at|to|from|in|sender)\s*[:\-]?\s*(.+)$"#,
-      #"(?i)^\s*(?:المرسل|مرسل|عند|إلى|الى|من)\s*[:\-]?\s*(.+)$"#,
-    ]
-    for line in lines {
-      for pattern in fieldPatterns {
-        if let candidate = nativeShortcutValidatedMerchant(
-          from: line,
-          pattern: pattern
-        ) {
-          return candidate
+    if !transferDetails.isTransferMessage && !nativeShortcutIsWalletTopUpMessage(text) {
+      if let merchant = nativeShortcutMerchantFromTransactionField(
+        from: messageText,
+        aliases: effectiveAliases,
+        hasPurchaseIntent: nativeShortcutHasPurchaseIntent(text)
+      ) {
+        return merchant
+      }
+      if let merchant = nativeShortcutMerchantFromPriorityPatterns(
+        from: messageText,
+        aliases: effectiveAliases
+      ) {
+        return merchant
+      }
+
+      for line in lines {
+        let lineLower = line.lowercased()
+        if nativeShortcutContainsAny(lineLower, [
+          "في:", "داخل:", "الدولة:", "country:",
+        ]) {
+          continue
+        }
+        if nativeShortcutContainsAny(lineLower, ["to:", "إلى:", "الى:"]) {
+          continue
+        }
+        if nativeShortcutContainsAny(lineLower, [
+          "شراء", "دفع", "خصم", "سداد", "عملية", "purchase", "payment", "pos",
+          "debit", "transfer", "remittance", "تحويل", "حوالة", "تم", "دولي",
+          "محلي", "بطاقة", "الخصم", "المباشر", "رقم", "المتاح", "الرصيد",
+          "الحساب", "اليوم", "الساعة", "merchant",
+        ]) ||
+          nativeShortcutContainsAny(lineLower, [
+            "apple pay", "mada", "مدى", "card", "بطاقة", "حساب", "account", "visa", "mastercard",
+          ]) ||
+          nativeShortcutContainsAny(lineLower, [
+            "sar", "sr", "s.r", "egp", "usd", "aed", "درهم", "ريال", "جنيه", "ر.س", "ج.م",
+            "fee", "رسوم", "total", "due", "balance", "الرصيد", "مبلغ", "amount",
+          ]) ||
+          nativeShortcutContainsAny(lineLower, ["from:", "من:"]) ||
+          line.rangeOfCharacter(from: .decimalDigits) != nil {
+          continue
+        }
+        if line.rangeOfCharacter(from: CharacterSet.letters.union(CharacterSet(charactersIn: "ءاأإآبتثجحخدذرزسشصضطظعغفقكلمنهوي"))) != nil {
+          if let candidate = nativeShortcutValidatedMerchant(
+            from: line,
+            aliases: effectiveAliases
+          ) {
+            return candidate
+          }
         }
       }
-    }
 
-    for line in lines {
-      let candidate = nativeShortcutValidatedMerchant(from: line)
-      guard let candidate, !candidate.isEmpty else { continue }
-      if candidate.rangeOfCharacter(from: .decimalDigits) != nil { continue }
-      let lower = candidate.lowercased()
-      if nativeShortcutContainsAny(lower, [
-        "otp",
-        "verification",
-        "balance",
-        "الرصيد",
-        "card",
-        "بطاقة",
-        "amount",
-        "مبلغ",
-        "purchase",
-        "payment",
-        "transfer",
-        "حساب",
-        "account",
-      ]) {
-        continue
+      if let merchant = nativeShortcutMerchantFromKnownAlias(
+        from: text,
+        aliases: effectiveAliases
+      ) {
+        return merchant
       }
-      return candidate
     }
 
     return nil
   }
 
+  private static func nativeShortcutMerchantFromIntentLabel(from rawMessage: String) -> String? {
+    let lower = rawMessage.lowercased()
+    let labels: [(pattern: String, merchant: String)] = [
+      (#"credit\s*card\s*:\s*payment"#, "Credit Card Payment"),
+      (#"debit\s*:\s*loan\s+instalment"#, "Loan Instalment"),
+      (#"تم\s+سداد\s+البطاقة\s+الائتمانية"#, "سداد البطاقة الائتمانية"),
+    ]
+    for label in labels {
+      if nativeShortcutFirstMatch(in: lower, pattern: label.pattern) != nil {
+        return label.merchant
+      }
+    }
+    return nil
+  }
+
   private static func nativeShortcutValidatedMerchant(
     from text: String,
-    pattern: String? = nil
+    pattern: String? = nil,
+    aliases: [String: String] = [:]
   ) -> String? {
     var candidate = text
     if let pattern,
@@ -864,12 +986,14 @@ protocol FlutterImplicitEngineDelegate {}
     candidate = nativeShortcutTrimMerchantCandidate(candidate)
     guard !candidate.isEmpty else { return nil }
 
+    let resolved = nativeShortcutResolveAlias(candidate, aliases: aliases)
+    candidate = resolved
     let normalized = candidate.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
     let searchToken = nativeShortcutMerchantSearchToken(candidate)
     if nativeShortcutIsInvalidMerchantCandidate(normalized: normalized, searchToken: searchToken) {
       return nil
     }
-    return candidate
+    return nativeShortcutNormalizeMerchantName(candidate)
   }
 
   private static func nativeShortcutTrimMerchantCandidate(_ rawMerchant: String) -> String {
@@ -924,6 +1048,13 @@ protocol FlutterImplicitEngineDelegate {}
     "successful", "completed", "review", "smart", "capture",
   ]
 
+  private static let nativeShortcutBuiltinMerchantAliases: [String: [String]] = [
+    "talabat": ["talabat", "talabat.com", "talabat app", "talabat maa", "talabat pay", "talabat mart", "طلبات"],
+    "amazon": ["amazon", "amazon.sa", "amazon.ae"],
+    "toyou": ["toyou", "toyou app"],
+    "tamimi market": ["tamimi market", "s505 tamimi market", "al tamimi market"],
+  ]
+
   private static func nativeShortcutMerchantIsStopWord(_ token: String) -> Bool {
     let normalized = nativeShortcutMerchantSearchToken(token)
     if normalized.isEmpty { return false }
@@ -941,6 +1072,103 @@ protocol FlutterImplicitEngineDelegate {}
       .lowercased()
       .replacingOccurrences(of: #"[\u200e\u200f\u202a-\u202e]"#, with: "", options: .regularExpression)
       .replacingOccurrences(of: #"[^a-z0-9\u0600-\u06FF]+"#, with: "", options: .regularExpression)
+  }
+
+  private static func nativeShortcutResolveAlias(
+    _ merchant: String,
+    aliases: [String: String]
+  ) -> String {
+    let key = merchant.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+    return aliases[key] ?? merchant
+  }
+
+  private static func nativeShortcutNormalizeMerchantName(_ merchant: String) -> String {
+    let normalized = merchant.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+    if normalized == "talabat.com" ||
+        normalized == "talabat app" ||
+        normalized == "talabat maa" ||
+        normalized == "talabat pay" ||
+        normalized == "talabat mart" ||
+        normalized.hasPrefix("talabat") {
+      return "Talabat"
+    }
+    if normalized.hasPrefix("amazon") ||
+        normalized == "amazon.sa" ||
+        normalized == "amazon.ae" {
+      return "Amazon"
+    }
+    if normalized.hasPrefix("toyou") {
+      return "ToYou"
+    }
+    if normalized.hasPrefix("hungerstation") {
+      return "HungerStation"
+    }
+    if normalized.hasPrefix("jahez") {
+      return "Jahez"
+    }
+    if normalized.hasPrefix("noon") {
+      return "Noon"
+    }
+    if normalized.hasPrefix("jarir") {
+      return "Jarir"
+    }
+    if normalized.hasPrefix("uber") {
+      return "Uber"
+    }
+    if normalized.hasPrefix("careem") {
+      return "Careem"
+    }
+    if normalized.hasPrefix("e-finance") || normalized.hasPrefix("efinance") {
+      return "E-Finance"
+    }
+    if normalized.hasPrefix("nile air") {
+      return "Nile Air"
+    }
+    if normalized.hasPrefix("flynas") {
+      return "Flynas"
+    }
+    if normalized.hasPrefix("saudia") {
+      return "Saudia"
+    }
+    if normalized.hasPrefix("fitness time") {
+      return "Fitness Time"
+    }
+    if normalized.hasPrefix("whoop") {
+      return "WHOOP"
+    }
+    if normalized.hasPrefix("fitness plan") {
+      return "Fitness Plan"
+    }
+    if normalized.hasPrefix("stc pay") {
+      return "STC Pay"
+    }
+    if normalized.hasPrefix("stc") {
+      return "STC"
+    }
+    if normalized.hasPrefix("mobily pay") {
+      return "Mobily Pay"
+    }
+    if normalized.hasPrefix("mobily") {
+      return "Mobily"
+    }
+    if normalized.hasPrefix("zain") {
+      return "Zain"
+    }
+    if nativeShortcutFirstMatch(in: normalized, pattern: #"^(?:s\d+\s+)?tamimi market"#) != nil {
+      return "Tamimi Market"
+    }
+    return nativeShortcutCapitalizeWords(merchant)
+  }
+
+  private static func nativeShortcutCapitalizeWords(_ text: String) -> String {
+    return text
+      .split(whereSeparator: { $0.isWhitespace })
+      .filter { !$0.isEmpty }
+      .map { word in
+        let lower = String(word).lowercased()
+        return lower.prefix(1).uppercased() + lower.dropFirst()
+      }
+      .joined(separator: " ")
   }
 
   private static func nativeShortcutIsInvalidMerchantCandidate(
@@ -985,6 +1213,509 @@ protocol FlutterImplicitEngineDelegate {}
     return false
   }
 
+  private static func nativeShortcutEffectiveAliases(
+    state: NativeSmartCaptureStateSnapshot?
+  ) -> [String: String] {
+    var aliases: [String: String] = [:]
+    for (merchant, aliasList) in nativeShortcutBuiltinMerchantAliases {
+      for alias in aliasList {
+        aliases[alias.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)] = merchant
+      }
+    }
+    guard let state else { return aliases }
+    for (alias, merchant) in state.merchantAliases {
+      aliases[alias.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)] = merchant
+    }
+    for (_, rule) in state.merchantRules {
+      let enabled = (rule["enabled"] as? Bool) ?? true
+      if !enabled { continue }
+      if let builtinKey = (rule["builtinKey"] as? String)?
+        .lowercased()
+        .trimmingCharacters(in: .whitespacesAndNewlines),
+        let builtinAliases = nativeShortcutBuiltinMerchantAliases[builtinKey] {
+        let merchantName = (rule["merchantName"] as? String) ?? ""
+        for alias in builtinAliases {
+          aliases[alias.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)] = merchantName
+        }
+      }
+      if let ruleAliases = rule["aliases"] as? [Any] {
+        let merchantName = (rule["merchantName"] as? String) ?? ""
+        for alias in ruleAliases {
+          let aliasText = String(describing: alias)
+            .lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+          if !aliasText.isEmpty && !merchantName.isEmpty {
+            aliases[aliasText] = merchantName
+          }
+        }
+      }
+    }
+    return aliases
+  }
+
+  private static func nativeShortcutMerchantFromKnownAlias(
+    from text: String,
+    aliases: [String: String]
+  ) -> String? {
+    let orderedAliases = aliases.keys.sorted { $0.count > $1.count }
+    let searchText = nativeShortcutMerchantSearchToken(text)
+    for alias in orderedAliases {
+      let escaped = NSRegularExpression.escapedPattern(for: alias)
+      if nativeShortcutFirstMatch(
+        in: text,
+        pattern: #"(?i)(?<![a-z0-9])\#(escaped)(?![a-z0-9])"#
+      ) != nil {
+        return nativeShortcutValidatedMerchant(
+          from: aliases[alias] ?? alias,
+          aliases: aliases
+        )
+      }
+      let aliasToken = nativeShortcutMerchantSearchToken(alias)
+      if !aliasToken.isEmpty && searchText.contains(aliasToken) {
+        return nativeShortcutValidatedMerchant(
+          from: aliases[alias] ?? alias,
+          aliases: aliases
+        )
+      }
+    }
+    return nil
+  }
+
+  private static func nativeShortcutMerchantFromInlinePatterns(
+    from rawMessage: String,
+    aliases: [String: String]
+  ) -> String? {
+    let patterns: [String] = [
+      #"(?:(?<![A-Za-z0-9])(?:at|merchant|store)(?![A-Za-z0-9])|لدى|عند|في)\s*[:\-]?\s*([A-Za-z\u0600-\u06FF0-9][A-Za-z0-9\u0600-\u06FF&*.,\- ]{1,80})"#
+    ]
+    for pattern in patterns {
+      if let match = nativeShortcutFirstMatch(in: rawMessage, pattern: pattern),
+         let range = Range(match.range(at: 1), in: rawMessage) {
+        let candidate = String(rawMessage[range])
+        if let validated = nativeShortcutValidatedMerchant(from: candidate, aliases: aliases) {
+          return validated
+        }
+      }
+    }
+    return nil
+  }
+
+  private static func nativeShortcutMerchantFromPriorityPatterns(
+    from rawMessage: String,
+    aliases: [String: String]
+  ) -> String? {
+    let lines = rawMessage
+      .split(separator: "\n")
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+    let patterns: [String] = [
+      #"^\s*عند\s+([A-Za-z\u0600-\u06FF0-9][A-Za-z0-9\u0600-\u06FF&*.,\- ]{1,80})"#,
+      #"^\s*At\s*[:-]?\s*([A-Za-z\u0600-\u06FF0-9][A-Za-z0-9\u0600-\u06FF&*.,\- ]{1,80})"#,
+      #"^\s*Merchant\s*[:-]?\s*([A-Za-z\u0600-\u06FF0-9][A-Za-z0-9\u0600-\u06FF&*.,\- ]{1,80})"#,
+    ]
+    for line in lines {
+      for pattern in patterns {
+        if let match = nativeShortcutFirstMatch(in: line, pattern: pattern),
+           let range = Range(match.range(at: 1), in: line) {
+          let candidate = String(line[range])
+          if let validated = nativeShortcutValidatedMerchant(from: candidate, aliases: aliases) {
+            return validated
+          }
+        }
+      }
+    }
+    return nil
+  }
+
+  private static func nativeShortcutMerchantFromTransactionField(
+    from rawMessage: String,
+    aliases: [String: String],
+    hasPurchaseIntent: Bool
+  ) -> String? {
+    let lines = rawMessage
+      .split(separator: "\n")
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+
+    if hasPurchaseIntent {
+      if let purchaseMerchant = nativeShortcutMerchantFromFieldLines(
+        lines,
+        aliases: aliases,
+        labels: ["من", "from", "at", "merchant", "store", "لدى", "عند"]
+      ) {
+        return purchaseMerchant
+      }
+    }
+
+    if let fallbackField = nativeShortcutMerchantFromFieldLines(
+      lines,
+      aliases: aliases,
+      labels: ["merchant", "store", "at"]
+    ) {
+      return fallbackField
+    }
+
+    if nativeShortcutContainsAny(rawMessage.lowercased(), [
+      "credit transfer",
+      "incoming transfer",
+      "deposit",
+      "salary",
+      "credited",
+      "received",
+      "transfer received",
+      "payment received",
+      "inward transfer",
+      "cashback",
+      "repayment",
+    ]) {
+      return nativeShortcutMerchantFromFieldLines(
+        lines,
+        aliases: aliases,
+        labels: ["from", "من", "لدى", "عند"]
+      )
+    }
+
+    return nil
+  }
+
+  private static func nativeShortcutMerchantFromFieldLines(
+    _ lines: [String],
+    aliases: [String: String],
+    labels: [String]
+  ) -> String? {
+    for line in lines {
+      for label in labels {
+        if let match = nativeShortcutFirstMatch(
+          in: line,
+          pattern: #"^\s*\#(NSRegularExpression.escapedPattern(for: label))\s*[:\-]?\s*(.+)$"#
+        ), let range = Range(match.range(at: 1), in: line) {
+          let candidate = String(line[range])
+          if let validated = nativeShortcutValidatedMerchant(from: candidate, aliases: aliases) {
+            return validated
+          }
+        }
+      }
+    }
+    return nil
+  }
+
+  private static func nativeShortcutTransferDetails(
+    from rawMessage: String,
+    currentUserName: String?
+  ) -> (direction: String, senderName: String?, recipientName: String?, isTransferMessage: Bool) {
+    let lines = rawMessage
+      .split(separator: "\n")
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+    let senderName = nativeShortcutTransferParty(
+      lines,
+      labels: ["sender", "from account", "from", "المرسل", "مرسل", "من حساب", "من"]
+    )
+    let recipientName = nativeShortcutTransferParty(
+      lines,
+      labels: ["to account", "to", "recipient", "beneficiary", "المستفيد", "إلى حساب", "إلى", "الى"]
+    )
+    let lowered = rawMessage.lowercased()
+    let hasExplicitTransferPartyLabels = nativeShortcutContainsAny(lowered, [
+      "sender:",
+      "recipient:",
+      "beneficiary:",
+      "from account",
+      "to account",
+      "المرسل",
+      "مرسل",
+      "المستفيد",
+      "من حساب",
+      "إلى حساب",
+    ])
+    let hasTransferKeywords = nativeShortcutContainsAny(lowered, [
+      "transfer",
+      "remittance",
+      "bank transfer",
+      "تحويل",
+      "حوالة",
+      "واردة",
+      "وارد",
+      "صادرة",
+      "صادر",
+    ])
+    let isInternalTransfer = nativeShortcutContainsAny(lowered, [
+      "internal transfer",
+      "transfer between accounts",
+      "account transfer",
+      "تحويل داخلي",
+      "تحويل بين الحسابات",
+      "بين حساباتي",
+      "between accounts",
+      "between my accounts",
+    ]) || (
+      nativeShortcutContainsAny(lowered, [
+        "from account",
+        "to account",
+        "من حساب",
+        "إلى حساب",
+      ]) && (
+        nativeShortcutLooksLikeOwnAccountReference(senderName) ||
+          nativeShortcutLooksLikeOwnAccountReference(recipientName)
+      )
+    )
+    let isTransferMessage = hasTransferKeywords || hasExplicitTransferPartyLabels || isInternalTransfer
+    var direction = "unknown"
+    if isTransferMessage {
+      direction = nativeShortcutTransferDirection(
+        rawMessage,
+        senderName: senderName,
+        recipientName: recipientName,
+        currentUserName: currentUserName,
+        isInternalTransfer: isInternalTransfer
+      )
+    }
+    return (direction, senderName, recipientName, isTransferMessage)
+  }
+
+  private static func nativeShortcutTransferParty(
+    _ lines: [String],
+    labels: [String]
+  ) -> String? {
+    for line in lines {
+      for label in labels {
+        if let match = nativeShortcutFirstMatch(
+          in: line,
+          pattern: #"^\s*\#(NSRegularExpression.escapedPattern(for: label))\s*[:\-]?\s*(.+)$"#
+        ), let range = Range(match.range(at: 1), in: line) {
+          let candidate = String(line[range]).trimmingCharacters(in: .whitespacesAndNewlines)
+          if !candidate.isEmpty && !nativeShortcutIsTransferPartyNoise(candidate) {
+            return candidate
+          }
+        }
+      }
+    }
+    return nil
+  }
+
+  private static func nativeShortcutIsTransferPartyNoise(_ value: String) -> Bool {
+    let lower = value.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+    return nativeShortcutContainsAny(lower, [
+      "balance",
+      "الرصيد",
+      "amount",
+      "مبلغ",
+      "account",
+      "حساب",
+      "card",
+      "بطاقة",
+      "visa",
+      "mastercard",
+      "apple pay",
+      "mada",
+      "stc pay",
+      "stcpay",
+    ]) || lower.range(of: #"^\d+$"#, options: .regularExpression) != nil
+  }
+
+  private static func nativeShortcutLooksLikeOwnAccountReference(_ value: String?) -> Bool {
+    guard let value else { return false }
+    let lower = value.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+    return nativeShortcutContainsAny(lower, ["account", "حساب", "card", "بطاقة"]) ||
+      lower.range(of: #"^\*+\d+$"#, options: .regularExpression) != nil ||
+      lower.range(of: #"^\d+$"#, options: .regularExpression) != nil
+  }
+
+  private static func nativeShortcutTransferDirection(
+    _ rawMessage: String,
+    senderName: String?,
+    recipientName: String?,
+    currentUserName: String?,
+    isInternalTransfer: Bool
+  ) -> String {
+    if isInternalTransfer { return "internal" }
+    let lower = rawMessage.lowercased()
+    let normalizedUser = currentUserName.map { nativeShortcutMerchantSearchToken($0) }
+    let normalizedSender = senderName.map { nativeShortcutMerchantSearchToken($0) }
+    let normalizedRecipient = recipientName.map { nativeShortcutMerchantSearchToken($0) }
+
+    if let normalizedUser {
+      if let normalizedSender, normalizedSender == normalizedUser {
+        return "out"
+      }
+      if let normalizedRecipient, normalizedRecipient == normalizedUser {
+        return "in"
+      }
+    }
+
+    if nativeShortcutContainsAny(lower, [
+      "debit transfer intl",
+      "debit transfer",
+      "transfer sent",
+      "paid to",
+      "sent to",
+      "outgoing transfer",
+      "خصم",
+      "سحب",
+      "دفع",
+      "تحويل صادر",
+      "حوالة صادرة",
+      "حوالة صادر",
+      "صادرة",
+      "صادر",
+      "تم التحويل إلى",
+    ]) {
+      return "out"
+    }
+
+    if nativeShortcutContainsAny(lower, [
+      "credit transfer",
+      "transfer received",
+      "received from",
+      "transfer from",
+      "incoming transfer",
+      "إيداع",
+      "تحويل وارد",
+      "حوالة واردة",
+      "حوالة وارد",
+      "واردة",
+      "وارد",
+      "تم استلام تحويل من",
+      "تم الإيداع",
+      "تم استلام",
+      "credited",
+      "received",
+    ]) {
+      return "in"
+    }
+
+    return "unknown"
+  }
+
+  private static func nativeShortcutHasPurchaseIntent(_ text: String) -> Bool {
+    return nativeShortcutContainsAny(text, [
+      "purchase",
+      "online purchase",
+      "pos",
+      "point of sale",
+      "apple pay",
+      "mada",
+      "visa purchase",
+      "mastercard purchase",
+      "debit card purchase",
+      "شراء",
+      "شراء دولي",
+      "شراء عبر الإنترنت",
+      "شراء عبر نقاط البيع",
+      "نقاط البيع",
+      "مدى",
+      "أبل باي",
+      "عملية شراء",
+    ])
+  }
+
+  private static func nativeShortcutIsWalletTopUpMessage(_ text: String) -> Bool {
+    return nativeShortcutContainsAny(text, [
+      "wallet top up",
+      "wallet top-up",
+      "wallet topup",
+      "top up wallet",
+      "top-up wallet",
+      "topup wallet",
+      "wallet recharge",
+      "recharge wallet",
+      "wallet reload",
+      "load wallet",
+      "wallet load",
+      "wallet refill",
+      "add money to wallet",
+      "add funds to wallet",
+      "fund wallet",
+      "wallet funding",
+      "account funding",
+      "funding via apple pay",
+      "wallet deposit",
+      "deposit to wallet",
+      "cash in wallet",
+      "wallet cash in",
+      "شحن المحفظة",
+      "شحن رصيد المحفظة",
+      "شحن المحفظه",
+      "شحن رصيد المحفظه",
+      "تعبئة المحفظة",
+      "تعبئة المحفظه",
+      "إعادة شحن المحفظة",
+      "اعادة شحن المحفظة",
+      "إعادة شحن المحفظه",
+      "اعادة شحن المحفظه",
+      "إضافة رصيد للمحفظة",
+      "اضافة رصيد للمحفظة",
+      "إضافة رصيد للمحفظه",
+      "اضافة رصيد للمحفظه",
+      "إيداع في المحفظة",
+      "إيداع في المحفظه",
+      "إضافة إلى المحفظة",
+      "اضافة إلى المحفظة",
+      "إضافة الى المحفظة",
+      "اضافة الى المحفظة",
+      "تم شحن المحفظة",
+      "تم شحن المحفظه",
+      "تم تعبئة المحفظة",
+      "تم تعبئة المحفظه",
+      "تمويل المحفظة",
+      "تمويل المحفظه",
+      "تمويل الحساب",
+      "تم تعبئة الحساب",
+      "شحن الحساب",
+      "إضافة رصيد للحساب",
+      "اضافة رصيد للحساب",
+    ])
+  }
+
+  private static func nativeShortcutIsAccountDepositMessage(_ text: String) -> Bool {
+    if nativeShortcutContainsAny(text, [
+      "salary",
+      "راتب",
+      "payroll",
+      "cashback",
+      "كاش باك",
+    ]) {
+      return false
+    }
+    let hasDepositIntent = nativeShortcutContainsAny(text, [
+      "deposit to account",
+      "deposit into account",
+      "account deposit",
+      "wallet deposit",
+      "deposit to wallet",
+      "fund account",
+      "funding account",
+      "top up account",
+      "cash in account",
+      "deposit",
+      "إيداع إلى حساب",
+      "إيداع الى حساب",
+      "إيداع في حساب",
+      "إيداع إلى المحفظة",
+      "إيداع في المحفظة",
+      "إيداع",
+      "تم الإيداع",
+      "تم الايداع",
+      "تم إضافة مبلغ",
+      "تم اضافة مبلغ",
+      "إضافة مبلغ",
+      "اضافة مبلغ",
+      "إضافة رصيد",
+      "اضافة رصيد",
+      "تم تمويل الحساب",
+      "تم تمويل المحفظة",
+    ])
+    let hasTargetAccount = nativeShortcutContainsAny(text, [
+      "account",
+      "حساب",
+      "investment",
+      "استثماري",
+      "wallet",
+      "محفظة",
+    ])
+    return hasDepositIntent && hasTargetAccount
+  }
+
   private static func nativeShortcutFirstMatch(
     in text: String,
     pattern: String
@@ -1014,6 +1745,25 @@ protocol FlutterImplicitEngineDelegate {}
     return false
   }
 
+  private static func nativeShortcutNotificationId(
+    source: String,
+    message: String
+  ) -> Int {
+    let normalizedSource = source
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+    let normalizedMessage = message
+      .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let bytes = Array("\(normalizedSource)|\(normalizedMessage)".utf8)
+    var hash: UInt32 = 0x811c9dc5
+    for byte in bytes {
+      hash ^= UInt32(byte)
+      hash = hash &* 0x01000193
+    }
+    return Int(hash & 0x7fffffff)
+  }
+
   private static func nativeShortcutFormatAmount(_ amount: Double) -> String {
     let formatted = String(format: "%.2f", amount)
     return formatted.replacingOccurrences(of: #"(\.\d*?[1-9])0+$"#, with: "$1", options: .regularExpression)
@@ -1022,6 +1772,7 @@ protocol FlutterImplicitEngineDelegate {}
 
   private static func nativeShortcutExplicitAmountCandidate(from text: String) -> (amount: Double, currency: String?)? {
     let patterns: [String] = [
+      #"(?i)(?:SAR|SR|S\.R|EGP|USD|AED|KWD|QAR|BHD|OMR|ر\.س|ج\.م|ريال|جنيه|درهم|د\.إ|د.إ)\s*(?:amount|المبلغ|مبلغ)\s*[:\-]?\s*([0-9][0-9,]*(?:\.[0-9]+)?)"#,
       #"(?i)(?:amount|المبلغ|مبلغ|charged amount|transaction amount|purchase amount|total|value|price|due)\s*[:\-]?\s*(?:SAR|SR|S\.R|EGP|USD|AED|KWD|QAR|BHD|OMR|ر\.س|ج\.م|ريال|جنيه|درهم|د\.إ|د.إ)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)"#,
       #"(?i)(?:SAR|SR|S\.R|EGP|USD|AED|KWD|QAR|BHD|OMR|ر\.س|ج\.م|ريال|جنيه|درهم|د\.إ|د.إ)\s*([0-9][0-9,]*(?:\.[0-9]+)?)"#,
       #"(?i)([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:SAR|SR|S\.R|EGP|USD|AED|KWD|QAR|BHD|OMR|ر\.س|ج\.م|ريال|جنيه|درهم|د\.إ|د.إ)"#,
@@ -1260,6 +2011,24 @@ protocol FlutterImplicitEngineDelegate {}
       }
     }
   }
+
+#if canImport(Flutter)
+  private func scheduleWidgetRefreshChannelRegistrationRetry() {
+    guard widgetRefreshChannel == nil,
+          widgetRefreshRegistrationAttempts < 8 else {
+      return
+    }
+
+    widgetRefreshRegistrationAttempts += 1
+    DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(200)) { [weak self] in
+      guard let self else { return }
+      self.configureWidgetRefreshChannel()
+      if self.widgetRefreshChannel == nil {
+        self.scheduleWidgetRefreshChannelRegistrationRetry()
+      }
+    }
+  }
+#endif
 
 #if canImport(Flutter)
   private func deliverQueuedShortcutMessagesIfPossible() {

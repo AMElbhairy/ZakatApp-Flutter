@@ -749,6 +749,8 @@ private fun smallBreakdownText(summary: WidgetSummarySnapshot): String {
     "$", "USD" -> "$"
     "€", "EUR" -> "€"
     "£", "GBP" -> "£"
+    "AUD" -> "A$"
+    "CAD" -> "C$"
     "E£", "EGP" -> "E£"
     "SAR" -> saudiRiyalSymbol()
     "AED" -> "د.إ"
@@ -766,7 +768,7 @@ private fun smallBreakdownText(summary: WidgetSummarySnapshot): String {
 }
 
 private fun saudiRiyalSymbol(): String {
-  return if (Build.VERSION.SDK_INT >= 36) "⃁" else "SR"
+  return if (Build.VERSION.SDK_INT >= 36) "⃁" else "SAR"
 }
 
 private fun isAboveNisabStatus(text: String): Boolean {

@@ -723,6 +723,10 @@ class WidgetDataService {
         return '€';
       case 'GBP':
         return '£';
+      case 'AUD':
+        return r'A$';
+      case 'CAD':
+        return r'C$';
       case 'EGP':
         return 'E£';
       case 'AED':
@@ -754,11 +758,11 @@ class WidgetDataService {
     if (!Platform.isAndroid) {
       return '⃁';
     }
-    final Match? match = RegExp(r'Android (\d+)').firstMatch(
-      Platform.operatingSystemVersion,
-    );
+    final Match? match = RegExp(
+      r'Android (\d+)',
+    ).firstMatch(Platform.operatingSystemVersion);
     final int androidVersion = int.tryParse(match?.group(1) ?? '') ?? 0;
-    return androidVersion >= 16 ? '⃁' : 'SR';
+    return androidVersion >= 16 ? '⃁' : 'SAR';
   }
 
   static String _formatSummaryAmount(double value, String currencySymbol) {
@@ -1006,22 +1010,16 @@ class WidgetDataService {
       );
     }
 
-    return <Map<String, dynamic>>[
-      ...ZakatScheduleService.calculateMonthlyZakatSchedule(
-        transactions: state.transactions.map((e) => e.toJson()).toList(),
-        savings: state.savings.map((e) => e.toJson()).toList(),
-        marketData: marketData,
-        lastRollover: state.lastRollover,
-        zakatNisabBasis: state.zakatNisabBasis,
-      ),
-      ...ZakatScheduleService.calculateSavingsZakatSchedule(
-        savings: state.savings.map((e) => e.toJson()).toList(),
-        transactions: state.transactions.map((e) => e.toJson()).toList(),
-        marketData: marketData,
-        lastRollover: state.lastRollover,
-        zakatNisabBasis: state.zakatNisabBasis,
-      ),
-    ];
+    return ZakatScheduleService.calculateMergedZakatSchedule(
+      zakatMethod: state.zakatMethod,
+      zakatAnnualDate: state.zakatAnnualDate,
+      transactions: state.transactions.map((e) => e.toJson()).toList(),
+      savings: state.savings.map((e) => e.toJson()).toList(),
+      investments: state.investments.map((e) => e.toJson()).toList(),
+      marketData: marketData,
+      lastRollover: state.lastRollover,
+      zakatNisabBasis: state.zakatNisabBasis,
+    );
   }
 
   static int _buildUpcomingObligationCount(

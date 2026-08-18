@@ -15,6 +15,10 @@ class RecurringTransaction {
     required this.enabled,
     required this.skipMonth,
     required this.createdAt,
+    this.autoAdd = true,
+    this.reminderEnabled = false,
+    this.reminderDayOffset = 0,
+    this.reminderTime = '09:00',
   });
 
   final String id;
@@ -30,6 +34,10 @@ class RecurringTransaction {
   final bool enabled;
   final String skipMonth;
   final String createdAt;
+  final bool autoAdd;
+  final bool reminderEnabled;
+  final int reminderDayOffset;
+  final String reminderTime;
 
   factory RecurringTransaction.fromJson(Map<String, dynamic> json) {
     return RecurringTransaction(
@@ -48,6 +56,10 @@ class RecurringTransaction {
       enabled: json['enabled'] == null ? true : _asBool(json['enabled']),
       skipMonth: (json['skipMonth'] ?? '').toString(),
       createdAt: normalizeTimestampText(json['createdAt']?.toString()),
+      autoAdd: json['autoAdd'] == null ? true : _asBool(json['autoAdd']),
+      reminderEnabled: json['reminderEnabled'] == null ? false : _asBool(json['reminderEnabled']),
+      reminderDayOffset: json['reminderDayOffset'] == null ? 0 : _asInt(json['reminderDayOffset']),
+      reminderTime: (json['reminderTime'] ?? '09:00').toString(),
     );
   }
 
@@ -66,6 +78,10 @@ class RecurringTransaction {
       'enabled': enabled,
       'skipMonth': skipMonth,
       'createdAt': createdAt,
+      'autoAdd': autoAdd,
+      'reminderEnabled': reminderEnabled,
+      'reminderDayOffset': reminderDayOffset,
+      'reminderTime': reminderTime,
     };
   }
 
@@ -83,6 +99,10 @@ class RecurringTransaction {
     bool? enabled,
     String? skipMonth,
     String? createdAt,
+    bool? autoAdd,
+    bool? reminderEnabled,
+    int? reminderDayOffset,
+    String? reminderTime,
   }) {
     return RecurringTransaction(
       id: id ?? this.id,
@@ -98,6 +118,10 @@ class RecurringTransaction {
       enabled: enabled ?? this.enabled,
       skipMonth: skipMonth ?? this.skipMonth,
       createdAt: createdAt ?? this.createdAt,
+      autoAdd: autoAdd ?? this.autoAdd,
+      reminderEnabled: reminderEnabled ?? this.reminderEnabled,
+      reminderDayOffset: reminderDayOffset ?? this.reminderDayOffset,
+      reminderTime: reminderTime ?? this.reminderTime,
     );
   }
 

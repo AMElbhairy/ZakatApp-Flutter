@@ -58,7 +58,7 @@ import 'services/sync_controller.dart';
 import 'services/startup_restore_discovery.dart';
 import 'services/widget_data_service.dart';
 
-final bool _showLegacyAuthUi = kDebugMode && !ZakatApp.isTesting;
+final bool _showLegacyAuthUi = true;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -644,12 +644,23 @@ class _ZakatAppContentState extends State<_ZakatAppContent> {
         GlobalCupertinoLocalizations.delegate,
       ],
       builder: (BuildContext context, Widget? child) {
+        final double width = MediaQuery.sizeOf(context).width;
+        final bool isSmallScreen = width < 430;
+        final Widget builtChild = child ?? const SizedBox.shrink();
+
+        final Widget responsiveChild = MediaQuery(
+          data: MediaQuery.of(context).copyWith(
+            textScaler: TextScaler.linear(isSmallScreen ? 0.9 : 1.0),
+          ),
+          child: builtChild,
+        );
+
         return GestureDetector(
           behavior: HitTestBehavior.translucent,
           onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
           child: Stack(
             children: <Widget>[
-              if (child case final Widget builtChild) builtChild,
+              responsiveChild,
               const _OfflineStatusBannerOverlay(),
               Consumer<AppPrivacyOverlayController>(
                 builder:

@@ -23,6 +23,7 @@ object AndroidSmsCaptureBridge {
         val title: String,
         val body: String,
         val tapToken: String,
+        val notificationId: Int,
     )
 
     private data class NativeSmartCaptureStateSnapshot(
@@ -96,6 +97,12 @@ object AndroidSmsCaptureBridge {
         "pound",
         "pounds",
     )
+    private val nativeBuiltinMerchantAliases = mapOf(
+        "talabat" to listOf("talabat", "talabat.com", "talabat app", "talabat maa", "talabat pay", "talabat mart", "طلبات"),
+        "amazon" to listOf("amazon", "amazon.sa", "amazon.ae"),
+        "toyou" to listOf("toyou", "toyou app"),
+        "tamimi market" to listOf("tamimi market", "s505 tamimi market", "al tamimi market"),
+    )
 
     private var captureChannel: MethodChannel? = null
     private var flutterReady: Boolean = false
@@ -140,9 +147,9 @@ object AndroidSmsCaptureBridge {
         val channel = captureChannel
         if (!flutterReady || channel == null) {
             val message = payload["messageContent"].orEmpty().trim()
-            val parsed = parseCaptureNotification(context, message)
+            val parsed = parseCaptureNotification(context, payload, message)
             val queuedPayload = payload + mapOf("notificationAlreadyShown" to "true")
-            showFallbackNotification(context, message, parsed)
+            showFallbackNotification(context, parsed)
             queuePayload(context, queuedPayload)
             return
         }
@@ -150,9 +157,9 @@ object AndroidSmsCaptureBridge {
             channel.invokeMethod("smsMessageReceived", payload)
         } catch (_: Throwable) {
             val message = payload["messageContent"].orEmpty().trim()
-            val parsed = parseCaptureNotification(context, message)
+            val parsed = parseCaptureNotification(context, payload, message)
             val queuedPayload = payload + mapOf("notificationAlreadyShown" to "true")
-            showFallbackNotification(context, message, parsed)
+            showFallbackNotification(context, parsed)
             queuePayload(context, queuedPayload)
         }
     }
@@ -175,10 +182,9 @@ object AndroidSmsCaptureBridge {
 
     private fun showFallbackNotification(
         context: Context,
-        message: String,
         parsed: ParsedCaptureNotification,
     ) {
-        if (message.isEmpty()) return
+        if (parsed.body.isEmpty() && parsed.title.isEmpty()) return
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) {
             return
         }
@@ -198,7 +204,7 @@ object AndroidSmsCaptureBridge {
         }
         val pendingIntent = PendingIntent.getActivity(
             context,
-            notificationIdBase + message.hashCode(),
+            parsed.notificationId,
             launchIntent,
             pendingIntentFlags(),
         )
@@ -219,19 +225,22 @@ object AndroidSmsCaptureBridge {
             .build()
 
         NotificationManagerCompat.from(context)
-            .notify(notificationIdBase + message.hashCode(), notification)
+            .notify(parsed.notificationId, notification)
     }
 
     private fun parseCaptureNotification(
         context: Context,
+        payload: Map<String, String>,
         message: String,
     ): ParsedCaptureNotification {
         val state = loadSmartCaptureState(context)
         val languageCode = state?.languagePreference ?: "en"
         val isArabic = languageCode.lowercase(Locale.ROOT).startsWith("ar")
+        val source = payload["source"].orEmpty()
         val amount = extractAmount(message)
-        val merchant = extractMerchantName(message)
+        val merchant = extractMerchantName(message, state)
         val tapToken = UUID.randomUUID().toString()
+        val notificationId = nativeNotificationId(source = source, message = message)
         val title = nativeCaptureStatusTitle(
             context = context,
             message = message,
@@ -251,6 +260,7 @@ object AndroidSmsCaptureBridge {
             title = title,
             body = body,
             tapToken = tapToken,
+            notificationId = notificationId,
         )
     }
 
@@ -328,7 +338,8 @@ object AndroidSmsCaptureBridge {
         }
 
         if (isLikelyOtpOrSecurityMessage(normalized) ||
-            nativeContainsRejectionIndicators(normalized)
+            nativeContainsRejectionIndicators(normalized) ||
+            nativeContainsSubscriptionActivationIndicators(normalized)
         ) {
             return nativeLocalizedLabel(
                 english = "Rejected",
@@ -390,9 +401,10 @@ object AndroidSmsCaptureBridge {
         if (merchant.isBlank() || amount.isBlank()) return false
 
         val normalized = message.lowercase(Locale.ROOT)
-        if (nativeContainsRejectionIndicators(normalized) ||
-            nativeLooksLikeTransferMessage(normalized)
-        ) {
+        if (nativeContainsRejectionIndicators(normalized)) {
+            return false
+        }
+        if (nativeContainsSubscriptionActivationIndicators(normalized)) {
             return false
         }
 
@@ -408,6 +420,10 @@ object AndroidSmsCaptureBridge {
                 ?.lowercase(Locale.ROOT)
                 ?: "expense"
             return enabled && autoApprove && defaultType != "transfer"
+        }
+
+        if (nativeLooksLikeTransferMessage(normalized)) {
+            return false
         }
 
         return nativeBuiltInAutoApproveMerchant(resolvedMerchant)
@@ -575,6 +591,40 @@ object AndroidSmsCaptureBridge {
         ))
     }
 
+    private fun nativeContainsSubscriptionActivationIndicators(text: String): Boolean {
+        return nativeContainsAny(text, listOf(
+            "subscribe",
+            "subscription",
+            "subscribed",
+            "welcome prepaid",
+            "welcome package",
+            "new activation",
+            "activation successful",
+            "activated successfully",
+            "package details",
+            "bundle price",
+            "service number",
+            "econtract",
+            "contract",
+            "mobily welcome prepaid",
+            "اشتراك",
+            "تم تفعيل اشتراكك",
+            "تم الاشتراك",
+            "تفعيل الاشتراك",
+            "الباقة",
+            "الباقة الترحيبية",
+            "الباقة مسبقة الدفع",
+            "تفاصيل الباقة",
+            "سعر الباقة",
+            "رقم الخدمة",
+            "العقد الإلكتروني",
+            "العقد الالكتروني",
+            "تطبيق موبايلي",
+            "حمّل تطبيق",
+            "حمل تطبيق",
+        ))
+    }
+
     private fun nativeLooksLikeTransferMessage(text: String): Boolean {
         return nativeContainsAny(text, listOf(
             "transfer",
@@ -640,79 +690,1001 @@ object AndroidSmsCaptureBridge {
     }
 
     private fun extractAmount(message: String): String? {
-        val lower = message.lowercase()
-        val amountRegex = Regex(
-            """(?:\b(?:egp|usd|sar|eur|gbp|aed|kwd|qar|bhd|omr|jod|try|myr|pkr|idr)\b\s*)?([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)\s*(egp|usd|sar|eur|gbp|aed|kwd|qar|bhd|omr|jod|try|myr|pkr|idr|ج\.م|جنيه|ريال|درهم|دينار|ليرة|€|£|\$|₺|⃁|﷼)?""",
-            RegexOption.IGNORE_CASE,
-        )
+        val normalized = message.replace("\r", "\n")
+        val explicit = nativeExplicitAmountCandidate(normalized)
+        if (explicit != null) {
+            return nativeFormatAmount(explicit.first, explicit.second)
+        }
 
-        val match = amountRegex.find(lower) ?: return null
-        val number = match.groupValues[1].replace(",", "")
-        val currency = match.groupValues.getOrNull(2)?.trim().orEmpty()
-            .uppercase(Locale.ROOT)
-        if (number.isBlank()) return null
-        return if (currency.isBlank()) number else "$currency $number".trim()
+        val lines = normalized.split("\n").map { it.trim() }.filter { it.isNotEmpty() }
+        var selectedPriority = Int.MAX_VALUE
+        var bestScore = Double.NEGATIVE_INFINITY
+        var selectedAmount: Double? = null
+
+        for (line in lines) {
+            val lower = line.lowercase(Locale.ROOT)
+            val matches = Regex("""([0-9][0-9,]*(?:\.[0-9]+)?)""").findAll(line)
+            for (match in matches) {
+                val raw = match.groupValues[1].replace(",", "")
+                val value = raw.toDoubleOrNull() ?: continue
+                if (value <= 0) continue
+                if (value < 100 && nativeLooksLikeDateNumberCandidate(line, value)) {
+                    continue
+                }
+                if (nativeContainsAny(lower, listOf(
+                        "الرصيد",
+                        "رصيدك الحالي",
+                        "حد الصرف",
+                        "حد الصرف المتبقي",
+                        "remaining amount",
+                        "remaining limit",
+                        "سعر الصرف",
+                        "exchange rate",
+                        "available balance",
+                        "remaining balance",
+                        "credit limit",
+                    ))
+                ) {
+                    continue
+                }
+
+                val priorityAndScore = nativeAmountPriorityAndScore(lower)
+                var score = priorityAndScore.second
+                val localCurrency = nativeCurrencyCode(line)
+                if (localCurrency == "SAR" || localCurrency == "EGP") {
+                    score += 30.0
+                }
+                if (priorityAndScore.first < selectedPriority ||
+                    (priorityAndScore.first == selectedPriority && score > bestScore)
+                ) {
+                    selectedPriority = priorityAndScore.first
+                    bestScore = score
+                    selectedAmount = value
+                }
+            }
+        }
+
+        return selectedAmount?.let { nativeFormatAmount(it, null) }
     }
 
-    private fun extractMerchantName(message: String): String? {
+    private fun extractMerchantName(
+        message: String,
+        state: NativeSmartCaptureStateSnapshot?,
+    ): String? {
         val normalized = message.replace("\r", "\n")
-        val cleaned = normalized.replace("\n", " ")
+        val text = normalized.lowercase(Locale.ROOT)
         val lines = normalized
-            .split("\n")
+            .split(Regex("""\r?\n"""))
             .map { it.trim() }
             .filter { it.isNotEmpty() }
 
-        val inlinePatterns = listOf(
-            Regex(
-                """(?i)(?:at|merchant|store|from|to|المرسل|مرسل|لدى|عند|من|إلى|الى)\s*[:\-]?\s*([A-Za-z0-9&'().\-\u0600-\u06FF ]{2,80})""",
-            ),
-        )
-        for (pattern in inlinePatterns) {
-            val match = pattern.find(cleaned) ?: continue
-            val merchant = match.groupValues.getOrNull(1)?.trim().orEmpty()
-            val candidate = cleanMerchantCandidate(merchant)
-            if (candidate.isNotBlank()) return candidate
-        }
+        val effectiveAliases = nativeEffectiveAliases(state)
+        val intentMerchant = nativeMerchantFromIntentLabel(message)
+        var merchantName: String? = null
 
-        val linePatterns = listOf(
-            Regex("""(?i)^\s*(?:merchant|at|to|from|store)\s*[:\-]?\s*(.+)$"""),
-            Regex("""(?i)^\s*(?:المرسل|مرسل|عند|لدى|من|إلى|الى)\s*[:\-]?\s*(.+)$"""),
-        )
-        for (line in lines) {
-            for (pattern in linePatterns) {
-                val match = pattern.find(line) ?: continue
-                val merchant = match.groupValues.getOrNull(1)?.trim().orEmpty()
-                val candidate = cleanMerchantCandidate(merchant)
-                if (candidate.isNotBlank()) return candidate
+        if (intentMerchant != null) {
+            merchantName = nativeNormalizeMerchantName(intentMerchant)
+        } else {
+            nativeMerchantFromInlinePatterns(message, effectiveAliases)?.let {
+                merchantName = it
+            } ?: run {
+                val transferDetails = nativeTransferDetails(
+                    message,
+                    currentUserName = null,
+                )
+                when (transferDetails.direction) {
+                    "out" -> {
+                        merchantName = transferDetails.recipientName?.let {
+                            nativeResolveAlias(it, effectiveAliases)
+                        }
+                    }
+                    "in" -> {
+                        merchantName = transferDetails.senderName?.let {
+                            nativeResolveAlias(it, effectiveAliases)
+                        }
+                    }
+                    else -> {
+                        if (!transferDetails.isTransferMessage && !nativeIsWalletTopUpMessage(text)) {
+                            merchantName = nativeMerchantFromTransactionField(
+                                message,
+                                effectiveAliases,
+                                hasPurchaseIntent = nativeHasPurchaseIntent(text),
+                            )
+                            merchantName = merchantName
+                                ?: nativeMerchantFromPriorityPatterns(message, effectiveAliases)
+                            if (merchantName == null) {
+                                for (line in lines) {
+                                    val lineLower = line.lowercase(Locale.ROOT)
+                                    if (Regex("""^(?:في|داخل|الدولة|country)\s*:""", RegexOption.IGNORE_CASE).containsMatchIn(lineLower)) continue
+                                    if (Regex("""^(?:to|إلى|الى)\s*:""", RegexOption.IGNORE_CASE).containsMatchIn(lineLower)) continue
+                                    if (nativeContainsAny(lineLower, listOf(
+                                            "شراء",
+                                            "دفع",
+                                            "خصم",
+                                            "سداد",
+                                            "عملية",
+                                            "purchase",
+                                            "payment",
+                                            "pos",
+                                            "debit",
+                                            "transfer",
+                                            "remittance",
+                                            "تحويل",
+                                            "حوالة",
+                                            "تم",
+                                            "دولي",
+                                            "محلي",
+                                            "بطاقة",
+                                            "الخصم",
+                                            "المباشر",
+                                            "رقم",
+                                            "المتاح",
+                                            "الرصيد",
+                                            "الحساب",
+                                            "اليوم",
+                                            "الساعة",
+                                            "merchant",
+                                        )) ||
+                                        nativeContainsAny(lineLower, listOf(
+                                            "apple pay",
+                                            "mada",
+                                            "مدى",
+                                            "card",
+                                            "بطاقة",
+                                            "حساب",
+                                            "account",
+                                            "visa",
+                                            "mastercard",
+                                        )) ||
+                                        nativeContainsAny(lineLower, listOf(
+                                            "sar",
+                                            "sr",
+                                            "s.r",
+                                            "egp",
+                                            "usd",
+                                            "aed",
+                                            "درهم",
+                                            "ريال",
+                                            "جنيه",
+                                            "ر.س",
+                                            "ج.م",
+                                            "fee",
+                                            "رسوم",
+                                            "total",
+                                            "due",
+                                            "balance",
+                                            "الرصيد",
+                                            "مبلغ",
+                                            "amount",
+                                        )) ||
+                                        Regex("""^\s*(?:from|من)\s*[:\-]?\s*\d+\s*$""", RegexOption.IGNORE_CASE).containsMatchIn(lineLower) ||
+                                        Regex("""\d""").containsMatchIn(line)
+                                    ) {
+                                        continue
+                                    }
+                                    if (Regex("""[A-Za-z\u0600-\u06FF]""").containsMatchIn(line)) {
+                                        merchantName = nativeValidatedMerchant(line, effectiveAliases)
+                                        if (merchantName != null) break
+                                    }
+                                }
+                            }
+                            if (merchantName == null) {
+                                merchantName = nativeMerchantFromKnownAlias(text, effectiveAliases)
+                            }
+                        }
+                    }
+                }
             }
         }
 
-        for (line in lines) {
-            val candidate = cleanMerchantCandidate(line)
-            if (candidate.isBlank()) continue
-            if (candidate.any { it.isDigit() }) continue
-            val lower = candidate.lowercase(Locale.ROOT)
-            if (nativeContainsAny(lower, listOf(
-                    "otp",
-                    "verification",
-                    "balance",
-                    "الرصيد",
-                    "card",
-                    "بطاقة",
-                    "amount",
-                    "مبلغ",
-                    "purchase",
-                    "payment",
-                    "transfer",
-                    "حساب",
-                    "account",
-                ))
-            ) {
-                continue
+        if (merchantName != null && nativeIsInvalidMerchantCandidate(merchantName)) {
+            merchantName = null
+        }
+        return merchantName
+    }
+
+    private fun nativeHasPurchaseIntent(text: String): Boolean {
+        return nativeContainsAny(text, listOf(
+            "purchase",
+            "online purchase",
+            "pos",
+            "point of sale",
+            "apple pay",
+            "mada",
+            "visa purchase",
+            "mastercard purchase",
+            "debit card purchase",
+            "شراء",
+            "شراء دولي",
+            "شراء عبر الإنترنت",
+            "شراء عبر نقاط البيع",
+            "نقاط البيع",
+            "مدى",
+            "أبل باي",
+            "عملية شراء",
+        ))
+    }
+
+    private fun nativeEffectiveAliases(state: NativeSmartCaptureStateSnapshot?): Map<String, String> {
+        val aliases = mutableMapOf<String, String>()
+        for ((merchant, aliasList) in nativeBuiltinMerchantAliases) {
+            for (alias in aliasList) {
+                aliases[alias.lowercase(Locale.ROOT).trim()] = merchant
             }
-            return candidate
+        }
+        if (state != null) {
+            for ((alias, merchant) in state.merchantAliases) {
+                aliases[alias.lowercase(Locale.ROOT).trim()] = merchant
+            }
+            for ((_, rule) in state.merchantRules) {
+                val enabled = (rule["enabled"] as? Boolean) ?: true
+                if (!enabled) continue
+                val builtinKey = (rule["builtinKey"] as? String)?.lowercase(Locale.ROOT)?.trim()
+                if (builtinKey != null) {
+                    for (alias in nativeBuiltinMerchantAliases[builtinKey].orEmpty()) {
+                        aliases[alias.lowercase(Locale.ROOT).trim()] = rule["merchantName"] as? String
+                            ?: aliases[alias.lowercase(Locale.ROOT).trim()].orEmpty()
+                    }
+                }
+                val ruleAliases = rule["aliases"] as? List<*>
+                if (ruleAliases != null) {
+                    for (alias in ruleAliases) {
+                        val aliasText = alias?.toString()?.lowercase(Locale.ROOT)?.trim().orEmpty()
+                        val merchantName = rule["merchantName"] as? String
+                        if (aliasText.isNotEmpty() && !merchantName.isNullOrBlank()) {
+                            aliases[aliasText] = merchantName
+                        }
+                    }
+                }
+            }
+        }
+        return aliases
+    }
+
+    private fun nativeMerchantFromKnownAlias(
+        text: String,
+        aliases: Map<String, String>,
+    ): String? {
+        val orderedAliases = aliases.keys.sortedByDescending { it.length }
+        val searchText = nativeMerchantSearchToken(text)
+        for (alias in orderedAliases) {
+            if (Regex("""(?i)(?<![a-z0-9])${Regex.escape(alias)}(?![a-z0-9])""").containsMatchIn(text)) {
+                return nativeValidatedMerchant(aliases[alias].orEmpty(), aliases)
+            }
+            val aliasToken = nativeMerchantSearchToken(alias)
+            if (aliasToken.isNotEmpty() && searchText.contains(aliasToken)) {
+                return nativeValidatedMerchant(aliases[alias].orEmpty(), aliases)
+            }
         }
         return null
+    }
+
+    private fun nativeMerchantFromPriorityPatterns(
+        rawMessage: String,
+        aliases: Map<String, String>,
+    ): String? {
+        val lines = rawMessage.split(Regex("""\r?\n"""))
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+        val patterns = listOf(
+            Regex("""^\s*عند\s+([A-Za-z\u0600-\u06FF0-9][A-Za-z0-9\u0600-\u06FF&*.,\- ]{1,80})""", RegexOption.IGNORE_CASE),
+            Regex("""^\s*At\s*[:-]?\s*([A-Za-z\u0600-\u06FF0-9][A-Za-z0-9\u0600-\u06FF&*.,\- ]{1,80})""", RegexOption.IGNORE_CASE),
+            Regex("""^\s*Merchant\s*[:-]?\s*([A-Za-z\u0600-\u06FF0-9][A-Za-z0-9\u0600-\u06FF&*.,\- ]{1,80})""", RegexOption.IGNORE_CASE),
+        )
+        for (line in lines) {
+            for (pattern in patterns) {
+                val match = pattern.find(line) ?: continue
+                val candidate = nativeValidatedMerchant(match.groupValues.getOrNull(1), aliases)
+                if (candidate != null) return candidate
+            }
+        }
+        return null
+    }
+
+    private fun nativeMerchantFromInlinePatterns(
+        rawMessage: String,
+        aliases: Map<String, String>,
+    ): String? {
+        val patterns = listOf(
+            Regex("""(?:(?<![A-Za-z0-9])(?:at|merchant|store)(?![A-Za-z0-9])|لدى|عند|في)\s*[:\-]?\s*([A-Za-z\u0600-\u06FF0-9][A-Za-z0-9\u0600-\u06FF&*.,\- ]{1,80})""", RegexOption.IGNORE_CASE),
+        )
+        for (pattern in patterns) {
+            val match = pattern.find(rawMessage) ?: continue
+            val candidate = nativeValidatedMerchant(match.groupValues.getOrNull(1), aliases)
+            if (candidate != null) return candidate
+        }
+        return null
+    }
+
+    private data class NativeTransferDetails(
+        val direction: String,
+        val senderName: String?,
+        val recipientName: String?,
+        val isTransferMessage: Boolean,
+    )
+
+    private fun nativeTransferDetails(
+        rawMessage: String,
+        currentUserName: String? = null,
+    ): NativeTransferDetails {
+        val lines = rawMessage.split(Regex("""\r?\n"""))
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+        val senderName = nativeTransferParty(lines, listOf(
+            "sender",
+            "from account",
+            "from",
+            "المرسل",
+            "مرسل",
+            "من حساب",
+            "من",
+        ))
+        val recipientName = nativeTransferParty(lines, listOf(
+            "to account",
+            "to",
+            "recipient",
+            "beneficiary",
+            "المستفيد",
+            "إلى حساب",
+            "إلى",
+            "الى",
+        ))
+        val lowered = rawMessage.lowercase(Locale.ROOT)
+        val hasExplicitTransferPartyLabels = nativeContainsAny(lowered, listOf(
+            "sender:",
+            "recipient:",
+            "beneficiary:",
+            "from account",
+            "to account",
+            "المرسل",
+            "مرسل",
+            "المستفيد",
+            "من حساب",
+            "إلى حساب",
+        ))
+        val hasTransferKeywords = nativeContainsAny(lowered, listOf(
+            "transfer",
+            "remittance",
+            "bank transfer",
+            "تحويل",
+            "حوالة",
+            "واردة",
+            "وارد",
+            "صادرة",
+            "صادر",
+        ))
+        val isInternalTransfer = nativeContainsAny(lowered, listOf(
+            "internal transfer",
+            "transfer between accounts",
+            "account transfer",
+            "تحويل داخلي",
+            "تحويل بين الحسابات",
+            "بين حساباتي",
+            "between accounts",
+            "between my accounts",
+        )) || (
+            nativeContainsAny(lowered, listOf(
+                "from account",
+                "to account",
+                "من حساب",
+                "إلى حساب",
+            )) && (
+                nativeLooksLikeOwnAccountReference(senderName) ||
+                    nativeLooksLikeOwnAccountReference(recipientName)
+            )
+        )
+        val isTransferMessage = hasTransferKeywords || hasExplicitTransferPartyLabels || isInternalTransfer
+        val direction = if (isTransferMessage) {
+            nativeTransferDirection(
+                rawMessage,
+                senderName = senderName,
+                recipientName = recipientName,
+                currentUserName = currentUserName,
+                isInternalTransfer = isInternalTransfer,
+            )
+        } else {
+            "unknown"
+        }
+        return NativeTransferDetails(direction, senderName, recipientName, isTransferMessage)
+    }
+
+    private fun nativeTransferParty(lines: List<String>, labels: List<String>): String? {
+        for (line in lines) {
+            for (label in labels) {
+                val match = Regex("""^\s*${Regex.escape(label)}\s*[:\-]?\s*(.+)$""", RegexOption.IGNORE_CASE)
+                    .find(line) ?: continue
+                val candidate = match.groupValues.getOrNull(1)?.trim().orEmpty()
+                if (candidate.isBlank() || nativeIsTransferPartyNoise(candidate)) continue
+                return candidate
+            }
+        }
+        return null
+    }
+
+    private fun nativeIsTransferPartyNoise(value: String): Boolean {
+        val lower = value.lowercase(Locale.ROOT).trim()
+        return nativeContainsAny(lower, listOf(
+            "balance",
+            "الرصيد",
+            "amount",
+            "مبلغ",
+            "account",
+            "حساب",
+            "card",
+            "بطاقة",
+            "visa",
+            "mastercard",
+            "apple pay",
+            "mada",
+            "stc pay",
+            "stcpay",
+        )) || Regex("""^\d+$""").matches(lower)
+    }
+
+    private fun nativeLooksLikeOwnAccountReference(value: String?): Boolean {
+        if (value == null) return false
+        val lower = value.lowercase(Locale.ROOT).trim()
+        return nativeContainsAny(lower, listOf("account", "حساب", "card", "بطاقة")) ||
+            Regex("""^\*+\d+$""").matches(lower) ||
+            Regex("""^\d+$""").matches(lower)
+    }
+
+    private fun nativeTransferDirection(
+        rawMessage: String,
+        senderName: String?,
+        recipientName: String?,
+        currentUserName: String?,
+        isInternalTransfer: Boolean,
+    ): String {
+        if (isInternalTransfer) return "internal"
+        val lower = rawMessage.lowercase(Locale.ROOT)
+        val normalizedUser = currentUserName?.let { nativeMerchantSearchToken(it) }
+        val normalizedSender = senderName?.let { nativeMerchantSearchToken(it) }
+        val normalizedRecipient = recipientName?.let { nativeMerchantSearchToken(it) }
+        if (normalizedUser != null) {
+            if (normalizedSender != null && normalizedSender == normalizedUser) return "out"
+            if (normalizedRecipient != null && normalizedRecipient == normalizedUser) return "in"
+        }
+        if (nativeContainsAny(lower, listOf(
+                "debit transfer intl",
+                "debit transfer",
+                "transfer sent",
+                "paid to",
+                "sent to",
+                "outgoing transfer",
+                "خصم",
+                "سحب",
+                "دفع",
+                "تحويل صادر",
+                "حوالة صادرة",
+                "حوالة صادر",
+                "صادرة",
+                "صادر",
+                "تم التحويل إلى",
+            ))
+        ) {
+            return "out"
+        }
+        if (nativeContainsAny(lower, listOf(
+                "credit transfer",
+                "transfer received",
+                "received from",
+                "transfer from",
+                "incoming transfer",
+                "إيداع",
+                "تحويل وارد",
+                "حوالة واردة",
+                "حوالة وارد",
+                "واردة",
+                "وارد",
+                "تم استلام تحويل من",
+                "تم الإيداع",
+                "تم استلام",
+                "credited",
+                "received",
+            ))
+        ) {
+            return "in"
+        }
+        return "unknown"
+    }
+
+    private fun nativeMerchantFromTransactionField(
+        rawMessage: String,
+        aliases: Map<String, String>,
+        hasPurchaseIntent: Boolean,
+    ): String? {
+        val lines = rawMessage.split(Regex("""\r?\n"""))
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+
+        if (hasPurchaseIntent) {
+            nativeMerchantFromFieldLines(
+                lines,
+                aliases,
+                listOf("من", "from", "at", "merchant", "store", "لدى", "عند"),
+            )?.let { return it }
+        }
+
+        nativeMerchantFromFieldLines(
+            lines,
+            aliases,
+            listOf("merchant", "store", "at"),
+        )?.let { return it }
+
+        if (nativeContainsAny(rawMessage.lowercase(Locale.ROOT), listOf(
+                "credit transfer",
+                "incoming transfer",
+                "deposit",
+                "salary",
+                "credited",
+                "received",
+                "transfer received",
+                "payment received",
+                "inward transfer",
+                "cashback",
+                "repayment",
+            ))
+        ) {
+            return nativeMerchantFromFieldLines(
+                lines,
+                aliases,
+                listOf("from", "من", "لدى", "عند"),
+            )
+        }
+        return null
+    }
+
+    private fun nativeMerchantFromFieldLines(
+        lines: List<String>,
+        aliases: Map<String, String>,
+        labels: List<String>,
+    ): String? {
+        for (line in lines) {
+            for (label in labels) {
+                val match = Regex("""^\s*${Regex.escape(label)}\s*[:\-]?\s*(.+)$""", RegexOption.IGNORE_CASE)
+                    .find(line) ?: continue
+                val candidate = nativeValidatedMerchant(match.groupValues.getOrNull(1), aliases)
+                if (candidate != null) return candidate
+            }
+        }
+        return null
+    }
+
+    private fun nativeMerchantSearchToken(input: String): String {
+        return input.lowercase(Locale.ROOT)
+            .replace(Regex("""[\u200e\u200f\u202a-\u202e]"""), "")
+            .replace(Regex("""[^a-z0-9\u0600-\u06FF]+"""), "")
+    }
+
+    private fun nativeValidatedMerchant(
+        rawMerchant: String?,
+        aliases: Map<String, String>,
+    ): String? {
+        if (rawMerchant == null) return null
+        var clean = nativeTrimMerchantCandidate(rawMerchant)
+            .lineSequence()
+            .firstOrNull()
+            .orEmpty()
+            .trim()
+            .replaceFirst(
+                Regex("""^(?:purchase|pos purchase|pos|payment|spent|withdrawal|debit|شراء|عملية شراء|سداد|خصم|دفع|transfer|تحويل|حوالة|تم|وارد|merchant|at|from|من|لدى|عند)\s*[:\-]?\s+""", RegexOption.IGNORE_CASE),
+                "",
+            )
+            .replaceFirst(
+                Regex("""\s+(?:sar|egp|usd|aed|ريال|جنيه|درهم|ر\.س|ج\.م)$""", RegexOption.IGNORE_CASE),
+                "",
+            )
+            .replaceFirst(
+                Regex("""\s*[-–]\s*(?:sa|ksa|uae|eg|us|usa|uk)$""", RegexOption.IGNORE_CASE),
+                "",
+            )
+            .trim()
+        clean = nativeResolveAlias(clean, aliases)
+        val normalized = nativeNormalizeMerchantName(clean)
+        val key = normalized.lowercase(Locale.ROOT).trim()
+        val blacklist = setOf(
+            "sa", "ksa", "uae", "eg", "sar", "egp", "usd", "aed", "eur", "gbp",
+            "ريال", "جنيه", "درهم", "dollar", "apple", "apple pay", "applepay",
+            "mada", "مدى", "visa", "mastercard", "stc pay", "stcpay", "bank transfer",
+            "urpay", "ur pay", "hsbc", "cib", "alrajhi", "al rajhi", "ahli", "al ahli",
+            "bank", "purchase", "pos purchase", "pos", "payment", "spent", "withdrawal",
+            "debit", "شراء", "عملية شراء", "سداد", "خصم", "دفع", "amount", "مبلغ",
+        )
+        if (clean.isBlank() ||
+            key.length <= 2 ||
+            blacklist.contains(key) ||
+            (nativeContainsAny(key, listOf("card", "account", "balance", "remaining", "visa", "mastercard", "mada", "apple pay", "stc pay", "stcpay")) && Regex("""\d""").containsMatchIn(key)) ||
+            Regex("""^[\d\s\.,]+$""").containsMatchIn(key) ||
+            Regex("""^(?:في|داخل|الدولة|country)\s*:""").containsMatchIn(key)
+        ) {
+            return null
+        }
+        return normalized
+    }
+
+    private fun nativeTrimMerchantCandidate(rawMerchant: String): String {
+        val tokens = rawMerchant
+            .replace(Regex("""[\r\n\t]+"""), " ")
+            .trim()
+            .split(Regex("""\s+"""))
+        val kept = mutableListOf<String>()
+        for (token in tokens) {
+            val cleaned = token.trim()
+            if (cleaned.isEmpty()) continue
+            if (isMerchantStopWord(cleaned)) break
+            kept.add(cleaned)
+        }
+        return kept.joinToString(" ").trim()
+    }
+
+    private fun nativeResolveAlias(merchant: String, aliases: Map<String, String>): String {
+        val key = merchant.lowercase(Locale.ROOT).trim()
+        return aliases[key] ?: merchant
+    }
+
+    private fun nativeNormalizeMerchantName(merchant: String): String {
+        val normalized = merchant.lowercase(Locale.ROOT).trim()
+        return when {
+            normalized == "talabat.com" ||
+                normalized == "talabat app" ||
+                normalized == "talabat maa" ||
+                normalized == "talabat pay" ||
+                normalized == "talabat mart" ||
+                normalized.startsWith("talabat") -> "Talabat"
+            normalized.startsWith("amazon") || normalized == "amazon.sa" || normalized == "amazon.ae" -> "Amazon"
+            normalized.startsWith("toyou") -> "ToYou"
+            normalized.startsWith("hungerstation") -> "HungerStation"
+            normalized.startsWith("jahez") -> "Jahez"
+            normalized.startsWith("noon") -> "Noon"
+            normalized.startsWith("jarir") -> "Jarir"
+            normalized.startsWith("uber") -> "Uber"
+            normalized.startsWith("careem") -> "Careem"
+            normalized.startsWith("e-finance") || normalized.startsWith("efinance") -> "E-Finance"
+            normalized.startsWith("nile air") -> "Nile Air"
+            normalized.startsWith("flynas") -> "Flynas"
+            normalized.startsWith("saudia") -> "Saudia"
+            normalized.startsWith("fitness time") -> "Fitness Time"
+            normalized.startsWith("whoop") -> "WHOOP"
+            normalized.startsWith("fitness plan") -> "Fitness Plan"
+            normalized.startsWith("stc pay") -> "STC Pay"
+            normalized.startsWith("stc") -> "STC"
+            normalized.startsWith("mobily pay") -> "Mobily Pay"
+            normalized.startsWith("mobily") -> "Mobily"
+            normalized.startsWith("zain") -> "Zain"
+            Regex("""^(?:s\d+\s+)?tamimi market""").matches(normalized) -> "Tamimi Market"
+            else -> capitalizeWords(merchant)
+        }
+    }
+
+    private fun capitalizeWords(value: String): String {
+        return value.split(Regex("""\s+"""))
+            .filter { it.isNotEmpty() }
+            .joinToString(" ") { word ->
+                word.lowercase(Locale.ROOT).replaceFirstChar { char ->
+                    if (char.isLowerCase()) char.titlecase(Locale.ROOT) else char.toString()
+                }
+            }
+    }
+
+    private fun nativeIsInvalidMerchantCandidate(merchant: String): Boolean {
+        val normalized = merchant.lowercase(Locale.ROOT).trim()
+        val searchToken = nativeMerchantSearchToken(merchant)
+        val invalidExact = setOf(
+            "account",
+            "bank",
+            "balance",
+            "amount",
+            "card",
+            "merchant",
+            "payment",
+            "purchase",
+            "pos",
+            "debit",
+            "credit",
+            "cash",
+            "transfer",
+            "expense",
+            "income",
+            "بطاقة",
+            "حساب",
+            "الرصيد",
+            "مبلغ",
+            "عملية",
+            "شراء",
+            "دفع",
+            "سداد",
+            "رقم",
+            "المتاح",
+            "المباشر",
+            "الخصم",
+            "إلى",
+            "الى",
+            "من",
+            "لدى",
+            "عند",
+            "في",
+            "داخل",
+            "pending",
+            "approval",
+            "approved",
+            "rejected",
+            "declined",
+            "captured",
+            "successful",
+            "completed",
+            "review",
+            "smart",
+            "capture",
+        )
+        if (invalidExact.contains(normalized) || invalidExact.contains(searchToken)) {
+            return true
+        }
+        if (searchToken.contains("حساب") ||
+            searchToken.contains("account") ||
+            searchToken.contains("بطاقة") ||
+            searchToken.contains("pending") ||
+            searchToken.contains("approval") ||
+            searchToken.contains("approved") ||
+            searchToken.contains("rejected") ||
+            searchToken.contains("declined") ||
+            searchToken.contains("captured") ||
+            searchToken.contains("successful") ||
+            searchToken.contains("completed") ||
+            searchToken.startsWith("visa") ||
+            searchToken.startsWith("mastercard") ||
+            searchToken.startsWith("mada") ||
+            searchToken.startsWith("applepay") ||
+            searchToken.startsWith("stcpay") ||
+            searchToken.contains("الرصيد") ||
+            searchToken.contains("balance") ||
+            searchToken.contains("amount") ||
+            searchToken.contains("مبلغ") ||
+            searchToken.contains("رقم")
+        ) {
+            return true
+        }
+        return false
+    }
+
+    private fun nativeIsTransferMessage(text: String): Boolean {
+        return nativeContainsAny(text, listOf(
+            "transfer",
+            "remittance",
+            "bank transfer",
+            "تحويل",
+            "حوالة",
+            "from account",
+            "to account",
+            "من حساب",
+            "إلى حساب",
+            "الى حساب",
+        ))
+    }
+
+    private fun nativeIsWalletTopUpMessage(text: String): Boolean {
+        return nativeContainsAny(text, listOf(
+            "wallet top up",
+            "wallet top-up",
+            "wallet topup",
+            "top up wallet",
+            "top-up wallet",
+            "topup wallet",
+            "wallet recharge",
+            "recharge wallet",
+            "wallet reload",
+            "load wallet",
+            "wallet load",
+            "wallet refill",
+            "add money to wallet",
+            "add funds to wallet",
+            "fund wallet",
+            "wallet funding",
+            "account funding",
+            "funding via apple pay",
+            "wallet deposit",
+            "deposit to wallet",
+            "cash in wallet",
+            "wallet cash in",
+            "شحن المحفظة",
+            "شحن رصيد المحفظة",
+            "شحن المحفظه",
+            "شحن رصيد المحفظه",
+            "تعبئة المحفظة",
+            "تعبئة المحفظه",
+            "إعادة شحن المحفظة",
+            "اعادة شحن المحفظة",
+            "إعادة شحن المحفظه",
+            "اعادة شحن المحفظه",
+            "إضافة رصيد للمحفظة",
+            "اضافة رصيد للمحفظة",
+            "إضافة رصيد للمحفظه",
+            "اضافة رصيد للمحفظه",
+            "إيداع في المحفظة",
+            "إيداع في المحفظه",
+            "إضافة إلى المحفظة",
+            "اضافة إلى المحفظة",
+            "إضافة الى المحفظة",
+            "اضافة الى المحفظة",
+            "تم شحن المحفظة",
+            "تم شحن المحفظه",
+            "تم تعبئة المحفظة",
+            "تم تعبئة المحفظه",
+            "تمويل المحفظة",
+            "تمويل المحفظه",
+            "تمويل الحساب",
+            "تم تعبئة الحساب",
+            "شحن الحساب",
+            "إضافة رصيد للحساب",
+            "اضافة رصيد للحساب",
+        ))
+    }
+
+    private fun nativeMerchantFromIntentLabel(rawMessage: String): String? {
+        val lower = rawMessage.lowercase(Locale.ROOT)
+        val labels = listOf(
+            Regex("""credit\s*card\s*:\s*payment""", RegexOption.IGNORE_CASE),
+            Regex("""debit\s*:\s*loan\s+instalment""", RegexOption.IGNORE_CASE),
+            Regex("""تم\s+سداد\s+البطاقة\s+الائتمانية""", RegexOption.IGNORE_CASE),
+        )
+        return when {
+            labels[0].containsMatchIn(lower) -> "Credit Card Payment"
+            labels[1].containsMatchIn(lower) -> "Loan Instalment"
+            labels[2].containsMatchIn(lower) -> "سداد البطاقة الائتمانية"
+            else -> null
+        }
+    }
+
+    private fun nativeExplicitAmountCandidate(text: String): Pair<Double, String?>? {
+        val patterns = listOf(
+            Regex("""(?i)(?:SAR|SR|S\.R|EGP|USD|AED|KWD|QAR|BHD|OMR|ر\.س|ج\.م|ريال|جنيه|درهم|د\.إ|د.إ)\s*(?:amount|المبلغ|مبلغ)\s*[:\-]?\s*([0-9][0-9,]*(?:\.[0-9]+)?)"""),
+            Regex("""(?i)(?:amount|المبلغ|مبلغ|charged amount|transaction amount|purchase amount|total|value|price|due)\s*[:\-]?\s*(?:SAR|SR|S\.R|EGP|USD|AED|KWD|QAR|BHD|OMR|ر\.س|ج\.م|ريال|جنيه|درهم|د\.إ|د.إ)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)"""),
+            Regex("""(?i)(?:SAR|SR|S\.R|EGP|USD|AED|KWD|QAR|BHD|OMR|ر\.س|ج\.م|ريال|جنيه|درهم|د\.إ|د.إ)\s*([0-9][0-9,]*(?:\.[0-9]+)?)"""),
+            Regex("""(?i)([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:SAR|SR|S\.R|EGP|USD|AED|KWD|QAR|BHD|OMR|ر\.س|ج\.م|ريال|جنيه|درهم|د\.إ|د.إ)"""),
+        )
+        for (pattern in patterns) {
+            val match = pattern.find(text) ?: continue
+            val rawAmount = match.groupValues.getOrNull(1).orEmpty().replace(",", "")
+            val parsedAmount = rawAmount.toDoubleOrNull() ?: continue
+            if (parsedAmount <= 0) continue
+            val currency = nativeCurrencyCode(match.value)
+            return parsedAmount to currency
+        }
+        return null
+    }
+
+    private fun nativeAmountPriorityAndScore(lineLower: String): Pair<Int, Double> {
+        return when {
+            nativeContainsAny(lineLower, listOf(
+                    "total due",
+                    "total charged",
+                    "إجمالي المبلغ المستحق",
+                    "المبلغ النهائي",
+                    "إجمالي المبلغ",
+                )) -> 1 to 10000.0
+            nativeContainsAny(lineLower, listOf(
+                    "charged amount",
+                    "المبلغ المطلوب",
+                    "total charged amount",
+                )) -> 2 to 8000.0
+            nativeContainsAny(lineLower, listOf(
+                    "مبلغ",
+                    "amount",
+                    "amt",
+                    "value",
+                    "بقيمة",
+                    "بقيمه",
+                    "purchase amount",
+                    "transaction amount",
+                )) -> 3 to 6000.0
+            nativeContainsAny(lineLower, listOf(
+                    "purchase",
+                    "pos",
+                    "payment",
+                    "debit",
+                    "credit",
+                    "شراء",
+                    "دفع",
+                    "خصم",
+                    "سحب",
+                )) -> 3 to 5500.0
+            nativeContainsAny(lineLower, listOf(
+                    "fee",
+                    "fees",
+                    "رسوم",
+                    "رسوم العملية",
+                )) -> 4 to 4000.0
+            nativeContainsAny(lineLower, listOf(
+                    "balance",
+                    "remaining",
+                    "spending limit",
+                    "remaining amount",
+                    "remaining limit",
+                )) -> 5 to 2000.0
+            else -> 5 to 0.0
+        }
+    }
+
+    private fun nativeLooksLikeDateNumberCandidate(line: String, value: Double): Boolean {
+        if (value >= 100) return false
+        val lower = line.lowercase(Locale.ROOT)
+        return nativeContainsAny(lower, listOf(
+            "jan",
+            "feb",
+            "mar",
+            "apr",
+            "may",
+            "jun",
+            "jul",
+            "aug",
+            "sep",
+            "oct",
+            "nov",
+            "dec",
+            "يناير",
+            "فبراير",
+            "مارس",
+            "أبريل",
+            "ابريل",
+            "مايو",
+            "يونيو",
+            "يوليو",
+            "أغسطس",
+            "اغسطس",
+            "سبتمبر",
+            "أكتوبر",
+            "اكتوبر",
+            "نوفمبر",
+            "ديسمبر",
+        )) || lower.contains("-") || lower.contains("/")
+    }
+
+    private fun nativeCurrencyCode(text: String): String? {
+        val patterns = listOf(
+            Regex("""(?i)\b(SAR|SR|S\.R)\b""") to "SAR",
+            Regex("""(?i)\b(EGP|ج\.م|جنيه)\b""") to "EGP",
+            Regex("""(?i)\b(USD|\$)\b""") to "USD",
+            Regex("""(?i)\b(AUD|A\$)\b""") to "AUD",
+            Regex("""(?i)\b(CAD|C\$)\b""") to "CAD",
+            Regex("""(?i)\b(AED|د\.إ|د.إ|درهم)\b""") to "AED",
+            Regex("""(?i)\b(KWD)\b""") to "KWD",
+            Regex("""(?i)\b(QAR)\b""") to "QAR",
+            Regex("""(?i)\b(BHD)\b""") to "BHD",
+            Regex("""(?i)\b(OMR)\b""") to "OMR",
+            Regex("""(?i)ر\.س""") to "SAR",
+            Regex("""(?i)⃁""") to "SAR",
+            Regex("""(?i)€""") to "EUR",
+            Regex("""(?i)£""") to "GBP",
+        )
+        for ((pattern, code) in patterns) {
+            if (pattern.containsMatchIn(text)) return code
+        }
+        return null
+    }
+
+    private fun nativeFormatAmount(amount: Double, currency: String?): String {
+        val formatted = String.format(Locale.ROOT, "%.2f", amount)
+            .replace(Regex("""(\.\d*?[1-9])0+$"""), "$1")
+            .replace(Regex("""\.0+$"""), "")
+        return if (currency.isNullOrBlank()) {
+            formatted
+        } else {
+            "${nativeDisplayCurrencyLabel(currency)} $formatted".trim()
+        }
+    }
+
+    private fun nativeDisplayCurrencyLabel(currency: String): String {
+        val code = currency.trim().uppercase(Locale.ROOT)
+        return when (code) {
+            "SAR", "⃁", "﷼" -> saudiRiyalSymbol()
+            "AUD" -> "A$"
+            "CAD" -> "C$"
+            else -> code
+        }
+    }
+
+    private fun saudiRiyalSymbol(): String {
+        return if (Build.VERSION.SDK_INT >= 36) "⃁" else "SAR"
     }
 
     private fun cleanMerchantCandidate(rawMerchant: String): String {
@@ -930,6 +1902,7 @@ object AndroidSmsCaptureBridge {
     fun isLikelyFinancialMessage(message: String): Boolean {
         val lower = message.lowercase()
         if (isLikelyOtpOrSecurityMessage(lower)) return false
+        if (nativeContainsSubscriptionActivationIndicators(lower)) return false
         if (nativeContainsRejectionIndicators(lower)) return true
         if (containsAnyCurrencyMarker(lower)) return true
         return listOf(
@@ -1018,5 +1991,18 @@ object AndroidSmsCaptureBridge {
             "notificationTap" to json.optString("notificationTap"),
             "notificationTapToken" to json.optString("notificationTapToken"),
         )
+    }
+
+    private fun nativeNotificationId(source: String, message: String): Int {
+        val normalizedSource = source.trim().lowercase(Locale.ROOT)
+        val normalizedMessage = message.replace(Regex("""\s+"""), " ")
+            .trim()
+        val bytes = "$normalizedSource|$normalizedMessage".toByteArray(Charsets.UTF_8)
+        var hash = 0x811c9dc5.toInt()
+        for (byte in bytes) {
+            hash = hash xor (byte.toInt() and 0xff)
+            hash *= 0x01000193
+        }
+        return hash and 0x7fffffff
     }
 }

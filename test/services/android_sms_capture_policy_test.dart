@@ -61,4 +61,19 @@ void main() {
       isFalse,
     );
   });
+
+  test('subscription activation sms is ignored', () {
+    expect(
+      AndroidSmsCapturePolicy.isLikelyFinancialMessage(
+        'You have successfully subscribed to Mobily Welcome Prepaid.',
+      ),
+      isFalse,
+    );
+    expect(
+      AndroidSmsCapturePolicy.isLikelyFinancialMessage(
+        'تم تفعيل اشتراكك في Mobily Welcome Prepaid بنجاح.',
+      ),
+      isFalse,
+    );
+  });
 }

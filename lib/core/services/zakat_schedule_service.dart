@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'zakat_engine.dart';
 import '../../models/investment_asset.dart';
 import '../../models/saving.dart';
@@ -361,16 +363,30 @@ class ZakatScheduleService {
       final String dateKey = _yyyyMmDd(dueDate);
       final String hijriDate = _hijriDateKey(hy, hm, hd);
 
+      final List<InvestmentAsset> investmentModelsAtDate = invModels
+          .where((InvestmentAsset asset) {
+            if (asset.valuationDate.isEmpty) return false;
+            final DateTime? valuationDate = DateTime.tryParse(asset.valuationDate);
+            return valuationDate != null && valuationDate.compareTo(dueDate) <= 0;
+          })
+          .toList(growable: false);
       final double totalWealthEgpAtDate =
-          ZakatEngineService.calculateTotalWealthEgpAt(
-            asOf: dueDate,
-            transactions: txModels,
-            savings: savingModels
-                .map((SavingLike s) => s.toSavingModel())
-                .toList(growable: false),
-            investments: invModels,
-            marketData: marketData,
-            lastRollover: lastRollover,
+          math.max(
+            0.0,
+            ZakatEngineService.calculateTotalWealthEgpAt(
+              asOf: dueDate,
+              transactions: txModels,
+              savings: savingModels
+                  .map((SavingLike s) => s.toSavingModel())
+                  .toList(growable: false),
+              investments: invModels,
+              marketData: marketData,
+              lastRollover: lastRollover,
+            ) -
+                ZakatEngineService.calculateTotalInvestmentsEgp(
+                  investments: investmentModelsAtDate,
+                  marketData: marketData,
+                ),
           );
 
       if (totalWealthEgpAtDate < nisabValueEgp) continue;
@@ -412,6 +428,83 @@ class ZakatScheduleService {
       });
 
     return result;
+  }
+
+  static List<Map<String, dynamic>> calculateMergedZakatSchedule({
+    required String zakatMethod,
+    required String zakatAnnualDate,
+    required List<Map<String, dynamic>> transactions,
+    required List<Map<String, dynamic>> savings,
+    required List<Map<String, dynamic>> investments,
+    required MarketData marketData,
+    DateTime? now,
+    String? lastRollover,
+    String? zakatNisabBasis,
+  }) {
+    if (zakatMethod == 'annual') {
+      return calculateAnnualZakatSchedule(
+        zakatAnnualDate: zakatAnnualDate,
+        transactions: transactions,
+        savings: savings,
+        investments: investments,
+        marketData: marketData,
+        now: now,
+        lastRollover: lastRollover,
+        zakatNisabBasis: zakatNisabBasis,
+      );
+    }
+
+    final List<Map<String, dynamic>> monthly =
+        calculateMonthlyZakatSchedule(
+          transactions: transactions,
+          savings: savings,
+          marketData: marketData,
+          now: now,
+          lastRollover: lastRollover,
+          zakatNisabBasis: zakatNisabBasis,
+        );
+    final List<Map<String, dynamic>> savingsSchedule =
+        calculateSavingsZakatSchedule(
+          savings: savings,
+          transactions: transactions,
+          marketData: marketData,
+          now: now,
+          lastRollover: lastRollover,
+          zakatNisabBasis: zakatNisabBasis,
+        );
+
+    final Map<String, Map<String, dynamic>> merged =
+        <String, Map<String, dynamic>>{};
+    for (final Map<String, dynamic> item in [...monthly, ...savingsSchedule]) {
+      final String monthKey = item['monthKey']?.toString() ?? '';
+      if (monthKey.isEmpty) continue;
+      if (!merged.containsKey(monthKey)) {
+        merged[monthKey] = <String, dynamic>{
+          'monthKey': monthKey,
+          'paymentDate': item['paymentDate'],
+          'totalZakat': (item['totalZakat'] as num).toDouble(),
+          'isPast': item['isPast'],
+          'isCurrentMonth': item['isCurrentMonth'],
+          'entries': List<Map<String, dynamic>>.from(
+            item['entries'] as Iterable,
+          ),
+        };
+      } else {
+        final Map<String, dynamic> existing = merged[monthKey]!;
+        existing['totalZakat'] =
+            (existing['totalZakat'] as num).toDouble() +
+            (item['totalZakat'] as num).toDouble();
+        (existing['entries'] as List<Map<String, dynamic>>).addAll(
+          List<Map<String, dynamic>>.from(item['entries'] as Iterable),
+        );
+      }
+    }
+
+    final List<Map<String, dynamic>> sorted = merged.values.toList()
+      ..sort(
+        (a, b) => a['monthKey'].toString().compareTo(b['monthKey'].toString()),
+      );
+    return sorted;
   }
 
   static Transaction _transactionFromJson(Map<String, dynamic> json) {

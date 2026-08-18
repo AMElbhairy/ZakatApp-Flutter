@@ -115,16 +115,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final AppStateController controller = context.watch<AppStateController>();
-    final String defaultEntryCurrency =
-        controller.state.defaultEntryCurrency.trim().isEmpty
-        ? 'EGP'
-        : controller.state.defaultEntryCurrency;
-    if (!widget.isEditMode &&
-        _currency == 'EGP' &&
-        defaultEntryCurrency != 'EGP') {
-      _currency = defaultEntryCurrency;
-    }
+    final AppStateController controller = context.read<AppStateController>();
     final List<String> categories = _type == 'income'
         ? controller.state.categories.income
         : controller.state.categories.expense;
@@ -332,17 +323,24 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
 
                             final AppStateController appStateController =
                                 context.read<AppStateController>();
-                            if (widget.isEditMode) {
-                              await appStateController.updateTransaction(
-                                transaction,
-                              );
-                            } else {
-                              await appStateController.addTransaction(
-                                transaction,
-                              );
+                            try {
+                              if (widget.isEditMode) {
+                                await appStateController.updateTransaction(
+                                  transaction,
+                                );
+                              } else {
+                                await appStateController.addTransaction(
+                                  transaction,
+                                );
+                              }
+                              if (!context.mounted) return;
+                              Navigator.of(context).pop();
+                            } catch (e) {
+                              setState(() => _saving = false);
+                              final String message =
+                                  e is StateError ? e.message : e.toString();
+                              _showError(message);
                             }
-                            if (!context.mounted) return;
-                            Navigator.of(context).pop();
                           },
                     label: _saving
                         ? context.l10n.tr('saving_progress')

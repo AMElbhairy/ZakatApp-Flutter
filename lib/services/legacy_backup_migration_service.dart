@@ -403,6 +403,14 @@ class LegacyBackupMigrationService {
           );
           tx['skipMonth'] = (tx['skipMonth'] ?? '').toString();
           _preserveBool(tx, 'enabled');
+          _preserveBool(tx, 'autoAdd');
+          _preserveBool(tx, 'reminderEnabled');
+          if (tx['reminderDayOffset'] == null) {
+            tx['reminderDayOffset'] = 0;
+          }
+          if (tx['reminderTime'] == null) {
+            tx['reminderTime'] = '09:00';
+          }
           tx['createdAt'] = _ensureCreatedAt(
             tx['createdAt'],
             tx['lastProcessed'],

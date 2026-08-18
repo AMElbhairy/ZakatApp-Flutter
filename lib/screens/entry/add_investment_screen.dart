@@ -36,6 +36,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
   final TextEditingController _ownershipPctController = TextEditingController();
   final TextEditingController _purchasePriceController =
       TextEditingController();
+  final TextEditingController _paidAmountController = TextEditingController();
   final TextEditingController _liabilityController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
   final TextEditingController _growthRateController = TextEditingController();
@@ -120,6 +121,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
       _currentValueController.text = _fmt(initial.marketValue);
       _ownershipPctController.text = _fmt(initial.ownershipSharePct);
       _purchasePriceController.text = _fmt(initial.originalPrice);
+      _paidAmountController.text = initial.paidAmount >= 0 ? _fmt(initial.paidAmount) : '';
       _notesController.text = initial.description;
       _showInstallmentConfig = initial.loanBalance > 0;
       _growthRateController.text = initial.yearlyGrowthRate > 0 ? _fmt(initial.yearlyGrowthRate) : '';
@@ -290,6 +292,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
     _currentValueController.dispose();
     _ownershipPctController.dispose();
     _purchasePriceController.dispose();
+    _paidAmountController.dispose();
     _liabilityController.dispose();
     _notesController.dispose();
     _growthRateController.dispose();
@@ -303,20 +306,6 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
   Widget build(BuildContext context) {
     final bool isArabic =
         Localizations.localeOf(context).languageCode.toLowerCase() == 'ar';
-    final String defaultEntryCurrency =
-        context
-            .watch<AppStateController>()
-            .state
-            .defaultEntryCurrency
-            .trim()
-            .isEmpty
-        ? 'EGP'
-        : context.watch<AppStateController>().state.defaultEntryCurrency;
-    if (!widget.isEditMode &&
-        _currency == 'EGP' &&
-        defaultEntryCurrency != 'EGP') {
-      _currency = defaultEntryCurrency;
-    }
     return SensitiveContentScope(
       child: Scaffold(
       appBar: AppBar(
@@ -381,6 +370,18 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                     }
                     return null;
                   },
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  key: const Key('investmentPaidAmountField'),
+                  controller: _paidAmountController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: InputDecoration(
+                    labelText: context.l10n.tr('paid_amount_optional'),
+                    border: const OutlineInputBorder(),
+                  ),
                 ),
                 const SizedBox(height: 16),
                 CompactDropdownFormField<String>(
@@ -1225,9 +1226,9 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
         tryParseAmount(_growthRateController.text) ?? 0;
 
     final double finalRemainingAmount = liability;
-    final double finalPaidAmount = purchasePrice > liability
-        ? (purchasePrice - liability)
-        : (purchasePrice > 0 ? 0.0 : (original?.paidAmount ?? 0.0));
+    final double finalPaidAmount = _paidAmountController.text.trim().isEmpty
+        ? -1.0
+        : (tryParseAmount(_paidAmountController.text) ?? 0.0);
     final double finalPaidAmountToDate = finalPaidAmount;
 
     final InvestmentAsset asset = InvestmentAsset(

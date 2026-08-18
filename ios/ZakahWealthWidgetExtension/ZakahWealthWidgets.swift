@@ -34,7 +34,7 @@ struct ZakahWealthProvider: TimelineProvider {
         let summary = WidgetDataStore.loadSummary()
         widgetLog("getTimeline loaded summary family=\(context.family) hasData=\(summary.hasData)")
         let entry = ZakahWealthEntry(date: Date(), summary: summary)
-        completion(Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(300))))
+        completion(Timeline(entries: [entry], policy: .never))
     }
 }
 

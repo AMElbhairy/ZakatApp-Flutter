@@ -503,7 +503,7 @@ class ReconciliationService {
     state['processedExpenseIds'] = processedExpenseIds.toList(growable: false);
 
     final AppStateModel next = AppStateModel.fromJson(state);
-    final bool modified = _stateChanged(input.toJson(), next.toJson());
+    final bool modified = _stateChanged(input, next);
     return ReconciliationResult(state: next, modified: modified);
   }
 
@@ -977,13 +977,11 @@ class ReconciliationService {
     final double upfrontPaid = _max(0, storedTotalPayable - totalInstallments);
     final double paidTotal = upfrontPaid + paidInstallments;
 
-    asset['paidAmount'] = _max(0.0, paidTotal);
     asset['remainingAmount'] = _max(0.0, totalInstallments - paidInstallments);
     asset['totalPayable'] = _max(
       0.0,
       paidTotal + _asDouble(asset['remainingAmount']),
     );
-    asset['paidAmountToDate'] = asset['paidAmount'];
     asset['loanBalance'] = asset['remainingAmount'];
   }
 
@@ -1407,18 +1405,17 @@ class ReconciliationService {
     ).toIso8601String();
   }
 
-  bool _stateChanged(Map<String, dynamic> before, Map<String, dynamic> after) {
-    final List<Map<String, dynamic>> bSavings = _asMapList(before['savings']);
-    final List<Map<String, dynamic>> aSavings = _asMapList(after['savings']);
+  bool _stateChanged(AppStateModel before, AppStateModel after) {
+    final List<Saving> bSavings = before.savings;
+    final List<Saving> aSavings = after.savings;
     if (bSavings.length != aSavings.length) return true;
     for (int i = 0; i < bSavings.length; i++) {
-      if (_asDouble(bSavings[i]['remainingAmount']) !=
-          _asDouble(aSavings[i]['remainingAmount'])) {
+      if (bSavings[i].remainingAmount != aSavings[i].remainingAmount) {
         return true;
       }
     }
-    final Set<String> bProcessed = _asStringSet(before['processedExpenseIds']);
-    final Set<String> aProcessed = _asStringSet(after['processedExpenseIds']);
+    final Set<String> bProcessed = before.processedExpenseIds.toSet();
+    final Set<String> aProcessed = after.processedExpenseIds.toSet();
     if (bProcessed.length != aProcessed.length) return true;
     if (!bProcessed.containsAll(aProcessed)) return true;
     return false;

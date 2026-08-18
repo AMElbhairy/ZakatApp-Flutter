@@ -608,31 +608,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
     }
 
-    final List<Map<String, dynamic>> transactionJson = transactions
-        .map((e) => e.toJson())
-        .toList(growable: false);
-    final List<Map<String, dynamic>> savingsJson = savings
-        .map((e) => e.toJson())
-        .toList(growable: false);
-
-    final List<Map<String, dynamic>> incomeSchedule =
-        ZakatScheduleService.calculateMonthlyZakatSchedule(
-          transactions: transactionJson,
-          savings: savingsJson,
-          marketData: marketData,
-          lastRollover: lastRollover,
-          zakatNisabBasis: zakatNisabBasis,
-        );
-    final List<Map<String, dynamic>> savingsSchedule =
-        ZakatScheduleService.calculateSavingsZakatSchedule(
-          savings: savingsJson,
-          transactions: transactionJson,
-          marketData: marketData,
-          lastRollover: lastRollover,
-          zakatNisabBasis: zakatNisabBasis,
-        );
-
-    return <Map<String, dynamic>>[...incomeSchedule, ...savingsSchedule];
+    return ZakatScheduleService.calculateMergedZakatSchedule(
+      zakatMethod: zakatMethod,
+      zakatAnnualDate: zakatAnnualDate,
+      transactions: transactions.map((e) => e.toJson()).toList(),
+      savings: savings.map((e) => e.toJson()).toList(),
+      investments: investments.map((e) => e.toJson()).toList(),
+      marketData: marketData,
+      lastRollover: lastRollover,
+      zakatNisabBasis: zakatNisabBasis,
+    );
   }
 
   static _Dues _computeDues({
@@ -2739,6 +2724,16 @@ class _AllocationRing extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
+    final double screenWidth = MediaQuery.sizeOf(context).width;
+    final bool isSmallScreen = screenWidth < 430;
+
+    final double avatarSize = isSmallScreen ? 30 : 36;
+    final double iconSize = isSmallScreen ? 15 : 18;
+    final double labelFontSize = isSmallScreen ? 11 : 13;
+    final double valueFontSize = isSmallScreen ? 9.5 : 11;
+    final double pctFontSize = isSmallScreen ? 11.5 : 13.5;
+    final double itemSpacing = isSmallScreen ? 8 : 10;
+
     final String currency = mainCurrency.trim().isEmpty
         ? 'EGP'
         : mainCurrency.trim();
@@ -2960,20 +2955,20 @@ class _AllocationRing extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: <Widget>[
                         Container(
-                          width: 36,
-                          height: 36,
+                          width: avatarSize,
+                          height: avatarSize,
                           decoration: BoxDecoration(
                             color: item['bg'] as Color,
-                            borderRadius: BorderRadius.circular(10),
+                            borderRadius: BorderRadius.circular(isSmallScreen ? 8 : 10),
                           ),
                           alignment: Alignment.center,
                           child: Icon(
                             item['icon'] as IconData,
                             color: item['iconColor'] as Color,
-                            size: 18,
+                            size: iconSize,
                           ),
                         ),
-                        const SizedBox(width: 10),
+                        SizedBox(width: itemSpacing),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -2982,7 +2977,7 @@ class _AllocationRing extends StatelessWidget {
                               Text(
                                 item['label'] as String,
                                 style: TextStyle(
-                                  fontSize: 13,
+                                  fontSize: labelFontSize,
                                   fontWeight: FontWeight.w600,
                                   color: dark
                                       ? Colors.white
@@ -2993,7 +2988,7 @@ class _AllocationRing extends StatelessWidget {
                               Text(
                                 formattedValue,
                                 style: TextStyle(
-                                  fontSize: 11,
+                                  fontSize: valueFontSize,
                                   color: dark
                                       ? const Color(0xFFA3B8B5)
                                       : const Color(0xFF6B7280),
@@ -3006,7 +3001,7 @@ class _AllocationRing extends StatelessWidget {
                         Text(
                           _DashboardScreenState._formatPct(pct),
                           style: TextStyle(
-                            fontSize: 13.5,
+                            fontSize: pctFontSize,
                             fontWeight: FontWeight.w700,
                             color: item['iconColor'] as Color,
                           ),

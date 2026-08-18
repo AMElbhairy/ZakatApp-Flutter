@@ -247,9 +247,31 @@ void main() {
         savings: const <model.Saving>[],
       );
 
-      await controller.addTransaction(_expense(id: 'expense-1', amount: 25));
+      expect(
+        () => controller.addTransaction(_expense(id: 'expense-1', amount: 25)),
+        throwsStateError,
+      );
 
       expect(controller.state.transactions, isEmpty);
+    },
+  );
+
+  test(
+    'SQLite blocks expense entry when amount exceeds available currency balance',
+    () async {
+      final controller = await _makeController(
+        transactions: <model.Transaction>[_income(id: 'income-1', amount: 100)],
+        savings: const <model.Saving>[],
+      );
+
+      expect(
+        () => controller.addTransaction(_expense(id: 'expense-1', amount: 125)),
+        throwsStateError,
+      );
+
+      expect(controller.state.transactions, hasLength(1));
+      expect(controller.state.transactions.single.id, 'income-1');
+      expect(controller.getAvailableBalance(currency: 'USD'), 100);
     },
   );
 

@@ -31,6 +31,7 @@ class FakeSmartCaptureAlertService extends SmartCaptureAlertService {
   int? lastBadgeCount;
   NotificationResponse? lastNotificationResponse;
   final List<PendingTransaction> notifications = <PendingTransaction>[];
+  final List<bool> replaceExistingFlags = <bool>[];
 
   @override
   void attachNavigatorKey(GlobalKey<NavigatorState> navigatorKey) {}
@@ -57,16 +58,22 @@ class FakeSmartCaptureAlertService extends SmartCaptureAlertService {
   @override
   Future<void> notifyCaptureState({
     required PendingTransaction pendingTransaction,
+    bool replaceExisting = false,
   }) async {
     notifications.add(pendingTransaction);
+    replaceExistingFlags.add(replaceExisting);
   }
 
   @override
   Future<void> notifyPendingReview({
     required PendingTransaction pendingTransaction,
     required int pendingReviewCount,
+    bool replaceExisting = false,
   }) async {
-    await notifyCaptureState(pendingTransaction: pendingTransaction);
+    await notifyCaptureState(
+      pendingTransaction: pendingTransaction,
+      replaceExisting: replaceExisting,
+    );
     lastBadgeCount = pendingReviewCount;
   }
 
@@ -637,6 +644,7 @@ void main() {
           alertService.notifications.single.status,
           CaptureStatus.pendingReview,
         );
+        expect(alertService.replaceExistingFlags.single, isFalse);
         expect(alertService.lastBadgeCount, 1);
 
         final PendingTransaction pending =
@@ -659,6 +667,47 @@ void main() {
         );
       },
     );
+
+    test(
+      'native notification already shown payload does not emit a second notification',
+      () async {
+        final alertService = FakeSmartCaptureAlertService();
+        final controller = await makeController(
+          smartCaptureAlertService: alertService,
+        );
+        AppleShortcutsService.initialize(controller);
+
+        final bool created =
+            await AppleShortcutsService.handleCapturePayload(<String, dynamic>{
+              'messageContent': 'Paid EGP 150 at Supermarket',
+              'source': PendingTransactionSource.sms,
+              'notificationAlreadyShown': 'true',
+            }, source: PendingTransactionSource.sms);
+
+        expect(created, isTrue);
+        expect(alertService.notifications, isEmpty);
+        expect(alertService.replaceExistingFlags, isEmpty);
+      },
+    );
+
+    test('notification ids are stable across platforms', () {
+      final int smsId = smartCaptureNotificationId(
+        source: PendingTransactionSource.sms,
+        rawMessage: 'Paid EGP 150 at Supermarket',
+      );
+      final int sameSmsId = smartCaptureNotificationId(
+        source: PendingTransactionSource.sms,
+        rawMessage: '  Paid   EGP 150 at Supermarket  ',
+      );
+      final int shortcutId = smartCaptureNotificationId(
+        source: PendingTransactionSource.shortcut,
+        rawMessage: 'Paid EGP 150 at Supermarket',
+      );
+
+      expect(smsId, sameSmsId);
+      expect(smsId, isNot(shortcutId));
+      expect(smsId, greaterThan(0));
+    });
 
     testWidgets('notification payload routes to the smart capture inbox', (
       WidgetTester tester,
@@ -1237,6 +1286,25 @@ void main() {
     );
 
     test(
+      'investment account deposit suppresses merchant extraction and stays expense',
+      () {
+        final parsed = SmartCaptureParser.parse(
+          'إيداع إلى حساب استثماري\n'
+          'رقم: 4454\n'
+          'SAR المبلغ: 10000\n'
+          'في: 2026-08-03 12:36:05\n'
+          'أويس المالية',
+        );
+
+        expect(parsed.type, 'expense');
+        expect(parsed.amount, 10000.0);
+        expect(parsed.currency, 'SAR');
+        expect(parsed.merchantName, isNull);
+        expect(parsed.description, 'Account Deposit');
+      },
+    );
+
+    test(
       'arabic transfer with currency suffix keeps the full amount and transfer type',
       () {
         final parsed = SmartCaptureParser.parse(
@@ -1354,6 +1422,24 @@ void main() {
       expect(parsed.isValid, isFalse);
       expect(parsed.ignoreReason, 'Verification Code Message');
       expect(parsed.description, 'Verification Code Message');
+      expect(parsed.amount, isNull);
+      expect(parsed.currency, isNull);
+      expect(parsed.merchantName, isNull);
+    });
+
+    test('subscription activation messages are excluded from smart capture', () {
+      final parsed = SmartCaptureParser.parse(
+        'مرحبا احمد البحيرى،\n'
+        'تم تفعيل اشتراكك في Mobily Welcome Prepaid بنجاح.\n'
+        'سعر الباقة: 0 ريال (تم احتساب الضريبة عند شحن الرصيد).\n'
+        'Dear Ahmed,\n'
+        'You have successfully subscribed to Mobily Welcome Prepaid.\n'
+        'Bundle price: SAR 0 (VAT has already been paid upon recharging).',
+      );
+
+      expect(parsed.isValid, isFalse);
+      expect(parsed.ignoreReason, 'Subscription Activation Message');
+      expect(parsed.description, 'Subscription Activation Message');
       expect(parsed.amount, isNull);
       expect(parsed.currency, isNull);
       expect(parsed.merchantName, isNull);
@@ -1502,6 +1588,44 @@ void main() {
 
       expect(fakeAlerts.lastBadgeCount, 0);
     });
+
+    test(
+      'approving an expense pending capture without available currency balance is blocked',
+      () async {
+        final controller = await makeController();
+
+        await controller.createPendingTransaction(
+          source: PendingTransactionSource.sms,
+          rawMessage: 'Purchase at Supermarket EGP 150',
+          suggestedType: 'expense',
+          confidence: 0.9,
+          suggestedAmount: 150.0,
+          suggestedCurrency: 'EGP',
+          suggestedDescription: 'Supermarket Expense',
+        );
+
+        final pt = controller.state.pendingTransactions.first;
+
+        expect(
+          () => controller.approvePendingTransaction(
+            pt.id,
+            type: 'expense',
+            amount: 150.0,
+            currency: 'EGP',
+            category: 'Groceries',
+            description: 'Approved Supermarket Expense',
+            date: '2026-06-14',
+          ),
+          throwsStateError,
+        );
+
+        expect(controller.state.transactions, isEmpty);
+        expect(
+          controller.state.pendingTransactions.first.status,
+          CaptureStatus.pendingReview,
+        );
+      },
+    );
 
     test('Confirmation learning promo milestone on 3 confirmations', () async {
       final controller = await makeController();

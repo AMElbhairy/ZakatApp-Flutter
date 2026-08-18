@@ -116,21 +116,6 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final String defaultEntryCurrency =
-        context
-            .watch<AppStateController>()
-            .state
-            .defaultEntryCurrency
-            .trim()
-            .isEmpty
-        ? 'EGP'
-        : context.watch<AppStateController>().state.defaultEntryCurrency;
-    if (!widget.isEditMode &&
-        _assetType == 'cash' &&
-        _cashCurrency == 'EGP' &&
-        defaultEntryCurrency != 'EGP') {
-      _cashCurrency = defaultEntryCurrency;
-    }
     return SensitiveContentScope(
       child: Scaffold(
       appBar: AppBar(

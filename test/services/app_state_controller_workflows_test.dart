@@ -2,12 +2,33 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zakatapp_flutter/core/services/zakat_engine.dart';
 import 'package:zakatapp_flutter/models/currency_exchange_edit_request.dart';
+import 'package:zakatapp_flutter/models/market_snapshot.dart';
 import 'package:zakatapp_flutter/models/saving.dart';
 import 'package:zakatapp_flutter/models/transaction.dart';
 import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
 import 'package:zakatapp_flutter/services/app_state_controller.dart';
 import 'package:zakatapp_flutter/services/local_storage_service.dart';
+import 'package:zakatapp_flutter/services/market_data_api_service.dart';
 import 'package:zakatapp_flutter/services/reconciliation_service.dart';
+
+class _CountingMarketRefreshController extends AppStateController {
+  _CountingMarketRefreshController({required super.repository});
+
+  int refreshCalls = 0;
+
+  @override
+  Future<MarketRefreshResult> refreshMarketData({
+    bool force = false,
+    bool respectCooldown = true,
+  }) async {
+    refreshCalls += 1;
+    return const MarketRefreshResult(
+      success: true,
+      updatedFields: 0,
+      message: 'stubbed',
+    );
+  }
+}
 
 void main() {
   Future<AppStateController> makeController() async {
@@ -60,6 +81,46 @@ void main() {
         .toList();
     expect(exchanged.length, 2);
   });
+
+  test(
+    'startMarketAutoRefresh preserves populated snapshots even without a timestamp and refreshes empty snapshot',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      const localStorage = LocalStorageService();
+      final repository = AppStateRepository(localStorage: localStorage);
+
+      final controller = _CountingMarketRefreshController(repository: repository);
+      await controller.load();
+      await controller.updateMarketSnapshot(
+        const MarketSnapshot(
+          gold24kPricePerGramEgp: 6822.708809035779,
+          silverPricePerGramEgp: 99.26472731392991,
+          usdToEgp: 49.802855,
+          sarToEgp: 13.280761333333334,
+          aedToEgp: 13.561022464261404,
+          kwdToEgp: 161.4046422240155,
+          qarToEgp: 13.682103021978023,
+          eurToEgp: 57.53019584558764,
+          gbpToEgp: 67.07048731053337,
+          bhdToEgp: 132.45440159574468,
+          omrToEgp: 129.5272915003238,
+          jodToEgp: 70.24380112834979,
+          tryToEgp: 1.0464309902985438,
+          myrToEgp: 12.166828189560043,
+          pkrToEgp: 0.17914113641154358,
+          idrToEgp: 0.0027783481730594747,
+          lastUpdated: '',
+        ),
+      );
+
+      await controller.startMarketAutoRefresh();
+      expect(controller.refreshCalls, 0);
+
+      await controller.updateMarketSnapshot(MarketSnapshot.empty);
+      await controller.startMarketAutoRefresh();
+      expect(controller.refreshCalls, 1);
+    },
+  );
 
   test(
     'controller executeCurrencyExchange fills missing source saving date',

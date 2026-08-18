@@ -98,7 +98,7 @@ class AppDatabase extends _$AppDatabase {
   }
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -121,6 +121,12 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 6) {
         await migrator.addColumn(investments, investments.yearlyGrowthRateText);
+      }
+      if (from < 7) {
+        await migrator.addColumn(recurringTransactions, recurringTransactions.autoAdd);
+        await migrator.addColumn(recurringTransactions, recurringTransactions.reminderEnabled);
+        await migrator.addColumn(recurringTransactions, recurringTransactions.reminderDayOffset);
+        await migrator.addColumn(recurringTransactions, recurringTransactions.reminderTime);
       }
       await _createIndexes();
     },

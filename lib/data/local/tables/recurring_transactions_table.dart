@@ -16,6 +16,10 @@ class RecurringTransactions extends Table {
   TextColumn get createdAt => text().named('created_at')();
   TextColumn get updatedAt => text().named('updated_at')();
   TextColumn get deletedAt => text().named('deleted_at').nullable()();
+  BoolColumn get autoAdd => boolean().withDefault(const Constant(true))();
+  BoolColumn get reminderEnabled => boolean().withDefault(const Constant(false))();
+  IntColumn get reminderDayOffset => integer().withDefault(const Constant(0))();
+  TextColumn get reminderTime => text().withDefault(const Constant('09:00'))();
 
   @override
   Set<Column<Object>> get primaryKey => <Column<Object>>{id};
