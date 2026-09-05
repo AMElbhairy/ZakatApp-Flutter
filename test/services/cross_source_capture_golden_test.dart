@@ -156,6 +156,30 @@ Date: 2026-06-28 09:15:00''',
 رمز التحقق لمرة واحدة هو: 482910
 لإتمام عملية الشراء بمبلغ 250.00 SAR
 لا تشارك هذا الرمز مع أي شخص''',
+
+      'arabic_purchase_applepay_unspaced': '''
+شراء إنترنت ApplePay
+بـ 9.81 SAR
+بطاقة ائتمانية *0973
+لدى SA/Tamara
+في 19:36 26-08-21
+رصيد 13,874.59''',
+
+      'arabic_purchase_pos_applepay_separator': '''
+شراء POS-ApplePay
+بـ SAR 45.00
+بطاقة ائتمانية *0973
+لدى SA /tashkilat *
+في 26-08-21 18:13
+الرصيد 11,355.40''',
+
+      'arabic_purchase_online_otp_code': '''
+رمز شراء أونلاين 6528
+للبطاقة *0973
+بـ 25 SAR''',
+
+      'bank_sms_charged_glued_preposition': '''
+شكرًا لاستخدامك بطاقة بنك مصر ****8799، تم الآن خصم EGP 105.06عند  MY FAWRY يوم 30/06 ، الرصيد المتاح EGP 1614.88 لمزيد من المعلومات عن الحساب، تفضل بزيارة الرابط التالي https://bnkmsr.com/online.''',
     };
 
     for (final entry in bankFixtures.entries) {

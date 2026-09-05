@@ -16,7 +16,7 @@ void main() {
       expect(parsed.type, 'expense');
       expect(parsed.amount, 38.0);
       expect(parsed.currency, 'SAR');
-      expect(parsed.merchantName, 'LikeCard SA - SA');
+      expect(parsed.merchantName, 'LikeCard SA');
       expect(parsed.paymentMethod, 'Apple Pay');
       expect(parsed.cardReference, '*0973');
       expect(parsed.accountReference, isNull);
@@ -88,7 +88,7 @@ void main() {
       expect(parsed.type, 'expense');
       expect(parsed.amount, 33.0);
       expect(parsed.currency, 'SAR');
-      expect(parsed.merchantName, 'Tashkilat Juha - SA');
+      expect(parsed.merchantName, 'Tashkilat Juha');
       expect(parsed.paymentMethod, 'Apple Pay');
       expect(parsed.cardReference, '*0973');
       expect(parsed.balance, 18334.39);
@@ -361,7 +361,7 @@ void main() {
         'من: LikeCard SA - SA',
       );
 
-      expect(parsed.merchantName, 'LikeCard SA - SA');
+      expect(parsed.merchantName, 'LikeCard SA');
       expect(parsed.paymentMethod, 'Apple Pay');
       expect(parsed.cardReference, '*0973');
     });
@@ -471,7 +471,7 @@ void main() {
       expect(parsed.type, 'expense');
       expect(parsed.amount, 100.0);
       expect(parsed.currency, 'SAR');
-      expect(parsed.merchantName, 'LikeCard SA - SA');
+      expect(parsed.merchantName, 'LikeCard SA');
     });
 
     test('longer merchant phrase wins over shorter Mobily rule', () {
@@ -611,6 +611,101 @@ void main() {
         expect(parsed.currency, 'EGP');
       },
     );
+
+    group('Phase 2A canonical parser accuracy regressions', () {
+      test('recognizes all ApplePay variations and normalizes to Apple Pay without making ApplePay merchant', () {
+        final variations = <String>[
+          'شراء إنترنت Apple Pay\nبـ 50 SAR\nلدى Jarir Bookstore',
+          'شراء إنترنت ApplePay\nبـ 50 SAR\nلدى Jarir Bookstore',
+          'شراء إنترنت apple pay\nبـ 50 SAR\nلدى Jarir Bookstore',
+          'شراء إنترنت applepay\nبـ 50 SAR\nلدى Jarir Bookstore',
+        ];
+
+        for (final msg in variations) {
+          final parsed = SmartCaptureParser.parse(msg);
+          expect(parsed.paymentMethod, 'Apple Pay', reason: 'Failed for: $msg');
+          expect(parsed.merchantName, 'Jarir', reason: 'Failed for: $msg');
+          expect(parsed.type, 'expense');
+          expect(parsed.amount, 50.0);
+        }
+      });
+
+      test('recognizes POS-ApplePay separator variations as Apple Pay and does not treat POS as merchant', () {
+        final variations = <String>[
+          'شراء POS-ApplePay\nبـ 75 SAR\nلدى Al Baik',
+          'شراء POS ApplePay\nبـ 75 SAR\nلدى Al Baik',
+          'شراء POS Apple Pay\nبـ 75 SAR\nلدى Al Baik',
+          'شراء POS - Apple Pay\nبـ 75 SAR\nلدى Al Baik',
+        ];
+
+        for (final msg in variations) {
+          final parsed = SmartCaptureParser.parse(msg);
+          expect(parsed.paymentMethod, 'Apple Pay', reason: 'Failed for: $msg');
+          expect(parsed.merchantName, 'Al Baik', reason: 'Failed for: $msg');
+          expect(parsed.type, 'expense');
+          expect(parsed.amount, 75.0);
+        }
+      });
+
+      test('recognizes Arabic purchase OTP phrases as verification messages and ignores them', () {
+        final otpMessages = <String>[
+          'رمز شراء أونلاين 6528\nللبطاقة *0973\nبـ 25 SAR',
+          'رمز شراء 1234 لبطاقتك *5678 بمبلغ 100 SAR',
+          'Purchase code: 9988 for your card ending 1234',
+        ];
+
+        for (final msg in otpMessages) {
+          final parsed = SmartCaptureParser.parse(msg);
+          expect(parsed.isValid, isFalse, reason: 'Should be ignored: $msg');
+          expect(parsed.ignoreReason, 'Verification Code Message');
+        }
+      });
+
+      test('negative test: ordinary online purchases containing شراء أونلاين remain valid transactions', () {
+        final purchaseMsg = 'شراء أونلاين بمبلغ 150 SAR\nلدى Amazon SA\nبطاقة *1234';
+        final parsed = SmartCaptureParser.parse(purchaseMsg);
+
+        expect(parsed.isValid, isTrue);
+        expect(parsed.type, 'expense');
+        expect(parsed.amount, 150.0);
+        expect(parsed.currency, 'SAR');
+        expect(parsed.merchantName, 'Amazon');
+      });
+
+      test('extracts merchant with glued Arabic preposition عند (spaced and glued, Arabic and English merchant)', () {
+        // Glued عند with English merchant
+        final gluedEnglish = SmartCaptureParser.parse(
+          'تم الآن خصم EGP 105.06عند  MY FAWRY يوم 30/06 ، الرصيد المتاح EGP 1614.88',
+        );
+        expect(gluedEnglish.amount, 105.06);
+        expect(gluedEnglish.currency, 'EGP');
+        expect(gluedEnglish.merchantName, 'MY FAWRY');
+
+        // Spaced عند with English merchant
+        final spacedEnglish = SmartCaptureParser.parse(
+          'تم الآن خصم EGP 105.06 عند MY FAWRY يوم 30/06 ، الرصيد المتاح EGP 1614.88',
+        );
+        expect(spacedEnglish.amount, 105.06);
+        expect(spacedEnglish.currency, 'EGP');
+        expect(spacedEnglish.merchantName, 'MY FAWRY');
+
+        // Glued عند with Arabic merchant
+        final gluedArabic = SmartCaptureParser.parse(
+          'تم الآن خصم EGP 105.06عند فوري يوم 30/06 ، الرصيد المتاح EGP 1614.88',
+        );
+        expect(gluedArabic.amount, 105.06);
+        expect(gluedArabic.currency, 'EGP');
+        expect(gluedArabic.merchantName, 'فوري');
+
+        // Glued لدى with Arabic merchant
+        final gluedLada = SmartCaptureParser.parse(
+          'تم الآن خصم SAR 50.00لدى جرير يوم 30/06',
+        );
+        expect(gluedLada.amount, 50.00);
+        expect(gluedLada.currency, 'SAR');
+        expect(gluedLada.merchantName, 'جرير');
+      });
+    });
   });
 }
 

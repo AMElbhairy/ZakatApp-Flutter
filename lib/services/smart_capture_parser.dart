@@ -112,12 +112,17 @@ class SmartCaptureParser {
       'one-time password',
       'verification code',
       'confirmation code',
+      'purchase code',
+      'security code',
+      'authentication code',
       'رمز التحقق',
       'كود التحقق',
       'رمز لمرة واحدة',
       'الرمز لمرة واحدة',
       'كلمة مرور لمرة واحدة',
       'رمز الاستخدام لمرة واحدة',
+      'رمز شراء',
+      'رمز شراء أونلاين',
     ]);
     if (isOtpOrVerificationMessage) {
       return const SmartCaptureParseResult(
@@ -240,6 +245,7 @@ class SmartCaptureParser {
           'pos',
           'point of sale',
           'apple pay',
+          'applepay',
           'mada',
           'visa purchase',
           'mastercard purchase',
@@ -660,6 +666,7 @@ class SmartCaptureParser {
       'pos',
       'point of sale',
       'apple pay',
+      'applepay',
       'mada',
       'visa purchase',
       'mastercard purchase',
@@ -758,6 +765,7 @@ class SmartCaptureParser {
                 ]) ||
                 _hasMatch(lineLower, [
                   'apple pay',
+                  'applepay',
                   'mada',
                   'مدى',
                   'card',
@@ -842,7 +850,7 @@ class SmartCaptureParser {
     ]);
     final double? balance = _extractLabeledAmount(rawMessage, <RegExp>[
       RegExp(
-        r'^\s*(?:current balance|wallet balance|available balance|balance|الرصيد)\s*[:\-]?\s*(.+)$',
+        r'^\s*(?:current balance|wallet balance|available balance|balance|الرصيد|رصيد)\s*[:\-]?\s*(.+)$',
         caseSensitive: false,
         multiLine: true,
       ),
@@ -1283,7 +1291,7 @@ class SmartCaptureParser {
   ) {
     final List<RegExp> patterns = <RegExp>[
       RegExp(
-        r'(?:(?<![A-Za-z0-9])(?:at|merchant|store)(?![A-Za-z0-9])|(?<![\u0600-\u06FF0-9])(?:لدى|عند|في)(?![\u0600-\u06FF0-9]))\s*[:\-]?\s*([A-Za-z\u0600-\u06FF0-9][A-Za-z0-9\u0600-\u06FF&*.,\- ]{1,80})',
+        r'(?:(?<![A-Za-z0-9])(?:at|merchant|store)(?![A-Za-z0-9])|(?<![\u0621-\u064A\u0671-\u06D5])(?:لدى|عند|في)(?![\u0621-\u064A\u0671-\u06D5]))\s*[:\-]?\s*([A-Za-z\u0600-\u06FF0-9][A-Za-z0-9\u0600-\u06FF&*.,\- ]{1,80})',
         caseSensitive: false,
       ),
     ];
@@ -1460,6 +1468,7 @@ class SmartCaptureParser {
           'visa',
           'mastercard',
           'apple pay',
+          'applepay',
           'mada',
           'stc pay',
           'stcpay',
@@ -1670,8 +1679,15 @@ class SmartCaptureParser {
   }
 
   static String? _extractPaymentMethod(String rawMessage) {
+    if (RegExp(
+      r'(?:\bpos\s*[-–—]?\s*)?(?:\bapple\s*pay\b|\bapplepay\b)',
+      caseSensitive: false,
+    ).hasMatch(rawMessage)) {
+      return 'Apple Pay';
+    }
+
     final Match? found = RegExp(
-      r'\b(apple pay|mada|visa|mastercard|stc pay|stcpay)\b',
+      r'\b(mada|visa|mastercard|stc pay|stcpay)\b',
       caseSensitive: false,
     ).firstMatch(rawMessage);
     if (found == null) return null;
@@ -2312,6 +2328,7 @@ class SmartCaptureParser {
               'mastercard',
               'mada',
               'apple pay',
+              'applepay',
               'stc pay',
               'stcpay',
             ]) &&
