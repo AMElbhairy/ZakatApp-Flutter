@@ -19,6 +19,9 @@ import 'recurring_notification_manager.dart';
 import '../models/saving.dart';
 import '../models/transaction.dart';
 import '../models/pending_transaction.dart';
+import '../models/raw_capture_payload.dart';
+import 'canonical_capture_normalizer.dart';
+import 'smart_capture_deduplicator.dart';
 import '../models/currency_exchange_edit_request.dart';
 import '../models/merchant_rule.dart';
 import '../models/merchant_confirmation.dart';
@@ -7130,50 +7133,105 @@ class AppStateController extends ChangeNotifier {
     String? sourceIdentifier,
     bool sendNotification = true,
   }) async {
+    final payload = RawCapturePayload(
+      rawText: rawMessage,
+      source: RawCapturePayload.parseSource(source),
+      sourceIdentifier: sourceIdentifier,
+      receivedAt: DateTime.now().toUtc(),
+      platform: !kIsWeb && Platform.isIOS
+          ? 'ios'
+          : (!kIsWeb && Platform.isAndroid ? 'android' : null),
+    );
+    return createPendingTransactionFromPayload(
+      payload,
+      sendNotification: sendNotification,
+    );
+  }
+
+  Future<bool> createPendingTransactionFromPayload(
+    RawCapturePayload payload, {
+    bool sendNotification = true,
+  }) async {
+    final String source = payload.sourceString;
+    final String sourceIdentifier = payload.sourceIdentifier ??
+        payload.senderHeader ??
+        (payload.source == CaptureSource.shortcut
+            ? 'Apple Automation'
+            : (payload.source == CaptureSource.sms ? 'Android SMS' : 'Manual Entry'));
+
     // Manual paste is an explicit user action and must work on iOS even when
     // automatic capture is disabled. Native automatic sources still respect
     // the Smart Capture setting.
     if (!_state.smartCaptureEnabled &&
         !Platform.isIOS &&
-        source != PendingTransactionSource.manual) {
+        payload.source != CaptureSource.manual) {
       return false;
     }
 
-    final String cleanMessage = rawMessage.trim();
+    final String cleanMessage = payload.rawText.trim();
     if (cleanMessage.isEmpty || cleanMessage.length > 10000) {
-      if (source == PendingTransactionSource.shortcut) {
+      if (payload.source == CaptureSource.shortcut) {
         debugPrint('[Shortcut] Flutter outcome: invalid');
       }
       return false;
     }
 
-    if (source == PendingTransactionSource.shortcut) {
+    if (payload.source == CaptureSource.shortcut) {
       debugPrint('[Shortcut] Parser started');
     }
 
+    // Step 1: Canonical Input Normalization (transport-level normalization)
+    final String normalizedMessage =
+        CanonicalCaptureNormalizer.normalize(cleanMessage);
+
+    // Step 2: Canonical Financial Parsing (SmartCaptureParser as single source of truth)
     final parsed = SmartCaptureParser.parse(
-      rawMessage,
+      normalizedMessage,
       merchantRules: _state.merchantRules,
       merchantAliases: _state.merchantAliases,
     );
 
+    // Step 3: Bank Detection (using normalized text and preserved sender header)
     String? detectedBank;
-    final String lowerMsg = cleanMessage.toLowerCase();
-    if (lowerMsg.contains('hsbc')) {
+    final String lowerMsg = normalizedMessage.toLowerCase();
+    final String lowerSender = (payload.senderHeader ?? '').toLowerCase();
+    if (lowerMsg.contains('hsbc') || lowerSender.contains('hsbc')) {
       detectedBank = 'HSBC';
-    } else if (lowerMsg.contains('cib')) {
+    } else if (lowerMsg.contains('cib') || lowerSender.contains('cib')) {
       detectedBank = 'CIB';
-    } else if (lowerMsg.contains('alrajhi') || lowerMsg.contains('الراجحي')) {
+    } else if (lowerMsg.contains('alrajhi') ||
+        lowerMsg.contains('الراجحي') ||
+        lowerSender.contains('alrajhi') ||
+        lowerSender.contains('rajhi')) {
       detectedBank = 'Al Rajhi Bank';
-    } else if (lowerMsg.contains('ahli') || lowerMsg.contains('الأهلي')) {
+    } else if (lowerMsg.contains('ahli') ||
+        lowerMsg.contains('الأهلي') ||
+        lowerSender.contains('ahli')) {
       detectedBank = 'Al Ahli Bank';
     }
 
-    if (source == PendingTransactionSource.shortcut) {
+    if (payload.source == CaptureSource.shortcut) {
       debugPrint(
         '[Shortcut] Parser result: merchant=${parsed.merchantName ?? 'null'}, '
         'amount=${_formatShortcutAmount(parsed.amount)}, '
         'currency=${parsed.currency ?? 'null'}, '
+        'confidence=${parsed.confidence.toStringAsFixed(2)}',
+      );
+    }
+
+    // Step 4: Debug Diagnostics (Debug builds only)
+    if (kDebugMode) {
+      debugPrint(
+        '[SmartCapturePipeline] Raw Capture: source=${payload.sourceString}, '
+        'sender=${payload.senderHeader ?? 'none'}, '
+        'receivedAt=${payload.receivedAt.toIso8601String()}, '
+        'rawLen=${cleanMessage.length}, normLen=${normalizedMessage.length}',
+      );
+      debugPrint(
+        '[SmartCapturePipeline] Canonical Result: merchant=${parsed.merchantName ?? 'null'}, '
+        'amount=${_formatShortcutAmount(parsed.amount)}, '
+        'currency=${parsed.currency ?? 'null'}, '
+        'type=${parsed.type}, '
         'confidence=${parsed.confidence.toStringAsFixed(2)}',
       );
     }
@@ -7183,24 +7241,24 @@ class AppStateController extends ChangeNotifier {
         : '';
     final String merchantKey = normMerchant.toLowerCase();
     final String? suggestedPaymentSourceId = parsed.type == 'expense'
-        ? _resolveCreditCardIdFromMessage(cleanMessage)
+        ? _resolveCreditCardIdFromMessage(normalizedMessage)
         : null;
 
     CaptureAnalytics nextAnalytics = _state.captureAnalytics.copyWith(
       parsedMessages: _state.captureAnalytics.parsedMessages + 1,
-      capturedFromAppleShortcuts: source == PendingTransactionSource.shortcut
+      capturedFromAppleShortcuts: payload.source == CaptureSource.shortcut
           ? _state.captureAnalytics.capturedFromAppleShortcuts + 1
           : _state.captureAnalytics.capturedFromAppleShortcuts,
     );
 
     if (!parsed.isValid) {
-      if (source == PendingTransactionSource.manual &&
+      if (payload.source == CaptureSource.manual &&
           parsed.ignoreReason != 'Verification Code Message' &&
           parsed.ignoreReason != 'Subscription Activation Message') {
         final PendingTransaction manualReview = PendingTransaction(
           id: const Uuid().v4(),
           source: source,
-          sourceIdentifier: sourceIdentifier ?? 'Manual Entry',
+          sourceIdentifier: sourceIdentifier,
           rawMessage: cleanMessage,
           createdAt: DateTime.now().toUtc().toIso8601String(),
           suggestedType: parsed.type == 'income' ? 'income' : 'expense',
@@ -7230,11 +7288,11 @@ class AppStateController extends ChangeNotifier {
       nextAnalytics = nextAnalytics.copyWith(
         ignoredMessages: nextAnalytics.ignoredMessages + 1,
         capturedFromAppleShortcutsIgnored:
-            source == PendingTransactionSource.shortcut
+            payload.source == CaptureSource.shortcut
             ? nextAnalytics.capturedFromAppleShortcutsIgnored + 1
             : nextAnalytics.capturedFromAppleShortcutsIgnored,
       );
-      if (source == PendingTransactionSource.shortcut) {
+      if (payload.source == CaptureSource.shortcut) {
         debugPrint('[Shortcut] Flutter outcome: invalid');
       }
       await updateState(
@@ -7244,11 +7302,7 @@ class AppStateController extends ChangeNotifier {
             PendingTransaction(
               id: const Uuid().v4(),
               source: source,
-              sourceIdentifier:
-                  sourceIdentifier ??
-                  (source == PendingTransactionSource.shortcut
-                      ? 'Apple Automation'
-                      : null),
+              sourceIdentifier: sourceIdentifier,
               rawMessage: cleanMessage,
               createdAt: DateTime.now().toUtc().toIso8601String(),
               suggestedType: parsed.type,
@@ -7268,74 +7322,37 @@ class AppStateController extends ChangeNotifier {
           captureAnalytics: nextAnalytics,
         ),
       );
-      if (source == PendingTransactionSource.shortcut) {
+      if (payload.source == CaptureSource.shortcut) {
         _logShortcutStateSnapshot('invalid');
       }
       return true;
     }
 
-    final now = DateTime.now().toUtc();
-    bool isDuplicate = false;
-
-    for (final pt in _state.pendingTransactions) {
-      if (pt.status == CaptureStatus.ignored) continue;
-      final String ptM = pt.merchantName != null
-          ? SmartCaptureParser.normalizeMerchantName(
-              pt.merchantName!,
-            ).trim().toLowerCase()
-          : '';
-      if (pt.suggestedType == parsed.type &&
-          pt.suggestedCurrency == parsed.currency &&
-          pt.suggestedAmount == parsed.amount &&
-          ptM == merchantKey) {
-        try {
-          final ptTime = DateTime.parse(pt.createdAt).toUtc();
-          if (now.difference(ptTime).abs().inMinutes <= 5) {
-            isDuplicate = true;
-            break;
-          }
-        } catch (_) {}
-      }
-    }
-
-    if (!isDuplicate) {
-      for (final t in _state.transactions) {
-        final String tM = _normalizedTransactionMerchantKey(t);
-        if (t.type == parsed.type &&
-            t.currency == parsed.currency &&
-            t.amount == parsed.amount &&
-            tM == merchantKey) {
-          try {
-            final tTime = DateTime.parse(t.createdAt).toUtc();
-            if (now.difference(tTime).abs().inMinutes <= 5) {
-              isDuplicate = true;
-              break;
-            }
-          } catch (_) {}
-        }
-      }
-    }
+    // Step 5: Deduplication via SmartCaptureDeduplicator (preserving existing 5-minute behavior)
+    final DeduplicationDiagnostics dedupDiag = SmartCaptureDeduplicator.evaluate(
+      parsed: parsed,
+      payload: payload,
+      pendingTransactions: _state.pendingTransactions,
+      transactions: _state.transactions,
+    );
+    final bool isDuplicate = dedupDiag.isDuplicate;
 
     if (isDuplicate) {
       nextAnalytics = nextAnalytics.copyWith(
         duplicateMessages: nextAnalytics.duplicateMessages + 1,
         ignoredMessages: nextAnalytics.ignoredMessages + 1,
         capturedFromAppleShortcutsIgnored:
-            source == PendingTransactionSource.shortcut
+            payload.source == CaptureSource.shortcut
             ? nextAnalytics.capturedFromAppleShortcutsIgnored + 1
             : nextAnalytics.capturedFromAppleShortcutsIgnored,
       );
-      if (source == PendingTransactionSource.shortcut) {
+      if (payload.source == CaptureSource.shortcut) {
         debugPrint('[Shortcut] Flutter outcome: duplicate');
       }
       final PendingTransaction transaction = PendingTransaction(
         id: const Uuid().v4(),
         source: source,
-        sourceIdentifier:
-            sourceIdentifier ??
-            (source == PendingTransactionSource.shortcut
-                ? 'Apple Automation'
-                : null),
+        sourceIdentifier: sourceIdentifier,
         rawMessage: cleanMessage,
         createdAt: DateTime.now().toUtc().toIso8601String(),
         suggestedType: parsed.type,
@@ -7362,7 +7379,7 @@ class AppStateController extends ChangeNotifier {
           captureAnalytics: nextAnalytics,
         ),
       );
-      if (source == PendingTransactionSource.shortcut) {
+      if (payload.source == CaptureSource.shortcut) {
         _logShortcutStateSnapshot('duplicate');
       }
       return true;
@@ -7453,11 +7470,7 @@ class AppStateController extends ChangeNotifier {
       final PendingTransaction transaction = PendingTransaction(
         id: const Uuid().v4(),
         source: source,
-        sourceIdentifier:
-            sourceIdentifier ??
-            (source == PendingTransactionSource.shortcut
-                ? 'Apple Automation'
-                : null),
+        sourceIdentifier: sourceIdentifier,
         rawMessage: cleanMessage,
         createdAt: timestampStr,
         reviewedAt: timestampStr,
@@ -7513,11 +7526,7 @@ class AppStateController extends ChangeNotifier {
       final PendingTransaction transaction = PendingTransaction(
         id: const Uuid().v4(),
         source: source,
-        sourceIdentifier:
-            sourceIdentifier ??
-            (source == PendingTransactionSource.shortcut
-                ? 'Apple Automation'
-                : null),
+        sourceIdentifier: sourceIdentifier,
         rawMessage: cleanMessage,
         createdAt: timestampStr,
         suggestedType: finalType,
@@ -7607,36 +7616,6 @@ class AppStateController extends ChangeNotifier {
     return amount == rounded
         ? amount.toStringAsFixed(0)
         : amount.toStringAsFixed(2);
-  }
-
-  static String _normalizedTransactionMerchantKey(Transaction transaction) {
-    String merchant = transaction.description.trim().toLowerCase();
-    merchant = merchant.replaceAll(
-      RegExp(
-        r'^(purchase at|income from|internal transfer to)\s+',
-        caseSensitive: false,
-      ),
-      '',
-    );
-    merchant = merchant.replaceAll(
-      RegExp(
-        r'\s+(purchase|order|subscription|deposit|transfer|payment)$',
-        caseSensitive: false,
-      ),
-      '',
-    );
-    merchant = merchant.trim();
-    if (merchant.isEmpty ||
-        merchant == 'bank transfer' ||
-        merchant == 'account deposit' ||
-        merchant == 'expense capture' ||
-        merchant == 'salary deposit' ||
-        merchant == 'captured message') {
-      return '';
-    }
-    return SmartCaptureParser.normalizeMerchantName(
-      merchant,
-    ).trim().toLowerCase();
   }
 
   Future<void> updateMarketSnapshot(MarketSnapshot snapshot) async {

@@ -11,7 +11,8 @@ class SmsCaptureReceiver : BroadcastReceiver() {
             return
         }
 
-        val message = Telephony.Sms.Intents.getMessagesFromIntent(intent)
+        val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
+        val message = messages
             .joinToString(separator = "") { sms -> sms.messageBody.orEmpty() }
             .trim()
         if (message.isEmpty()) {
@@ -35,13 +36,22 @@ class SmsCaptureReceiver : BroadcastReceiver() {
             return
         }
 
+        val sender = messages.firstOrNull()?.originatingAddress.orEmpty().trim()
+        val receivedAtIso = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US).apply {
+            timeZone = java.util.TimeZone.getTimeZone("UTC")
+        }.format(java.util.Date())
+
         AndroidSmsCaptureBridge.enqueueOrDeliver(
             context,
             mapOf(
                 "messageContent" to message,
                 "source" to "sms",
-                "sourceIdentifier" to "Android SMS",
+                "sourceIdentifier" to (if (sender.isNotEmpty()) sender else "Android SMS"),
+                "senderHeader" to sender,
+                "receivedAt" to receivedAtIso,
+                "platform" to "android",
             ),
         )
     }
 }
+

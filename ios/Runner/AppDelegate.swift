@@ -119,10 +119,15 @@ protocol FlutterImplicitEngineDelegate {}
       ? await sendNativeShortcutNotification(preview: preview)
       : false
 
+    // Note: nativeShortcutPreview is strictly a temporary, non-authoritative preview
+    // used solely for immediate local notifications when the Flutter engine is unavailable.
+    // It never determines persisted transaction data; canonical parsing happens in Dart upon delivery.
     let payload: [String: Any] = [
       "messageContent": trimmed,
       "source": "shortcut",
       "sourceIdentifier": "Apple Automation",
+      "receivedAt": ISO8601DateFormatter().string(from: Date()),
+      "platform": "ios",
       "notificationAlreadyShown": nativeNotificationShown ? "true" : "false",
     ]
 

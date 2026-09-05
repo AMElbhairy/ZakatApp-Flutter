@@ -6,7 +6,7 @@ import '../../core/widgets/app_ui.dart';
 import '../../core/theme/app_theme_extensions.dart';
 import '../../core/theme/app_radii.dart';
 import '../../services/app_state_controller.dart';
-import '../../models/pending_transaction.dart';
+import '../../models/raw_capture_payload.dart';
 
 class AddSmartCaptureMessageScreen extends StatefulWidget {
   const AddSmartCaptureMessageScreen({super.key});
@@ -34,11 +34,14 @@ class _AddSmartCaptureMessageScreenState
     final String rawMessage = _messageController.text;
 
     try {
-      final bool created = await controller
-          .createPendingTransactionFromMessageWithResult(
-            rawMessage,
-            PendingTransactionSource.manual,
-          );
+      final payload = RawCapturePayload(
+        rawText: rawMessage,
+        source: CaptureSource.manual,
+        sourceIdentifier: 'Manual Entry',
+        receivedAt: DateTime.now().toUtc(),
+      );
+      final bool created =
+          await controller.createPendingTransactionFromPayload(payload);
 
       if (mounted) {
         if (!created) {
