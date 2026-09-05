@@ -45,13 +45,14 @@ class CurrencyDropdownFormField extends StatelessWidget {
           child: InkWell(
             borderRadius: BorderRadius.circular(12),
             onTap: () async {
-              final String? selected = await showCompactSelectionDialog<String>(
-                context: context,
-                title: labelText,
-                options: currencies,
-                optionLabel: currencyLabel,
-                selectedValueLabel: currencyLabel(currentValue),
-              );
+              final String? selected =
+                  await showCompactSelectionDialogAfterFocus<String>(
+                    context: context,
+                    title: labelText,
+                    options: currencies,
+                    optionLabel: currencyLabel,
+                    selectedValueLabel: currencyLabel(currentValue),
+                  );
               if (selected != null) {
                 field.didChange(selected);
                 onChanged(selected);

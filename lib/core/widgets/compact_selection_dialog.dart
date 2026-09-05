@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 
 import '../motion/app_motion.dart';
 import '../theme/app_colors.dart';
@@ -9,7 +10,9 @@ Future<T?> showCompactSelectionDialog<T>({
   required List<T> options,
   required String Function(T value) optionLabel,
   String? selectedValueLabel,
+  VoidCallback? onFirstFrame,
 }) {
+  bool firstFrameReported = false;
   final ThemeData theme = Theme.of(context);
   return showGeneralDialog<T>(
     context: context,
@@ -23,6 +26,12 @@ Future<T?> showCompactSelectionDialog<T>({
           Animation<double> animation,
           Animation<double> secondaryAnimation,
         ) {
+          if (onFirstFrame != null && !firstFrameReported) {
+            firstFrameReported = true;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              onFirstFrame();
+            });
+          }
           final bool isLargeScreen =
               MediaQuery.sizeOf(dialogContext).width >= 420;
           final double maxWidth = isLargeScreen ? 420 : 360;
@@ -158,5 +167,53 @@ Future<T?> showCompactSelectionDialog<T>({
             ),
           );
         },
+  );
+}
+
+Future<T?> showCompactSelectionDialogAfterFocus<T>({
+  required BuildContext context,
+  required String title,
+  required List<T> options,
+  required String Function(T value) optionLabel,
+  String? selectedValueLabel,
+}) async {
+  final Stopwatch? stopwatch = kDebugMode || kProfileMode
+      ? (Stopwatch()..start())
+      : null;
+  final FocusNode? primaryFocus = FocusManager.instance.primaryFocus;
+  if (primaryFocus != null && primaryFocus.hasFocus) {
+    primaryFocus.unfocus();
+    if (stopwatch != null) {
+      debugPrint('Selector focus release: ${stopwatch.elapsedMicroseconds}us');
+    }
+    // Let the current frame consume the focus change and start keyboard
+    // dismissal before the dialog route is built. This avoids a fixed delay
+    // and leaves the fast unfocused path immediate.
+    await WidgetsBinding.instance.endOfFrame;
+    if (stopwatch != null) {
+      debugPrint(
+        'Selector keyboard/viewInsets frame: '
+        '${stopwatch.elapsedMilliseconds}ms',
+      );
+    }
+  }
+  if (!context.mounted) return null;
+  if (stopwatch != null) {
+    debugPrint(
+      'Selector showGeneralDialog preparation: '
+      '${stopwatch.elapsedMilliseconds}ms',
+    );
+  }
+  return showCompactSelectionDialog<T>(
+    context: context,
+    title: title,
+    options: options,
+    optionLabel: optionLabel,
+    selectedValueLabel: selectedValueLabel,
+    onFirstFrame: stopwatch == null
+        ? null
+        : () => debugPrint(
+            'Selector first frame: ${stopwatch.elapsedMilliseconds}ms',
+          ),
   );
 }

@@ -55,13 +55,14 @@ class CompactDropdownFormField<T> extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
               onTap: enabled
                   ? () async {
-                      final T? selected = await showCompactSelectionDialog<T>(
-                        context: context,
-                        title: labelText,
-                        options: items,
-                        optionLabel: itemLabel,
-                        selectedValueLabel: itemLabel(currentValue),
-                      );
+                      final T? selected =
+                          await showCompactSelectionDialogAfterFocus<T>(
+                            context: context,
+                            title: labelText,
+                            options: items,
+                            optionLabel: itemLabel,
+                            selectedValueLabel: itemLabel(currentValue),
+                          );
                       if (selected != null) {
                         field.didChange(selected);
                         onChanged(selected);
@@ -117,13 +118,14 @@ class CompactDropdownButton<T> extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         onTap: enabled
             ? () async {
-                final T? selected = await showCompactSelectionDialog<T>(
-                  context: context,
-                  title: labelText,
-                  options: items,
-                  optionLabel: itemLabel,
-                  selectedValueLabel: itemLabel(value),
-                );
+                final T? selected =
+                    await showCompactSelectionDialogAfterFocus<T>(
+                      context: context,
+                      title: labelText,
+                      options: items,
+                      optionLabel: itemLabel,
+                      selectedValueLabel: itemLabel(value),
+                    );
                 if (selected != null) onChanged(selected);
               }
             : null,
