@@ -99,6 +99,8 @@ class ReconciliationService {
 
   final Map<String, List<CashSource>> _cashSourcesCache =
       <String, List<CashSource>>{};
+  final Map<String, Map<String, double>> _cashBalanceCache =
+      <String, Map<String, double>>{};
   String? _cashSourcesDependencyKey;
 
   void _profile(String message) {
@@ -120,6 +122,7 @@ class ReconciliationService {
       // Financial inputs changed: discard all currency/date variants, but do
       // not invalidate this cache for unrelated UI/settings state changes.
       _cashSourcesCache.clear();
+      _cashBalanceCache.clear();
       _cashSourcesDependencyKey = dependencyKey;
     }
     final String cacheKey = _cashSourcesCacheKey(
@@ -531,6 +534,23 @@ class ReconciliationService {
     required String currency,
     String? asOfDate,
   }) {
+    final String dependencyKey = _cashSourcesDependencyKeyFor(state);
+    if (_cashSourcesDependencyKey != dependencyKey) {
+      _cashSourcesCache.clear();
+      _cashBalanceCache.clear();
+      _cashSourcesDependencyKey = dependencyKey;
+    }
+    final String normalizedCurrency = currency.trim().toUpperCase();
+    final String cacheKey = _cashSourcesCacheKey(
+      state: state,
+      currency: normalizedCurrency,
+      asOfDate: asOfDate,
+    );
+    final Map<String, double>? cached = _cashBalanceCache[cacheKey];
+    if (cached != null) {
+      _profile('CashBalance cache hit');
+      return cached[normalizedCurrency] ?? 0;
+    }
     List<Transaction> txList = state.transactions;
     List<Saving> savList = state.savings;
     if (asOfDate != null && asOfDate.isNotEmpty) {
@@ -539,13 +559,15 @@ class ReconciliationService {
           .where((s) => s.dateAcquired.compareTo(asOfDate) <= 0)
           .toList();
     }
-    return ZakatEngineService.calculateCashByCurrency(
+    final Map<String, double> balances =
+        ZakatEngineService.calculateCashByCurrency(
           transactions: txList,
           savings: savList,
           marketData: MarketData.fromJson(state.marketData),
           lastRollover: state.lastRollover,
-        )[currency.trim().toUpperCase()] ??
-        0;
+        );
+    _cashBalanceCache[cacheKey] = Map<String, double>.unmodifiable(balances);
+    return balances[normalizedCurrency] ?? 0;
   }
 
   Map<String, double> getCashByCurrency(AppStateModel state) {

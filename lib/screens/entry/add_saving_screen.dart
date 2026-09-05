@@ -337,7 +337,14 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
   }
 
   Future<void> _submit() async {
+    final Stopwatch? flowWatch = kDebugMode || kProfileMode
+        ? (Stopwatch()..start())
+        : null;
     if (!(_formKey.currentState?.validate() ?? false)) return;
+    final int validationElapsed = flowWatch?.elapsedMilliseconds ?? 0;
+    if (flowWatch != null) {
+      debugPrint('SavingSave validation: ${validationElapsed}ms');
+    }
 
     setState(() => _saving = true);
     final double amount = double.parse(_amountController.text.trim());
@@ -348,6 +355,12 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
         _linkPurchaseToCashEntries
         ? _selectedFundingAllocations()
         : <Map<String, dynamic>>[];
+    if (flowWatch != null) {
+      debugPrint(
+        'SavingSave funding preparation: '
+        '${flowWatch.elapsedMilliseconds - validationElapsed}ms',
+      );
+    }
     final double allocationTotal = fundingAllocations.fold<double>(
       0,
       (double sum, Map<String, dynamic> allocation) =>
@@ -413,6 +426,9 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
       } else {
         await controller.addSaving(entry);
       }
+      if (flowWatch != null) {
+        debugPrint('SavingSave mutation: ${flowWatch.elapsedMilliseconds}ms');
+      }
     } on StateError catch (error) {
       if (!mounted) return;
       setState(() => _saving = false);
@@ -425,6 +441,9 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
 
     if (!mounted) return;
     Navigator.of(context).pop();
+    if (flowWatch != null) {
+      debugPrint('SavingSave total: ${flowWatch.elapsedMilliseconds}ms');
+    }
   }
 
   static DateTime? _tryParseDate(String? value) {

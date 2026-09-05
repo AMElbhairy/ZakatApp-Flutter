@@ -3439,9 +3439,20 @@ class AppStateController extends ChangeNotifier {
     bool savingChanged = false,
     bool mirrorSavings = false,
   }) async {
+    final Stopwatch? stopwatch = kDebugMode || kProfileMode
+        ? (Stopwatch()..start())
+        : null;
     if (transactionChanged) _skipNextSqliteTransactionMirror = true;
     if (savingChanged) _skipNextSqliteSavingsMirror = true;
+    final int beforeNotify = stopwatch?.elapsedMilliseconds ?? 0;
     notifyListeners();
+    final int afterNotify = stopwatch?.elapsedMilliseconds ?? 0;
+    if (stopwatch != null) {
+      debugPrint(
+        'LocalWrite notifyListeners: ${afterNotify - beforeNotify}ms, '
+        'tx=${_state.transactions.length}, savings=${_state.savings.length}',
+      );
+    }
     // Direct repository writes already persisted the changed records. Avoid
     // rewriting unrelated SQLite collections during this compatibility save.
     await _saveStateForCompatibility(
@@ -3449,7 +3460,14 @@ class AppStateController extends ChangeNotifier {
       mirrorSavings: mirrorSavings,
       mirrorOtherCollections: false,
     );
-    unawaited(WidgetDataService.syncFromState(_state));
+    unawaited(_syncWidgetDataWithProfile(_state));
+    if (stopwatch != null) {
+      debugPrint(
+        'LocalWrite persistence: '
+        '${stopwatch.elapsedMilliseconds - afterNotify}ms',
+      );
+      debugPrint('LocalWrite total: ${stopwatch.elapsedMilliseconds}ms');
+    }
     if (!_isApplyingRemoteSync) {
       _syncSensitiveCollectionsInBackground(previousState, _state);
       unawaited(triggerSyncPipeline(reason: 'local_write'));

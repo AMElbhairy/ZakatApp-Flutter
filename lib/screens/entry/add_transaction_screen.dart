@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import '../../widgets/sensitive_content_scope.dart';
 import 'package:uuid/uuid.dart';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart' as image_picker;
@@ -357,9 +357,27 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                       onPressed: _saving
                           ? null
                           : () async {
+                              final Stopwatch? flowWatch =
+                                  kDebugMode || kProfileMode
+                                  ? (Stopwatch()..start())
+                                  : null;
                               if (!(_formKey.currentState?.validate() ??
                                   false)) {
+                                if (flowWatch != null) {
+                                  debugPrint(
+                                    'TransactionSave validation: '
+                                    '${flowWatch.elapsedMilliseconds}ms',
+                                  );
+                                }
                                 return;
+                              }
+                              final int validationElapsed =
+                                  flowWatch?.elapsedMilliseconds ?? 0;
+                              if (flowWatch != null) {
+                                debugPrint(
+                                  'TransactionSave validation: '
+                                  '${validationElapsed}ms',
+                                );
                               }
                               setState(() => _saving = true);
                               final double amount =
@@ -375,6 +393,12 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                                   )) {
                                 if (mounted) setState(() => _saving = false);
                                 return;
+                              }
+                              if (flowWatch != null) {
+                                debugPrint(
+                                  'TransactionSave confirmation/check: '
+                                  '${flowWatch.elapsedMilliseconds - validationElapsed}ms',
+                                );
                               }
 
                               final Transaction? original =
@@ -425,8 +449,20 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                                 } else {
                                   await controller.addTransaction(transaction);
                                 }
+                                if (flowWatch != null) {
+                                  debugPrint(
+                                    'TransactionSave mutation: '
+                                    '${flowWatch.elapsedMilliseconds}ms',
+                                  );
+                                }
                                 if (!context.mounted) return;
                                 Navigator.of(context).pop();
+                                if (flowWatch != null) {
+                                  debugPrint(
+                                    'TransactionSave total: '
+                                    '${flowWatch.elapsedMilliseconds}ms',
+                                  );
+                                }
                               } catch (e) {
                                 setState(() => _saving = false);
                                 final String message =
@@ -507,6 +543,9 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     AppStateController controller,
     double amount,
   ) async {
+    final Stopwatch? flowWatch = kDebugMode || kProfileMode
+        ? (Stopwatch()..start())
+        : null;
     final List<String> warnings = <String>[];
     if (_deductFrom == 'cash') {
       double available = controller.getAvailableBalance(currency: _currency);
@@ -539,23 +578,42 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
         );
       }
     }
+    if (flowWatch != null) {
+      debugPrint(
+        'TransactionSave availableCash/comparison: '
+        '${flowWatch.elapsedMilliseconds}ms',
+      );
+    }
     if (warnings.isEmpty || !mounted) return true;
+    final Stopwatch? popupWatch = kDebugMode || kProfileMode
+        ? (Stopwatch()..start())
+        : null;
     final bool? confirmed = await showDialog<bool>(
       context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
-        title: Text(context.l10n.tr('review_transaction_warning')),
-        content: Text(warnings.join('\n\n')),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(context.l10n.tr('cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(context.l10n.tr('confirm')),
-          ),
-        ],
-      ),
+      builder: (BuildContext dialogContext) {
+        if (popupWatch != null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            debugPrint(
+              'TransactionSave confirmation first frame: '
+              '${popupWatch.elapsedMilliseconds}ms',
+            );
+          });
+        }
+        return AlertDialog(
+          title: Text(context.l10n.tr('review_transaction_warning')),
+          content: Text(warnings.join('\n\n')),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: Text(context.l10n.tr('cancel')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: Text(context.l10n.tr('confirm')),
+            ),
+          ],
+        );
+      },
     );
     return confirmed == true;
   }

@@ -813,6 +813,9 @@ class ActivityScreenState extends State<ActivityScreen> {
                         },
                       );
                       if (confirmed == true) {
+                        final Stopwatch? stopwatch = kDebugMode || kProfileMode
+                            ? (Stopwatch()..start())
+                            : null;
                         final bool isCurrencyExchange =
                             (entry.transferTitle ?? '').toLowerCase() ==
                             'currency exchange';
@@ -827,6 +830,12 @@ class ActivityScreenState extends State<ActivityScreen> {
                           );
                         } else if (entry.saving != null) {
                           await controller.deleteSaving(entry.saving!.id);
+                        }
+                        if (stopwatch != null) {
+                          debugPrint(
+                            'TransactionDelete total: '
+                            '${stopwatch.elapsedMilliseconds}ms',
+                          );
                         }
                       }
                     },

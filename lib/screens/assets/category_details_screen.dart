@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 
@@ -2352,7 +2353,15 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
     );
 
     if (confirmed == true && context.mounted) {
+      final Stopwatch? stopwatch = kDebugMode || kProfileMode
+          ? (Stopwatch()..start())
+          : null;
       await context.read<AppStateController>().deleteTransaction(tx.id);
+      if (stopwatch != null) {
+        debugPrint(
+          'TransactionDelete total: ${stopwatch.elapsedMilliseconds}ms',
+        );
+      }
     }
   }
 
