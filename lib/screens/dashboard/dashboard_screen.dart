@@ -56,6 +56,8 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   bool _animateIn = false;
+  String? _derivedCacheKey;
+  _DashboardDerivedData? _derivedCache;
 
   @override
   void initState() {
@@ -80,102 +82,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final transactions = state.transactions;
     final savings = state.savings;
     final bool dark = Theme.of(context).brightness == Brightness.dark;
-    final investments = state.investments;
 
-    final market = MarketData.fromJson(state.marketData);
-    final MarketSnapshot snapshot = controller.currentMarketSnapshot;
-    final Set<String> requiredCurrencies = _requiredCurrencies(
-      transactions: transactions,
-      savings: savings,
-      investments: investments,
+    final _DashboardDerivedData derived = _getDerivedData(
+      state: state,
+      marketSnapshot: controller.currentMarketSnapshot,
     );
-    final bool hasFxData = requiredCurrencies.every(
-      (String c) => ZakatEngineService.isCurrencyConversionAvailable(c, market),
-    );
-    final bool hasMetalsData = snapshot.hasRequiredData;
-    final bool hasMarketData = hasFxData && hasMetalsData;
 
-    NisabTotals savingsTotals = const NisabTotals(
-      totalCashEgp: 0,
-      totalGold24k: 0,
-      totalGoldEgp: 0,
-      totalSilverGrams: 0,
-      totalSilverEgp: 0,
-      totalSavingsWealthEgp: 0,
-    );
-    double totalWealthEgp = 0;
-    double totalLiabilitiesEgp = 0;
-    double netPositionEgp = 0;
-    double nisabThreshold = 0;
-    bool nisabMet = false;
-    double zakatableWealthEgp = 0;
-
-    if (hasMarketData) {
-      savingsTotals = ZakatEngineService.computeNisabTotals(
-        savings: savings,
-        marketData: market,
-      );
-      totalWealthEgp = ZakatEngineService.calculateTotalWealthEgp(
-        transactions: transactions,
-        savings: savings,
-        investments: investments,
-        marketData: market,
-        lastRollover: state.lastRollover,
-      );
-
-      totalLiabilitiesEgp = ZakatEngineService.calculateTotalLiabilitiesEgp(
-        transactions: transactions,
-        savings: savings,
-        investments: investments,
-        marketData: market,
-        lastRollover: state.lastRollover,
-      );
-      netPositionEgp = totalWealthEgp - totalLiabilitiesEgp;
-
-      zakatableWealthEgp = ZakatEngineService.calculateTotalWealthEgp(
-        transactions: transactions,
-        savings: savings,
-        investments: const <InvestmentAsset>[],
-        marketData: market,
-        lastRollover: state.lastRollover,
-      );
-
-      nisabThreshold = ZakatEngineService.cashNisabThresholdEgp(
-        market,
-        zakatNisabBasis: state.zakatNisabBasis,
-      );
-      nisabMet = ZakatEngineService.checkCashNisab(
-        zakatableWealthEgp,
-        market,
-        zakatNisabBasis: state.zakatNisabBasis,
-      );
-    }
-
-    final List<Map<String, dynamic>> schedule = hasMarketData
-        ? _buildSchedule(
-            zakatMethod: state.zakatMethod,
-            zakatAnnualDate: state.zakatAnnualDate,
-            transactions: transactions,
-            savings: savings,
-            investments: investments,
-            marketData: market,
-            lastRollover: state.lastRollover,
-            zakatNisabBasis: state.zakatNisabBasis,
-          )
-        : const <Map<String, dynamic>>[];
-    final _Dues dues = _computeDues(
-      schedule: schedule,
-      zakatPaidMonths: state.zakatPaidMonths,
-      investments: investments,
-      marketData: market,
-    );
-    final DateTime? nextZakatDueDate = findNextUnpaidZakatDate(
-      schedule,
-      state.zakatPaidMonths.toSet(),
-    );
-    final bool nextZakatIsOverdue =
-        nextZakatDueDate != null &&
-        !nextZakatDueDate.isAfter(DateUtils.dateOnly(DateTime.now()));
+    final MarketData market = derived.market;
+    final bool hasFxData = derived.hasFxData;
+    final bool hasMetalsData = derived.hasMetalsData;
+    final bool hasMarketData = derived.hasMarketData;
+    final double totalWealthEgp = derived.totalWealthEgp;
+    final double netPositionEgp = derived.netPositionEgp;
+    final double nisabThreshold = derived.nisabThreshold;
+    final bool nisabMet = derived.nisabMet;
+    final double zakatableWealthEgp = derived.zakatableWealthEgp;
+    final _Dues dues = derived.dues;
+    final DateTime? nextZakatDueDate = derived.nextZakatDueDate;
+    final bool nextZakatIsOverdue = derived.nextZakatIsOverdue;
+    final _Allocation allocation = derived.allocation;
+    final bool balancesHidden = _isBalanceHidden(state);
+    final _HeroGrowthData? heroGrowth = derived.heroGrowth;
+    final List<_DashboardActivityEntry> recent4 = derived.recent4;
+    final bool hasAnyData = derived.hasAnyData;
+    final List<PendingTransaction> pendingItems = derived.pendingItems;
+    final bool hasPending = derived.hasPending;
     final String? nextZakatDate = nextZakatDueDate != null
         ? _latinDigits(
             DateFormat(
@@ -185,133 +116,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
           )
         : null;
 
-    final double cashWealthEgp = hasFxData
-        ? ZakatEngineService.calculateTotalCashWealthEgp(
-            transactions: transactions,
-            savings: savings,
-            marketData: market,
-            lastRollover: state.lastRollover,
-          )
-        : 0.0;
-
-    final _Allocation allocation = _computeAllocation(
-      savingsTotals: savingsTotals,
-      investments: investments,
-      marketData: market,
-      totalWealthEgp: totalWealthEgp,
-      cashWealthEgp: cashWealthEgp,
-    );
-    final bool balancesHidden = _isBalanceHidden(state);
-    final _HeroGrowthData? heroGrowth = _computeHeroGrowth(
-      transactions: transactions,
-      savings: savings,
-      investments: investments,
-      marketData: market,
-      marketHistory: state.marketHistory,
-      netWorthEgp: netPositionEgp,
-      hasMarketData: hasMarketData,
-      lastRollover: state.lastRollover,
-    );
-
-    // Grouping exchanges and metal purchases for dashboard
-    final Map<String, List<Transaction>> exchangePairs =
-        <String, List<Transaction>>{};
-    for (final Transaction transaction in transactions.where(
-      (Transaction transaction) =>
-          transaction.category == 'Currency Exchange' &&
-          (transaction.exchangePairId ?? '').isNotEmpty,
-    )) {
-      exchangePairs
-          .putIfAbsent(transaction.exchangePairId!, () => <Transaction>[])
-          .add(transaction);
-    }
-    final Map<String, List<Saving>> exchangeSavings = <String, List<Saving>>{};
-    for (final Saving saving in state.savings.where(
-      (Saving saving) =>
-          (saving.transferActivityId ?? '').isNotEmpty &&
-          saving.internalTransferType == 'savings_currency_exchange',
-    )) {
-      exchangeSavings
-          .putIfAbsent(saving.transferActivityId!, () => <Saving>[])
-          .add(saving);
-    }
-    final Set<String> exchangeActivityIds = <String>{
-      ...exchangePairs.keys,
-      ...exchangeSavings.keys,
-    };
-    final Set<String> fundedMetalIds = state.savings
-        .where((Saving saving) => saving.fundingAllocations.isNotEmpty)
-        .map((Saving saving) => saving.id)
-        .toSet();
-
-    final List<_DashboardActivityEntry> recent =
-        <_DashboardActivityEntry>[
-          ...transactions
-              .where(
-                (Transaction transaction) =>
-                    !transaction.isTransferActivity ||
-                    transaction.category == 'Gold Sale' ||
-                    transaction.category == 'Silver Sale' ||
-                    ((transaction.exchangePairId ?? '').isEmpty &&
-                        !fundedMetalIds.contains(transaction.exchangePairId)),
-              )
-              .map(_DashboardActivityEntry.transaction),
-          ...exchangeActivityIds.map(
-            (String id) => _DashboardActivityEntry.currencyExchange(
-              exchangePairs[id] ?? const <Transaction>[],
-              exchangeSavings[id] ?? const <Saving>[],
-            ),
-          ),
-          ...state.savings
-              .where(
-                (Saving saving) =>
-                    (saving.exchangeSourceSavingId ?? '').isNotEmpty &&
-                    (saving.transferActivityId ?? '').isEmpty,
-              )
-              .map(_DashboardActivityEntry.legacySavingExchange),
-          ...state.savings
-              .where(
-                (Saving saving) =>
-                    saving.fundingAllocations.isNotEmpty ||
-                    ZakatEngineService.normaliseAssetType(saving.assetType) ==
-                        'gold' ||
-                    ZakatEngineService.normaliseAssetType(saving.assetType) ==
-                        'silver',
-              )
-              .map(_DashboardActivityEntry.metalTransfer),
-          ...savings
-              .where(
-                (Saving saving) =>
-                    ZakatEngineService.normaliseAssetType(saving.assetType) ==
-                        'cash' &&
-                    (saving.exchangeSourceSavingId ?? '').isEmpty &&
-                    (saving.exchangeSourceIncomeId ?? '').isEmpty &&
-                    (saving.transferActivityId ?? '').isEmpty,
-              )
-              .map(_DashboardActivityEntry.cashSaving),
-        ]..sort((_DashboardActivityEntry a, _DashboardActivityEntry b) {
-          final int byDate = _parseDate(b.date).compareTo(_parseDate(a.date));
-          if (byDate != 0) return byDate;
-          return b.createdAt.compareTo(a.createdAt);
-        });
-    final List<_DashboardActivityEntry> recent4 = recent
-        .take(4)
-        .toList(growable: false);
-
-    final bool hasAnyData =
-        transactions.isNotEmpty || savings.isNotEmpty || investments.isNotEmpty;
-
-    final List<PendingTransaction> pendingItems = state.pendingTransactions
-        .where((t) => t.status == CaptureStatus.pendingReview)
-        .toList();
-    final bool hasPending = pendingItems.isNotEmpty;
-
     final tokens = context.premiumTokens;
     final double navSafeBottomPadding =
         112 + MediaQuery.paddingOf(context).bottom;
     if (derivedWatch != null) {
       debugPrint(
-        'Dashboard derived/build: ${derivedWatch.elapsedMilliseconds}ms, '
+        'Dashboard build total: ${derivedWatch.elapsedMilliseconds}ms, '
         'tx=${transactions.length}, savings=${savings.length}',
       );
     }
@@ -587,6 +397,52 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ],
       ),
     );
+  }
+
+  _DashboardDerivedData _getDerivedData({
+    required AppStateModel state,
+    required MarketSnapshot marketSnapshot,
+  }) {
+    // Derived financial data depends only on these collection identities and
+    // the listed Zakat/rollover inputs. Layout, focus, keyboard, navigation,
+    // and notification changes intentionally do not invalidate this cache.
+    final String cacheKey = <Object?>[
+      identityHashCode(state.transactions),
+      identityHashCode(state.savings),
+      identityHashCode(state.investments),
+      identityHashCode(state.creditCards),
+      identityHashCode(state.marketData),
+      identityHashCode(state.marketHistory),
+      identityHashCode(state.pendingTransactions),
+      identityHashCode(state.zakatPaidMonths),
+      state.lastRollover,
+      state.zakatMethod,
+      state.zakatAnnualDate,
+      state.zakatNisabBasis,
+      DateUtils.dateOnly(DateTime.now()).toIso8601String(),
+    ].join('|');
+    if (_derivedCacheKey == cacheKey && _derivedCache != null) {
+      if (kDebugMode || kProfileMode) {
+        debugPrint('Dashboard derived cache hit');
+      }
+      return _derivedCache!;
+    }
+    final Stopwatch? stopwatch = kDebugMode || kProfileMode
+        ? (Stopwatch()..start())
+        : null;
+    final _DashboardDerivedData derived = _DashboardDerivedData.compute(
+      state: state,
+      marketSnapshot: marketSnapshot,
+    );
+    _derivedCacheKey = cacheKey;
+    _derivedCache = derived;
+    if (stopwatch != null) {
+      debugPrint(
+        'Dashboard derived recompute: ${stopwatch.elapsedMilliseconds}ms, '
+        'tx=${state.transactions.length}, savings=${state.savings.length}',
+      );
+    }
+    return derived;
   }
 
   Widget _stagger({required int order, required Widget child}) {
@@ -3766,6 +3622,326 @@ class _ActivityRowState extends State<_ActivityRow>
         );
       }
     }
+  }
+}
+
+class _DashboardDerivedData {
+  const _DashboardDerivedData({
+    required this.market,
+    required this.hasFxData,
+    required this.hasMetalsData,
+    required this.hasMarketData,
+    required this.savingsTotals,
+    required this.totalWealthEgp,
+    required this.totalLiabilitiesEgp,
+    required this.netPositionEgp,
+    required this.nisabThreshold,
+    required this.nisabMet,
+    required this.zakatableWealthEgp,
+    required this.dues,
+    required this.nextZakatDueDate,
+    required this.nextZakatIsOverdue,
+    required this.cashWealthEgp,
+    required this.allocation,
+    required this.heroGrowth,
+    required this.recent4,
+    required this.hasAnyData,
+    required this.pendingItems,
+    required this.hasPending,
+  });
+
+  final MarketData market;
+  final bool hasFxData;
+  final bool hasMetalsData;
+  final bool hasMarketData;
+  final NisabTotals savingsTotals;
+  final double totalWealthEgp;
+  final double totalLiabilitiesEgp;
+  final double netPositionEgp;
+  final double nisabThreshold;
+  final bool nisabMet;
+  final double zakatableWealthEgp;
+  final _Dues dues;
+  final DateTime? nextZakatDueDate;
+  final bool nextZakatIsOverdue;
+  final double cashWealthEgp;
+  final _Allocation allocation;
+  final _HeroGrowthData? heroGrowth;
+  final List<_DashboardActivityEntry> recent4;
+  final bool hasAnyData;
+  final List<PendingTransaction> pendingItems;
+  final bool hasPending;
+
+  static _DashboardDerivedData compute({
+    required AppStateModel state,
+    required MarketSnapshot marketSnapshot,
+  }) {
+    final Stopwatch? stageWatch = kDebugMode || kProfileMode
+        ? (Stopwatch()..start())
+        : null;
+    final List<Transaction> transactions = state.transactions;
+    final List<Saving> savings = state.savings;
+    final List<InvestmentAsset> investments = state.investments;
+    final MarketData market = MarketData.fromJson(state.marketData);
+    final Set<String> requiredCurrencies =
+        _DashboardScreenState._requiredCurrencies(
+          transactions: transactions,
+          savings: savings,
+          investments: investments,
+        );
+    final bool hasFxData = requiredCurrencies.every(
+      (String currency) =>
+          ZakatEngineService.isCurrencyConversionAvailable(currency, market),
+    );
+    final bool hasMetalsData = marketSnapshot.hasRequiredData;
+    final bool hasMarketData = hasFxData && hasMetalsData;
+    if (stageWatch != null) {
+      debugPrint(
+        'Dashboard derived state read: ${stageWatch.elapsedMilliseconds}ms',
+      );
+    }
+
+    NisabTotals savingsTotals = const NisabTotals(
+      totalCashEgp: 0,
+      totalGold24k: 0,
+      totalGoldEgp: 0,
+      totalSilverGrams: 0,
+      totalSilverEgp: 0,
+      totalSavingsWealthEgp: 0,
+    );
+    double totalWealthEgp = 0;
+    double totalLiabilitiesEgp = 0;
+    double netPositionEgp = 0;
+    double nisabThreshold = 0;
+    bool nisabMet = false;
+    double zakatableWealthEgp = 0;
+    if (hasMarketData) {
+      savingsTotals = ZakatEngineService.computeNisabTotals(
+        savings: savings,
+        marketData: market,
+      );
+      totalWealthEgp = ZakatEngineService.calculateTotalWealthEgp(
+        transactions: transactions,
+        savings: savings,
+        investments: investments,
+        marketData: market,
+        lastRollover: state.lastRollover,
+      );
+      totalLiabilitiesEgp = ZakatEngineService.calculateTotalLiabilitiesEgp(
+        transactions: transactions,
+        savings: savings,
+        investments: investments,
+        marketData: market,
+        lastRollover: state.lastRollover,
+      );
+      netPositionEgp = totalWealthEgp - totalLiabilitiesEgp;
+      zakatableWealthEgp = ZakatEngineService.calculateTotalWealthEgp(
+        transactions: transactions,
+        savings: savings,
+        investments: const <InvestmentAsset>[],
+        marketData: market,
+        lastRollover: state.lastRollover,
+      );
+      nisabThreshold = ZakatEngineService.cashNisabThresholdEgp(
+        market,
+        zakatNisabBasis: state.zakatNisabBasis,
+      );
+      nisabMet = ZakatEngineService.checkCashNisab(
+        zakatableWealthEgp,
+        market,
+        zakatNisabBasis: state.zakatNisabBasis,
+      );
+    }
+    if (stageWatch != null) {
+      debugPrint(
+        'Dashboard derived financial totals: '
+        '${stageWatch.elapsedMilliseconds}ms',
+      );
+    }
+
+    final List<Map<String, dynamic>> schedule = hasMarketData
+        ? _DashboardScreenState._buildSchedule(
+            zakatMethod: state.zakatMethod,
+            zakatAnnualDate: state.zakatAnnualDate,
+            transactions: transactions,
+            savings: savings,
+            investments: investments,
+            marketData: market,
+            lastRollover: state.lastRollover,
+            zakatNisabBasis: state.zakatNisabBasis,
+          )
+        : const <Map<String, dynamic>>[];
+    final _Dues dues = _DashboardScreenState._computeDues(
+      schedule: schedule,
+      zakatPaidMonths: state.zakatPaidMonths,
+      investments: investments,
+      marketData: market,
+    );
+    final DateTime? nextZakatDueDate = findNextUnpaidZakatDate(
+      schedule,
+      state.zakatPaidMonths.toSet(),
+    );
+    final bool nextZakatIsOverdue =
+        nextZakatDueDate != null &&
+        !nextZakatDueDate.isAfter(DateUtils.dateOnly(DateTime.now()));
+    if (stageWatch != null) {
+      debugPrint(
+        'Dashboard derived zakat/history: ${stageWatch.elapsedMilliseconds}ms',
+      );
+    }
+
+    final double cashWealthEgp = hasFxData
+        ? ZakatEngineService.calculateTotalCashWealthEgp(
+            transactions: transactions,
+            savings: savings,
+            marketData: market,
+            lastRollover: state.lastRollover,
+          )
+        : 0.0;
+    final _Allocation allocation = _DashboardScreenState._computeAllocation(
+      savingsTotals: savingsTotals,
+      investments: investments,
+      marketData: market,
+      totalWealthEgp: totalWealthEgp,
+      cashWealthEgp: cashWealthEgp,
+    );
+    final _HeroGrowthData? heroGrowth =
+        _DashboardScreenState._computeHeroGrowth(
+          transactions: transactions,
+          savings: savings,
+          investments: investments,
+          marketData: market,
+          marketHistory: state.marketHistory,
+          netWorthEgp: netPositionEgp,
+          hasMarketData: hasMarketData,
+          lastRollover: state.lastRollover,
+        );
+    if (stageWatch != null) {
+      debugPrint(
+        'Dashboard derived charts/allocation: '
+        '${stageWatch.elapsedMilliseconds}ms',
+      );
+    }
+
+    final Map<String, List<Transaction>> exchangePairs =
+        <String, List<Transaction>>{};
+    for (final Transaction transaction in transactions.where(
+      (Transaction item) =>
+          item.category == 'Currency Exchange' &&
+          (item.exchangePairId ?? '').isNotEmpty,
+    )) {
+      exchangePairs
+          .putIfAbsent(transaction.exchangePairId!, () => <Transaction>[])
+          .add(transaction);
+    }
+    final Map<String, List<Saving>> exchangeSavings = <String, List<Saving>>{};
+    for (final Saving saving in savings.where(
+      (Saving item) =>
+          (item.transferActivityId ?? '').isNotEmpty &&
+          item.internalTransferType == 'savings_currency_exchange',
+    )) {
+      exchangeSavings
+          .putIfAbsent(saving.transferActivityId!, () => <Saving>[])
+          .add(saving);
+    }
+    final Set<String> exchangeActivityIds = <String>{
+      ...exchangePairs.keys,
+      ...exchangeSavings.keys,
+    };
+    final Set<String> fundedMetalIds = savings
+        .where((Saving item) => item.fundingAllocations.isNotEmpty)
+        .map((Saving item) => item.id)
+        .toSet();
+    final List<_DashboardActivityEntry> recent =
+        <_DashboardActivityEntry>[
+          ...transactions
+              .where(
+                (Transaction item) =>
+                    !item.isTransferActivity ||
+                    item.category == 'Gold Sale' ||
+                    item.category == 'Silver Sale' ||
+                    ((item.exchangePairId ?? '').isEmpty &&
+                        !fundedMetalIds.contains(item.exchangePairId)),
+              )
+              .map(_DashboardActivityEntry.transaction),
+          ...exchangeActivityIds.map(
+            (String id) => _DashboardActivityEntry.currencyExchange(
+              exchangePairs[id] ?? const <Transaction>[],
+              exchangeSavings[id] ?? const <Saving>[],
+            ),
+          ),
+          ...savings
+              .where(
+                (Saving item) =>
+                    (item.exchangeSourceSavingId ?? '').isNotEmpty &&
+                    (item.transferActivityId ?? '').isEmpty,
+              )
+              .map(_DashboardActivityEntry.legacySavingExchange),
+          ...savings
+              .where(
+                (Saving item) =>
+                    item.fundingAllocations.isNotEmpty ||
+                    ZakatEngineService.normaliseAssetType(item.assetType) ==
+                        'gold' ||
+                    ZakatEngineService.normaliseAssetType(item.assetType) ==
+                        'silver',
+              )
+              .map(_DashboardActivityEntry.metalTransfer),
+          ...savings
+              .where(
+                (Saving item) =>
+                    ZakatEngineService.normaliseAssetType(item.assetType) ==
+                        'cash' &&
+                    (item.exchangeSourceSavingId ?? '').isEmpty &&
+                    (item.exchangeSourceIncomeId ?? '').isEmpty &&
+                    (item.transferActivityId ?? '').isEmpty,
+              )
+              .map(_DashboardActivityEntry.cashSaving),
+        ]..sort((_DashboardActivityEntry a, _DashboardActivityEntry b) {
+          final int byDate = _DashboardScreenState._parseDate(
+            b.date,
+          ).compareTo(_DashboardScreenState._parseDate(a.date));
+          if (byDate != 0) return byDate;
+          return b.createdAt.compareTo(a.createdAt);
+        });
+    if (stageWatch != null) {
+      debugPrint(
+        'Dashboard derived activity/pending: '
+        '${stageWatch.elapsedMilliseconds}ms',
+      );
+    }
+    final List<PendingTransaction> pendingItems = state.pendingTransactions
+        .where(
+          (PendingTransaction item) =>
+              item.status == CaptureStatus.pendingReview,
+        )
+        .toList(growable: false);
+    return _DashboardDerivedData(
+      market: market,
+      hasFxData: hasFxData,
+      hasMetalsData: hasMetalsData,
+      hasMarketData: hasMarketData,
+      savingsTotals: savingsTotals,
+      totalWealthEgp: totalWealthEgp,
+      totalLiabilitiesEgp: totalLiabilitiesEgp,
+      netPositionEgp: netPositionEgp,
+      nisabThreshold: nisabThreshold,
+      nisabMet: nisabMet,
+      zakatableWealthEgp: zakatableWealthEgp,
+      dues: dues,
+      nextZakatDueDate: nextZakatDueDate,
+      nextZakatIsOverdue: nextZakatIsOverdue,
+      cashWealthEgp: cashWealthEgp,
+      allocation: allocation,
+      heroGrowth: heroGrowth,
+      recent4: recent.take(4).toList(growable: false),
+      hasAnyData:
+          transactions.isNotEmpty ||
+          savings.isNotEmpty ||
+          investments.isNotEmpty,
+      pendingItems: pendingItems,
+      hasPending: pendingItems.isNotEmpty,
+    );
   }
 }
 
