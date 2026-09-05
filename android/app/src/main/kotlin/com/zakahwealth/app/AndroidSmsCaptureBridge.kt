@@ -71,6 +71,7 @@ object AndroidSmsCaptureBridge {
         "l.e",
         "l.e.",
         "ج.م",
+        "جم",
         "جنيه",
         "جنيه مصري",
         "ريال",
@@ -401,6 +402,9 @@ object AndroidSmsCaptureBridge {
         if (merchant.isBlank() || amount.isBlank()) return false
 
         val normalized = message.lowercase(Locale.ROOT)
+        if (isLikelyOtpOrSecurityMessage(normalized)) {
+            return false
+        }
         if (nativeContainsRejectionIndicators(normalized)) {
             return false
         }
@@ -967,9 +971,9 @@ object AndroidSmsCaptureBridge {
             .map { it.trim() }
             .filter { it.isNotEmpty() }
         val patterns = listOf(
-            Regex("""^\s*عند\s+([A-Za-z\u0600-\u06FF0-9][A-Za-z0-9\u0600-\u06FF&*.,\- ]{1,80})""", RegexOption.IGNORE_CASE),
-            Regex("""^\s*At\s*[:-]?\s*([A-Za-z\u0600-\u06FF0-9][A-Za-z0-9\u0600-\u06FF&*.,\- ]{1,80})""", RegexOption.IGNORE_CASE),
-            Regex("""^\s*Merchant\s*[:-]?\s*([A-Za-z\u0600-\u06FF0-9][A-Za-z0-9\u0600-\u06FF&*.,\- ]{1,80})""", RegexOption.IGNORE_CASE),
+            Regex("""^\s*عند\s+([A-Za-z\u0600-\u06FF0-9][A-Za-z0-9\u0600-\u06FF&*.,\-\/ ]{1,80})""", RegexOption.IGNORE_CASE),
+            Regex("""^\s*At\s*[:-]?\s*([A-Za-z\u0600-\u06FF0-9][A-Za-z0-9\u0600-\u06FF&*.,\-\/ ]{1,80})""", RegexOption.IGNORE_CASE),
+            Regex("""^\s*Merchant\s*[:-]?\s*([A-Za-z\u0600-\u06FF0-9][A-Za-z0-9\u0600-\u06FF&*.,\-\/ ]{1,80})""", RegexOption.IGNORE_CASE),
         )
         for (line in lines) {
             for (pattern in patterns) {
@@ -986,7 +990,7 @@ object AndroidSmsCaptureBridge {
         aliases: Map<String, String>,
     ): String? {
         val patterns = listOf(
-            Regex("""(?:(?<![A-Za-z0-9])(?:at|merchant|store)(?![A-Za-z0-9])|لدى|عند|في)\s*[:\-]?\s*([A-Za-z\u0600-\u06FF0-9][A-Za-z0-9\u0600-\u06FF&*.,\- ]{1,80})""", RegexOption.IGNORE_CASE),
+            Regex("""(?:(?<![A-Za-z0-9])(?:at|merchant|store)(?![A-Za-z0-9])|(?<![\u0600-\u06FF0-9])(?:لدى|عند|في)(?![\u0600-\u06FF0-9]))\s*[:\-]?\s*([A-Za-z\u0600-\u06FF0-9][A-Za-z0-9\u0600-\u06FF&*.,\-\/ ]{1,80})""", RegexOption.IGNORE_CASE),
         )
         for (pattern in patterns) {
             val match = pattern.find(rawMessage) ?: continue
@@ -1010,7 +1014,7 @@ object AndroidSmsCaptureBridge {
         val lines = rawMessage.split(Regex("""\r?\n"""))
             .map { it.trim() }
             .filter { it.isNotEmpty() }
-        val senderName = nativeTransferParty(lines, listOf(
+        var senderName = nativeTransferParty(lines, listOf(
             "sender",
             "from account",
             "from",
@@ -1019,7 +1023,7 @@ object AndroidSmsCaptureBridge {
             "من حساب",
             "من",
         ))
-        val recipientName = nativeTransferParty(lines, listOf(
+        var recipientName = nativeTransferParty(lines, listOf(
             "to account",
             "to",
             "recipient",
@@ -1029,6 +1033,32 @@ object AndroidSmsCaptureBridge {
             "إلى",
             "الى",
         ))
+
+        if (senderName == null) {
+            val match = Regex("""(?i)(?:\bfrom\b|من)\s+([A-Za-z\u0600-\u06FF\*\s]{2,80})""").find(rawMessage)
+            if (match != null) {
+                val candidate = match.groupValues[1].trim()
+                if (candidate.isNotEmpty() && !nativeIsTransferPartyNoise(candidate)) {
+                    val trimmed = nativeTrimMerchantCandidate(candidate)
+                    if (trimmed.isNotEmpty()) {
+                        senderName = trimmed
+                    }
+                }
+            }
+        }
+
+        if (recipientName == null) {
+            val match = Regex("""(?i)(?:\bto\b|إلى|الى)\s+([A-Za-z\u0600-\u06FF\*\s]{2,80})""").find(rawMessage)
+            if (match != null) {
+                val candidate = match.groupValues[1].trim()
+                if (candidate.isNotEmpty() && !nativeIsTransferPartyNoise(candidate)) {
+                    val trimmed = nativeTrimMerchantCandidate(candidate)
+                    if (trimmed.isNotEmpty()) {
+                        recipientName = trimmed
+                    }
+                }
+            }
+        }
         val lowered = rawMessage.lowercase(Locale.ROOT)
         val hasExplicitTransferPartyLabels = nativeContainsAny(lowered, listOf(
             "sender:",
@@ -1161,6 +1191,9 @@ object AndroidSmsCaptureBridge {
                 "صادرة",
                 "صادر",
                 "تم التحويل إلى",
+                "تم تنفيذ تحويل",
+                "من حسابكم",
+                "تحويل لحظي من",
             ))
         ) {
             return "out"
@@ -1182,6 +1215,12 @@ object AndroidSmsCaptureBridge {
                 "تم استلام",
                 "credited",
                 "received",
+                "تم إضافة تحويل",
+                "تم اضافة تحويل",
+                "تحويل لحظي لحسابكم",
+                "تحويل لحسابكم",
+                "تم إضافة",
+                "تم اضافة",
             ))
         ) {
             return "in"
@@ -1324,7 +1363,12 @@ object AndroidSmsCaptureBridge {
     }
 
     private fun nativeNormalizeMerchantName(merchant: String): String {
-        val normalized = merchant.lowercase(Locale.ROOT).trim()
+        var cleanMerchant = merchant.trim()
+        cleanMerchant = cleanMerchant.replace(
+            Regex("""^(?:sa|ksa|uae|eg|us|usa|uk)\s*/\s*""", RegexOption.IGNORE_CASE),
+            "",
+        ).trim()
+        val normalized = cleanMerchant.lowercase(Locale.ROOT).trim()
         return when {
             normalized == "talabat.com" ||
                 normalized == "talabat app" ||
@@ -1353,7 +1397,7 @@ object AndroidSmsCaptureBridge {
             normalized.startsWith("mobily") -> "Mobily"
             normalized.startsWith("zain") -> "Zain"
             Regex("""^(?:s\d+\s+)?tamimi market""").matches(normalized) -> "Tamimi Market"
-            else -> capitalizeWords(merchant)
+            else -> capitalizeWords(cleanMerchant)
         }
     }
 
@@ -1537,10 +1581,10 @@ object AndroidSmsCaptureBridge {
 
     private fun nativeExplicitAmountCandidate(text: String): Pair<Double, String?>? {
         val patterns = listOf(
-            Regex("""(?i)(?:SAR|SR|S\.R|EGP|USD|AED|KWD|QAR|BHD|OMR|ر\.س|ج\.م|ريال|جنيه|درهم|د\.إ|د.إ)\s*(?:amount|المبلغ|مبلغ)\s*[:\-]?\s*([0-9][0-9,]*(?:\.[0-9]+)?)"""),
-            Regex("""(?i)(?:amount|المبلغ|مبلغ|charged amount|transaction amount|purchase amount|total|value|price|due)\s*[:\-]?\s*(?:SAR|SR|S\.R|EGP|USD|AED|KWD|QAR|BHD|OMR|ر\.س|ج\.م|ريال|جنيه|درهم|د\.إ|د.إ)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)"""),
-            Regex("""(?i)(?:SAR|SR|S\.R|EGP|USD|AED|KWD|QAR|BHD|OMR|ر\.س|ج\.م|ريال|جنيه|درهم|د\.إ|د.إ)\s*([0-9][0-9,]*(?:\.[0-9]+)?)"""),
-            Regex("""(?i)([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:SAR|SR|S\.R|EGP|USD|AED|KWD|QAR|BHD|OMR|ر\.س|ج\.م|ريال|جنيه|درهم|د\.إ|د.إ)"""),
+            Regex("""(?i)(?:SAR|SR|S\.R|EGP|USD|AED|KWD|QAR|BHD|OMR|ر\.س|ج\.م|جم|ريال|جنيه|درهم|د\.إ|د.إ)\s*(?:amount|المبلغ|مبلغ)\s*[:\-]?\s*([0-9][0-9,]*(?:\.[0-9]+)?)"""),
+            Regex("""(?i)(?:amount|المبلغ|مبلغ|charged amount|transaction amount|purchase amount|total|value|price|due)\s*[:\-]?\s*(?:SAR|SR|S\.R|EGP|USD|AED|KWD|QAR|BHD|OMR|ر\.س|ج\.م|جم|ريال|جنيه|درهم|د\.إ|د.إ)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)"""),
+            Regex("""(?i)(?:SAR|SR|S\.R|EGP|USD|AED|KWD|QAR|BHD|OMR|ر\.س|ج\.م|جم|ريال|جنيه|درهم|د\.إ|د.إ)\s*([0-9][0-9,]*(?:\.[0-9]+)?)"""),
+            Regex("""(?i)([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:SAR|SR|S\.R|EGP|USD|AED|KWD|QAR|BHD|OMR|ر\.س|ج\.م|جم|ريال|جنيه|درهم|د\.إ|د.إ)"""),
         )
         for (pattern in patterns) {
             val match = pattern.find(text) ?: continue
@@ -1642,7 +1686,7 @@ object AndroidSmsCaptureBridge {
     private fun nativeCurrencyCode(text: String): String? {
         val patterns = listOf(
             Regex("""(?i)\b(SAR|SR|S\.R)\b""") to "SAR",
-            Regex("""(?i)\b(EGP|ج\.م|جنيه)\b""") to "EGP",
+            Regex("""(?i)\b(EGP|ج\.م|جم|جنيه)\b""") to "EGP",
             Regex("""(?i)\b(USD|\$)\b""") to "USD",
             Regex("""(?i)\b(AUD|A\$)\b""") to "AUD",
             Regex("""(?i)\b(CAD|C\$)\b""") to "CAD",
@@ -1872,6 +1916,7 @@ object AndroidSmsCaptureBridge {
             "authentication code",
             "login code",
             "passcode",
+            "purchase code",
             "pin",
             "password",
             "wrong otp",
@@ -1889,6 +1934,8 @@ object AndroidSmsCaptureBridge {
             "الرمز لمرة واحدة",
             "كلمة مرور لمرة واحدة",
             "رمز الاستخدام لمرة واحدة",
+            "رمز شراء",
+            "رمز شراء أونلاين",
             "تأكيد الدخول",
             "رمز خاطئ",
             "الرمز غير صحيح",

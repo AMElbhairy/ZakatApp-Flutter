@@ -31,6 +31,9 @@ class _LoginPageState extends State<LoginPage> {
   bool _passwordObscured = true;
   bool _confirmPasswordObscured = true;
   String? _validationMessage;
+  bool _advancedOptionsExpanded = false;
+  int _logoTapCount = 0;
+  bool _showDeveloperEmailLogin = false;
 
   @override
   void dispose() {
@@ -67,11 +70,21 @@ class _LoginPageState extends State<LoginPage> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: <Widget>[
-                  AuthBrandHeader(
-                    title: l10n.tr('brand_title'),
-                    subtitle: l10n.tr('brand_tagline'),
-                    logoSize: 84,
-                    framedLogo: false,
+                  GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _logoTapCount++;
+                        if (_logoTapCount >= 5) {
+                          _showDeveloperEmailLogin = true;
+                        }
+                      });
+                    },
+                    child: AuthBrandHeader(
+                      title: l10n.tr('brand_title'),
+                      subtitle: l10n.tr('brand_tagline'),
+                      logoSize: 84,
+                      framedLogo: false,
+                    ),
                   ),
                   const SizedBox(height: AppSpacing.lg),
                   Text(
@@ -103,129 +116,152 @@ class _LoginPageState extends State<LoginPage> {
                                 ),
                           ),
                           const SizedBox(height: AppSpacing.md),
-                          if (showLegacyAuthUi) ...<Widget>[
-                            if (_createAccountMode) ...<Widget>[
-                              TextField(
-                                controller: _nameController,
-                                textInputAction: TextInputAction.next,
-                                decoration: InputDecoration(
-                                  labelText: l10n.tr('full_name'),
-                                ),
+                          if (showLegacyAuthUi && _showDeveloperEmailLogin) ...<Widget>[
+                            Theme(
+                              data: Theme.of(context).copyWith(
+                                dividerColor: Colors.transparent,
                               ),
-                              const SizedBox(height: AppSpacing.sm),
-                            ],
-                            TextField(
-                              key: const Key('emailField'),
-                              controller: _emailController,
-                              keyboardType: TextInputType.emailAddress,
-                              textInputAction: TextInputAction.next,
-                              autofillHints: const <String>[
-                                AutofillHints.username,
-                                AutofillHints.email,
-                              ],
-                              autocorrect: false,
-                              decoration: InputDecoration(
-                                labelText: l10n.tr('email_address'),
-                              ),
-                            ),
-                            const SizedBox(height: AppSpacing.sm),
-                            TextField(
-                              key: const Key('passwordField'),
-                              controller: _passwordController,
-                              obscureText: _passwordObscured,
-                              textInputAction: _createAccountMode
-                                  ? TextInputAction.next
-                                  : TextInputAction.done,
-                              autofillHints: <String>[
-                                _createAccountMode
-                                    ? AutofillHints.newPassword
-                                    : AutofillHints.password,
-                              ],
-                              decoration: InputDecoration(
-                                labelText: l10n.tr('password'),
-                                helperText: _createAccountMode
-                                    ? l10n.tr('password_requirements')
-                                    : null,
-                                suffixIcon: IconButton(
-                                  onPressed: () {
-                                    setState(() {
-                                      _passwordObscured = !_passwordObscured;
-                                    });
-                                  },
-                                  icon: Icon(
-                                    _passwordObscured
-                                        ? Icons.visibility_off_outlined
-                                        : Icons.visibility_outlined,
+                              child: ExpansionTile(
+                                initiallyExpanded: _advancedOptionsExpanded,
+                                onExpansionChanged: (val) {
+                                  setState(() {
+                                    _advancedOptionsExpanded = val;
+                                  });
+                                },
+                                title: Text(
+                                  l10n.tr('advanced_options') ?? 'Advanced Options',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: tokens.colors.textSecondary,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
-                              ),
-                            ),
-                            if (_createAccountMode) ...<Widget>[
-                              const SizedBox(height: AppSpacing.sm),
-                              TextField(
-                                key: const Key('confirmPasswordField'),
-                                controller: _confirmPasswordController,
-                                obscureText: _confirmPasswordObscured,
-                                textInputAction: TextInputAction.done,
-                                decoration: InputDecoration(
-                                  labelText: l10n.tr('confirm_password'),
-                                  suffixIcon: IconButton(
-                                    onPressed: () {
-                                      setState(() {
-                                        _confirmPasswordObscured =
-                                            !_confirmPasswordObscured;
-                                      });
-                                    },
-                                    icon: Icon(
-                                      _confirmPasswordObscured
-                                          ? Icons.visibility_off_outlined
-                                          : Icons.visibility_outlined,
+                                children: [
+                                  if (_createAccountMode) ...<Widget>[
+                                    TextField(
+                                      controller: _nameController,
+                                      textInputAction: TextInputAction.next,
+                                      decoration: InputDecoration(
+                                        labelText: l10n.tr('full_name'),
+                                      ),
+                                    ),
+                                    const SizedBox(height: AppSpacing.sm),
+                                  ],
+                                  TextField(
+                                    key: const Key('emailField'),
+                                    controller: _emailController,
+                                    keyboardType: TextInputType.emailAddress,
+                                    textInputAction: TextInputAction.next,
+                                    autofillHints: const <String>[
+                                      AutofillHints.username,
+                                      AutofillHints.email,
+                                    ],
+                                    autocorrect: false,
+                                    decoration: InputDecoration(
+                                      labelText: l10n.tr('email_address'),
                                     ),
                                   ),
-                                ),
+                                  const SizedBox(height: AppSpacing.sm),
+                                  TextField(
+                                    key: const Key('passwordField'),
+                                    controller: _passwordController,
+                                    obscureText: _passwordObscured,
+                                    textInputAction: _createAccountMode
+                                        ? TextInputAction.next
+                                        : TextInputAction.done,
+                                    autofillHints: <String>[
+                                      _createAccountMode
+                                          ? AutofillHints.newPassword
+                                          : AutofillHints.password,
+                                    ],
+                                    decoration: InputDecoration(
+                                      labelText: l10n.tr('password'),
+                                      helperText: _createAccountMode
+                                          ? l10n.tr('password_requirements')
+                                          : null,
+                                      suffixIcon: IconButton(
+                                        onPressed: () {
+                                          setState(() {
+                                            _passwordObscured = !_passwordObscured;
+                                          });
+                                        },
+                                        icon: Icon(
+                                          _passwordObscured
+                                              ? Icons.visibility_off_outlined
+                                              : Icons.visibility_outlined,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  if (_createAccountMode) ...<Widget>[
+                                    const SizedBox(height: AppSpacing.sm),
+                                    TextField(
+                                      key: const Key('confirmPasswordField'),
+                                      controller: _confirmPasswordController,
+                                      obscureText: _confirmPasswordObscured,
+                                      textInputAction: TextInputAction.done,
+                                      decoration: InputDecoration(
+                                        labelText: l10n.tr('confirm_password'),
+                                        suffixIcon: IconButton(
+                                          onPressed: () {
+                                            setState(() {
+                                              _confirmPasswordObscured =
+                                                  !_confirmPasswordObscured;
+                                            });
+                                          },
+                                          icon: Icon(
+                                            _confirmPasswordObscured
+                                                ? Icons.visibility_off_outlined
+                                                : Icons.visibility_outlined,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                  const SizedBox(height: AppSpacing.md),
+                                  AuthBrandPrimaryButton(
+                                    key: const Key('emailAuthButton'),
+                                    label: _createAccountMode
+                                        ? l10n.tr('create_account')
+                                        : l10n.tr('sign_in_with_email'),
+                                    isLoading: isLoading,
+                                    leading: const Icon(Icons.mail_outline_rounded),
+                                    onPressed: () => _submitEmailAuth(context),
+                                  ),
+                                  const SizedBox(height: AppSpacing.xs),
+                                  if (!_createAccountMode)
+                                    Align(
+                                      alignment: Alignment.centerRight,
+                                      child: TextButton(
+                                        onPressed: isLoading
+                                            ? null
+                                            : () => _sendResetEmail(context),
+                                        child: Text(l10n.tr('forgot_password')),
+                                      ),
+                                    ),
+                                  Align(
+                                    alignment: Alignment.center,
+                                    child: TextButton(
+                                      onPressed: isLoading
+                                          ? null
+                                          : () {
+                                              setState(() {
+                                                _createAccountMode =
+                                                    !_createAccountMode;
+                                                _validationMessage = null;
+                                              });
+                                            },
+                                      child: Text(
+                                        _createAccountMode
+                                            ? l10n.tr('already_have_account')
+                                            : l10n.tr('need_account'),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: AppSpacing.sm),
+                                ],
                               ),
-                            ],
-                            const SizedBox(height: AppSpacing.md),
-                            AuthBrandPrimaryButton(
-                              key: const Key('emailAuthButton'),
-                              label: _createAccountMode
-                                  ? l10n.tr('create_account')
-                                  : l10n.tr('sign_in_with_email'),
-                              isLoading: isLoading,
-                              leading: const Icon(Icons.mail_outline_rounded),
-                              onPressed: () => _submitEmailAuth(context),
                             ),
-                            const SizedBox(height: AppSpacing.xs),
-                            if (!_createAccountMode)
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: TextButton(
-                                  onPressed: isLoading
-                                      ? null
-                                      : () => _sendResetEmail(context),
-                                  child: Text(l10n.tr('forgot_password')),
-                                ),
-                              ),
-                            Align(
-                              alignment: Alignment.center,
-                              child: TextButton(
-                                onPressed: isLoading
-                                    ? null
-                                    : () {
-                                        setState(() {
-                                          _createAccountMode =
-                                              !_createAccountMode;
-                                          _validationMessage = null;
-                                        });
-                                      },
-                                child: Text(
-                                  _createAccountMode
-                                      ? l10n.tr('already_have_account')
-                                      : l10n.tr('need_account'),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: AppSpacing.sm),
                           ],
                           AuthBrandSecondaryButton(
                             key: const Key('googleSignInButton'),
@@ -238,14 +274,21 @@ class _LoginPageState extends State<LoginPage> {
                                     provider: AuthProvider.google,
                                   ),
                           ),
-                          if (Theme.of(context).platform == TargetPlatform.iOS || Theme.of(context).platform == TargetPlatform.macOS) ...[
+                          if (Theme.of(context).platform ==
+                                  TargetPlatform.iOS ||
+                              Theme.of(context).platform ==
+                                  TargetPlatform.macOS) ...[
                             const SizedBox(height: AppSpacing.sm),
                             AuthBrandSecondaryButton(
                               key: const Key('appleSignInButton'),
                               label: l10n.tr('continue_with_apple'),
                               leading: Icon(
                                 Icons.apple,
-                                color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.black,
+                                color:
+                                    Theme.of(context).brightness ==
+                                        Brightness.dark
+                                    ? Colors.white
+                                    : Colors.black,
                                 size: 20,
                               ),
                               foregroundColor: tokens.colors.textPrimary,

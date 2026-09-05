@@ -16,13 +16,64 @@ void main() {
       expect(parsed.type, 'expense');
       expect(parsed.amount, 38.0);
       expect(parsed.currency, 'SAR');
-      expect(parsed.merchantName, 'LikeCard SA');
+      expect(parsed.merchantName, 'LikeCard SA - SA');
       expect(parsed.paymentMethod, 'Apple Pay');
       expect(parsed.cardReference, '*0973');
       expect(parsed.accountReference, isNull);
       expect(parsed.balance, 19584.33);
       expect(parsed.remainingAmount, isNull);
       _expectDateTime(parsed.capturedAt, 2026, 6, 26, 10, 2);
+    });
+
+    test('arabic purchase removes country code prefix (e.g., SA/Tamara)', () {
+      final parsed = SmartCaptureParser.parse(
+        'شراء إنترنت ApplePay\n'
+        'بـ 9.81 SAR\n'
+        'بطاقة ائتمانية *0973\n'
+        'لدى SA/Tamara\n'
+        'في 19:36 26-08-21\n'
+        'رصيد 13,874.59',
+      );
+
+      expect(parsed.type, 'expense');
+      expect(parsed.amount, 9.81);
+      expect(parsed.currency, 'SAR');
+      expect(parsed.merchantName, 'SA/Tamara');
+      expect(parsed.paymentMethod, 'Apple Pay');
+      expect(parsed.cardReference, '*0973');
+      expect(parsed.balance, 13874.59);
+    });
+
+    test('arabic purchase with country prefix in merchant line extracts merchant cleanly', () {
+      final parsed = SmartCaptureParser.parse(
+        'شراء POS-ApplePay\n'
+        'بـ SAR 45.00\n'
+        'بطاقة ائتمانية *0973\n'
+        'لدى SA /tashkilat *\n'
+        'في 26-08-21 18:13\n'
+        'الرصيد 11,355.40',
+      );
+
+      expect(parsed.type, 'expense');
+      expect(parsed.amount, 45.0);
+      expect(parsed.currency, 'SAR');
+      expect(parsed.merchantName, 'SA /tashkilat *');
+      expect(parsed.paymentMethod, 'Apple Pay');
+      expect(parsed.cardReference, '*0973');
+      expect(parsed.balance, 11355.4);
+    });
+
+    test('arabic purchase code message is recognized as OTP and ignored', () {
+      final parsed = SmartCaptureParser.parse(
+        'رمز شراء أونلاين 6528\n'
+        'للبطاقة *0973\n'
+        'بـ 25 SAR\n'
+        'من Amazon SA\n'
+        'في 11:32 26-08-21',
+      );
+
+      expect(parsed.isValid, false);
+      expect(parsed.ignoreReason, 'Verification Code Message');
     });
 
     test('arabic Apple Pay purchase keeps merchant clean and ignores date line', () {
@@ -37,7 +88,7 @@ void main() {
       expect(parsed.type, 'expense');
       expect(parsed.amount, 33.0);
       expect(parsed.currency, 'SAR');
-      expect(parsed.merchantName, 'Tashkilat Juha');
+      expect(parsed.merchantName, 'Tashkilat Juha - SA');
       expect(parsed.paymentMethod, 'Apple Pay');
       expect(parsed.cardReference, '*0973');
       expect(parsed.balance, 18334.39);
@@ -310,7 +361,7 @@ void main() {
         'من: LikeCard SA - SA',
       );
 
-      expect(parsed.merchantName, 'LikeCard SA');
+      expect(parsed.merchantName, 'LikeCard SA - SA');
       expect(parsed.paymentMethod, 'Apple Pay');
       expect(parsed.cardReference, '*0973');
     });
@@ -420,7 +471,7 @@ void main() {
       expect(parsed.type, 'expense');
       expect(parsed.amount, 100.0);
       expect(parsed.currency, 'SAR');
-      expect(parsed.merchantName, 'LikeCard SA');
+      expect(parsed.merchantName, 'LikeCard SA - SA');
     });
 
     test('longer merchant phrase wins over shorter Mobily rule', () {

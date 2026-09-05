@@ -51,6 +51,8 @@ class _EditRecurringTransactionScreenState
   late bool _reminderEnabled;
   late int _reminderDayOffset;
   late String _reminderTime;
+  late String _frequency;
+  late List<String> _customDates;
 
   @override
   void initState() {
@@ -66,6 +68,8 @@ class _EditRecurringTransactionScreenState
     _reminderEnabled = existing?.reminderEnabled ?? false;
     _reminderDayOffset = existing?.reminderDayOffset ?? 0;
     _reminderTime = existing?.reminderTime ?? '09:00';
+    _frequency = existing?.frequency ?? 'monthly';
+    _customDates = existing != null ? List<String>.from(existing.customDates) : <String>[];
 
     final controller = context.read<AppStateController>();
     final String existingCurrency = existing?.currency.trim() ?? '';
@@ -143,7 +147,7 @@ class _EditRecurringTransactionScreenState
               category: _category,
               description: _descriptionController.text.trim(),
               dayOfMonth: parsedDay.clamp(1, 31),
-              frequency: 'monthly',
+              frequency: _frequency,
               lastProcessed: null,
               enabled: true,
               skipMonth: '',
@@ -152,6 +156,7 @@ class _EditRecurringTransactionScreenState
               reminderEnabled: _reminderEnabled,
               reminderDayOffset: _reminderDayOffset,
               reminderTime: _reminderTime,
+              customDates: _customDates,
             ))
         .copyWith(
           name: trimmedName,
@@ -165,6 +170,8 @@ class _EditRecurringTransactionScreenState
           reminderEnabled: _reminderEnabled,
           reminderDayOffset: _reminderDayOffset,
           reminderTime: _reminderTime,
+          frequency: _frequency,
+          customDates: _customDates,
         );
 
     if (widget.existing == null) {
@@ -351,12 +358,130 @@ class _EditRecurringTransactionScreenState
                     },
                   ),
                   const SizedBox(height: AppSpacing.md),
-                  TextField(
-                    controller: _dayController,
-                    keyboardType: TextInputType.number,
-                    style: TextStyle(color: tokens.colors.textPrimary),
-                    decoration: _fieldDecoration(context.l10n.tr('day_of_month')),
+                  CompactDropdownFormField<String>(
+                    value: _frequency,
+                    labelText: 'Frequency',
+                    items: const <String>['monthly', 'quarterly', 'yearly', 'custom'],
+                    itemLabel: (String value) {
+                      switch (value) {
+                        case 'monthly': return 'Monthly';
+                        case 'quarterly': return 'Quarterly';
+                        case 'yearly': return 'Yearly';
+                        case 'custom': return 'Custom Schedule';
+                        default: return value;
+                      }
+                    },
+                    onChanged: (String value) {
+                      setState(() => _frequency = value);
+                    },
                   ),
+                  const SizedBox(height: AppSpacing.md),
+                  if (_frequency != 'custom') ...[
+                    TextField(
+                      controller: _dayController,
+                      keyboardType: TextInputType.number,
+                      style: TextStyle(color: tokens.colors.textPrimary),
+                      decoration: _fieldDecoration(context.l10n.tr('day_of_month')),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                  ],
+                  if (_frequency == 'custom') ...[
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Scheduled Dates',
+                        style: TextStyle(
+                          color: tokens.colors.textSecondary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.0,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    Container(
+                      decoration: BoxDecoration(
+                        border: Border.all(color: tokens.colors.divider),
+                        borderRadius: AppRadii.card,
+                      ),
+                      padding: const EdgeInsets.all(AppSpacing.sm),
+                      child: Column(
+                        children: [
+                          if (_customDates.isEmpty)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+                              child: Text(
+                                'No dates scheduled yet.',
+                                style: TextStyle(
+                                  color: tokens.colors.textSecondary,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            )
+                          else
+                            ListView.separated(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              itemCount: _customDates.length,
+                              separatorBuilder: (_, __) => Divider(color: tokens.colors.divider),
+                              itemBuilder: (context, index) {
+                                final String dStr = _customDates[index];
+                                return Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Padding(
+                                      padding: const EdgeInsets.only(left: AppSpacing.xs),
+                                      child: Text(
+                                        dStr,
+                                        style: TextStyle(
+                                          color: tokens.colors.textPrimary,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete_outline, color: Colors.red),
+                                      onPressed: () {
+                                        setState(() {
+                                          _customDates.removeAt(index);
+                                        });
+                                      },
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
+                          const SizedBox(height: AppSpacing.sm),
+                          TextButton.icon(
+                            onPressed: () async {
+                              final DateTime? picked = await showDatePicker(
+                                context: context,
+                                initialDate: DateTime.now(),
+                                firstDate: DateTime.now(),
+                                lastDate: DateTime.now().add(const Duration(days: 365 * 5)),
+                              );
+                              if (picked != null) {
+                                final String formatted = "${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}";
+                                if (!_customDates.contains(formatted)) {
+                                  setState(() {
+                                    _customDates.add(formatted);
+                                    _customDates.sort();
+                                  });
+                                }
+                              }
+                            },
+                            icon: Icon(Icons.add, color: tokens.colors.gold),
+                            label: Text(
+                              'Add Scheduled Date',
+                              style: TextStyle(color: tokens.colors.gold, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                  ],
                   const SizedBox(height: AppSpacing.md),
                   TextField(
                     controller: _descriptionController,

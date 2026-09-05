@@ -254,11 +254,6 @@ class FirebaseAuthService implements AuthService, AuthGateStateSource {
 
   @override
   Future<void> signOut() async {
-    try {
-      await _googleSignIn.signOut();
-    } catch (_) {
-      // Best-effort sign out from Google provider state.
-    }
     await _firebaseAuth.signOut();
   }
 
@@ -337,6 +332,8 @@ class FirebaseAuthService implements AuthService, AuthGateStateSource {
     if (!isAvailable) {
       throw StateError('Apple Sign In is not available on this device.');
     }
+
+    await _clearGoogleSession();
 
     final AuthorizationCredentialAppleID appleCredential =
         await SignInWithApple.getAppleIDCredential(

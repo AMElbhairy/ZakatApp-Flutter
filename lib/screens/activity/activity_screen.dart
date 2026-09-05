@@ -684,9 +684,21 @@ class ActivityScreenState extends State<ActivityScreen> {
           locale: Localizations.localeOf(context).toString(),
         );
 
-    final double totalIncome = summaryMetrics.incomeCurrent;
-    final double totalExpenses = summaryMetrics.expenseCurrent;
-    final double totalTransfers = summaryMetrics.transferCurrent;
+    final double totalIncome = ZakatEngineService.convertFromEgp(
+      summaryMetrics.incomeCurrent,
+      mainCurrency,
+      market,
+    );
+    final double totalExpenses = ZakatEngineService.convertFromEgp(
+      summaryMetrics.expenseCurrent,
+      mainCurrency,
+      market,
+    );
+    final double totalTransfers = ZakatEngineService.convertFromEgp(
+      summaryMetrics.transferCurrent,
+      mainCurrency,
+      market,
+    );
 
     final Map<_ActivityFilter, List<CurrencyBreakdownItem>> breakdowns =
         <_ActivityFilter, List<CurrencyBreakdownItem>>{

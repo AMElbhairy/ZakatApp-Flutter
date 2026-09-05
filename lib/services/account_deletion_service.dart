@@ -23,52 +23,78 @@ class AccountDeletionService {
   final AccountReauthenticationService reauthenticationService;
   final Future<void> Function(UserProfile user)? deleteCloudBackupData;
 
-  Future<void> deleteAccount() async {
-    final UserProfile? user = _currentUserProfile();
-    if (user == null) {
-      throw StateError('No signed-in user found.');
+  Future<void> deleteAccount({bool requireReauth = false}) async {
+    final UserProfile? user = _currentUserProfile() ?? authController.currentUser;
+    final String userId =
+        (user?.id ?? appStateController.state.userId ?? '').trim();
+
+    if (userId.isEmpty && user == null) {
+      // Guest or anonymous mode cleanup
+      await appStateController.deleteLocalDataForUser(userId: 'anonymous');
+      await authController.signOut();
+      return;
     }
+
+    final UserProfile effectiveUser = user ??
+        UserProfile(
+          id: userId,
+          email: appStateController.state.userEmail ?? '',
+          displayName: 'User',
+          provider: appStateController.state.userProvider ?? 'local',
+        );
 
     await _record(
       level: 'info',
       message: 'Delete requested',
       metadata: <String, dynamic>{
-        'userId': user.id,
+        'userId': effectiveUser.id,
         'providers': authBackend.providerIds,
       },
     );
 
-    final AccountReauthMethod? reauthMethod = await reauthenticationService
-        .reauthenticateCurrentUser();
-    if (reauthMethod == null) {
+    if (requireReauth) {
+      final AccountReauthMethod? reauthMethod = await reauthenticationService
+          .reauthenticateCurrentUser();
+      if (reauthMethod == null) {
+        await _record(
+          level: 'warn',
+          message: 'Reauth cancelled',
+          metadata: <String, dynamic>{'userId': effectiveUser.id},
+        );
+        throw StateError('Re-authentication was cancelled.');
+      }
       await _record(
-        level: 'warn',
-        message: 'Reauth cancelled',
-        metadata: <String, dynamic>{'userId': user.id},
+        level: 'info',
+        message: 'Reauth succeeded',
+        metadata: <String, dynamic>{
+          'userId': effectiveUser.id,
+          'method': reauthMethod.name,
+        },
       );
-      throw StateError('Re-authentication was cancelled.');
     }
 
-    await _record(
-      level: 'info',
-      message: 'Reauth succeeded',
-      metadata: <String, dynamic>{
-        'userId': user.id,
-        'method': reauthMethod.name,
-      },
+    // 1. Delete all online cloud data (Google Drive, iCloud, Firestore)
+    await _deleteCloudData(effectiveUser);
+
+    // 2. Delete Firebase Auth user credentials
+    await _deleteAuthAccount(
+      effectiveUser,
+      allowSkipOnAuthFailure: !requireReauth,
     );
 
-    await _deleteCloudData(user);
-    await _deleteAuthAccount(user);
+    // 3. Delete all local database files, local snapshots, secure storage & widgets
     Object? localCleanupError;
     StackTrace? localCleanupStackTrace;
     try {
-      await _deleteLocalDataWithRetry(user);
+      await _deleteLocalDataWithRetry(effectiveUser);
     } catch (error, stackTrace) {
       localCleanupError = error;
       localCleanupStackTrace = stackTrace;
     }
-    await _signOutAndFinalize(user);
+
+    // 4. Sign out & finalize
+    await _signOutAndFinalize(effectiveUser);
+
     if (localCleanupError != null) {
       Error.throwWithStackTrace(
         localCleanupError,
@@ -80,17 +106,17 @@ class AccountDeletionService {
   UserProfile? _currentUserProfile() {
     final String? uid = authBackend.uid;
     if (uid == null || uid.trim().isEmpty) {
-      return null;
+      return authController.currentUser;
     }
     return UserProfile(
       id: uid,
-      email: authBackend.email ?? '',
-      displayName: authBackend.email ?? 'User',
+      email: authBackend.email ?? authController.currentUser?.email ?? '',
+      displayName: authBackend.email ?? authController.currentUser?.displayName ?? 'User',
       provider: authBackend.providerIds.contains('password')
           ? 'email'
           : authBackend.providerIds.contains('google.com')
           ? 'google'
-          : 'google',
+          : (authController.currentUser?.provider ?? 'local'),
     );
   }
 
@@ -137,7 +163,10 @@ class AccountDeletionService {
     );
   }
 
-  Future<void> _deleteAuthAccount(UserProfile user) async {
+  Future<void> _deleteAuthAccount(
+    UserProfile user, {
+    bool allowSkipOnAuthFailure = true,
+  }) async {
     await _record(
       level: 'info',
       message: 'Auth delete started',
@@ -153,7 +182,7 @@ class AccountDeletionService {
     } on FirebaseAuthException catch (error, stackTrace) {
       debugPrint('AccountDeletionService auth delete failed: $error');
       debugPrintStack(stackTrace: stackTrace);
-      if (error.code == 'requires-recent-login') {
+      if (error.code == 'requires-recent-login' && !allowSkipOnAuthFailure) {
         await _record(
           level: 'warn',
           message: 'Auth delete requires recent login',
@@ -187,11 +216,19 @@ class AccountDeletionService {
         return;
       }
       await _record(
-        level: 'error',
-        message: 'Auth delete failed',
+        level: 'warn',
+        message: 'Auth delete skipped or failed',
         metadata: <String, dynamic>{'userId': user.id, 'error': error.code},
       );
-      rethrow;
+      if (!allowSkipOnAuthFailure) {
+        rethrow;
+      }
+    } catch (error, stackTrace) {
+      debugPrint('AccountDeletionService auth delete error: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (!allowSkipOnAuthFailure) {
+        rethrow;
+      }
     }
   }
 

@@ -29,7 +29,6 @@ class CurrencyDropdownFormField extends StatelessWidget {
     }
 
     return FormField<String>(
-      key: ValueKey<String>('currencyDropdown_${labelText}_$value'),
       initialValue: value,
       builder: (FormFieldState<String> field) {
         final String currentValue = field.value ?? value;

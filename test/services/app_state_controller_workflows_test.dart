@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zakatapp_flutter/core/services/zakat_engine.dart';
 import 'package:zakatapp_flutter/models/currency_exchange_edit_request.dart';
+import 'package:zakatapp_flutter/models/credit_card.dart';
 import 'package:zakatapp_flutter/models/market_snapshot.dart';
 import 'package:zakatapp_flutter/models/saving.dart';
 import 'package:zakatapp_flutter/models/transaction.dart';
@@ -54,6 +55,85 @@ void main() {
     );
   });
 
+  test(
+    'supplementary card routes balance to parent and archives independently',
+    () async {
+      final controller = await makeController();
+      const CreditCard parent = CreditCard(
+        id: 'parent-card',
+        bankName: 'Bank',
+        cardNickname: 'Main',
+        network: CreditCardNetwork.visa,
+        last4Digits: '1111',
+        creditLimit: 10000,
+        currency: 'EGP',
+        openingBalance: 100,
+      );
+      await controller.addCreditCard(parent);
+      await controller.addCreditCard(
+        const CreditCard(
+          id: 'child-card',
+          bankName: 'Bank',
+          cardNickname: 'Supplementary',
+          network: CreditCardNetwork.visa,
+          last4Digits: '2222',
+          creditLimit: 1,
+          currency: 'EGP',
+          openingBalance: 1,
+          parentCardId: 'parent-card',
+        ),
+      );
+
+      await controller.addTransaction(
+        const Transaction(
+          id: 'child-expense',
+          type: 'expense',
+          date: '2026-06-01',
+          amount: 250,
+          currency: 'EGP',
+          category: 'Purchase',
+          description: 'Child card purchase',
+          createdAt: '2026-06-01T00:00:00.000Z',
+          rolledOver: false,
+          paymentSourceId: 'child-card',
+        ),
+      );
+
+      final CreditCard updatedParent = controller.state.creditCards.firstWhere(
+        (CreditCard card) => card.id == parent.id,
+      );
+      final CreditCard updatedChild = controller.state.creditCards.firstWhere(
+        (CreditCard card) => card.id == 'child-card',
+      );
+      expect(updatedParent.openingBalance, 350);
+      expect(updatedChild.openingBalance, 350);
+      expect(updatedChild.creditLimit, updatedParent.creditLimit);
+
+      await controller.archiveCreditCard(
+        parent.id,
+        balanceOwnerId: 'child-card',
+      );
+      expect(
+        controller.state.creditCards
+            .firstWhere((c) => c.id == parent.id)
+            .isArchived,
+        isTrue,
+      );
+      expect(
+        controller.state.creditCards
+            .firstWhere((c) => c.id == 'child-card')
+            .parentCardId,
+        isNull,
+      );
+      expect(
+        controller.state.creditCards
+            .firstWhere((c) => c.id == 'child-card')
+            .openingBalance,
+        350,
+      );
+    },
+  );
+
   test('controller executeCurrencyExchange creates linked records', () async {
     final controller = await makeController();
     await controller.addTransaction(
@@ -89,7 +169,9 @@ void main() {
       const localStorage = LocalStorageService();
       final repository = AppStateRepository(localStorage: localStorage);
 
-      final controller = _CountingMarketRefreshController(repository: repository);
+      final controller = _CountingMarketRefreshController(
+        repository: repository,
+      );
       await controller.load();
       await controller.updateMarketSnapshot(
         const MarketSnapshot(
@@ -114,11 +196,11 @@ void main() {
       );
 
       await controller.startMarketAutoRefresh();
-      expect(controller.refreshCalls, 0);
+      expect(controller.refreshCalls, 1);
 
       await controller.updateMarketSnapshot(MarketSnapshot.empty);
       await controller.startMarketAutoRefresh();
-      expect(controller.refreshCalls, 1);
+      expect(controller.refreshCalls, 2);
     },
   );
 
@@ -344,7 +426,9 @@ void main() {
         isFalse,
       );
       expect(
-        controller.state.transactions.any((Transaction tx) => tx.id == 'income-delete'),
+        controller.state.transactions.any(
+          (Transaction tx) => tx.id == 'income-delete',
+        ),
         isTrue,
       );
     },

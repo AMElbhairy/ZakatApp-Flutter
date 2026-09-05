@@ -105,6 +105,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     double netPositionEgp = 0;
     double nisabThreshold = 0;
     bool nisabMet = false;
+    double zakatableWealthEgp = 0;
 
     if (hasMarketData) {
       savingsTotals = ZakatEngineService.computeNisabTotals(
@@ -128,12 +129,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
       netPositionEgp = totalWealthEgp - totalLiabilitiesEgp;
 
+      zakatableWealthEgp = ZakatEngineService.calculateTotalWealthEgp(
+        transactions: transactions,
+        savings: savings,
+        investments: const <InvestmentAsset>[],
+        marketData: market,
+        lastRollover: state.lastRollover,
+      );
+
       nisabThreshold = ZakatEngineService.cashNisabThresholdEgp(
         market,
         zakatNisabBasis: state.zakatNisabBasis,
       );
       nisabMet = ZakatEngineService.checkCashNisab(
-        totalWealthEgp,
+        zakatableWealthEgp,
         market,
         zakatNisabBasis: state.zakatNisabBasis,
       );
@@ -157,14 +166,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
       investments: investments,
       marketData: market,
     );
-    final String? nextZakatDate = findNextUnpaidZakatDate(
+    final DateTime? nextZakatDueDate = findNextUnpaidZakatDate(
       schedule,
       state.zakatPaidMonths.toSet(),
     );
-    final DateTime? nextZakatDueDate = _parseDashboardZakatDate(nextZakatDate);
     final bool nextZakatIsOverdue =
         nextZakatDueDate != null &&
         !nextZakatDueDate.isAfter(DateUtils.dateOnly(DateTime.now()));
+    final String? nextZakatDate = nextZakatDueDate != null
+        ? _latinDigits(
+            DateFormat(
+              'd MMMM yyyy',
+              _isArabic(context) ? 'ar' : 'en_US',
+            ).format(nextZakatDueDate),
+          )
+        : null;
 
     final double cashWealthEgp = hasFxData
         ? ZakatEngineService.calculateTotalCashWealthEgp(
@@ -189,7 +205,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       investments: investments,
       marketData: market,
       marketHistory: state.marketHistory,
-      totalWealthEgp: totalWealthEgp,
+      netWorthEgp: netPositionEgp,
       hasMarketData: hasMarketData,
       lastRollover: state.lastRollover,
     );
@@ -329,6 +345,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               child: _PremiumHeroCard(
                 totalWealthEgp: totalWealthEgp,
                 netPositionEgp: netPositionEgp,
+                zakatableWealthEgp: zakatableWealthEgp,
                 dues: dues,
                 nisabMet: nisabMet,
                 hasMarketData: hasMarketData,
@@ -564,12 +581,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _stagger({required int order, required Widget child}) {
-    final int base = 280 + (order * 80);
+    final int delayMilliseconds = order * 35;
+    final int totalMilliseconds = 220 + delayMilliseconds;
     return _KeepAliveWrapper(
       child: TweenAnimationBuilder<double>(
         tween: Tween<double>(begin: 0, end: _animateIn ? 1 : 0),
-        duration: Duration(milliseconds: base),
-        curve: Curves.easeOutCubic,
+        duration: Duration(milliseconds: totalMilliseconds),
+        curve: Interval(
+          delayMilliseconds / totalMilliseconds,
+          1,
+          curve: Curves.easeOutCubic,
+        ),
         builder: (_, double value, Widget? built) {
           return Opacity(
             opacity: value,
@@ -649,7 +671,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 : monthKey
           : '${paymentDate.year}-${paymentDate.month.toString().padLeft(2, '0')}';
       final double value = ((item['totalZakat'] ?? 0) as num).toDouble();
-      if (scheduleMonthKey == thisMonthKey) {
+      if (scheduleMonthKey.isNotEmpty &&
+          scheduleMonthKey.compareTo(thisMonthKey) <= 0) {
         if (!zakatPaidMonths.contains(monthKey)) {
           thisMonth += value;
         }
@@ -685,7 +708,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
           marketData,
         );
 
-        if (installmentMonthKey == thisMonthKey) {
+        if (installmentMonthKey.isNotEmpty &&
+            installmentMonthKey.compareTo(thisMonthKey) <= 0) {
           thisMonth += amountEgp;
         } else if (installmentMonthKey == nextMonthKey) {
           nextMonth += amountEgp;
@@ -715,10 +739,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
         metalsPct: 0,
         propertyPct: 0,
         companyPct: 0,
+        otherPct: 0,
         cashVal: 0,
         metalsVal: 0,
         propertyVal: 0,
         companyVal: 0,
+        otherVal: 0,
         totalVal: 0,
       );
     }
@@ -729,16 +755,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     double property = 0;
     double company = 0;
+    double other = 0;
     for (final asset in investments) {
+      final String type = ZakatEngineService.normaliseInvestmentType(
+        asset.investmentType,
+      );
       final double value =
           ZakatEngineService.calculateInvestmentEstimatedValueEgp(
             asset: asset,
             marketData: marketData,
           );
-      if (ZakatEngineService.isCompanyInvestmentType(asset.investmentType)) {
+      if (type == 'company_investment') {
         company += value;
-      } else {
+      } else if (type == 'real_estate') {
         property += value;
+      } else {
+        other += value;
       }
     }
 
@@ -747,10 +779,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       metalsPct: (metals / totalWealthEgp) * 100,
       propertyPct: (property / totalWealthEgp) * 100,
       companyPct: (company / totalWealthEgp) * 100,
+      otherPct: (other / totalWealthEgp) * 100,
       cashVal: cash,
       metalsVal: metals,
       propertyVal: property,
       companyVal: company,
+      otherVal: other,
       totalVal: totalWealthEgp,
     );
   }
@@ -881,18 +915,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required List<InvestmentAsset> investments,
     required MarketData marketData,
     required List<Map<String, dynamic>> marketHistory,
-    required double totalWealthEgp,
+    required double netWorthEgp,
     required bool hasMarketData,
     String? lastRollover,
   }) {
     final DateTime now = DateTime.now();
-    if (!hasMarketData || totalWealthEgp < 0 || !totalWealthEgp.isFinite) {
+    if (!hasMarketData || netWorthEgp < 0 || !netWorthEgp.isFinite) {
       return null;
     }
 
     final DateTime startOfYear = DateTime(now.year, 1, 1);
-    final double startOfYearWealth =
-        ZakatEngineService.calculateTotalWealthEgpAt(
+    final double startOfYearNetWorth =
+        ZakatEngineService.calculateNetWorthEgpAt(
           asOf: startOfYear,
           transactions: transactions,
           savings: savings,
@@ -900,10 +934,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
           marketData: marketData,
           lastRollover: lastRollover,
         );
-    if (startOfYearWealth <= 0 || !startOfYearWealth.isFinite) return null;
+    if (startOfYearNetWorth <= 0 || !startOfYearNetWorth.isFinite) return null;
 
     final double changePct =
-        ((totalWealthEgp - startOfYearWealth) / startOfYearWealth) * 100;
+        ((netWorthEgp - startOfYearNetWorth) / startOfYearNetWorth) * 100;
     if (!changePct.isFinite) return null;
 
     final List<_WealthHistoryPoint> realHistory = <_WealthHistoryPoint>[];
@@ -963,7 +997,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     while (!cursor.isAfter(now)) {
       final DateTime monthEnd = DateTime(cursor.year, cursor.month + 1, 0);
       final DateTime asOf = monthEnd.isAfter(now) ? now : monthEnd;
-      final double value = ZakatEngineService.calculateTotalWealthEgpAt(
+      final double value = ZakatEngineService.calculateNetWorthEgpAt(
         asOf: asOf,
         transactions: transactions,
         savings: savings,
@@ -1215,6 +1249,7 @@ class _PremiumHeroCard extends StatelessWidget {
   const _PremiumHeroCard({
     required this.totalWealthEgp,
     required this.netPositionEgp,
+    required this.zakatableWealthEgp,
     required this.dues,
     required this.nisabMet,
     required this.hasMarketData,
@@ -1229,6 +1264,7 @@ class _PremiumHeroCard extends StatelessWidget {
 
   final double totalWealthEgp;
   final double netPositionEgp;
+  final double zakatableWealthEgp;
   final _Dues dues;
   final bool nisabMet;
   final bool hasMarketData;
@@ -1262,13 +1298,13 @@ class _PremiumHeroCard extends StatelessWidget {
 
     final List<_HeroSupportItem> supportItems = <_HeroSupportItem>[
       _HeroSupportItem(
-        label: context.l10n.tr('net_position').toUpperCase(),
-        icon: Icons.verified_user_outlined,
+        label: context.l10n.tr('total_assets').toUpperCase(),
+        icon: Icons.account_balance_wallet_outlined,
         value: balancesHidden
             ? hiddenValue
             : _DashboardScreenState._formatOrMissing(
                 context,
-                netPositionEgp,
+                totalWealthEgp,
                 hasMarketData,
                 state.mainCurrency,
                 market,
@@ -1366,7 +1402,7 @@ class _PremiumHeroCard extends StatelessWidget {
                         ),
                         PositionedDirectional(
                           start: 22,
-                          top: 19,
+                          top: 13,
                           end: artworkWidth + 12,
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1375,9 +1411,7 @@ class _PremiumHeroCard extends StatelessWidget {
                                 mainAxisSize: MainAxisSize.min,
                                 children: <Widget>[
                                   Text(
-                                    context.l10n
-                                        .tr('total_wealth')
-                                        .toUpperCase(),
+                                    context.l10n.tr('net_worth').toUpperCase(),
                                     style: textTheme.titleSmall?.copyWith(
                                       color: const Color(0xFFFFC928),
                                       fontWeight: FontWeight.w700,
@@ -1391,7 +1425,7 @@ class _PremiumHeroCard extends StatelessWidget {
                                 widthFactor: compact ? 1.0 : 0.96,
                                 alignment: AlignmentDirectional.centerStart,
                                 child: _AnimatedAmountText(
-                                  valueEgp: totalWealthEgp,
+                                  valueEgp: netPositionEgp,
                                   hasMarketData: hasMarketData,
                                   mainCurrency: state.mainCurrency,
                                   marketData: market,
@@ -1399,10 +1433,10 @@ class _PremiumHeroCard extends StatelessWidget {
                                 ),
                               ),
                               if (showGrowth) ...<Widget>[
-                                const SizedBox(height: 8),
+                                const SizedBox(height: 4),
                                 _HeroGrowthRow(growth: heroGrowth!),
                               ],
-                              const SizedBox(height: 11),
+                              const SizedBox(height: 6),
                               _HeroStatusPanel(
                                 label: nisabLabel,
                                 subtitle: hasMarketData
@@ -1412,12 +1446,20 @@ class _PremiumHeroCard extends StatelessWidget {
                                     : null,
                               ),
                               if (nextZakatDate != null && !balancesHidden) ...[
-                                const SizedBox(height: 8),
+                                const SizedBox(height: 4),
                                 _HeroNextZakatBadge(
                                   date: nextZakatDate!,
                                   isOverdue: nextZakatIsOverdue,
                                 ),
                               ],
+                              const SizedBox(height: 4),
+                              _HeroZakatableWealthBadge(
+                                amountEgp: zakatableWealthEgp,
+                                hasMarketData: hasMarketData,
+                                mainCurrency: state.mainCurrency,
+                                marketData: market,
+                                balancesHidden: balancesHidden,
+                              ),
                             ],
                           ),
                         ),
@@ -1874,59 +1916,134 @@ class _HeroNextZakatBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final Color badgeColor = isOverdue
-        ? const Color(0xFF7F1D1D).withValues(alpha: 0.9)
-        : Colors.white.withValues(alpha: 0.05);
-    final Color borderColor = isOverdue
-        ? const Color(0xFFF87171).withValues(alpha: 0.72)
-        : Colors.white.withValues(alpha: 0.1);
-    final Color iconColor = isOverdue
-        ? const Color(0xFFFCA5A5)
-        : const Color(0xFF21D99B);
     final String label = isOverdue
         ? '${context.l10n.tr('zakat')} ${context.l10n.tr('due_now')}'
         : '${context.l10n.tr('next_zakat').toUpperCase()}: ';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: badgeColor,
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: borderColor, width: 1),
-      ),
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        alignment: AlignmentDirectional.centerStart,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(
-              isOverdue ? Icons.error_outline : Icons.nightlight_round,
-              color: iconColor,
-              size: 12,
-            ),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: textTheme.bodySmall?.copyWith(
-                color: isOverdue
-                    ? const Color(0xFFFCA5A5)
-                    : Colors.white.withValues(alpha: 0.54),
-                fontWeight: FontWeight.w700,
-                fontSize: 8.5,
-                letterSpacing: 0.2,
+    if (isOverdue) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: const Color(0xFF7F1D1D).withValues(alpha: 0.9),
+          borderRadius: BorderRadius.circular(30),
+          border: Border.all(
+            color: const Color(0xFFF87171).withValues(alpha: 0.72),
+            width: 1,
+          ),
+        ),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: AlignmentDirectional.centerStart,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const Icon(
+                Icons.error_outline,
+                color: Color(0xFFFCA5A5),
+                size: 13,
               ),
-            ),
-            if (!isOverdue)
+              const SizedBox(width: 4),
               Text(
-                date,
+                label,
                 style: textTheme.bodySmall?.copyWith(
-                  color: Colors.white,
+                  color: const Color(0xFFFCA5A5),
                   fontWeight: FontWeight.w700,
-                  fontSize: 10.0,
+                  fontSize: 9.0,
+                  letterSpacing: 0.2,
                 ),
               ),
-          ],
+            ],
+          ),
         ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          const Icon(
+            Icons.nightlight_round,
+            color: Color(0xFF21D99B),
+            size: 13,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: textTheme.bodySmall?.copyWith(
+              color: Colors.white.withValues(alpha: 0.54),
+              fontWeight: FontWeight.w700,
+              fontSize: 9.0,
+              letterSpacing: 0.2,
+            ),
+          ),
+          Text(
+            date,
+            style: textTheme.bodySmall?.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+              fontSize: 10.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeroZakatableWealthBadge extends StatelessWidget {
+  const _HeroZakatableWealthBadge({
+    required this.amountEgp,
+    required this.hasMarketData,
+    required this.mainCurrency,
+    required this.marketData,
+    required this.balancesHidden,
+  });
+
+  final double amountEgp;
+  final bool hasMarketData;
+  final String mainCurrency;
+  final MarketData marketData;
+  final bool balancesHidden;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final String formattedAmount = balancesHidden
+        ? '••••••'
+        : _DashboardScreenState._formatOrMissing(
+            context,
+            amountEgp,
+            hasMarketData,
+            mainCurrency,
+            marketData,
+          );
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          const Icon(Icons.stars_rounded, color: Color(0xFFFFC928), size: 13),
+          const SizedBox(width: 4),
+          Text(
+            '${context.l10n.tr('zakatable_wealth').toUpperCase()}: ',
+            style: textTheme.bodySmall?.copyWith(
+              color: Colors.white.withValues(alpha: 0.54),
+              fontWeight: FontWeight.w700,
+              fontSize: 9.0,
+              letterSpacing: 0.2,
+            ),
+          ),
+          Text(
+            formattedAmount,
+            style: textTheme.bodySmall?.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+              fontSize: 10.5,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2816,6 +2933,14 @@ class _AllocationRing extends StatelessWidget {
         'iconColor': const Color(0xFF6B5A95),
         'bg': dark ? const Color(0xFF281C3F) : const Color(0xFFF0EBF9),
       },
+      <String, dynamic>{
+        'label': context.l10n.tr('other_assets'),
+        'value': allocation.otherVal,
+        'pct': allocation.otherPct,
+        'icon': Icons.more_horiz_rounded,
+        'iconColor': const Color(0xFF8B5CF6),
+        'bg': dark ? const Color(0xFF281C3F) : const Color(0xFFF3E8FF),
+      },
     ];
 
     final List<_AllocSeg> segs = items.map((item) {
@@ -2959,7 +3084,9 @@ class _AllocationRing extends StatelessWidget {
                           height: avatarSize,
                           decoration: BoxDecoration(
                             color: item['bg'] as Color,
-                            borderRadius: BorderRadius.circular(isSmallScreen ? 8 : 10),
+                            borderRadius: BorderRadius.circular(
+                              isSmallScreen ? 8 : 10,
+                            ),
                           ),
                           alignment: Alignment.center,
                           child: Icon(
@@ -3651,10 +3778,12 @@ class _Allocation {
     required this.metalsPct,
     required this.propertyPct,
     required this.companyPct,
+    required this.otherPct,
     required this.cashVal,
     required this.metalsVal,
     required this.propertyVal,
     required this.companyVal,
+    required this.otherVal,
     required this.totalVal,
   });
 
@@ -3662,10 +3791,12 @@ class _Allocation {
   final double metalsPct;
   final double propertyPct;
   final double companyPct;
+  final double otherPct;
   final double cashVal;
   final double metalsVal;
   final double propertyVal;
   final double companyVal;
+  final double otherVal;
   final double totalVal;
 }
 
@@ -4070,7 +4201,7 @@ class _TopExpenseCategoriesCardState extends State<_TopExpenseCategoriesCard> {
   }
 }
 
-String? findNextUnpaidZakatDate(
+DateTime? findNextUnpaidZakatDate(
   List<Map<String, dynamic>> schedule,
   Set<String> paidMonths,
 ) {
@@ -4088,20 +4219,7 @@ String? findNextUnpaidZakatDate(
       best = parsed;
     }
   }
-  if (best == null) return null;
-  return DateFormat('dd MMM yyyy', 'en_US').format(best);
-}
-
-DateTime? _parseDashboardZakatDate(String? rawDate) {
-  if (rawDate == null || rawDate.trim().isEmpty) return null;
-  try {
-    return DateFormat(
-      'dd MMM yyyy',
-      'en_US',
-    ).parseStrict(normalizeDateText(rawDate.trim()));
-  } catch (_) {
-    return null;
-  }
+  return best;
 }
 
 class _KeepAliveWrapper extends StatefulWidget {
@@ -4122,4 +4240,20 @@ class _KeepAliveWrapperState extends State<_KeepAliveWrapper>
     super.build(context);
     return widget.child;
   }
+}
+
+String _latinDigits(String value) {
+  const Map<String, String> map = <String, String>{
+    '٠': '0',
+    '١': '1',
+    '٢': '2',
+    '٣': '3',
+    '٤': '4',
+    '٥': '5',
+    '٦': '6',
+    '٧': '7',
+    '٨': '8',
+    '٩': '9',
+  };
+  return value.split('').map((String c) => map[c] ?? c).join();
 }

@@ -26,6 +26,7 @@ class PendingTransaction {
     this.suggestedDescription,
     this.merchantName,
     this.suggestedCategory,
+    this.suggestedPaymentSourceId,
     required this.confidence,
     required this.status,
     this.approvalSource,
@@ -51,6 +52,7 @@ class PendingTransaction {
   final String? suggestedDescription;
   final String? merchantName;
   final String? suggestedCategory;
+  final String? suggestedPaymentSourceId;
   final double confidence;
   final CaptureStatus status;
   final ApprovalSource? approvalSource;
@@ -91,6 +93,7 @@ class PendingTransaction {
     String? suggestedDescription,
     String? merchantName,
     String? suggestedCategory,
+    String? suggestedPaymentSourceId,
     double? confidence,
     CaptureStatus? status,
     ApprovalSource? approvalSource,
@@ -105,6 +108,7 @@ class PendingTransaction {
     bool clearReviewedAt = false,
     bool clearApprovalSource = false,
     bool clearLinkedTransactionId = false,
+    bool clearSuggestedPaymentSourceId = false,
   }) {
     return PendingTransaction(
       id: id ?? this.id,
@@ -119,6 +123,9 @@ class PendingTransaction {
       suggestedDescription: suggestedDescription ?? this.suggestedDescription,
       merchantName: merchantName ?? this.merchantName,
       suggestedCategory: suggestedCategory ?? this.suggestedCategory,
+      suggestedPaymentSourceId: clearSuggestedPaymentSourceId
+          ? null
+          : suggestedPaymentSourceId ?? this.suggestedPaymentSourceId,
       confidence: confidence ?? this.confidence,
       status: status ?? this.status,
       approvalSource: clearApprovalSource
@@ -155,6 +162,7 @@ class PendingTransaction {
       suggestedDescription: json['suggestedDescription']?.toString(),
       merchantName: json['merchantName']?.toString(),
       suggestedCategory: json['suggestedCategory']?.toString(),
+      suggestedPaymentSourceId: json['suggestedPaymentSourceId']?.toString(),
       confidence: _asDouble(json['confidence'] ?? 1.0),
       status: _parseStatus(json['status']),
       approvalSource: _parseApprovalSource(json['approvalSource']),
@@ -184,6 +192,8 @@ class PendingTransaction {
         'suggestedDescription': suggestedDescription,
       if (merchantName != null) 'merchantName': merchantName,
       if (suggestedCategory != null) 'suggestedCategory': suggestedCategory,
+      if (suggestedPaymentSourceId != null)
+        'suggestedPaymentSourceId': suggestedPaymentSourceId,
       'confidence': confidence,
       'status': status.name,
       if (approvalSource != null) 'approvalSource': approvalSource!.name,
@@ -249,6 +259,7 @@ class PendingTransaction {
         other.suggestedDescription == suggestedDescription &&
         other.merchantName == merchantName &&
         other.suggestedCategory == suggestedCategory &&
+        other.suggestedPaymentSourceId == suggestedPaymentSourceId &&
         other.confidence == confidence &&
         other.status == status &&
         other.approvalSource == approvalSource &&
@@ -277,6 +288,7 @@ class PendingTransaction {
       suggestedDescription,
       merchantName,
       suggestedCategory,
+      suggestedPaymentSourceId,
       confidence,
       status,
       approvalSource,

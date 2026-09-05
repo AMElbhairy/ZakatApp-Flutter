@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -25,13 +26,17 @@ class WidgetDataService {
   WidgetDataService._();
 
   static const String appGroupId = 'group.com.zakahwealth.app';
-  static const String widgetDataKey = 'zakah_wealth_widget_snapshot';
-  static const String wealthHistoryKey =
-      'zakah_wealth_widget_net_worth_history_v2';
+  static const String activeUserIdKey = 'zakah_wealth_widget_active_user_id';
+  static const String legacyWidgetDataKey = 'zakah_wealth_widget_snapshot';
+  static const String legacyPortfolioSnapshotKey = 'widget_portfolio_snapshot';
   static const String legacyWealthHistoryKey =
-      'zakah_wealth_widget_wealth_history_v1';
-  static const String smartCaptureStateKey =
+      'zakah_wealth_widget_net_worth_history_v2';
+  static const String legacySmartCaptureStateKey =
       'zakah_wealth_smart_capture_state_v1';
+  static const String widgetDataKey = legacyWidgetDataKey;
+  static const String portfolioSnapshotKey = legacyPortfolioSnapshotKey;
+  static const String wealthHistoryKey = legacyWealthHistoryKey;
+  static const String smartCaptureStateKey = legacySmartCaptureStateKey;
   static const String iosWidgetKind = 'ZakahWealthWidget';
   static const String iosSmallWidgetKind = 'ZakahWealthSmallWidget';
   static const String iosAccessoryKind = 'ZakahWealthAccessoryWidget';
@@ -77,6 +82,15 @@ class WidgetDataService {
     try {
       await initialize();
 
+      final String userId = _widgetUserId(state);
+      if (userId.isEmpty) {
+        await clearAll();
+        debugPrint(
+          'WidgetDataService.syncFromState skipped widget payload because no user is signed in.',
+        );
+        return;
+      }
+
       final MarketSnapshot marketSnapshot = MarketSnapshot.fromAppStateJson(
         state.marketData,
       );
@@ -119,20 +133,55 @@ class WidgetDataService {
 
       try {
         await HomeWidget.saveWidgetData<String>(
-          widgetDataKey,
-          encoded,
+          activeUserIdKey,
+          userId,
           appGroupId: appGroupId,
         );
         await HomeWidget.saveWidgetData<String>(
-          smartCaptureStateKey,
-          smartCaptureEncoded,
+          widgetDataKeyForUser(userId),
+          encoded,
           appGroupId: appGroupId,
         );
+        if (snapshot.hasData) {
+          final Map<String, dynamic> portfolioSnapshot =
+              await _buildPortfolioSnapshot(
+                state: state,
+                marketSnapshot: marketSnapshot,
+                incomeThisMonth: snapshot.incomeThisMonth,
+                expensesThisMonth: snapshot.expensesThisMonth,
+                pendingSmsCount: snapshot.pendingSmsCount,
+                upcomingObligationsCount: snapshot.upcomingObligationsCount,
+              );
+          final String portfolioEncoded = jsonEncode(portfolioSnapshot);
+          await HomeWidget.saveWidgetData<String>(
+            portfolioSnapshotKeyForUser(userId),
+            portfolioEncoded,
+            appGroupId: appGroupId,
+          );
+          await HomeWidget.saveWidgetData<String>(
+            smartCaptureStateKeyForUser(userId),
+            smartCaptureEncoded,
+            appGroupId: appGroupId,
+          );
+        } else {
+          await HomeWidget.saveWidgetData<String>(
+            portfolioSnapshotKeyForUser(userId),
+            null,
+            appGroupId: appGroupId,
+          );
+          await HomeWidget.saveWidgetData<String>(
+            smartCaptureStateKeyForUser(userId),
+            null,
+            appGroupId: appGroupId,
+          );
+        }
+        await _removeLegacyWidgetPayloads();
       } catch (error, stackTrace) {
         debugPrint('WidgetDataService App Group save failed: $error');
         debugPrintStack(stackTrace: stackTrace);
         rethrow;
       }
+
       debugPrint(
         'WidgetDataService.syncFromState wrote snapshot: '
         'hasData=${snapshot.hasData}, '
@@ -150,27 +199,58 @@ class WidgetDataService {
     }
   }
 
-  static Future<void> clearAll() async {
+  static Future<void> clearAll({String? userId}) async {
     try {
       await initialize();
       _lastSnapshotJson = null;
+      final String cleanedUserId = (userId ?? '').trim();
       await Future.wait(<Future<void>>[
         HomeWidget.saveWidgetData<String>(
-          widgetDataKey,
+          activeUserIdKey,
           null,
           appGroupId: appGroupId,
         ).then((_) {}),
         HomeWidget.saveWidgetData<String>(
-          smartCaptureStateKey,
+          legacyWidgetDataKey,
           null,
           appGroupId: appGroupId,
         ).then((_) {}),
         HomeWidget.saveWidgetData<String>(
-          wealthHistoryKey,
+          legacyPortfolioSnapshotKey,
+          null,
+          appGroupId: appGroupId,
+        ).then((_) {}),
+        HomeWidget.saveWidgetData<String>(
+          legacySmartCaptureStateKey,
           null,
           appGroupId: appGroupId,
         ).then((_) {}),
       ]);
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.remove(legacyWealthHistoryKey);
+      if (cleanedUserId.isNotEmpty) {
+        await prefs.remove(wealthHistoryKeyForUser(cleanedUserId));
+      }
+      if (cleanedUserId.isNotEmpty) {
+        await Future.wait(<Future<void>>[
+          HomeWidget.saveWidgetData<String>(
+            widgetDataKeyForUser(cleanedUserId),
+            null,
+            appGroupId: appGroupId,
+          ).then((_) {}),
+          HomeWidget.saveWidgetData<String>(
+            portfolioSnapshotKeyForUser(cleanedUserId),
+            null,
+            appGroupId: appGroupId,
+          ).then((_) {}),
+          HomeWidget.saveWidgetData<String>(
+            smartCaptureStateKeyForUser(cleanedUserId),
+            null,
+            appGroupId: appGroupId,
+          ).then((_) {}),
+        ]);
+      }
+      await _reloadAllTimelines();
     } catch (error, stackTrace) {
       debugPrint('WidgetDataService.clearAll failed: $error');
       debugPrintStack(stackTrace: stackTrace);
@@ -240,6 +320,7 @@ class WidgetDataService {
     required AppStateModel state,
     required MarketSnapshot marketSnapshot,
   }) async {
+    final String userId = _widgetUserId(state);
     final bool isArabic = _widgetLanguageCode(state) == 'ar';
     final String mainCurrency = state.mainCurrency.trim().isEmpty
         ? 'EGP'
@@ -319,6 +400,7 @@ class WidgetDataService {
       currentCurrencyRateToEgp: mainCurrencyRateToEgp,
       marketSnapshot: marketSnapshot,
       today: today,
+      userId: userId,
     );
     _logWealthDelta(
       context: 'summary',
@@ -355,9 +437,22 @@ class WidgetDataService {
       today: today,
     );
 
+    final double zakatableWealthEgp = hasMarketData
+        ? _finiteOrZero(
+            ZakatEngineService.calculateTotalWealthEgp(
+              transactions: state.transactions,
+              savings: state.savings,
+              investments: const <InvestmentAsset>[],
+              marketData: marketData,
+              lastRollover: state.lastRollover,
+            ),
+            'zakatableWealthEgp',
+          )
+        : 0;
+
     final bool nisabMet = hasMarketData
         ? ZakatEngineService.checkCashNisab(
-            currentWealthEgp,
+            zakatableWealthEgp,
             marketData,
             zakatNisabBasis: state.zakatNisabBasis,
           )
@@ -434,6 +529,178 @@ class WidgetDataService {
     );
   }
 
+  static Future<Map<String, dynamic>> _buildPortfolioSnapshot({
+    required AppStateModel state,
+    required MarketSnapshot marketSnapshot,
+    required double incomeThisMonth,
+    required double expensesThisMonth,
+    required int pendingSmsCount,
+    required int upcomingObligationsCount,
+  }) async {
+    final String mainCurrency = state.mainCurrency.trim().isEmpty
+        ? 'EGP'
+        : state.mainCurrency.trim().toUpperCase();
+
+    final MarketData marketData = _toMarketData(marketSnapshot);
+
+    final Map<String, double> cashByCurrency =
+        ZakatEngineService.calculateCashByCurrency(
+          transactions: state.transactions,
+          savings: state.savings,
+          marketData: marketData,
+          lastRollover: state.lastRollover,
+        );
+
+    final Map<String, double> investmentsByCurrency = <String, double>{};
+    for (final asset in state.investments) {
+      final double fallbackMarketValue =
+          ZakatEngineService.estimateInflationAdjustedValue(
+            originalPrice: asset.originalPrice,
+            valuationDate: asset.valuationDate,
+            inflationRateAnnual: asset.inflationRateAnnual,
+            ownershipType: 'fully_owned',
+            paidAmount: asset.originalPrice,
+          );
+      final double mv = asset.marketValue;
+      double effectiveValue = mv.isFinite
+          ? math.max(0.0, mv)
+          : math.max(0.0, fallbackMarketValue);
+      final double share = asset.ownershipSharePct.isFinite
+          ? math.min(1.0, math.max(0.0, asset.ownershipSharePct / 100.0))
+          : 1.0;
+      effectiveValue *= share;
+
+      final String cur = asset.currency.trim().toUpperCase();
+      if (cur.isNotEmpty) {
+        investmentsByCurrency[cur] =
+            (investmentsByCurrency[cur] ?? 0.0) + effectiveValue;
+      }
+    }
+
+    final Map<String, double> liabilitiesByCurrency = <String, double>{};
+    for (final asset in state.investments) {
+      final double nativeLoan = asset.loanBalance;
+      if (nativeLoan.isFinite && nativeLoan > 0) {
+        final String cur = asset.currency.trim().toUpperCase();
+        if (cur.isNotEmpty) {
+          liabilitiesByCurrency[cur] =
+              (liabilitiesByCurrency[cur] ?? 0.0) + nativeLoan;
+        }
+      }
+    }
+
+    final List<String> cashCurrencies = ZakatEngineService.supportedCurrencies;
+    for (final currency in cashCurrencies) {
+      final double balance =
+          ZakatEngineService.calculateWalletBalanceByCurrency(
+            currency: currency,
+            transactions: state.transactions,
+            savings: state.savings,
+            lastRollover: state.lastRollover,
+          );
+      if (balance < -ZakatEngineService.minAmount) {
+        final String cur = currency.trim().toUpperCase();
+        liabilitiesByCurrency[cur] =
+            (liabilitiesByCurrency[cur] ?? 0.0) + (-balance);
+      }
+    }
+
+    final Map<String, double> goldGramsByKarat = <String, double>{};
+    for (final s in state.savings) {
+      if (ZakatEngineService.normaliseAssetType(s.assetType) == 'gold') {
+        final double amount = s.remainingAmount.isFinite
+            ? s.remainingAmount
+            : s.amount;
+        final String karat = s.unit.trim();
+        goldGramsByKarat[karat] = (goldGramsByKarat[karat] ?? 0.0) + amount;
+      }
+    }
+
+    double silverGrams = 0.0;
+    for (final s in state.savings) {
+      if (ZakatEngineService.normaliseAssetType(s.assetType) == 'silver') {
+        final double amount = s.remainingAmount.isFinite
+            ? s.remainingAmount
+            : s.amount;
+        silverGrams += amount;
+      }
+    }
+
+    final double currentNetWorthEgp = ZakatEngineService.calculateNetWorthEgp(
+      transactions: state.transactions,
+      savings: state.savings,
+      investments: state.investments,
+      marketData: marketData,
+      lastRollover: state.lastRollover,
+    );
+    final double mainCurrencyRateToEgp = _mainCurrencyRateToEgp(
+      mainCurrency,
+      marketSnapshot,
+    );
+    final DateTime now = DateTime.now();
+    final DateTime today = DateUtils.dateOnly(now);
+    final _WealthDeltaSnapshot wealthDelta = await _resolveDailyWealthDelta(
+      currentWealthEgp: currentNetWorthEgp,
+      currentCurrency: mainCurrency,
+      currentCurrencyRateToEgp: mainCurrencyRateToEgp,
+      marketSnapshot: marketSnapshot,
+      today: today,
+      userId: _widgetUserId(state),
+    );
+
+    final _TodaySpendingSummary todaySpending = _buildTodaySpending(
+      transactions: state.transactions,
+      marketSnapshot: marketSnapshot,
+      mainCurrency: mainCurrency,
+      today: today,
+    );
+
+    final List<Map<String, dynamic>> schedule = _buildZakatSchedule(
+      state: state,
+      marketData: marketData,
+    );
+    final _WidgetZakahCountdown? nextZakahInfo = _findNextUnpaidZakatDate(
+      schedule,
+      state.zakatPaidMonths.toSet(),
+      today: today,
+      isArabic: _widgetLanguageCode(state) == 'ar',
+    );
+
+    return <String, dynamic>{
+      'schemaVersion': 1,
+      'generatedAt': DateTime.now().toUtc().toIso8601String(),
+      'baseCurrency': mainCurrency,
+      'yesterdayNetWorthBaseCurrency': wealthDelta.yesterdayWealthMain,
+      'nisabBasis': ZakatEngineService.normalizeZakatNisabBasis(
+        state.zakatNisabBasis,
+      ),
+      'hideBalances': state.biometricHideWealthEnabled,
+      'zakahAnnualDate': state.zakatAnnualDate,
+      'zakahPaidMonths': state.zakatPaidMonths,
+      'cash': cashByCurrency,
+      'investments': investmentsByCurrency,
+      'liabilities': liabilitiesByCurrency,
+      'goldGramsByKarat': goldGramsByKarat,
+      'silverGrams': silverGrams,
+      'nonMarketWealthBaseCurrency': 0.0,
+      'monthlyIncomeBaseCurrency': incomeThisMonth,
+      'monthlyExpensesBaseCurrency': expensesThisMonth,
+      'pendingSmsCount': pendingSmsCount,
+      'upcomingObligationsCount': upcomingObligationsCount,
+      'nextZakahText':
+          nextZakahInfo?.dateLabel ??
+          (state.zakatAnnualDate.isEmpty
+              ? 'Not scheduled'
+              : state.zakatAnnualDate),
+      'nextZakahDays': nextZakahInfo?.daysRemaining,
+      'todaySpendingMain': todaySpending.totalMain,
+      'todaySpendingBreakdown': todaySpending.items
+          .map((WidgetCurrencySpendingItem e) => e.toJson())
+          .toList(),
+      'todaySpendingOtherCurrenciesCount': todaySpending.otherCurrencyCount,
+    };
+  }
+
   static String _widgetLanguageCode(AppStateModel state) {
     return state.languagePreference.trim().toLowerCase() == 'ar' ? 'ar' : 'en';
   }
@@ -467,14 +734,20 @@ class WidgetDataService {
     required double currentCurrencyRateToEgp,
     required MarketSnapshot marketSnapshot,
     required DateTime today,
+    required String? userId,
   }) async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
-    if (prefs.containsKey(legacyWealthHistoryKey)) {
+    final String historyKey = wealthHistoryKeyForUser(userId);
+    final String? legacyRaw = prefs.getString(legacyWealthHistoryKey);
+    String? raw = prefs.getString(historyKey);
+    if ((raw == null || raw.trim().isEmpty) &&
+        legacyRaw != null &&
+        legacyRaw.trim().isNotEmpty) {
+      raw = legacyRaw;
+      await prefs.setString(historyKey, legacyRaw);
       await prefs.remove(legacyWealthHistoryKey);
     }
-    final Map<String, _WealthHistoryEntry> history = _loadWealthHistory(
-      prefs.getString(wealthHistoryKey),
-    );
+    final Map<String, _WealthHistoryEntry> history = _loadWealthHistory(raw);
     final String todayKey = _dayKey(today);
     final String yesterdayKey = _dayKey(
       today.subtract(const Duration(days: 1)),
@@ -513,7 +786,7 @@ class WidgetDataService {
       ),
     );
     await prefs.setString(
-      wealthHistoryKey,
+      historyKey,
       jsonEncode(_serializeWealthHistory(history)),
     );
 
@@ -663,6 +936,50 @@ class WidgetDataService {
     return local.day >= startDay
         ? DateTime(local.year, local.month, startDay)
         : DateTime(local.year, local.month - 1, startDay);
+  }
+
+  static String widgetDataKeyForUser(String userId) {
+    return 'zakah_wealth_widget_snapshot_$userId';
+  }
+
+  static String portfolioSnapshotKeyForUser(String userId) {
+    return 'widget_portfolio_snapshot_$userId';
+  }
+
+  static String wealthHistoryKeyForUser(String? userId) {
+    final String clean = (userId ?? '').trim();
+    return 'zakah_wealth_widget_net_worth_history_v2_${clean.isEmpty ? 'default' : clean}';
+  }
+
+  static String smartCaptureStateKeyForUser(String userId) {
+    return 'zakah_wealth_smart_capture_state_v1_$userId';
+  }
+
+  static Future<void> _removeLegacyWidgetPayloads() async {
+    await Future.wait(<Future<void>>[
+      HomeWidget.saveWidgetData<String>(
+        legacyWidgetDataKey,
+        null,
+        appGroupId: appGroupId,
+      ).then((_) {}),
+      HomeWidget.saveWidgetData<String>(
+        legacyPortfolioSnapshotKey,
+        null,
+        appGroupId: appGroupId,
+      ).then((_) {}),
+      HomeWidget.saveWidgetData<String>(
+        legacySmartCaptureStateKey,
+        null,
+        appGroupId: appGroupId,
+      ).then((_) {}),
+    ]);
+  }
+
+  static String _widgetUserId(AppStateModel state) {
+    final String userId = state.userId?.trim() ?? '';
+    if (userId.isNotEmpty) return userId;
+    final String loadedUserId = state.loadedUserId?.trim() ?? '';
+    return loadedUserId;
   }
 
   static String _localizeWidgetCategory(String category, bool isArabic) {
@@ -857,9 +1174,19 @@ class WidgetDataService {
       percent: netAssetDeltaPct,
     );
 
+    final double zakatableWealthEgp = hasMarketData
+        ? ZakatEngineService.calculateTotalWealthEgp(
+            transactions: state.transactions,
+            savings: state.savings,
+            investments: const <InvestmentAsset>[],
+            marketData: marketData,
+            lastRollover: state.lastRollover,
+          )
+        : 0;
+
     final bool nisabMet = hasMarketData
         ? ZakatEngineService.checkCashNisab(
-            currentWealthEgp,
+            zakatableWealthEgp,
             marketData,
             zakatNisabBasis: state.zakatNisabBasis,
           )

@@ -47,7 +47,7 @@ class CloudSyncManager {
   }) : appVersion = appVersion ??
             const String.fromEnvironment(
               'APP_VERSION',
-              defaultValue: '1.0.0',
+              defaultValue: '1.5.0',
             );
 
   /// Configures the sync encryption passphrase.

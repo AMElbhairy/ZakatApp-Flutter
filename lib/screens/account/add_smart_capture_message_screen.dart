@@ -34,12 +34,21 @@ class _AddSmartCaptureMessageScreenState
     final String rawMessage = _messageController.text;
 
     try {
-      await controller.createPendingTransactionFromMessage(
-        rawMessage,
-        PendingTransactionSource.manual,
-      );
+      final bool created = await controller
+          .createPendingTransactionFromMessageWithResult(
+            rawMessage,
+            PendingTransactionSource.manual,
+          );
 
       if (mounted) {
+        if (!created) {
+          showTopSnackBar(
+            context,
+            context.l10n.tr('smart_capture_disabled'),
+            kind: AppToastKind.error,
+          );
+          return;
+        }
         showTopSnackBar(
           context,
           context.l10n.tr('message_parsed_successfully'),

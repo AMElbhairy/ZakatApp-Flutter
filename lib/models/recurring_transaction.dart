@@ -19,6 +19,7 @@ class RecurringTransaction {
     this.reminderEnabled = false,
     this.reminderDayOffset = 0,
     this.reminderTime = '09:00',
+    this.customDates = const <String>[],
   });
 
   final String id;
@@ -38,6 +39,7 @@ class RecurringTransaction {
   final bool reminderEnabled;
   final int reminderDayOffset;
   final String reminderTime;
+  final List<String> customDates;
 
   factory RecurringTransaction.fromJson(Map<String, dynamic> json) {
     return RecurringTransaction(
@@ -60,6 +62,9 @@ class RecurringTransaction {
       reminderEnabled: json['reminderEnabled'] == null ? false : _asBool(json['reminderEnabled']),
       reminderDayOffset: json['reminderDayOffset'] == null ? 0 : _asInt(json['reminderDayOffset']),
       reminderTime: (json['reminderTime'] ?? '09:00').toString(),
+      customDates: json['customDates'] is List
+          ? List<String>.from((json['customDates'] as List).map((e) => e.toString()))
+          : const <String>[],
     );
   }
 
@@ -82,6 +87,7 @@ class RecurringTransaction {
       'reminderEnabled': reminderEnabled,
       'reminderDayOffset': reminderDayOffset,
       'reminderTime': reminderTime,
+      'customDates': customDates,
     };
   }
 
@@ -103,6 +109,7 @@ class RecurringTransaction {
     bool? reminderEnabled,
     int? reminderDayOffset,
     String? reminderTime,
+    List<String>? customDates,
   }) {
     return RecurringTransaction(
       id: id ?? this.id,
@@ -122,6 +129,7 @@ class RecurringTransaction {
       reminderEnabled: reminderEnabled ?? this.reminderEnabled,
       reminderDayOffset: reminderDayOffset ?? this.reminderDayOffset,
       reminderTime: reminderTime ?? this.reminderTime,
+      customDates: customDates ?? this.customDates,
     );
   }
 

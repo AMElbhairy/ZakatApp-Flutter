@@ -70,11 +70,14 @@ class AndroidSmsCapturePolicy {
       'authentication code',
       'login code',
       'passcode',
+      'purchase code',
       'رمز التحقق',
       'كود التحقق',
       'رمز لمرة واحدة',
       'كلمة مرور لمرة واحدة',
       'رمز الاستخدام لمرة واحدة',
+      'رمز شراء',
+      'رمز شراء أونلاين',
       'تأكيد الدخول',
     ].any(lower.contains);
   }

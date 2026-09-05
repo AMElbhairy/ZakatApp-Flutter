@@ -17,14 +17,19 @@ protocol FlutterImplicitEngineDelegate {}
 @main
 @objc class AppDelegate: BaseFlutterAppDelegate, FlutterImplicitEngineDelegate {
 #if canImport(Flutter)
+  private static let iCloudContainerIdentifier = "iCloud.com.zakahwealth.app"
+#endif
+#if canImport(Flutter)
   private var smartCaptureChannel: FlutterMethodChannel?
   private var shortcutBridgeChannel: FlutterMethodChannel?
   private var appleSignInChannel: FlutterMethodChannel?
   private var widgetRefreshChannel: FlutterMethodChannel?
+  private var icloudChannel: FlutterMethodChannel?
 #endif
   private var shortcutBridgeRegistrationAttempts = 0
   private var appleSignInRegistrationAttempts = 0
   private var widgetRefreshRegistrationAttempts = 0
+  private var icloudRegistrationAttempts = 0
   private let appleSignInCoordinator = AppleSignInCoordinator()
 
   private static let shortcutQueueStorageKey = "com.zakahwealth.smartcapture.pendingShortcutMessages"
@@ -57,13 +62,16 @@ protocol FlutterImplicitEngineDelegate {}
     configureShortcutBridgeChannel()
     configureAppleSignInChannel()
     configureWidgetRefreshChannel()
+    configureICloudChannel()
 #endif
+    refreshWidgetTimelines()
     UNUserNotificationCenter.current().delegate = self
     requestNotificationAuthorizationIfNeeded()
 #if canImport(Flutter)
     scheduleShortcutBridgeRegistrationRetry()
     scheduleAppleSignInRegistrationRetry()
     scheduleWidgetRefreshChannelRegistrationRetry()
+    scheduleICloudRegistrationRetry()
 #endif
 
     return didFinishLaunching
@@ -76,13 +84,16 @@ protocol FlutterImplicitEngineDelegate {}
     configureShortcutBridgeChannel()
     configureAppleSignInChannel()
     configureWidgetRefreshChannel()
+    configureICloudChannel()
 #endif
+    refreshWidgetTimelines()
     UNUserNotificationCenter.current().delegate = self
     requestNotificationAuthorizationIfNeeded()
 #if canImport(Flutter)
     scheduleShortcutBridgeRegistrationRetry()
     scheduleAppleSignInRegistrationRetry()
     scheduleWidgetRefreshChannelRegistrationRetry()
+    scheduleICloudRegistrationRetry()
 #endif
   }
 
@@ -115,12 +126,11 @@ protocol FlutterImplicitEngineDelegate {}
       "notificationAlreadyShown": nativeNotificationShown ? "true" : "false",
     ]
 
-    shortcutQueueLock.lock()
-    defer { shortcutQueueLock.unlock() }
-
-    loadShortcutQueueLocked()
-    pendingShortcutMessages.append(payload)
-    saveShortcutQueueLocked()
+    shortcutQueueLock.withLock {
+      loadShortcutQueueLocked()
+      pendingShortcutMessages.append(payload)
+      saveShortcutQueueLocked()
+    }
 
     NSLog("[Shortcut] Payload queued")
     NSLog("[Shortcut] Queue size: \(pendingShortcutMessages.count)")
@@ -323,12 +333,15 @@ protocol FlutterImplicitEngineDelegate {}
       "one-time password",
       "verification code",
       "confirmation code",
+      "purchase code",
       "رمز التحقق",
       "كود التحقق",
       "رمز لمرة واحدة",
       "الرمز لمرة واحدة",
       "كلمة مرور لمرة واحدة",
       "رمز الاستخدام لمرة واحدة",
+      "رمز شراء",
+      "رمز شراء أونلاين",
       "مرفوضة",
       "مرفوض",
       "رفض",
@@ -436,6 +449,9 @@ protocol FlutterImplicitEngineDelegate {}
     }
 
     let normalized = messageText.lowercased()
+    if nativeShortcutContainsOtpIndicators(normalized) {
+      return false
+    }
     if nativeShortcutContainsSubscriptionActivationIndicators(normalized) {
       return false
     }
@@ -482,19 +498,19 @@ protocol FlutterImplicitEngineDelegate {}
     let now = Date().timeIntervalSince1970
     let cutoff = now - 300
 
-    recentShortcutCaptureLock.lock()
-    defer { recentShortcutCaptureLock.unlock() }
-    loadRecentShortcutCapturesLocked()
-    pruneRecentShortcutCapturesLocked(now: now, cutoff: cutoff)
-    if recentShortcutCaptures.contains(where: { ($0["signature"] as? String) == signature }) {
-      return true
+    return recentShortcutCaptureLock.withLock {
+      loadRecentShortcutCapturesLocked()
+      pruneRecentShortcutCapturesLocked(now: now, cutoff: cutoff)
+      if recentShortcutCaptures.contains(where: { ($0["signature"] as? String) == signature }) {
+        return true
+      }
+      recentShortcutCaptures.append([
+        "signature": signature,
+        "capturedAt": now,
+      ])
+      saveRecentShortcutCapturesLocked()
+      return false
     }
-    recentShortcutCaptures.append([
-      "signature": signature,
-      "capturedAt": now,
-    ])
-    saveRecentShortcutCapturesLocked()
-    return false
   }
 
   private static func nativeShortcutContainsRejectionIndicators(_ text: String) -> Bool {
@@ -607,12 +623,15 @@ protocol FlutterImplicitEngineDelegate {}
       "one-time password",
       "verification code",
       "confirmation code",
+      "purchase code",
       "رمز التحقق",
       "كود التحقق",
       "رمز لمرة واحدة",
       "الرمز لمرة واحدة",
       "كلمة مرور لمرة واحدة",
       "رمز الاستخدام لمرة واحدة",
+      "رمز شراء",
+      "رمز شراء أونلاين",
     ])
   }
 
@@ -1083,7 +1102,13 @@ protocol FlutterImplicitEngineDelegate {}
   }
 
   private static func nativeShortcutNormalizeMerchantName(_ merchant: String) -> String {
-    let normalized = merchant.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+    var cleanMerchant = merchant.trimmingCharacters(in: .whitespacesAndNewlines)
+    cleanMerchant = cleanMerchant.replacingOccurrences(
+      of: #"^(?:sa|ksa|uae|eg|us|usa|uk)\s*/\s*"#,
+      with: "",
+      options: .regularExpression
+    ).trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalized = cleanMerchant.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
     if normalized == "talabat.com" ||
         normalized == "talabat app" ||
         normalized == "talabat maa" ||
@@ -1157,7 +1182,7 @@ protocol FlutterImplicitEngineDelegate {}
     if nativeShortcutFirstMatch(in: normalized, pattern: #"^(?:s\d+\s+)?tamimi market"#) != nil {
       return "Tamimi Market"
     }
-    return nativeShortcutCapitalizeWords(merchant)
+    return nativeShortcutCapitalizeWords(cleanMerchant)
   }
 
   private static func nativeShortcutCapitalizeWords(_ text: String) -> String {
@@ -1286,7 +1311,7 @@ protocol FlutterImplicitEngineDelegate {}
     aliases: [String: String]
   ) -> String? {
     let patterns: [String] = [
-      #"(?:(?<![A-Za-z0-9])(?:at|merchant|store)(?![A-Za-z0-9])|لدى|عند|في)\s*[:\-]?\s*([A-Za-z\u0600-\u06FF0-9][A-Za-z0-9\u0600-\u06FF&*.,\- ]{1,80})"#
+      #"(?:(?<![A-Za-z0-9])(?:at|merchant|store)(?![A-Za-z0-9])|(?<![\u0600-\u06FF0-9])(?:لدى|عند|في)(?![\u0600-\u06FF0-9]))\s*[:\-]?\s*([A-Za-z\u0600-\u06FF0-9][A-Za-z0-9\u0600-\u06FF&*.,\-\/ ]{1,80})"#
     ]
     for pattern in patterns {
       if let match = nativeShortcutFirstMatch(in: rawMessage, pattern: pattern),
@@ -1309,9 +1334,9 @@ protocol FlutterImplicitEngineDelegate {}
       .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
       .filter { !$0.isEmpty }
     let patterns: [String] = [
-      #"^\s*عند\s+([A-Za-z\u0600-\u06FF0-9][A-Za-z0-9\u0600-\u06FF&*.,\- ]{1,80})"#,
-      #"^\s*At\s*[:-]?\s*([A-Za-z\u0600-\u06FF0-9][A-Za-z0-9\u0600-\u06FF&*.,\- ]{1,80})"#,
-      #"^\s*Merchant\s*[:-]?\s*([A-Za-z\u0600-\u06FF0-9][A-Za-z0-9\u0600-\u06FF&*.,\- ]{1,80})"#,
+      #"^\s*عند\s+([A-Za-z\u0600-\u06FF0-9][A-Za-z0-9\u0600-\u06FF&*.,\-\/ ]{1,80})"#,
+      #"^\s*At\s*[:-]?\s*([A-Za-z\u0600-\u06FF0-9][A-Za-z0-9\u0600-\u06FF&*.,\-\/ ]{1,80})"#,
+      #"^\s*Merchant\s*[:-]?\s*([A-Za-z\u0600-\u06FF0-9][A-Za-z0-9\u0600-\u06FF&*.,\-\/ ]{1,80})"#,
     ]
     for line in lines {
       for pattern in patterns {
@@ -1407,14 +1432,40 @@ protocol FlutterImplicitEngineDelegate {}
       .split(separator: "\n")
       .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
       .filter { !$0.isEmpty }
-    let senderName = nativeShortcutTransferParty(
+    var senderName = nativeShortcutTransferParty(
       lines,
       labels: ["sender", "from account", "from", "المرسل", "مرسل", "من حساب", "من"]
     )
-    let recipientName = nativeShortcutTransferParty(
+    var recipientName = nativeShortcutTransferParty(
       lines,
       labels: ["to account", "to", "recipient", "beneficiary", "المستفيد", "إلى حساب", "إلى", "الى"]
     )
+
+    if senderName == nil {
+      if let match = nativeShortcutFirstMatch(in: rawMessage, pattern: #"(?i)(?:\bfrom\b|من)\s+([A-Za-z\u0600-\u06FF\*\s]{2,80})"#),
+         let range = Range(match.range(at: 1), in: rawMessage) {
+        let candidate = String(rawMessage[range]).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !candidate.isEmpty && !nativeShortcutIsTransferPartyNoise(candidate) {
+          let trimmed = nativeShortcutTrimMerchantCandidate(candidate)
+          if !trimmed.isEmpty {
+            senderName = trimmed
+          }
+        }
+      }
+    }
+
+    if recipientName == nil {
+      if let match = nativeShortcutFirstMatch(in: rawMessage, pattern: #"(?i)(?:\bto\b|إلى|الى)\s+([A-Za-z\u0600-\u06FF\*\s]{2,80})"#),
+         let range = Range(match.range(at: 1), in: rawMessage) {
+        let candidate = String(rawMessage[range]).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !candidate.isEmpty && !nativeShortcutIsTransferPartyNoise(candidate) {
+          let trimmed = nativeShortcutTrimMerchantCandidate(candidate)
+          if !trimmed.isEmpty {
+            recipientName = trimmed
+          }
+        }
+      }
+    }
     let lowered = rawMessage.lowercased()
     let hasExplicitTransferPartyLabels = nativeShortcutContainsAny(lowered, [
       "sender:",
@@ -1559,6 +1610,9 @@ protocol FlutterImplicitEngineDelegate {}
       "صادرة",
       "صادر",
       "تم التحويل إلى",
+      "تم تنفيذ تحويل",
+      "من حسابكم",
+      "تحويل لحظي من",
     ]) {
       return "out"
     }
@@ -1580,6 +1634,12 @@ protocol FlutterImplicitEngineDelegate {}
       "تم استلام",
       "credited",
       "received",
+      "تم إضافة تحويل",
+      "تم اضافة تحويل",
+      "تحويل لحظي لحسابكم",
+      "تحويل لحسابكم",
+      "تم إضافة",
+      "تم اضافة",
     ]) {
       return "in"
     }
@@ -1772,10 +1832,10 @@ protocol FlutterImplicitEngineDelegate {}
 
   private static func nativeShortcutExplicitAmountCandidate(from text: String) -> (amount: Double, currency: String?)? {
     let patterns: [String] = [
-      #"(?i)(?:SAR|SR|S\.R|EGP|USD|AED|KWD|QAR|BHD|OMR|ر\.س|ج\.م|ريال|جنيه|درهم|د\.إ|د.إ)\s*(?:amount|المبلغ|مبلغ)\s*[:\-]?\s*([0-9][0-9,]*(?:\.[0-9]+)?)"#,
-      #"(?i)(?:amount|المبلغ|مبلغ|charged amount|transaction amount|purchase amount|total|value|price|due)\s*[:\-]?\s*(?:SAR|SR|S\.R|EGP|USD|AED|KWD|QAR|BHD|OMR|ر\.س|ج\.م|ريال|جنيه|درهم|د\.إ|د.إ)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)"#,
-      #"(?i)(?:SAR|SR|S\.R|EGP|USD|AED|KWD|QAR|BHD|OMR|ر\.س|ج\.م|ريال|جنيه|درهم|د\.إ|د.إ)\s*([0-9][0-9,]*(?:\.[0-9]+)?)"#,
-      #"(?i)([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:SAR|SR|S\.R|EGP|USD|AED|KWD|QAR|BHD|OMR|ر\.س|ج\.م|ريال|جنيه|درهم|د\.إ|د.إ)"#,
+      #"(?i)(?:SAR|SR|S\.R|EGP|USD|AED|KWD|QAR|BHD|OMR|ر\.س|ج\.م|جم|ريال|جنيه|درهم|د\.إ|د.إ)\s*(?:amount|المبلغ|مبلغ)\s*[:\-]?\s*([0-9][0-9,]*(?:\.[0-9]+)?)"#,
+      #"(?i)(?:amount|المبلغ|مبلغ|charged amount|transaction amount|purchase amount|total|value|price|due)\s*[:\-]?\s*(?:SAR|SR|S\.R|EGP|USD|AED|KWD|QAR|BHD|OMR|ر\.س|ج\.م|جم|ريال|جنيه|درهم|د\.إ|د.إ)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)"#,
+      #"(?i)(?:SAR|SR|S\.R|EGP|USD|AED|KWD|QAR|BHD|OMR|ر\.س|ج\.م|جم|ريال|جنيه|درهم|د\.إ|د.إ)\s*([0-9][0-9,]*(?:\.[0-9]+)?)"#,
+      #"(?i)([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:SAR|SR|S\.R|EGP|USD|AED|KWD|QAR|BHD|OMR|ر\.س|ج\.م|جم|ريال|جنيه|درهم|د\.إ|د.إ)"#,
     ]
 
     for pattern in patterns {
@@ -1803,7 +1863,7 @@ protocol FlutterImplicitEngineDelegate {}
   private static func nativeShortcutCurrencyCode(in text: String) -> String? {
     let patterns: [(String, String)] = [
       (#"(?i)\b(SAR|SR|S\.R)\b"#, "SAR"),
-      (#"(?i)\b(EGP|ج\.م|جنيه)\b"#, "EGP"),
+      (#"(?i)\b(EGP|ج\.م|جم|جنيه)\b"#, "EGP"),
       (#"(?i)\b(USD|\$)\b"#, "USD"),
       (#"(?i)\b(AED|د\.إ|د.إ|درهم)\b"#, "AED"),
       (#"(?i)\b(KWD)\b"#, "KWD"),
@@ -1994,6 +2054,14 @@ protocol FlutterImplicitEngineDelegate {}
     }
     widgetRefreshChannel = channel
   }
+
+  private func refreshWidgetTimelines() {
+    if #available(iOS 14.0, *) {
+      WidgetCenter.shared.reloadTimelines(ofKind: "ZakahWealthWidget")
+      WidgetCenter.shared.reloadTimelines(ofKind: "ZakahWealthSmallWidget")
+      WidgetCenter.shared.reloadAllTimelines()
+    }
+  }
 #endif
 
   private func scheduleAppleSignInRegistrationRetry() {
@@ -2037,15 +2105,19 @@ protocol FlutterImplicitEngineDelegate {}
       return
     }
 
-    AppDelegate.shortcutQueueLock.lock()
-    let messages = AppDelegate.pendingShortcutMessages
+    let messages = AppDelegate.shortcutQueueLock.withLock { () -> [[String: Any]] in
+      AppDelegate.loadShortcutQueueLocked()
+      guard !AppDelegate.pendingShortcutMessages.isEmpty else {
+        return []
+      }
+      let queuedMessages = AppDelegate.pendingShortcutMessages
+      AppDelegate.pendingShortcutMessages.removeAll()
+      AppDelegate.saveShortcutQueueLocked()
+      return queuedMessages
+    }
     guard !messages.isEmpty else {
-      AppDelegate.shortcutQueueLock.unlock()
       return
     }
-    AppDelegate.pendingShortcutMessages.removeAll()
-    AppDelegate.saveShortcutQueueLocked()
-    AppDelegate.shortcutQueueLock.unlock()
 
     NSLog("[Shortcut] Native push delivering queued messages: \(messages.count)")
     for message in messages {
@@ -2106,12 +2178,11 @@ protocol FlutterImplicitEngineDelegate {}
   }
 
   static func queueNotificationLaunch(_ payload: [String: Any]) {
-    notificationLaunchLock.lock()
-    defer { notificationLaunchLock.unlock() }
-
-    loadNotificationLaunchQueueLocked()
-    pendingNotificationLaunches.append(payload)
-    saveNotificationLaunchQueueLocked()
+    notificationLaunchLock.withLock {
+      loadNotificationLaunchQueueLocked()
+      pendingNotificationLaunches.append(payload)
+      saveNotificationLaunchQueueLocked()
+    }
     DispatchQueue.main.async {
       AppDelegate.sharedDeliverQueuedNotificationLaunchesIfPossible()
     }
@@ -2129,16 +2200,19 @@ protocol FlutterImplicitEngineDelegate {}
       return
     }
 
-    AppDelegate.notificationLaunchLock.lock()
-    AppDelegate.refreshNotificationLaunchQueueFromStorageLocked()
-    let launches = AppDelegate.pendingNotificationLaunches
+    let launches = AppDelegate.notificationLaunchLock.withLock { () -> [[String: Any]] in
+      AppDelegate.refreshNotificationLaunchQueueFromStorageLocked()
+      guard !AppDelegate.pendingNotificationLaunches.isEmpty else {
+        return []
+      }
+      let queuedLaunches = AppDelegate.pendingNotificationLaunches
+      AppDelegate.pendingNotificationLaunches.removeAll()
+      AppDelegate.saveNotificationLaunchQueueLocked()
+      return queuedLaunches
+    }
     guard !launches.isEmpty else {
-      AppDelegate.notificationLaunchLock.unlock()
       return
     }
-    AppDelegate.pendingNotificationLaunches.removeAll()
-    AppDelegate.saveNotificationLaunchQueueLocked()
-    AppDelegate.notificationLaunchLock.unlock()
 
     NSLog("[SMS] Native push delivering queued notification launches: \(launches.count)")
     for launch in launches {
@@ -2232,31 +2306,29 @@ protocol FlutterImplicitEngineDelegate {}
   }
 
   static func drainShortcutQueue() -> [[String: Any]] {
-    shortcutQueueLock.lock()
-    defer { shortcutQueueLock.unlock() }
+    return shortcutQueueLock.withLock { () -> [[String: Any]] in
+      NSLog("[Shortcut] getPendingShortcutMessages called")
+      refreshShortcutQueueFromStorageLocked()
+      let messages = pendingShortcutMessages
+      guard !messages.isEmpty else {
+        NSLog("[Shortcut] Returning queued messages: 0")
+        return []
+      }
 
-    NSLog("[Shortcut] getPendingShortcutMessages called")
-    refreshShortcutQueueFromStorageLocked()
-    let messages = pendingShortcutMessages
-    guard !messages.isEmpty else {
-      NSLog("[Shortcut] Returning queued messages: 0")
-      return []
+      pendingShortcutMessages.removeAll()
+      saveShortcutQueueLocked()
+      NSLog("[Shortcut] Returning queued messages: \(messages.count)")
+      NSLog("[Shortcut] Queue cleared")
+      return messages
     }
-
-    pendingShortcutMessages.removeAll()
-    saveShortcutQueueLocked()
-    NSLog("[Shortcut] Returning queued messages: \(messages.count)")
-    NSLog("[Shortcut] Queue cleared")
-    return messages
   }
 
   static func clearShortcutQueue() {
-    shortcutQueueLock.lock()
-    defer { shortcutQueueLock.unlock() }
-
-    pendingShortcutMessages.removeAll()
-    saveShortcutQueueLocked()
-    NSLog("[Shortcut] Queue cleared")
+    shortcutQueueLock.withLock {
+      pendingShortcutMessages.removeAll()
+      saveShortcutQueueLocked()
+      NSLog("[Shortcut] Queue cleared")
+    }
   }
 
   private func requestNotificationAuthorizationIfNeeded() {
@@ -2311,6 +2383,319 @@ protocol FlutterImplicitEngineDelegate {}
     } else {
       completionHandler([.alert, .sound, .badge])
     }
+  }
+
+#if canImport(Flutter)
+  private func configureICloudChannel() {
+    guard icloudChannel == nil,
+          let controller = activeFlutterViewController() else {
+      return
+    }
+    let channel = FlutterMethodChannel(
+      name: "com.zakatapp.icloud",
+      binaryMessenger: controller.binaryMessenger
+    )
+    channel.setMethodCallHandler { [weak self] call, result in
+      guard let self = self else {
+        result(FlutterError(code: "UNAVAILABLE", message: "AppDelegate is nil", details: nil))
+        return
+      }
+      self.handleICloudCall(call, result: result)
+    }
+    icloudChannel = channel
+  }
+
+  private func scheduleICloudRegistrationRetry() {
+    guard icloudChannel == nil,
+          icloudRegistrationAttempts < 8 else {
+      return
+    }
+    icloudRegistrationAttempts += 1
+    DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(200)) { [weak self] in
+      guard let self = self else { return }
+      self.configureICloudChannel()
+      if self.icloudChannel == nil {
+        self.scheduleICloudRegistrationRetry()
+      }
+    }
+  }
+
+  private func handleICloudCall(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    let containerIdentifier = Self.iCloudContainerIdentifier
+    switch call.method {
+    case "getAvailability":
+      let containerURL = FileManager.default.url(
+        forUbiquityContainerIdentifier: containerIdentifier
+      )
+      if containerURL == nil {
+        result("unavailable")
+      } else {
+        result("connected")
+      }
+      
+    case "connect":
+      let containerURL = FileManager.default.url(
+        forUbiquityContainerIdentifier: containerIdentifier
+      )
+      result(containerURL != nil)
+      
+    case "disconnect":
+      result(nil)
+      
+    case "readManifest":
+      guard let args = call.arguments as? [String: Any],
+            let namespace = args["namespace"] as? String else {
+        result(FlutterError(code: "INVALID_ARGS", message: "Missing arguments", details: nil))
+        return
+      }
+      guard let containerURL = FileManager.default.url(
+        forUbiquityContainerIdentifier: containerIdentifier
+      ) else {
+        result(nil)
+        return
+      }
+      let docDir = containerURL.appendingPathComponent("Documents", isDirectory: true)
+      let namespaceDir = docDir.appendingPathComponent(namespace, isDirectory: true)
+      let manifestURL = namespaceDir.appendingPathComponent("manifest.json")
+      
+      let coordinator = NSFileCoordinator()
+      var error: NSError?
+      var manifestString: String? = nil
+      
+      coordinator.coordinate(readingItemAt: manifestURL, options: [], error: &error) { url in
+        if let data = try? Data(contentsOf: url),
+           let str = String(data: data, encoding: .utf8) {
+          manifestString = str
+        }
+      }
+      
+      if let manifestString = manifestString {
+        let payload: [String: Any] = [
+          "content": manifestString,
+          "revision": "\(manifestString.hashValue)"
+        ]
+        if let jsonData = try? JSONSerialization.data(withJSONObject: payload),
+           let jsonStr = String(data: jsonData, encoding: .utf8) {
+          result(jsonStr)
+        } else {
+          result(nil)
+        }
+      } else {
+        result(nil)
+      }
+      
+    case "writeManifest":
+      guard let args = call.arguments as? [String: Any],
+            let namespace = args["namespace"] as? String,
+            let manifestDataStr = args["manifestData"] as? String else {
+        result(FlutterError(code: "INVALID_ARGS", message: "Missing arguments", details: nil))
+        return
+      }
+      guard let containerURL = FileManager.default.url(
+        forUbiquityContainerIdentifier: containerIdentifier
+      ) else {
+        result(FlutterError(code: "UNAVAILABLE", message: "iCloud not connected", details: nil))
+        return
+      }
+      let docDir = containerURL.appendingPathComponent("Documents", isDirectory: true)
+      let namespaceDir = docDir.appendingPathComponent(namespace, isDirectory: true)
+      let manifestURL = namespaceDir.appendingPathComponent("manifest.json")
+      
+      let coordinator = NSFileCoordinator()
+      var coordError: NSError?
+      var writeError: Error? = nil
+      
+      coordinator.coordinate(writingItemAt: manifestURL, options: [], error: &coordError) { url in
+        do {
+          try FileManager.default.createDirectory(at: namespaceDir, withIntermediateDirectories: true, attributes: nil)
+          let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+          try manifestDataStr.data(using: .utf8)?.write(to: tempURL, options: .atomic)
+          if FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.removeItem(at: url)
+          }
+          try FileManager.default.moveItem(at: tempURL, to: url)
+        } catch {
+          writeError = error
+        }
+      }
+      
+      if let error = writeError {
+        result(FlutterError(code: "WRITE_ERROR", message: error.localizedDescription, details: nil))
+      } else if let error = coordError {
+        result(FlutterError(code: "COORD_ERROR", message: error.localizedDescription, details: nil))
+      } else {
+        result(nil)
+      }
+      
+    case "readFile":
+      guard let args = call.arguments as? [String: Any],
+            let namespace = args["namespace"] as? String,
+            let filePath = args["path"] as? String else {
+        result(FlutterError(code: "INVALID_ARGS", message: "Missing arguments", details: nil))
+        return
+      }
+      guard let containerURL = FileManager.default.url(
+        forUbiquityContainerIdentifier: containerIdentifier
+      ) else {
+        result(nil)
+        return
+      }
+      let fileURL = containerURL
+        .appendingPathComponent("Documents", isDirectory: true)
+        .appendingPathComponent(namespace, isDirectory: true)
+        .appendingPathComponent(filePath)
+      
+      let coordinator = NSFileCoordinator()
+      var error: NSError?
+      var fileData: Data? = nil
+      
+      coordinator.coordinate(readingItemAt: fileURL, options: [], error: &error) { url in
+        fileData = try? Data(contentsOf: url)
+      }
+      
+      if let data = fileData {
+        result(FlutterStandardTypedData(bytes: data))
+      } else {
+        result(nil)
+      }
+      
+    case "writeFile":
+      guard let args = call.arguments as? [String: Any],
+            let namespace = args["namespace"] as? String,
+            let filePath = args["path"] as? String,
+            let dataObj = args["bytes"] as? FlutterStandardTypedData else {
+        result(FlutterError(code: "INVALID_ARGS", message: "Missing arguments", details: nil))
+        return
+      }
+      guard let containerURL = FileManager.default.url(
+        forUbiquityContainerIdentifier: containerIdentifier
+      ) else {
+        result(FlutterError(code: "UNAVAILABLE", message: "iCloud not connected", details: nil))
+        return
+      }
+      let docDir = containerURL.appendingPathComponent("Documents", isDirectory: true)
+      let fileURL = docDir.appendingPathComponent(namespace, isDirectory: true).appendingPathComponent(filePath)
+      
+      let coordinator = NSFileCoordinator()
+      var coordError: NSError?
+      var writeError: Error? = nil
+      
+      coordinator.coordinate(writingItemAt: fileURL, options: [], error: &coordError) { url in
+        do {
+          try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
+          let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+          try dataObj.data.write(to: tempURL, options: .atomic)
+          if FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.removeItem(at: url)
+          }
+          try FileManager.default.moveItem(at: tempURL, to: url)
+        } catch {
+          writeError = error
+        }
+      }
+      
+      if let error = writeError {
+        result(FlutterError(code: "WRITE_ERROR", message: error.localizedDescription, details: nil))
+      } else if let error = coordError {
+        result(FlutterError(code: "COORD_ERROR", message: error.localizedDescription, details: nil))
+      } else {
+        result(nil)
+      }
+      
+    case "listFiles":
+      guard let args = call.arguments as? [String: Any],
+            let namespace = args["namespace"] as? String,
+            let prefix = args["prefix"] as? String else {
+        result(FlutterError(code: "INVALID_ARGS", message: "Missing arguments", details: nil))
+        return
+      }
+      guard let containerURL = FileManager.default.url(
+        forUbiquityContainerIdentifier: containerIdentifier
+      ) else {
+        result([])
+        return
+      }
+      let docDir = containerURL.appendingPathComponent("Documents", isDirectory: true)
+      let namespaceDir = docDir.appendingPathComponent(namespace, isDirectory: true)
+      let targetDir = namespaceDir.appendingPathComponent(prefix)
+      
+      var list: [[String: Any]] = []
+      let keys: [URLResourceKey] = [.fileSizeKey, .contentModificationDateKey]
+      let enumerator = FileManager.default.enumerator(at: targetDir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles])
+      
+      if let enumFiles = enumerator {
+        for case let fileURL as URL in enumFiles {
+          if let resourceValues = try? fileURL.resourceValues(forKeys: Set(keys)) {
+            let size = resourceValues.fileSize ?? 0
+            let date = resourceValues.contentModificationDate ?? Date()
+            let relPath = fileURL.path.replacingOccurrences(
+              of: namespaceDir.path + "/",
+              with: ""
+            )
+            list.append([
+              "path": relPath,
+              "sizeBytes": size,
+              "lastModified": Int(date.timeIntervalSince1970 * 1000),
+              "revision": "\(size)_\(Int(date.timeIntervalSince1970))"
+            ])
+          }
+        }
+      }
+      result(list)
+      
+    case "deleteFile":
+      guard let args = call.arguments as? [String: Any],
+            let namespace = args["namespace"] as? String,
+            let filePath = args["path"] as? String else {
+        result(FlutterError(code: "INVALID_ARGS", message: "Missing arguments", details: nil))
+        return
+      }
+      guard let containerURL = FileManager.default.url(
+        forUbiquityContainerIdentifier: containerIdentifier
+      ) else {
+        result(FlutterError(code: "UNAVAILABLE", message: "iCloud not connected", details: nil))
+        return
+      }
+      let fileURL = containerURL
+        .appendingPathComponent("Documents", isDirectory: true)
+        .appendingPathComponent(namespace, isDirectory: true)
+        .appendingPathComponent(filePath)
+      
+      let coordinator = NSFileCoordinator()
+      var coordError: NSError?
+      var deleteError: Error? = nil
+      
+      coordinator.coordinate(writingItemAt: fileURL, options: [], error: &coordError) { url in
+        do {
+          if FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.removeItem(at: url)
+          }
+        } catch {
+          deleteError = error
+        }
+      }
+      
+      if let error = deleteError {
+        result(FlutterError(code: "DELETE_ERROR", message: error.localizedDescription, details: nil))
+      } else if let error = coordError {
+        result(FlutterError(code: "COORD_ERROR", message: error.localizedDescription, details: nil))
+      } else {
+        result(nil)
+      }
+      
+    default:
+      result(FlutterMethodNotImplemented)
+    }
+  }
+#endif
+}
+
+private extension NSLock {
+  @discardableResult
+  func withLock<T>(_ body: () throws -> T) rethrows -> T {
+    lock()
+    defer { unlock() }
+    return try body()
   }
 }
 

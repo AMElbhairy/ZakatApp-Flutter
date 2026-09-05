@@ -9,6 +9,7 @@ import '../../core/theme/app_theme_extensions.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/utils/currency_presentation.dart';
 import '../../models/app_state.dart';
+import '../../models/credit_card.dart';
 import '../../models/merchant_rule.dart';
 import '../../models/pending_transaction.dart';
 import '../../models/transaction.dart';
@@ -40,6 +41,7 @@ class _ReviewPendingTransactionScreenState
   late TextEditingController _descriptionController;
   late DateTime _selectedDate;
   String? _selectedCategory;
+  String _deductFrom = 'cash';
 
   // Type definitions.
   final List<String> _types = const <String>['expense', 'income'];
@@ -72,6 +74,38 @@ class _ReviewPendingTransactionScreenState
       parsedDate = DateTime.now();
     }
     _selectedDate = parsedDate;
+
+    String? suggestedCardId = p.suggestedPaymentSourceId;
+    if (suggestedCardId == null) {
+      final String digits =
+          SmartCaptureParser.parse(
+            p.rawMessage,
+          ).cardReference?.replaceAll(RegExp(r'\D'), '') ??
+          '';
+      if (digits.length >= 4) {
+        final String last4 = digits.substring(digits.length - 4);
+        final List<CreditCard> matches = context
+            .read<AppStateController>()
+            .state
+            .creditCards
+            .where(
+              (CreditCard card) =>
+                  !card.isArchived && card.last4Digits.trim() == last4,
+            )
+            .toList(growable: false);
+        if (matches.length == 1) suggestedCardId = matches.single.id;
+      }
+    }
+    if (suggestedCardId != null) {
+      final String cardId = suggestedCardId;
+      final List<CreditCard> matches = context
+          .read<AppStateController>()
+          .state
+          .creditCards
+          .where((CreditCard card) => !card.isArchived && card.id == cardId)
+          .toList(growable: false);
+      if (matches.length == 1) _deductFrom = cardId;
+    }
 
     // Initialize category
     _initCategory();
@@ -194,6 +228,9 @@ class _ReviewPendingTransactionScreenState
           category: _selectedCategory ?? '',
           description: _descriptionController.text.trim(),
           date: dateStr,
+          paymentSourceId: _selectedType == 'expense' && _deductFrom != 'cash'
+              ? _deductFrom
+              : null,
         );
       } else {
         await controller.approvePendingTransaction(
@@ -204,6 +241,9 @@ class _ReviewPendingTransactionScreenState
           category: _selectedCategory ?? '',
           description: _descriptionController.text.trim(),
           date: dateStr,
+          paymentSourceId: _selectedType == 'expense' && _deductFrom != 'cash'
+              ? _deductFrom
+              : null,
         );
       }
 
@@ -482,6 +522,14 @@ class _ReviewPendingTransactionScreenState
     final tokens = context.premiumTokens;
     final state = context.watch<AppStateController>().state;
     final availableCategories = _getAvailableCategories(state.categories);
+    final List<CreditCard> creditCards = state.creditCards
+        .where((CreditCard card) => !card.isArchived)
+        .toList(growable: false);
+    final List<String> paymentSources = <String>[
+      'cash',
+      ...creditCards.map((CreditCard card) => card.id),
+    ];
+    if (!paymentSources.contains(_deductFrom)) _deductFrom = 'cash';
     final bool isApprovedCapture =
         widget.pendingTransaction.status == CaptureStatus.autoApproved ||
         widget.pendingTransaction.status == CaptureStatus.manuallyApproved;
@@ -656,6 +704,25 @@ class _ReviewPendingTransactionScreenState
                       setState(() {
                         _selectedCategory = val;
                       });
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                ],
+
+                if (_selectedType == 'expense') ...[
+                  _buildDropdownField<String>(
+                    label: context.l10n.tr('deduct_from'),
+                    value: _deductFrom,
+                    items: paymentSources,
+                    itemLabel: (String source) {
+                      if (source == 'cash') return context.l10n.tr('cash');
+                      final CreditCard card = creditCards.firstWhere(
+                        (CreditCard item) => item.id == source,
+                      );
+                      return '${card.bankName} ${card.cardNickname} **** ${card.last4Digits}';
+                    },
+                    onChanged: (String source) {
+                      setState(() => _deductFrom = source);
                     },
                   ),
                   const SizedBox(height: 16),

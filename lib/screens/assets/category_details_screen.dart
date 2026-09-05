@@ -22,7 +22,7 @@ import '../../core/widgets/sell_metal_dialog.dart';
 class CategoryDetailsScreen extends StatefulWidget {
   const CategoryDetailsScreen({
     super.key,
-    required this.categoryType, // 'cash', 'gold', 'silver', 'investments', 'property', 'other'
+    required this.categoryType, // 'cash', 'gold', 'silver', 'investments', 'property', 'other_assets', 'liabilities'
   });
 
   final String categoryType;
@@ -179,11 +179,40 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
         items = investments
             .where(
               (a) =>
-                  !ZakatEngineService.isCompanyInvestmentType(a.investmentType),
+                  ZakatEngineService.normaliseInvestmentType(
+                    a.investmentType,
+                  ) ==
+                  'real_estate',
             )
             .toList();
-        titleKey = 'property';
+        titleKey = 'properties';
         headerIcon = Icons.home_outlined;
+        break;
+      case 'other_assets':
+        items = investments
+            .where(
+              (a) =>
+                  ZakatEngineService.normaliseInvestmentType(
+                    a.investmentType,
+                  ) ==
+                  'car',
+            )
+            .toList();
+        titleKey = 'vehicles';
+        headerIcon = Icons.directions_car_outlined;
+        break;
+      case 'liabilities':
+        items = investments
+            .where(
+              (InvestmentAsset asset) =>
+                  ZakatEngineService.normaliseInvestmentType(
+                    asset.investmentType,
+                  ) ==
+                  'liability',
+            )
+            .toList();
+        titleKey = 'other_liabilities';
+        headerIcon = Icons.account_balance_outlined;
         break;
       case 'other':
         items = [];
@@ -307,17 +336,50 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
             );
           }
         } else if (item is InvestmentAsset) {
-          final double share = (item.ownershipSharePct / 100).clamp(0, 1);
-          final double gross = ZakatEngineService.convertToEgp(
-            item.marketValue * share,
-            item.currency,
-            market,
+          final String type = ZakatEngineService.normaliseInvestmentType(
+            item.investmentType,
           );
-          categoryTotalVal += ZakatEngineService.convertFromEgp(
-            gross,
-            mainCurrency,
-            market,
-          );
+          if (type == 'liability') {
+            final double outstanding = item.installmentPlan.isNotEmpty
+                ? item.installmentPlan
+                      .where((inst) => inst['isPaid'] != true)
+                      .fold<double>(0.0, (s, inst) {
+                        final double amount = ((inst['amount'] ?? 0) as num)
+                            .toDouble();
+                        final String cur =
+                            inst['currency']?.toString() ?? item.currency;
+                        return s +
+                            ZakatEngineService.convertToEgp(
+                              amount,
+                              cur,
+                              market,
+                            );
+                      })
+                : ZakatEngineService.convertToEgp(
+                    item.loanBalance > 0
+                        ? item.loanBalance
+                        : item.remainingAmount,
+                    item.currency,
+                    market,
+                  );
+            categoryTotalVal -= ZakatEngineService.convertFromEgp(
+              outstanding,
+              mainCurrency,
+              market,
+            );
+          } else {
+            final double share = 1.0;
+            final double gross = ZakatEngineService.convertToEgp(
+              item.marketValue * share,
+              item.currency,
+              market,
+            );
+            categoryTotalVal += ZakatEngineService.convertFromEgp(
+              gross,
+              mainCurrency,
+              market,
+            );
+          }
         }
       }
     }
@@ -396,23 +458,29 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
       }
     }
     double categoryLiabilitiesMain = 0.0;
-    if (widget.categoryType == 'investments' || widget.categoryType == 'property') {
+    if (widget.categoryType == 'investments' ||
+        widget.categoryType == 'property' ||
+        widget.categoryType == 'other_assets') {
       double totalLiabsEgp = 0.0;
       for (final item in filteredItems) {
         if (item is InvestmentAsset) {
           final double unpaidLiabilityEgp = item.installmentPlan.isNotEmpty
-              ? item.installmentPlan.where((inst) => inst['isPaid'] != true).fold(
-                  0.0,
-                  (sum, inst) {
-                    final String instCurrency =
-                        (inst['currency']?.toString().isNotEmpty == true)
-                        ? inst['currency'].toString()
-                        : item.currency;
-                    final double amount = ((inst['amount'] ?? 0) as num).toDouble();
-                    return sum +
-                        ZakatEngineService.convertToEgp(amount, instCurrency, market);
-                  },
-                )
+              ? item.installmentPlan
+                    .where((inst) => inst['isPaid'] != true)
+                    .fold(0.0, (sum, inst) {
+                      final String instCurrency =
+                          (inst['currency']?.toString().isNotEmpty == true)
+                          ? inst['currency'].toString()
+                          : item.currency;
+                      final double amount = ((inst['amount'] ?? 0) as num)
+                          .toDouble();
+                      return sum +
+                          ZakatEngineService.convertToEgp(
+                            amount,
+                            instCurrency,
+                            market,
+                          );
+                    })
               : ZakatEngineService.convertToEgp(
                   item.loanBalance,
                   item.currency,
@@ -519,7 +587,9 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                                             Expanded(
                                               child: Text(
                                                 context.l10n
-                                                    .tr('total_assets')
+                                                    .tr(widget.categoryType == 'liabilities'
+                                                        ? 'total_other_liabilities'
+                                                        : 'total_assets')
                                                     .toUpperCase(),
                                                 maxLines: 1,
                                                 overflow: TextOverflow.ellipsis,
@@ -668,7 +738,7 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                                         ),
                                       ],
                                     ),
-                                   ),
+                                  ),
                                 ],
                               )
                             : Row(
@@ -677,13 +747,15 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                                   // Left Column
                                   Expanded(
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       mainAxisSize: MainAxisSize.min,
                                       children: <Widget>[
                                         Row(
                                           children: <Widget>[
                                             CircleAvatar(
-                                              backgroundColor: Colors.white.withValues(alpha: 0.15),
+                                              backgroundColor: Colors.white
+                                                  .withValues(alpha: 0.15),
                                               radius: 16,
                                               child: Icon(
                                                 headerIcon,
@@ -694,7 +766,11 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                                             const SizedBox(width: 8),
                                             Expanded(
                                               child: Text(
-                                                context.l10n.tr('total_assets').toUpperCase(),
+                                                context.l10n
+                                                    .tr(widget.categoryType == 'liabilities'
+                                                        ? 'total_other_liabilities'
+                                                        : 'total_assets')
+                                                    .toUpperCase(),
                                                 maxLines: 1,
                                                 overflow: TextOverflow.ellipsis,
                                                 style: const TextStyle(
@@ -710,7 +786,8 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                                         const SizedBox(height: 10),
                                         FittedBox(
                                           fit: BoxFit.scaleDown,
-                                          alignment: AlignmentDirectional.centerStart,
+                                          alignment:
+                                              AlignmentDirectional.centerStart,
                                           child: Text(
                                             formattedTotal,
                                             style: const TextStyle(
@@ -720,10 +797,16 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                                             ),
                                           ),
                                         ),
-                                        if (widget.categoryType == 'investments' || widget.categoryType == 'property') ...[
+                                        if (widget.categoryType ==
+                                                'investments' ||
+                                            widget.categoryType == 'property' ||
+                                            widget.categoryType ==
+                                                'other_assets') ...[
                                           const SizedBox(height: 10),
                                           Text(
-                                            context.l10n.tr('liabilities').toUpperCase(),
+                                            context.l10n
+                                                .tr('liabilities')
+                                                .toUpperCase(),
                                             style: const TextStyle(
                                               color: Color(0xFFFFC928),
                                               fontWeight: FontWeight.w700,
@@ -734,7 +817,8 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                                           const SizedBox(height: 4),
                                           FittedBox(
                                             fit: BoxFit.scaleDown,
-                                            alignment: AlignmentDirectional.centerStart,
+                                            alignment: AlignmentDirectional
+                                                .centerStart,
                                             child: Text(
                                               ZakatEngineService.formatCurrency(
                                                 categoryLiabilitiesMain,
@@ -756,7 +840,9 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                                   ),
                                   // Right Column
                                   Container(
-                                    padding: const EdgeInsetsDirectional.only(start: 12),
+                                    padding: const EdgeInsetsDirectional.only(
+                                      start: 12,
+                                    ),
                                     decoration: const BoxDecoration(
                                       border: BorderDirectional(
                                         start: BorderSide(
@@ -766,14 +852,17 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                                       ),
                                     ),
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       mainAxisSize: MainAxisSize.min,
                                       children: <Widget>[
                                         Row(
                                           children: <Widget>[
                                             Icon(
                                               Icons.layers_outlined,
-                                              color: Colors.white.withValues(alpha: 0.75),
+                                              color: Colors.white.withValues(
+                                                alpha: 0.75,
+                                              ),
                                               size: 14,
                                             ),
                                             const SizedBox(width: 6),
@@ -787,7 +876,8 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                                             ),
                                           ],
                                         ),
-                                        if (widget.categoryType == 'gold' && totalGold24kGrams > 0) ...[
+                                        if (widget.categoryType == 'gold' &&
+                                            totalGold24kGrams > 0) ...[
                                           const SizedBox(height: 8),
                                           Text(
                                             '${totalGold24kGrams.toStringAsFixed(1)} g 24K',
@@ -797,7 +887,8 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                                             ),
                                           ),
                                         ],
-                                        if (widget.categoryType == 'silver' && totalSilverGrams > 0) ...[
+                                        if (widget.categoryType == 'silver' &&
+                                            totalSilverGrams > 0) ...[
                                           const SizedBox(height: 8),
                                           Text(
                                             '${totalSilverGrams.toStringAsFixed(1)} g SILVER',
@@ -959,10 +1050,14 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                         cardKey: const Key('assetsEmptyState'),
                         title: isCashCategory
                             ? context.l10n.tr('no_available_cash')
-                            : context.l10n.tr('no_assets_yet'),
+                            : (widget.categoryType == 'liabilities'
+                                ? context.l10n.tr('no_liabilities_yet')
+                                : context.l10n.tr('no_assets_yet')),
                         message: isCashCategory
                             ? context.l10n.tr('no_available_cash_message')
-                            : context.l10n.tr('assets_empty_message'),
+                            : (widget.categoryType == 'liabilities'
+                                ? context.l10n.tr('liabilities_empty_message')
+                                : context.l10n.tr('assets_empty_message')),
                       ),
                     )
                   : ListView.builder(
@@ -1093,10 +1188,17 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                     ? context.l10n.tr('gold')
                     : context.l10n.tr('silver')));
 
-    final bool isMetal = saving.assetType == 'gold' || saving.assetType == 'silver';
-    final String karatSuffix = saving.assetType == 'gold' ? ' | ${saving.unit}K' : (saving.assetType == 'silver' ? ' | 999' : '');
-    final String metalTitle = isMetal ? '$displayTitle$karatSuffix' : displayTitle;
-    final String rightSubText = isMetal ? '${saving.remainingAmount.toStringAsFixed(2)} g' : originalAmountStr;
+    final bool isMetal =
+        saving.assetType == 'gold' || saving.assetType == 'silver';
+    final String karatSuffix = saving.assetType == 'gold'
+        ? ' | ${saving.unit}K'
+        : (saving.assetType == 'silver' ? ' | 999' : '');
+    final String metalTitle = isMetal
+        ? '$displayTitle$karatSuffix'
+        : displayTitle;
+    final String rightSubText = isMetal
+        ? '${saving.remainingAmount.toStringAsFixed(2)} g'
+        : originalAmountStr;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -1217,7 +1319,9 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.14),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.primary.withValues(alpha: 0.14),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
@@ -1244,7 +1348,9 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                             style: TextStyle(
                               fontSize: 14.0,
                               fontWeight: FontWeight.w700,
-                              color: Theme.of(context).brightness == Brightness.dark
+                              color:
+                                  Theme.of(context).brightness ==
+                                      Brightness.dark
                                   ? Colors.white
                                   : const Color(0xFF1F2937),
                             ),
@@ -1256,7 +1362,8 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                           style: TextStyle(
                             fontSize: 14.5,
                             fontWeight: FontWeight.w800,
-                            color: Theme.of(context).brightness == Brightness.dark
+                            color:
+                                Theme.of(context).brightness == Brightness.dark
                                 ? const Color(0xFF34D399)
                                 : const Color(0xFF065F46),
                           ),
@@ -1273,7 +1380,8 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                           style: TextStyle(
                             fontSize: 10.5,
                             fontWeight: FontWeight.w500,
-                            color: Theme.of(context).brightness == Brightness.dark
+                            color:
+                                Theme.of(context).brightness == Brightness.dark
                                 ? const Color(0xFFA3B8B5)
                                 : const Color(0xFF6B7280),
                           ),
@@ -1283,7 +1391,8 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
-                            color: Theme.of(context).brightness == Brightness.dark
+                            color:
+                                Theme.of(context).brightness == Brightness.dark
                                 ? const Color(0xFFA3B8B5)
                                 : const Color(0xFF475569),
                           ),
@@ -1329,31 +1438,39 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
     final String title = source.description.trim().isEmpty
         ? context.l10n.tr('cash')
         : source.description;
-    
+
     String displayTitle = title;
     String? amountExchangedText;
 
     final String lowerTitle = title.toLowerCase().trim();
     if (lowerTitle.startsWith('currency exchange in:')) {
       displayTitle = isArabic ? 'تحويل عملة' : 'Currency exchange';
-      final String afterIn = title.substring(lowerTitle.indexOf('currency exchange in:') + 'currency exchange in:'.length).trim();
+      final String afterIn = title
+          .substring(
+            lowerTitle.indexOf('currency exchange in:') +
+                'currency exchange in:'.length,
+          )
+          .trim();
       final List<String> parts = afterIn.split(RegExp(r'→|->|–|-'));
       if (parts.isNotEmpty) {
         final String originalExchanged = parts[0].trim();
-        amountExchangedText = isArabic 
-            ? 'المبلغ المحول: $originalExchanged' 
+        amountExchangedText = isArabic
+            ? 'المبلغ المحول: $originalExchanged'
             : 'Amount Exchanged : $originalExchanged';
       }
     } else {
-      final List<String> parts = title.split(RegExp(r'\s+from\s+', caseSensitive: false));
+      final List<String> parts = title.split(
+        RegExp(r'\s+from\s+', caseSensitive: false),
+      );
       if (parts.length > 1) {
         final String rawPrefix = parts[0].trim();
         final String rawSuffix = parts[1].trim();
         final String lowerPrefix = rawPrefix.toLowerCase();
-        
+
         if (lowerPrefix.contains('bank transfer')) {
           displayTitle = isArabic ? 'تحويل بنكي' : 'Bank Transfer';
-        } else if (lowerPrefix.contains('account deposit') || lowerPrefix.contains('salary deposit')) {
+        } else if (lowerPrefix.contains('account deposit') ||
+            lowerPrefix.contains('salary deposit')) {
           displayTitle = isArabic ? 'إيداع في الحساب' : 'Account Deposit';
         } else if (lowerPrefix.contains('deposit')) {
           displayTitle = isArabic ? 'إيداع' : 'Deposit';
@@ -1364,7 +1481,7 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
         } else {
           displayTitle = rawPrefix;
         }
-        
+
         amountExchangedText = isArabic ? 'من: $rawSuffix' : 'From: $rawSuffix';
       }
     }
@@ -1483,7 +1600,9 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                                 style: TextStyle(
                                   fontSize: 14.0,
                                   fontWeight: FontWeight.w700,
-                                  color: Theme.of(context).brightness == Brightness.dark
+                                  color:
+                                      Theme.of(context).brightness ==
+                                          Brightness.dark
                                       ? Colors.white
                                       : const Color(0xFF1F2937),
                                 ),
@@ -1499,7 +1618,9 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                               style: TextStyle(
                                 fontSize: 14.5,
                                 fontWeight: FontWeight.w800,
-                                color: Theme.of(context).brightness == Brightness.dark
+                                color:
+                                    Theme.of(context).brightness ==
+                                        Brightness.dark
                                     ? const Color(0xFF34D399)
                                     : const Color(0xFF065F46),
                               ),
@@ -1516,7 +1637,9 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                               style: TextStyle(
                                 fontSize: 10.5,
                                 fontWeight: FontWeight.w500,
-                                color: Theme.of(context).brightness == Brightness.dark
+                                color:
+                                    Theme.of(context).brightness ==
+                                        Brightness.dark
                                     ? const Color(0xFFA3B8B5)
                                     : const Color(0xFF6B7280),
                               ),
@@ -1527,7 +1650,9 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                                 style: TextStyle(
                                   fontSize: 10.5,
                                   fontWeight: FontWeight.w500,
-                                  color: Theme.of(context).brightness == Brightness.dark
+                                  color:
+                                      Theme.of(context).brightness ==
+                                          Brightness.dark
                                       ? const Color(0xFFA3B8B5)
                                       : const Color(0xFF6B7280),
                                 ),
@@ -1547,7 +1672,8 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                   runSpacing: 4,
                   children: <Widget>[
                     _buildBadge(
-                      label: '${isArabic ? 'الأصلي' : 'Original'}: ${original.replaceAll(RegExp(r'\.\d{2}'), '')}',
+                      label:
+                          '${isArabic ? 'الأصلي' : 'Original'}: ${original.replaceAll(RegExp(r'\.\d{2}'), '')}',
                       textColor: const Color(0xFFB45309),
                       bgColor: const Color(0xFFFEF3C7),
                       darkTextColor: const Color(0xFFFBBF24),
@@ -1555,7 +1681,8 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                       isDark: Theme.of(context).brightness == Brightness.dark,
                     ),
                     _buildBadge(
-                      label: '${isArabic ? 'المتبقي' : 'Remaining'}: ${remaining.replaceAll(RegExp(r'\.\d{2}'), '')}',
+                      label:
+                          '${isArabic ? 'المتبقي' : 'Remaining'}: ${remaining.replaceAll(RegExp(r'\.\d{2}'), '')}',
                       textColor: const Color(0xFF0F766E),
                       bgColor: const Color(0xFFCCFBF1),
                       darkTextColor: const Color(0xFF99F6E4),
@@ -1800,7 +1927,7 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
       mainCurrency,
       market,
     );
-    final double share = (asset.ownershipSharePct / 100).clamp(0, 1);
+    final double share = 1.0;
     final double gross = ZakatEngineService.convertToEgp(
       asset.marketValue * share,
       asset.currency,
@@ -1812,35 +1939,70 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
       market,
     );
 
-    final String formattedValue = ZakatEngineService.formatCurrency(
-      grossValueInMainCurrency,
-      mainCurrency,
-      isArabic: isArabic,
+    final String type = ZakatEngineService.normaliseInvestmentType(
+      asset.investmentType,
     );
+    final String formattedValue = type == 'liability'
+        ? '-${ZakatEngineService.formatCurrency(unpaidLiabilityMain, mainCurrency, isArabic: isArabic)}'
+        : ZakatEngineService.formatCurrency(
+            grossValueInMainCurrency,
+            mainCurrency,
+            isArabic: isArabic,
+          );
 
     double paidInstallmentsInAssetCurrency = 0.0;
     for (final Map<String, dynamic> item in asset.installmentPlan) {
       if (item['isPaid'] == true) {
-        final String itemCurrency = (item['currency']?.toString().isNotEmpty == true)
+        final String itemCurrency =
+            (item['currency']?.toString().isNotEmpty == true)
             ? item['currency'].toString()
             : asset.currency;
         final double amount = ((item['amount'] ?? 0) as num).toDouble();
         if (itemCurrency == asset.currency) {
           paidInstallmentsInAssetCurrency += amount;
         } else {
-          final double amountEgp = ZakatEngineService.convertToEgp(amount, itemCurrency, market);
-          paidInstallmentsInAssetCurrency += ZakatEngineService.convertFromEgp(amountEgp, asset.currency, market);
+          final double amountEgp = ZakatEngineService.convertToEgp(
+            amount,
+            itemCurrency,
+            market,
+          );
+          paidInstallmentsInAssetCurrency += ZakatEngineService.convertFromEgp(
+            amountEgp,
+            asset.currency,
+            market,
+          );
         }
       }
     }
-    final double totalPaidAssetCurrency = asset.paidAmount + paidInstallmentsInAssetCurrency;
-    final String paidValueFormatted = ZakatEngineService.formatCurrency(totalPaidAssetCurrency, asset.currency, isArabic: isArabic);
+    final double initialPaid = asset.paidAmount >= 0 ? asset.paidAmount : 0.0;
+    final double totalPaidAssetCurrency =
+        initialPaid + paidInstallmentsInAssetCurrency;
+
+    final double totalPaidEgp = ZakatEngineService.convertToEgp(
+      totalPaidAssetCurrency,
+      asset.currency,
+      market,
+    );
+    final double totalPaidMain = ZakatEngineService.convertFromEgp(
+      totalPaidEgp,
+      mainCurrency,
+      market,
+    );
+    final String paidValueFormatted = ZakatEngineService.formatCurrency(
+      totalPaidMain,
+      mainCurrency,
+      isArabic: isArabic,
+    );
 
     final String displayTitle = asset.location.isNotEmpty
         ? asset.location
-        : (ZakatEngineService.isCompanyInvestmentType(asset.investmentType)
+        : (type == 'company_investment'
               ? context.l10n.tr('company_shares')
-              : context.l10n.tr('property'));
+              : (type == 'car'
+                    ? (context.l10n.tr('car') ?? 'Car')
+                    : (type == 'liability'
+                          ? (context.l10n.tr('liability') ?? 'Liability / Loan')
+                          : context.l10n.tr('property'))));
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -1892,34 +2054,39 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: <Widget>[
-              if (widget.categoryType == 'investments')
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF10B981).withValues(alpha: 0.14),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.pie_chart_rounded,
-                    color: Color(0xFF10B981),
-                    size: 22,
-                  ),
-                )
-              else
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFD97706).withValues(alpha: 0.14),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.home_work_rounded,
-                    color: Color(0xFFD97706),
-                    size: 22,
-                  ),
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color:
+                      (type == 'company_investment'
+                              ? const Color(0xFF10B981)
+                              : (type == 'car'
+                                    ? const Color(0xFF0284C7)
+                                    : (type == 'liability'
+                                          ? const Color(0xFFDC2626)
+                                          : const Color(0xFFD97706))))
+                          .withValues(alpha: 0.14),
+                  shape: BoxShape.circle,
                 ),
+                child: Icon(
+                  type == 'company_investment'
+                      ? Icons.pie_chart_rounded
+                      : (type == 'car'
+                            ? Icons.directions_car_outlined
+                            : (type == 'liability'
+                                  ? Icons.payment_outlined
+                                  : Icons.home_work_rounded)),
+                  color: type == 'company_investment'
+                      ? const Color(0xFF10B981)
+                      : (type == 'car'
+                            ? const Color(0xFF0284C7)
+                            : (type == 'liability'
+                                  ? const Color(0xFFDC2626)
+                                  : const Color(0xFFD97706))),
+                  size: 22,
+                ),
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -1938,7 +2105,9 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                             style: TextStyle(
                               fontSize: 14.0,
                               fontWeight: FontWeight.w700,
-                              color: Theme.of(context).brightness == Brightness.dark
+                              color:
+                                  Theme.of(context).brightness ==
+                                      Brightness.dark
                                   ? Colors.white
                                   : const Color(0xFF1F2937),
                             ),
@@ -1950,9 +2119,15 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                           style: TextStyle(
                             fontSize: 14.5,
                             fontWeight: FontWeight.w800,
-                            color: Theme.of(context).brightness == Brightness.dark
-                                ? const Color(0xFF34D399)
-                                : const Color(0xFF065F46),
+                            color: type == 'liability'
+                                ? (Theme.of(context).brightness ==
+                                          Brightness.dark
+                                      ? const Color(0xFFF87171)
+                                      : const Color(0xFFB91C1C))
+                                : (Theme.of(context).brightness ==
+                                          Brightness.dark
+                                      ? const Color(0xFF34D399)
+                                      : const Color(0xFF065F46)),
                           ),
                         ),
                       ],
@@ -1963,35 +2138,50 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: <Widget>[
                         Text(
-                          '${asset.valuationDate} • ${asset.ownershipSharePct.toStringAsFixed(0)}%',
+                          '${asset.valuationDate}',
                           style: TextStyle(
                             fontSize: 10.5,
                             fontWeight: FontWeight.w500,
-                            color: Theme.of(context).brightness == Brightness.dark
+                            color:
+                                Theme.of(context).brightness == Brightness.dark
                                 ? const Color(0xFFA3B8B5)
                                 : const Color(0xFF6B7280),
                           ),
                         ),
-                        if (asset.paidAmount >= 0) ...[
+                        if (asset.paidAmount >= 0 ||
+                            paidInstallmentsInAssetCurrency > 0) ...[
                           const SizedBox(width: 8),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
                             decoration: BoxDecoration(
-                              color: Theme.of(context).brightness == Brightness.dark
+                              color:
+                                  Theme.of(context).brightness ==
+                                      Brightness.dark
                                   ? const Color(0xFF042F2E)
                                   : const Color(0xFF0F766E),
                               borderRadius: BorderRadius.circular(6),
                               border: Border.all(
-                                color: Theme.of(context).brightness == Brightness.dark
-                                    ? const Color(0xFF99F6E4).withValues(alpha: 0.25)
+                                color:
+                                    Theme.of(context).brightness ==
+                                        Brightness.dark
+                                    ? const Color(
+                                        0xFF99F6E4,
+                                      ).withValues(alpha: 0.25)
                                     : Colors.transparent,
                                 width: 0.5,
                               ),
                             ),
                             child: Text(
-                              isArabic ? 'مدفوع: $paidValueFormatted' : 'Paid: $paidValueFormatted',
+                              isArabic
+                                  ? 'مدفوع: $paidValueFormatted'
+                                  : 'Paid: $paidValueFormatted',
                               style: TextStyle(
-                                color: Theme.of(context).brightness == Brightness.dark
+                                color:
+                                    Theme.of(context).brightness ==
+                                        Brightness.dark
                                     ? const Color(0xFF99F6E4)
                                     : Colors.white,
                                 fontSize: 10,
@@ -2020,10 +2210,14 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                               vertical: 6,
                             ),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFFFC928).withValues(alpha: 0.12),
+                              color: const Color(
+                                0xFFFFC928,
+                              ).withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(6),
                               border: Border.all(
-                                color: const Color(0xFFFFC928).withValues(alpha: 0.45),
+                                color: const Color(
+                                  0xFFFFC928,
+                                ).withValues(alpha: 0.45),
                                 width: 0.7,
                               ),
                             ),
@@ -2368,6 +2562,11 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                                                   formattedDate;
                                               updatedPlan[index]['recurrenceDate'] =
                                                   formattedDate;
+                                              final List<Map<String, dynamic>>
+                                              sortedPlan =
+                                                  InvestmentAsset.sortInstallmentPlan(
+                                                    updatedPlan,
+                                                  );
 
                                               final updatedAsset = InvestmentAsset(
                                                 id: latestAsset.id,
@@ -2390,7 +2589,7 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                                                     latestAsset.paidAmount,
                                                 remainingAmount:
                                                     latestAsset.remainingAmount,
-                                                installmentPlan: updatedPlan,
+                                                installmentPlan: sortedPlan,
                                                 valuationDate:
                                                     latestAsset.valuationDate,
                                                 marketValue:
@@ -2667,13 +2866,19 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
         ),
       );
     } else if (widget.categoryType == 'investments' ||
-        widget.categoryType == 'property') {
+        widget.categoryType == 'property' ||
+        widget.categoryType == 'other_assets' ||
+        widget.categoryType == 'liabilities') {
       Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => AddInvestmentScreen(
             initialAssetType: widget.categoryType == 'investments'
                 ? 'company_share'
-                : 'property',
+                : (widget.categoryType == 'liabilities'
+                    ? 'liability'
+                    : (widget.categoryType == 'other_assets'
+                        ? 'car'
+                        : 'property')),
           ),
         ),
       );

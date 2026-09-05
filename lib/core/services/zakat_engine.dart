@@ -608,10 +608,17 @@ class ZakatEngineService {
     required InvestmentAsset asset,
     required MarketData marketData,
   }) {
+    final String type = normaliseInvestmentType(asset.investmentType);
+    if (type == 'liability' || type == 'loan') {
+      return 0.0;
+    }
+    final double rate = type == 'car'
+        ? -asset.inflationRateAnnual
+        : asset.inflationRateAnnual;
     final double fallbackMarketValue = estimateInflationAdjustedValue(
       originalPrice: asset.originalPrice,
       valuationDate: asset.valuationDate,
-      inflationRateAnnual: asset.inflationRateAnnual,
+      inflationRateAnnual: rate,
       ownershipType: 'fully_owned',
       paidAmount: asset.originalPrice,
     );
@@ -621,9 +628,7 @@ class ZakatEngineService {
         ? math.max(0, mv)
         : math.max(0, fallbackMarketValue);
 
-    final double share = asset.ownershipSharePct.isFinite
-        ? math.min(1, math.max(0, asset.ownershipSharePct / 100))
-        : 1;
+    final double share = 1.0;
     effectiveMarketValue *= share;
 
     return convertToEgp(effectiveMarketValue, asset.currency, marketData);
@@ -728,6 +733,12 @@ class ZakatEngineService {
             return sum + tx.amount;
           }
           if (tx.type == 'transfer') {
+            if (tx.transferSourceId == 'cash') return sum - tx.amount;
+            if (tx.transferDestinationId == 'cash') return sum + tx.amount;
+            return sum;
+          }
+          if (tx.type == 'expense' &&
+              (tx.paymentSourceId ?? '').trim().isNotEmpty) {
             return sum;
           }
           if (lastRollover != null &&
@@ -919,8 +930,7 @@ class ZakatEngineService {
     return investments
         .where(
           (InvestmentAsset asset) =>
-              normaliseInvestmentType(asset.investmentType) !=
-              'company_investment',
+              normaliseInvestmentType(asset.investmentType) == 'real_estate',
         )
         .fold<double>(0, (double sum, InvestmentAsset asset) {
           return sum +

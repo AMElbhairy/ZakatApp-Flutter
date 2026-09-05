@@ -446,6 +446,13 @@ class ReconciliationService {
       for (final Map<String, dynamic> tx in txForCurrency) {
         final String type = (tx['type'] ?? '').toString();
         final double amount = _asDouble(tx['amount']);
+        if (type == 'transfer') {
+          final String source = (tx['transferSourceId'] ?? '').toString();
+          final String destination = (tx['transferDestinationId'] ?? '')
+              .toString();
+          if (destination == 'cash') runningBalance += amount;
+          if (source != 'cash') continue;
+        }
         if (type == 'income') {
           if (_asBool(tx['rolledOver']) && _asDouble(tx['rolledAmount']) > 0) {
             runningBalance += (amount - _asDouble(tx['rolledAmount'])).clamp(
@@ -457,7 +464,10 @@ class ReconciliationService {
           }
           continue;
         }
-        if (type != 'expense') continue;
+        if (type != 'expense' && type != 'transfer') continue;
+        if ((tx['paymentSourceId'] ?? '').toString().trim().isNotEmpty) {
+          continue;
+        }
 
         final String date = (tx['date'] ?? '').toString();
         if (lastRollover.isNotEmpty &&
@@ -539,6 +549,24 @@ class ReconciliationService {
     for (final Map<String, dynamic> tx in sorted) {
       final String type = (tx['type'] ?? '').toString();
       final double amount = _asDouble(tx['amount']);
+      if (type == 'transfer') {
+        final String source = (tx['transferSourceId'] ?? '').toString();
+        final String destination = (tx['transferDestinationId'] ?? '')
+            .toString();
+        if (destination == 'cash') {
+          lots.add(<String, dynamic>{
+            'id': 'transfer_${tx['id']}',
+            'date': tx['date'],
+            'originalAmount': amount,
+            'remainingAmount': amount,
+            'rolledOver': false,
+            'currency': currency,
+            'category': tx['category'],
+            'description': tx['description'],
+          });
+        }
+        if (source != 'cash') continue;
+      }
       if (type == 'income') {
         double effectiveAmount = amount;
         if (_asBool(tx['rolledOver']) && _asDouble(tx['rolledAmount']) > 0) {
@@ -555,7 +583,10 @@ class ReconciliationService {
           'category': tx['category'],
           'description': tx['description'],
         });
-      } else if (type == 'expense') {
+      } else if (type == 'expense' || type == 'transfer') {
+        if ((tx['paymentSourceId'] ?? '').toString().trim().isNotEmpty) {
+          continue;
+        }
         final String date = (tx['date'] ?? '').toString();
         if (lastRollover != null &&
             lastRollover.isNotEmpty &&
@@ -613,6 +644,9 @@ class ReconciliationService {
         return sum + amount;
       }
       if (type == 'expense') {
+        if ((tx['paymentSourceId'] ?? '').toString().trim().isNotEmpty) {
+          return sum;
+        }
         final String date = (tx['date'] ?? '').toString();
         if (lastRollover != null &&
             lastRollover.isNotEmpty &&
@@ -621,6 +655,13 @@ class ReconciliationService {
           return sum;
         }
         return sum - amount;
+      }
+      if (type == 'transfer') {
+        final String source = (tx['transferSourceId'] ?? '').toString();
+        final String destination = (tx['transferDestinationId'] ?? '')
+            .toString();
+        if (source == 'cash') return sum - amount;
+        if (destination == 'cash') return sum + amount;
       }
       return sum;
     });

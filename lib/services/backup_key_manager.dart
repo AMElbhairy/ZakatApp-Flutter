@@ -37,7 +37,7 @@ class BackupKeyManager {
         _encryptionService = encryptionService ?? SyncEncryptionService(),
         _nowProvider = nowProvider ?? DateTime.now,
         _appVersion = appVersion ??
-            const String.fromEnvironment('APP_VERSION', defaultValue: '1.0.0');
+            const String.fromEnvironment('APP_VERSION', defaultValue: '1.5.0');
 
   static const int currentVersion = 1;
   static const String _wrappingContext = 'zakatapp_backup_key_recovery_v1';
@@ -173,6 +173,14 @@ class BackupKeyManager {
         BackupKeyRecoveryException.recoveryUnavailableMessage,
       );
     }
+  }
+
+  Future<void> deleteRecoveryKeyFromFirestore({String? uid}) async {
+    final String targetUid = (uid ?? _auth.currentUser?.uid ?? '').trim();
+    if (targetUid.isEmpty) return;
+    try {
+      await _document(targetUid).delete();
+    } catch (_) {}
   }
 
   DocumentReference<Map<String, dynamic>> _document(String uid) {

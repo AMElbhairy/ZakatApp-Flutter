@@ -20,12 +20,6 @@ const Color _cashFlowEmerald = Color(0xFF087A5A);
 const Color _cashFlowExpenseRedOrange = Color(0xFFD9433F);
 const Color _cashFlowNegativeRed = Color(0xFFD92D20);
 const Color _cashFlowNeutral = Color(0xFF171A18);
-const Color _cashFlowBackground = Color(0xFFFBFAF6);
-const Color _cashFlowSecondaryText = Color(0xFF7C8783);
-const Color _cashFlowAxisText = Color(0xFF8CA5A1);
-const Color _cashFlowGrid = Color(0xFFE9E6DE);
-const Color _cashFlowDivider = Color(0xFFDED9CD);
-const Color _cashFlowTooltipBorder = Color(0xFFDDD8CC);
 
 enum CashFlowViewType {
   netFlow,
@@ -166,6 +160,7 @@ class _CashFlowChartScreenState extends State<CashFlowChartScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final bool isDark = theme.brightness == Brightness.dark;
     final isArabic = Localizations.localeOf(context).languageCode == 'ar';
     final tokens = theme.extension<PremiumThemeTokens>() ?? PremiumThemePresets.dark;
 
@@ -179,7 +174,7 @@ class _CashFlowChartScreenState extends State<CashFlowChartScreen> {
 
     if (plan == null) {
       return Scaffold(
-        backgroundColor: _cashFlowBackground,
+        backgroundColor: tokens.colors.background,
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -219,7 +214,7 @@ class _CashFlowChartScreenState extends State<CashFlowChartScreen> {
 
     if (points.isEmpty) {
       return Scaffold(
-        backgroundColor: _cashFlowBackground,
+        backgroundColor: tokens.colors.background,
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -384,7 +379,7 @@ class _CashFlowChartScreenState extends State<CashFlowChartScreen> {
         ? (variance >= 0 ? tokens.colors.danger : tokens.colors.success)
         : (variance >= 0 ? tokens.colors.success : tokens.colors.danger);
     final double forecastedEndBalance = points.last.actualBalance ?? points.last.plannedBalance;
-    final Color balanceNeutralColor = _cashFlowNeutral;
+    final Color balanceNeutralColor = isDark ? tokens.colors.textPrimary : _cashFlowNeutral;
 
     final String planYearLabel = isArabic
         ? 'الخطة المالية · ${plan.name}'
@@ -535,8 +530,8 @@ class _CashFlowChartScreenState extends State<CashFlowChartScreen> {
       safeMax = math.max(safeMax, 0.0);
     }
 
-      return Scaffold(
-        backgroundColor: _cashFlowBackground,
+    return Scaffold(
+        backgroundColor: tokens.colors.background,
       body: SafeArea(
         child: Column(
           children: <Widget>[
@@ -569,7 +564,7 @@ class _CashFlowChartScreenState extends State<CashFlowChartScreen> {
                 ],
               ),
             ),
-            const Divider(height: 1, thickness: 0.5),
+            Divider(height: 1, thickness: 0.5, color: tokens.colors.divider),
 
             // 2. Summary stats values row
             Padding(
@@ -864,12 +859,12 @@ class _CashFlowChartScreenState extends State<CashFlowChartScreen> {
                                             padding: const EdgeInsets.all(10),
                                             width: 180,
                                             decoration: BoxDecoration(
-                                              color: Colors.white.withValues(alpha: 0.95),
+                                              color: tokens.colors.card,
                                               borderRadius: BorderRadius.circular(8),
-                                              border: Border.all(color: _cashFlowTooltipBorder),
+                                              border: Border.all(color: tokens.colors.divider),
                                               boxShadow: [
                                                 BoxShadow(
-                                                  color: Colors.black.withValues(alpha: 0.25),
+                                                  color: Colors.black.withValues(alpha: isDark ? 0.42 : 0.25),
                                                   blurRadius: 8,
                                                   offset: const Offset(0, 4),
                                                 ),
@@ -978,7 +973,7 @@ class _StickyYAxisPainter extends CustomPainter {
       final NumberFormat numberFormatter = NumberFormat.compact(locale: selectedLocale);
       textPainter.text = TextSpan(
         text: numberFormatter.format(yVal),
-        style: const TextStyle(color: _cashFlowAxisText, fontSize: 10),
+        style: TextStyle(color: tokens.colors.textSecondary, fontSize: 10),
       );
       textPainter.layout();
       textPainter.paint(
@@ -1009,11 +1004,13 @@ class _SummaryStatTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tokens = theme.extension<PremiumThemeTokens>() ?? PremiumThemePresets.dark;
     return Column(
       children: [
         Text(
           label,
-          style: const TextStyle(fontSize: 10, color: _cashFlowSecondaryText, fontWeight: FontWeight.bold),
+          style: TextStyle(fontSize: 10, color: tokens.colors.textSecondary, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 2),
         Text(
@@ -1040,23 +1037,25 @@ class _SelectorButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tokens = theme.extension<PremiumThemeTokens>() ?? PremiumThemePresets.dark;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
         child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? _cashFlowEmerald : Colors.white,
+          color: isSelected ? _cashFlowEmerald : tokens.colors.surface,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isSelected ? _cashFlowEmerald : _cashFlowDivider,
+            color: isSelected ? _cashFlowEmerald : tokens.colors.divider,
             width: 1,
           ),
         ),
         child: Text(
           label,
           style: TextStyle(
-            color: isSelected ? Colors.white : _cashFlowNeutral,
+            color: isSelected ? Colors.white : tokens.colors.textPrimary,
             fontSize: 12,
             fontWeight: FontWeight.bold,
           ),
@@ -1212,7 +1211,7 @@ class _CashFlowChartPainter extends CustomPainter {
 
     // 1. Draw grid lines
     final gridLinePaint = Paint()
-      ..color = _cashFlowGrid.withValues(alpha: 0.9)
+      ..color = tokens.colors.divider.withValues(alpha: 0.7)
       ..strokeWidth = 0.5;
 
     for (int i = 0; i <= 4; i++) {
@@ -1230,7 +1229,7 @@ class _CashFlowChartPainter extends CustomPainter {
     // 2. Draw Zero Baseline
     if (safeMin < 0.0 && safeMax > 0.0) {
       final zeroPaint = Paint()
-        ..color = _cashFlowAxisText.withValues(alpha: 0.8)
+        ..color = tokens.colors.textSecondary.withValues(alpha: 0.7)
         ..strokeWidth = 1.0;
       canvas.drawLine(
         Offset(leftMargin, getY(0.0)),
@@ -1249,7 +1248,7 @@ class _CashFlowChartPainter extends CustomPainter {
       textPainter.text = TextSpan(
         text: monthStr,
         style: TextStyle(
-          color: hoveredIndex == i ? _cashFlowPlannedGold : _cashFlowSecondaryText,
+          color: hoveredIndex == i ? _cashFlowPlannedGold : tokens.colors.textSecondary,
           fontWeight: hoveredIndex == i ? FontWeight.bold : FontWeight.normal,
           fontSize: 9,
         ),

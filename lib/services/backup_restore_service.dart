@@ -29,12 +29,15 @@ class BackupRestoreService {
     String rawJson, {
     bool allowWhenLocalDataExists = false,
     String? expectedUserId,
+    bool allowCrossAccount = false,
   }) async {
     _ensureConflictSafety(allowWhenLocalDataExists);
 
     final LegacyMigrationReport report = _migrationService
         .parseAndMigrateWithReport(rawJson);
-    _ensureOwnership(report.state, expectedUserId);
+    if (!allowCrossAccount) {
+      _ensureOwnership(report.state, expectedUserId);
+    }
     final String effectiveUserId = _resolveEffectiveUserId(expectedUserId);
     final Map<String, dynamic> normalized = Map<String, dynamic>.from(
       report.state,
@@ -65,12 +68,15 @@ class BackupRestoreService {
     String rawJson, {
     bool allowWhenLocalDataExists = false,
     String? expectedUserId,
+    bool allowCrossAccount = false,
   }) async {
     _ensureConflictSafety(allowWhenLocalDataExists);
 
     final LegacyMigrationReport report = _migrationService
         .parseAndMigrateWithReport(rawJson);
-    _ensureOwnership(report.state, expectedUserId);
+    if (!allowCrossAccount) {
+      _ensureOwnership(report.state, expectedUserId);
+    }
     final String effectiveUserId = _resolveEffectiveUserId(expectedUserId);
     final Map<String, dynamic> current = controller.state.toJson();
     final Map<String, dynamic> incoming = report.state;
@@ -140,6 +146,13 @@ class BackupRestoreService {
     merged['defaultEntryCurrency'] =
         (incoming['defaultEntryCurrency'] ?? current['defaultEntryCurrency'])
             .toString();
+    merged['financialMonthCycle'] =
+        (incoming['financialMonthCycle'] ?? current['financialMonthCycle'])
+            .toString();
+    merged['financialMonthStartDay'] =
+        incoming.containsKey('financialMonthStartDay')
+        ? incoming['financialMonthStartDay']
+        : current['financialMonthStartDay'];
     merged['zakatMethod'] = (incoming['zakatMethod'] ?? current['zakatMethod'])
         .toString();
     merged['zakatAnnualDate'] =

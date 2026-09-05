@@ -24,6 +24,7 @@ import '../models/merchant_rule.dart';
 import '../models/merchant_confirmation.dart';
 import '../models/capture_analytics.dart';
 import '../models/correction_feedback.dart';
+import '../models/credit_card.dart';
 import '../models/user_profile.dart';
 import '../core/utils/category_visuals.dart';
 import 'android_sms_capture_service.dart';
@@ -64,6 +65,7 @@ import 'reconciliation_service.dart';
 import '../core/services/zakat_engine.dart';
 import 'biometric_service.dart';
 import 'firestore_sync_manager.dart';
+import 'local_backup_service.dart';
 import 'secure_storage_service.dart';
 import 'smart_capture_parser.dart';
 import '../data/sync/local_sync_pipeline.dart';
@@ -90,9 +92,11 @@ class AppStateController extends ChangeNotifier {
     Duration pushDebounceDuration = const Duration(seconds: 15),
     SmartCaptureAlertService? smartCaptureAlertService,
     SecureStorageService? secureStorageService,
+    LocalBackupService? localBackupService,
   }) : _activeState = AppStateDefaults.create(),
        secureStorageService =
            secureStorageService ?? const SecureStorageService(),
+       localBackupService = localBackupService ?? LocalBackupService(),
        marketDataApiService =
            marketDataApiService ?? MarketDataApiServiceImpl(),
        reconciliationService = reconciliationService ?? ReconciliationService(),
@@ -115,6 +119,7 @@ class AppStateController extends ChangeNotifier {
   final bool enableBackgroundSync;
   final bool enableMarketAutoRefresh;
   final SecureStorageService secureStorageService;
+  final LocalBackupService localBackupService;
   final bool _sqliteEnabled;
   final bool _ownsDatabase;
 
@@ -474,6 +479,7 @@ class AppStateController extends ChangeNotifier {
         throw StateError('Hydration validation failed: fallback rejected');
       }
 
+      bool repairedIOSSmartCapture = false;
       await runZoned(() async {
         if (userId != null && userId.trim().isNotEmpty) {
           _state = _state.copyWith(userId: userId, loadedUserId: userId);
@@ -508,12 +514,49 @@ class AppStateController extends ChangeNotifier {
           userId: userId,
         );
 
+        // Supplementary cards mirror their parent even when restored from an
+        // older snapshot that contains stale inherited values.
+        ref.value = ref.value.copyWith(
+          creditCards: _inheritParentValues(ref.value.creditCards),
+        );
+
+        if (Platform.isIOS && !ref.value.smartCaptureEnabled) {
+          ref.value = ref.value.copyWith(smartCaptureEnabled: true);
+          repairedIOSSmartCapture = true;
+        }
+
         // Swap to the active state atomically at the very end of successful hydration:
         _activeState = ref.value;
       }, zoneValues: {#hydrationState: ref});
 
+      if (repairedIOSSmartCapture) {
+        await save();
+      }
+
       _setHydrationPhase(AppHydrationPhase.ready, reason: 'load_complete');
-      await processDueRecurringTransactions(reason: 'load');
+      try {
+        final String hydratedLang = _state.languagePreference
+            .trim()
+            .toLowerCase();
+        if (hydratedLang.isNotEmpty) {
+          final SharedPreferences prefs = await SharedPreferences.getInstance();
+          if (prefs.getString('language_preference') != hydratedLang) {
+            await prefs.setString('language_preference', hydratedLang);
+          }
+        }
+      } catch (e) {
+        debugPrint(
+          'Error syncing language preference to SharedPreferences: $e',
+        );
+      }
+      try {
+        await processDueRecurringTransactions(reason: 'load');
+      } catch (e, st) {
+        debugPrint(
+          'AppStateController.load: failed to process recurring transactions: $e',
+        );
+        debugPrintStack(stackTrace: st);
+      }
 
       final ReconciliationResult reconciled = reconciliationService
           .reconcileExpensesWithSavings(_state);
@@ -677,12 +720,6 @@ class AppStateController extends ChangeNotifier {
 
   Future<void> startMarketAutoRefresh({bool refreshImmediately = true}) async {
     if (!enableMarketAutoRefresh) {
-      return;
-    }
-    // Preserve any existing saved market snapshot so calculations remain tied
-    // to the database/export data unless the user explicitly refreshes.
-    if (currentMarketSnapshot.hasRequiredData ||
-        currentMarketSnapshot.lastUpdated.trim().isNotEmpty) {
       return;
     }
     // Always refresh immediately when the app re-enters the active session.
@@ -1339,10 +1376,12 @@ class AppStateController extends ChangeNotifier {
       _state,
       settings,
     );
-    if (_userSettingsEqual(_state, mergedState)) return;
+    final AppStateModel platformState = _normalizePlatformState(mergedState);
+    if (_userSettingsEqual(_state, platformState)) return;
     _isApplyingRemoteSync = true;
     try {
-      _state = mergedState.copyWith(
+      _state = platformState.copyWith(
+        creditCards: _inheritParentValues(platformState.creditCards),
         lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
       );
       await save();
@@ -1589,6 +1628,15 @@ class AppStateController extends ChangeNotifier {
               Map<String, dynamic>.from(settings['captureAnalytics'] as Map),
             )
           : current.captureAnalytics,
+      creditCards: settings['credit_cards'] is List
+          ? (settings['credit_cards'] as List)
+                .whereType<Map>()
+                .map(
+                  (Map<dynamic, dynamic> card) =>
+                      CreditCard.fromJson(Map<String, dynamic>.from(card)),
+                )
+                .toList(growable: false)
+          : current.creditCards,
     );
   }
 
@@ -1598,6 +1646,7 @@ class AppStateController extends ChangeNotifier {
       'appPreferences': <String, dynamic>{
         'mainCurrency': state.mainCurrency,
         'defaultEntryCurrency': state.defaultEntryCurrency,
+        'financialMonthCycle': state.financialMonthCycle,
         'languagePreference': state.languagePreference,
         'themeMode': state.themeMode,
         'zakatScheduleFilter': state.zakatScheduleFilter,
@@ -1626,6 +1675,9 @@ class AppStateController extends ChangeNotifier {
       },
       'merchantAliases': state.merchantAliases,
       'captureAnalytics': state.captureAnalytics.toJson(),
+      'credit_cards': state.creditCards
+          .map((CreditCard card) => card.toJson())
+          .toList(growable: false),
     };
   }
 
@@ -1658,6 +1710,15 @@ class AppStateController extends ChangeNotifier {
       processedExpenseIds: settings['processed_expense_ids'] is List
           ? _asStringList(settings['processed_expense_ids'])
           : current.processedExpenseIds,
+      creditCards: settings['credit_cards'] is List
+          ? (settings['credit_cards'] as List)
+                .whereType<Map>()
+                .map(
+                  (Map<dynamic, dynamic> card) =>
+                      CreditCard.fromJson(Map<String, dynamic>.from(card)),
+                )
+                .toList(growable: false)
+          : current.creditCards,
       zakatMethod: settings.containsKey('zakat_method')
           ? settings['zakat_method'].toString()
           : current.zakatMethod,
@@ -1678,6 +1739,9 @@ class AppStateController extends ChangeNotifier {
       defaultEntryCurrency: settings.containsKey('default_entry_currency')
           ? settings['default_entry_currency'].toString()
           : current.defaultEntryCurrency,
+      financialMonthCycle: settings.containsKey('financial_month_cycle')
+          ? settings['financial_month_cycle'].toString()
+          : current.financialMonthCycle,
       languagePreference: settings.containsKey('language_preference')
           ? settings['language_preference'].toString()
           : current.languagePreference,
@@ -1754,12 +1818,16 @@ class AppStateController extends ChangeNotifier {
       'zakat_paid_months': state.zakatPaidMonths,
       'zakat_expense_ids': state.zakatExpenseIds,
       'processed_expense_ids': state.processedExpenseIds,
+      'credit_cards': state.creditCards
+          .map((CreditCard card) => card.toJson())
+          .toList(growable: false),
       'zakat_method': state.zakatMethod,
       'zakat_annual_date': state.zakatAnnualDate,
       'zakat_nisab_basis': state.zakatNisabBasis,
       'zakat_schedule_filter': state.zakatScheduleFilter,
       'main_currency': state.mainCurrency,
       'default_entry_currency': state.defaultEntryCurrency,
+      'financial_month_cycle': state.financialMonthCycle,
       'language_preference': state.languagePreference,
       'theme_mode': state.themeMode,
       'biometric_lock_enabled': state.biometricLockEnabled,
@@ -1813,11 +1881,40 @@ class AppStateController extends ChangeNotifier {
     return merged;
   }
 
-  Future<void> save() async {
-    await _saveStateForCompatibility();
+  Future<void> save({
+    bool creditCardsOnly = false,
+    bool mirrorTransactions = true,
+    bool mirrorSavings = true,
+    bool mirrorOtherCollections = true,
+  }) async {
+    await _saveStateForCompatibility(
+      creditCardsOnly: creditCardsOnly,
+      mirrorTransactions: mirrorTransactions,
+      mirrorSavings: mirrorSavings,
+      mirrorOtherCollections: mirrorOtherCollections,
+    );
+    unawaited(_captureLocalBackup());
   }
 
-  Future<void> _saveStateForCompatibility() async {
+  Future<void> _captureLocalBackup() async {
+    try {
+      await localBackupService.captureSnapshot(
+        state: _stateForPersistence(_state),
+        provider: _state.userProvider,
+        email: _state.userEmail,
+      );
+    } catch (error, stackTrace) {
+      debugPrint('AppStateController._captureLocalBackup failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  Future<void> _saveStateForCompatibility({
+    bool creditCardsOnly = false,
+    bool mirrorTransactions = true,
+    bool mirrorSavings = true,
+    bool mirrorOtherCollections = true,
+  }) async {
     await repository.saveAppState(
       _stateForPersistence(_state),
       userId: _state.userId,
@@ -1835,7 +1932,13 @@ class AppStateController extends ChangeNotifier {
         debugPrintStack(stackTrace: stackTrace);
       }
     }
+    if (creditCardsOnly) {
+      _skipNextSqliteTransactionMirror = false;
+      _skipNextSqliteSavingsMirror = false;
+      return;
+    }
     if (_useSqliteLocalStore &&
+        mirrorTransactions &&
         localTransactionsRepository != null &&
         !_skipNextSqliteTransactionMirror) {
       try {
@@ -1851,6 +1954,7 @@ class AppStateController extends ChangeNotifier {
       }
     }
     if (_useSqliteLocalStore &&
+        mirrorSavings &&
         localSavingsRepository != null &&
         !_skipNextSqliteSavingsMirror) {
       try {
@@ -1863,7 +1967,9 @@ class AppStateController extends ChangeNotifier {
         debugPrintStack(stackTrace: stackTrace);
       }
     }
-    if (_useSqliteLocalStore && localPendingTransactionsRepository != null) {
+    if (mirrorOtherCollections &&
+        _useSqliteLocalStore &&
+        localPendingTransactionsRepository != null) {
       try {
         await localPendingTransactionsRepository!.replaceAllForLocalMirror(
           _state.pendingTransactions,
@@ -1876,7 +1982,9 @@ class AppStateController extends ChangeNotifier {
         debugPrintStack(stackTrace: stackTrace);
       }
     }
-    if (_useSqliteLocalStore && localFinancialPlansRepository != null) {
+    if (mirrorOtherCollections &&
+        _useSqliteLocalStore &&
+        localFinancialPlansRepository != null) {
       try {
         await localFinancialPlansRepository!.replaceAllForLocalMirror(
           _state.financialPlans,
@@ -1889,7 +1997,9 @@ class AppStateController extends ChangeNotifier {
         debugPrintStack(stackTrace: stackTrace);
       }
     }
-    if (_useSqliteLocalStore && localInvestmentsRepository != null) {
+    if (mirrorOtherCollections &&
+        _useSqliteLocalStore &&
+        localInvestmentsRepository != null) {
       try {
         await localInvestmentsRepository!.replaceAllForLocalMirror(
           _state.investments,
@@ -1902,7 +2012,9 @@ class AppStateController extends ChangeNotifier {
         debugPrintStack(stackTrace: stackTrace);
       }
     }
-    if (_useSqliteLocalStore && localMerchantRulesRepository != null) {
+    if (mirrorOtherCollections &&
+        _useSqliteLocalStore &&
+        localMerchantRulesRepository != null) {
       try {
         await localMerchantRulesRepository!.replaceAllForLocalMirror(
           _state.merchantRules.values,
@@ -1915,7 +2027,9 @@ class AppStateController extends ChangeNotifier {
         debugPrintStack(stackTrace: stackTrace);
       }
     }
-    if (_useSqliteLocalStore && localMerchantConfirmationsRepository != null) {
+    if (mirrorOtherCollections &&
+        _useSqliteLocalStore &&
+        localMerchantConfirmationsRepository != null) {
       try {
         await localMerchantConfirmationsRepository!.replaceAllForLocalMirror(
           _state.merchantConfirmations,
@@ -1928,7 +2042,9 @@ class AppStateController extends ChangeNotifier {
         debugPrintStack(stackTrace: stackTrace);
       }
     }
-    if (_useSqliteLocalStore && localCorrectionFeedbackRepository != null) {
+    if (mirrorOtherCollections &&
+        _useSqliteLocalStore &&
+        localCorrectionFeedbackRepository != null) {
       try {
         await localCorrectionFeedbackRepository!.replaceAllForLocalMirror(
           _state.correctionFeedback,
@@ -1941,7 +2057,9 @@ class AppStateController extends ChangeNotifier {
         debugPrintStack(stackTrace: stackTrace);
       }
     }
-    if (_useSqliteLocalStore && localRecurringTransactionsRepository != null) {
+    if (mirrorOtherCollections &&
+        _useSqliteLocalStore &&
+        localRecurringTransactionsRepository != null) {
       try {
         await localRecurringTransactionsRepository!.replaceAllForLocalMirror(
           _state.recurringTransactions,
@@ -1985,7 +2103,7 @@ class AppStateController extends ChangeNotifier {
         await localStore.importPendingTransactions(_state.pendingTransactions);
         return;
       }
-      _markCollectionSource('pending_transactions', 'empty default');
+      _markCollectionSource('pending_transactions', 'SQLite');
     } catch (error, stackTrace) {
       debugPrint(
         'AppStateController.load: failed to read SQLite pending transactions. '
@@ -2023,7 +2141,7 @@ class AppStateController extends ChangeNotifier {
         return;
       }
 
-      _markCollectionSource('transactions', 'empty default');
+      _markCollectionSource('transactions', 'SQLite');
     } catch (error, stackTrace) {
       debugPrint(
         'AppStateController.load: failed to read SQLite transactions. '
@@ -2059,7 +2177,7 @@ class AppStateController extends ChangeNotifier {
         return;
       }
 
-      _markCollectionSource('savings', 'empty default');
+      _markCollectionSource('savings', 'SQLite');
     } catch (error, stackTrace) {
       debugPrint(
         'AppStateController.load: failed to read SQLite savings. '
@@ -2096,7 +2214,7 @@ class AppStateController extends ChangeNotifier {
         await localStore.importFinancialPlans(_state.financialPlans);
         return;
       }
-      _markCollectionSource('financial_plans', 'empty default');
+      _markCollectionSource('financial_plans', 'SQLite');
     } catch (error, stackTrace) {
       debugPrint(
         'AppStateController.load: failed to read SQLite financial plans. '
@@ -2132,7 +2250,7 @@ class AppStateController extends ChangeNotifier {
         await localStore.importInvestments(_state.investments);
         return;
       }
-      _markCollectionSource('investments', 'empty default');
+      _markCollectionSource('investments', 'SQLite');
     } catch (error, stackTrace) {
       debugPrint(
         'AppStateController.load: failed to read SQLite investments. '
@@ -2172,7 +2290,7 @@ class AppStateController extends ChangeNotifier {
         await localStore.importMerchantRules(_state.merchantRules.values);
         return;
       }
-      _markCollectionSource('merchant_rules', 'empty default');
+      _markCollectionSource('merchant_rules', 'SQLite');
     } catch (error, stackTrace) {
       debugPrint(
         'AppStateController.load: failed to read SQLite merchant rules. '
@@ -2211,7 +2329,7 @@ class AppStateController extends ChangeNotifier {
         );
         return;
       }
-      _markCollectionSource('merchant_confirmations', 'empty default');
+      _markCollectionSource('merchant_confirmations', 'SQLite');
     } catch (error, stackTrace) {
       debugPrint(
         'AppStateController.load: failed to read SQLite merchant confirmations. '
@@ -2248,7 +2366,7 @@ class AppStateController extends ChangeNotifier {
         await localStore.importCorrectionFeedback(_state.correctionFeedback);
         return;
       }
-      _markCollectionSource('correction_feedback', 'empty default');
+      _markCollectionSource('correction_feedback', 'SQLite');
     } catch (error, stackTrace) {
       debugPrint(
         'AppStateController.load: failed to read SQLite correction feedback. '
@@ -2287,7 +2405,7 @@ class AppStateController extends ChangeNotifier {
         );
         return;
       }
-      _markCollectionSource('recurring_transactions', 'empty default');
+      _markCollectionSource('recurring_transactions', 'SQLite');
     } catch (error, stackTrace) {
       debugPrint(
         'AppStateController.load: failed to read SQLite recurring transactions. '
@@ -2319,11 +2437,13 @@ class AppStateController extends ChangeNotifier {
         'zakat_paid_months',
         'zakat_expense_ids',
         'processed_expense_ids',
+        'credit_cards',
         'zakat_method',
         'zakat_annual_date',
         'zakat_nisab_basis',
         'zakat_schedule_filter',
         'main_currency',
+        'financial_month_cycle',
         'theme_mode',
       ].any((String key) => !settings.containsKey(key));
       _state = mergedState;
@@ -2385,7 +2505,7 @@ class AppStateController extends ChangeNotifier {
       'AppStateController.clearLocalDataForSignOut requires userId.',
     );
     await stopLiveFirestoreSync();
-    await repository.clearLocalDataForSignOut(userId: userId);
+    await WidgetDataService.clearAll(userId: userId);
     if (_database != null) {
       await _database!.close();
       _database = null;
@@ -2417,7 +2537,15 @@ class AppStateController extends ChangeNotifier {
     );
     await stopLiveFirestoreSync();
     await repository.clearLocalDataForSignOut(userId: userId);
+    await WidgetDataService.clearAll(userId: userId);
     await secureStorageService.deleteAiKeys(userId: userId);
+    await secureStorageService.deleteBackupKey(userId: userId);
+    await secureStorageService.deleteBackupPassphrase(userId: userId);
+    await localBackupService.deleteBackupsForUser(userId);
+    final String? scopedProfileKey = StorageKeys.userProfileKeyForUser(userId);
+    if (scopedProfileKey != null) {
+      await repository.localStorage.remove(scopedProfileKey);
+    }
     await repository.localStorage.remove(StorageKeys.userProfileKey);
     await repository.localStorage.remove(StorageKeys.appStateAnonymousKey);
     await repository.localStorage.remove(StorageKeys.aiKeysAnonymousKey);
@@ -2458,17 +2586,51 @@ class AppStateController extends ChangeNotifier {
     await deleteLocalDataForUser(userId: userId);
   }
 
-  Future<void> updateState(AppStateModel newState) async {
+  AppStateModel _normalizePlatformState(AppStateModel state) {
+    if (!Platform.isIOS || state.smartCaptureEnabled) {
+      return state;
+    }
+    return state.copyWith(smartCaptureEnabled: true);
+  }
+
+  Future<void> updateState(
+    AppStateModel newState, {
+    bool creditCardsOnly = false,
+  }) async {
     if (hasHydrationFailure) return;
+    newState = _normalizePlatformState(newState);
     final AppStateModel previousState = _state;
-    final ReconciliationResult reconciled = reconciliationService
-        .reconcileExpensesWithSavings(newState);
-    _state = reconciled.state.copyWith(
+    final bool transactionOrSavingsInputChanged =
+        !identical(previousState.transactions, newState.transactions) ||
+        !identical(previousState.savings, newState.savings);
+    final AppStateModel stateToSave = creditCardsOnly
+        ? newState
+        : transactionOrSavingsInputChanged
+        ? reconciliationService.reconcileExpensesWithSavings(newState).state
+        : newState;
+    _state = stateToSave.copyWith(
       lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
     );
-    await save();
+    // Publish the reconciled local state before compatibility mirrors and
+    // background sync continue. The write still completes before this
+    // method returns, but the current frame is not held by serialization.
     notifyListeners();
+    await save(
+      creditCardsOnly: creditCardsOnly,
+      mirrorTransactions: !identical(
+        previousState.transactions,
+        _state.transactions,
+      ),
+      mirrorSavings: !identical(previousState.savings, _state.savings),
+      mirrorOtherCollections: _isApplyingRemoteSync,
+    );
     unawaited(WidgetDataService.syncFromState(_state));
+    if (creditCardsOnly) {
+      if (!_isApplyingRemoteSync) {
+        _syncSensitiveCollectionsInBackground(previousState, _state);
+      }
+      return;
+    }
     final int previousPendingReviewCount = previousState.pendingTransactions
         .where(
           (PendingTransaction item) =>
@@ -2557,7 +2719,7 @@ class AppStateController extends ChangeNotifier {
             id: id,
             existsCheck: () async =>
                 (await localFinancialPlansRepository!.getActiveFinancialPlans())
-                    .any((FinancialPlan item) => item.id == id),
+                    .every((FinancialPlan item) => item.id != id),
           );
         }
         for (final MapEntry<String, FinancialPlan> entry in nextById.entries) {
@@ -3166,9 +3328,13 @@ class AppStateController extends ChangeNotifier {
           ? await localRecurringTransactionsRepository!
                 .getActiveRecurringTransactions()
           : _state.recurringTransactions;
-      final pending = localPendingTransactionsRepository != null
+      final List<PendingTransaction> localPending =
+          localPendingTransactionsRepository != null
           ? await localPendingTransactionsRepository!
                 .getActivePendingTransactions()
+          : const <PendingTransaction>[];
+      final List<PendingTransaction> pending = localPending.isNotEmpty
+          ? localPending
           : _state.pendingTransactions;
       final merchantRules = localMerchantRulesRepository != null
           ? await localMerchantRulesRepository!.getActiveMerchantRules()
@@ -3197,6 +3363,13 @@ class AppStateController extends ChangeNotifier {
         correctionFeedback: correctionFeedback,
         investments: investments,
       );
+      if (localPending.isEmpty &&
+          _state.pendingTransactions.isNotEmpty &&
+          localPendingTransactionsRepository != null) {
+        await localPendingTransactionsRepository!.importPendingTransactions(
+          _state.pendingTransactions,
+        );
+      }
       _state = _state.copyWith(
         syncHealth: _state.syncHealth.copyWith(
           lastSuccessAt: DateTime.now().toUtc().toIso8601String(),
@@ -3217,11 +3390,18 @@ class AppStateController extends ChangeNotifier {
     required AppStateModel previousState,
     bool transactionChanged = false,
     bool savingChanged = false,
+    bool mirrorSavings = false,
   }) async {
     if (transactionChanged) _skipNextSqliteTransactionMirror = true;
     if (savingChanged) _skipNextSqliteSavingsMirror = true;
-    await _saveStateForCompatibility();
     notifyListeners();
+    // Direct repository writes already persisted the changed records. Avoid
+    // rewriting unrelated SQLite collections during this compatibility save.
+    await _saveStateForCompatibility(
+      mirrorTransactions: false,
+      mirrorSavings: mirrorSavings,
+      mirrorOtherCollections: false,
+    );
     unawaited(WidgetDataService.syncFromState(_state));
     if (!_isApplyingRemoteSync) {
       _syncSensitiveCollectionsInBackground(previousState, _state);
@@ -3569,14 +3749,40 @@ class AppStateController extends ChangeNotifier {
   }
 
   Future<void> addTransaction(Transaction transaction) async {
-    if (transaction.type == 'expense') {
+    if (transaction.type == 'transfer') {
+      await addAccountTransfer(transaction);
+      return;
+    }
+    if (transaction.paymentSourceId != null &&
+        !_state.creditCards.any(
+          (CreditCard card) => card.id == transaction.paymentSourceId,
+        )) {
+      throw StateError('The selected credit card is no longer available.');
+    }
+    if (transaction.creditCardPaymentId != null &&
+        !_state.creditCards.any(
+          (CreditCard card) => card.id == transaction.creditCardPaymentId,
+        )) {
+      throw StateError('The selected credit card is no longer available.');
+    }
+    if (transaction.type == 'expense' && transaction.paymentSourceId != null) {
+      _ensureCreditCardHasAvailableLimit(
+        cardId: transaction.paymentSourceId!,
+        amount: transaction.amount,
+        currency: transaction.currency,
+      );
+    }
+    if (transaction.type == 'expense' && transaction.paymentSourceId == null) {
       _ensureExpenseHasAvailableBalance(
         transactionId: transaction.id,
         currency: transaction.currency,
         amount: transaction.amount,
       );
     }
-    if (_useSqliteLocalStore && localTransactionsRepository != null) {
+    if (_useSqliteLocalStore &&
+        localTransactionsRepository != null &&
+        transaction.paymentSourceId == null &&
+        transaction.creditCardPaymentId == null) {
       await _saveTransactionViaLocalRepository(
         transaction,
         fallbackState: _state.copyWith(
@@ -3585,9 +3791,73 @@ class AppStateController extends ChangeNotifier {
       );
       return;
     }
+    final List<CreditCard> nextCards = _adjustCreditCardBalance(
+      cards: _state.creditCards,
+      sourceId: transaction.paymentSourceId,
+      amount: transaction.amount,
+      currency: transaction.currency,
+    );
+    final List<CreditCard> nextCardsAfterPayment = _adjustCreditCardBalance(
+      cards: nextCards,
+      sourceId: transaction.creditCardPaymentId,
+      amount: transaction.amount,
+      currency: transaction.currency,
+      multiplier: -1,
+    );
     await updateState(
       _state.copyWith(
         transactions: <Transaction>[..._state.transactions, transaction],
+        creditCards: nextCardsAfterPayment,
+      ),
+    );
+  }
+
+  Future<void> addAccountTransfer(Transaction transaction) async {
+    final String source = transaction.transferSourceId?.trim() ?? '';
+    final String destination = transaction.transferDestinationId?.trim() ?? '';
+    if (source.isEmpty || destination.isEmpty || source == destination) {
+      throw StateError('Choose different source and destination accounts.');
+    }
+    final List<String> accountIds = <String>[
+      'cash',
+      ..._state.creditCards
+          .where((CreditCard card) => !card.isArchived)
+          .map((CreditCard card) => card.id),
+    ];
+    if (!accountIds.contains(source) || !accountIds.contains(destination)) {
+      throw StateError('The selected account is no longer available.');
+    }
+    if (source == 'cash') {
+      _ensureExpenseHasAvailableBalance(
+        transactionId: transaction.id,
+        currency: transaction.currency,
+        amount: transaction.amount,
+      );
+    } else {
+      _ensureCreditCardHasAvailableLimit(
+        cardId: source,
+        amount: transaction.amount,
+        currency: transaction.currency,
+      );
+    }
+
+    List<CreditCard> nextCards = _adjustCreditCardBalance(
+      cards: _state.creditCards,
+      sourceId: source == 'cash' ? null : source,
+      amount: transaction.amount,
+      currency: transaction.currency,
+    );
+    nextCards = _adjustCreditCardBalance(
+      cards: nextCards,
+      sourceId: destination == 'cash' ? null : destination,
+      amount: transaction.amount,
+      currency: transaction.currency,
+      multiplier: -1,
+    );
+    await updateState(
+      _state.copyWith(
+        transactions: <Transaction>[..._state.transactions, transaction],
+        creditCards: nextCards,
       ),
     );
   }
@@ -3602,10 +3872,10 @@ class AppStateController extends ChangeNotifier {
   }
 
   Future<void> updateTransaction(Transaction transaction) async {
-    if (transaction.type == 'expense') {
-      final Transaction? originalTx = _state.transactions
-          .where((tx) => tx.id == transaction.id)
-          .firstOrNull;
+    final Transaction? originalTx = _state.transactions
+        .where((Transaction tx) => tx.id == transaction.id)
+        .firstOrNull;
+    if (transaction.type == 'expense' && transaction.paymentSourceId == null) {
       final double originalAmount = originalTx?.amount ?? 0.0;
       _ensureExpenseHasAvailableBalance(
         transactionId: transaction.id,
@@ -3615,17 +3885,114 @@ class AppStateController extends ChangeNotifier {
         originalAmount: originalAmount,
       );
     }
+    if (transaction.type == 'expense' && transaction.paymentSourceId != null) {
+      final String ownerId = _resolveCreditCardOwnerId(
+        transaction.paymentSourceId!,
+      );
+      final CreditCard card = _state.creditCards.firstWhere(
+        (CreditCard item) => item.id == ownerId,
+        orElse: () =>
+            throw StateError('The selected credit card is unavailable.'),
+      );
+      double available = card.availableCredit;
+      if (originalTx?.paymentSourceId != null &&
+          _resolveCreditCardOwnerId(originalTx!.paymentSourceId!) == card.id) {
+        available += _convertCurrencyAmount(
+          amount: originalTx!.amount,
+          fromCurrency: originalTx.currency,
+          toCurrency: card.currency,
+        );
+      }
+      final double requested = _convertCurrencyAmount(
+        amount: transaction.amount,
+        fromCurrency: transaction.currency,
+        toCurrency: card.currency,
+      );
+      if (!requested.isFinite ||
+          requested - available > ReconciliationService.minAmount) {
+        throw StateError('Not enough available credit on this card.');
+      }
+    }
     final List<Transaction> next = _state.transactions
         .map((Transaction tx) => tx.id == transaction.id ? transaction : tx)
         .toList(growable: false);
-    if (_useSqliteLocalStore && localTransactionsRepository != null) {
+    if (_useSqliteLocalStore &&
+        localTransactionsRepository != null &&
+        originalTx?.paymentSourceId == null &&
+        transaction.paymentSourceId == null &&
+        originalTx?.creditCardPaymentId == null &&
+        transaction.creditCardPaymentId == null) {
       await _saveTransactionViaLocalRepository(
         transaction,
         fallbackState: _state.copyWith(transactions: next),
       );
       return;
     }
-    await updateState(_state.copyWith(transactions: next));
+    List<CreditCard> nextCards = _adjustCreditCardBalance(
+      cards: _state.creditCards,
+      sourceId: originalTx?.paymentSourceId,
+      amount: originalTx?.amount ?? 0,
+      currency: originalTx?.currency ?? transaction.currency,
+      multiplier: -1,
+    );
+    nextCards = _adjustCreditCardBalance(
+      cards: nextCards,
+      sourceId: transaction.paymentSourceId,
+      amount: transaction.amount,
+      currency: transaction.currency,
+    );
+    nextCards = _adjustCreditCardBalance(
+      cards: nextCards,
+      sourceId: originalTx?.creditCardPaymentId,
+      amount: originalTx?.amount ?? 0,
+      currency: originalTx?.currency ?? transaction.currency,
+      multiplier: 1,
+    );
+    nextCards = _adjustCreditCardBalance(
+      cards: nextCards,
+      sourceId: transaction.creditCardPaymentId,
+      amount: transaction.amount,
+      currency: transaction.currency,
+      multiplier: -1,
+    );
+    nextCards = _adjustCreditCardBalance(
+      cards: nextCards,
+      sourceId: originalTx?.transferSourceId == 'cash'
+          ? null
+          : originalTx?.transferSourceId,
+      amount: originalTx?.amount ?? 0,
+      currency: originalTx?.currency ?? transaction.currency,
+      multiplier: -1,
+    );
+    nextCards = _adjustCreditCardBalance(
+      cards: nextCards,
+      sourceId: originalTx?.transferDestinationId == 'cash'
+          ? null
+          : originalTx?.transferDestinationId,
+      amount: originalTx?.amount ?? 0,
+      currency: originalTx?.currency ?? transaction.currency,
+      multiplier: 1,
+    );
+    nextCards = _adjustCreditCardBalance(
+      cards: nextCards,
+      sourceId: transaction.transferSourceId == 'cash'
+          ? null
+          : transaction.transferSourceId,
+      amount: transaction.amount,
+      currency: transaction.currency,
+    );
+    nextCards = _adjustCreditCardBalance(
+      cards: nextCards,
+      sourceId: transaction.transferDestinationId == 'cash'
+          ? null
+          : transaction.transferDestinationId,
+      amount: transaction.amount,
+      currency: transaction.currency,
+      multiplier: -1,
+    );
+    await updateState(
+      _state.copyWith(transactions: next, creditCards: nextCards),
+    );
   }
 
   Future<void> deleteTransaction(String transactionId) async {
@@ -3723,8 +4090,46 @@ class AppStateController extends ChangeNotifier {
         })
         .toList(growable: false);
 
+    final List<CreditCard> nextCreditCards = _adjustCreditCardBalance(
+      cards: _state.creditCards,
+      sourceId: txTarget.paymentSourceId,
+      amount: txTarget.amount,
+      currency: txTarget.currency,
+      multiplier: -1,
+    );
+    final List<CreditCard> nextCreditCardsAfterPayment =
+        _adjustCreditCardBalance(
+          cards: nextCreditCards,
+          sourceId: txTarget.creditCardPaymentId,
+          amount: txTarget.amount,
+          currency: txTarget.currency,
+          multiplier: 1,
+        );
+    List<CreditCard> nextCreditCardsAfterTransfer = _adjustCreditCardBalance(
+      cards: nextCreditCardsAfterPayment,
+      sourceId: txTarget.transferSourceId == 'cash'
+          ? null
+          : txTarget.transferSourceId,
+      amount: txTarget.amount,
+      currency: txTarget.currency,
+      multiplier: -1,
+    );
+    nextCreditCardsAfterTransfer = _adjustCreditCardBalance(
+      cards: nextCreditCardsAfterTransfer,
+      sourceId: txTarget.transferDestinationId == 'cash'
+          ? null
+          : txTarget.transferDestinationId,
+      amount: txTarget.amount,
+      currency: txTarget.currency,
+      multiplier: 1,
+    );
+
     await updateState(
-      _state.copyWith(savings: nextSavings, transactions: nextTransactions),
+      _state.copyWith(
+        savings: nextSavings,
+        transactions: nextTransactions,
+        creditCards: nextCreditCardsAfterTransfer,
+      ),
     );
   }
 
@@ -3809,6 +4214,12 @@ class AppStateController extends ChangeNotifier {
   }
 
   bool _canUseRepositoryDeleteForTransaction(Transaction transaction) {
+    if (transaction.paymentSourceId != null ||
+        transaction.creditCardPaymentId != null ||
+        transaction.transferSourceId != null ||
+        transaction.transferDestinationId != null) {
+      return false;
+    }
     final bool hasExchangeActivity =
         transaction.exchangePairId != null &&
         transaction.exchangePairId!.trim().isNotEmpty;
@@ -3818,6 +4229,99 @@ class AppStateController extends ChangeNotifier {
       return false;
     }
     return true;
+  }
+
+  String _resolveCreditCardOwnerId(String cardId) {
+    String currentId = cardId.trim();
+    final Set<String> visited = <String>{};
+    while (currentId.isNotEmpty && visited.add(currentId)) {
+      final CreditCard? card = _state.creditCards
+          .where((CreditCard item) => item.id == currentId)
+          .firstOrNull;
+      final String? parentId = card?.parentCardId?.trim();
+      if (parentId == null || parentId.isEmpty) return currentId;
+      currentId = parentId;
+    }
+    throw StateError('Credit card parent relationship is circular.');
+  }
+
+  CreditCard _normalizeCreditCard(CreditCard card) {
+    final String? parentId = card.parentCardId?.trim();
+    if (parentId == null || parentId.isEmpty) {
+      return card.copyWith(clearParentCardId: true);
+    }
+    if (parentId == card.id) {
+      throw StateError('A credit card cannot be its own parent.');
+    }
+    final CreditCard parent = _state.creditCards.firstWhere(
+      (CreditCard item) => item.id == parentId,
+      orElse: () =>
+          throw StateError('The selected parent card is unavailable.'),
+    );
+    if (parent.isArchived) {
+      throw StateError('An archived credit card cannot be a parent.');
+    }
+    if (parent.parentCardId != null && parent.parentCardId!.trim().isNotEmpty) {
+      throw StateError('A supplementary card cannot be a parent card.');
+    }
+    return card.copyWith(
+      parentCardId: parent.id,
+      creditLimit: parent.creditLimit,
+      currency: parent.currency,
+      openingBalance: parent.openingBalance,
+    );
+  }
+
+  List<CreditCard> _inheritParentValues(List<CreditCard> cards) {
+    final Map<String, CreditCard> byId = <String, CreditCard>{
+      for (final CreditCard card in cards) card.id: card,
+    };
+    return cards
+        .map((CreditCard card) {
+          final String? parentId = card.parentCardId?.trim();
+          final CreditCard? parent = parentId == null ? null : byId[parentId];
+          if (parent == null) return card;
+          return card.copyWith(
+            creditLimit: parent.creditLimit,
+            currency: parent.currency,
+            openingBalance: parent.openingBalance,
+          );
+        })
+        .toList(growable: false);
+  }
+
+  List<CreditCard> _adjustCreditCardBalance({
+    required List<CreditCard> cards,
+    required String? sourceId,
+    required double amount,
+    required String currency,
+    double multiplier = 1,
+  }) {
+    if (sourceId == null || sourceId.trim().isEmpty || amount == 0) {
+      return cards;
+    }
+    final String ownerId = _resolveCreditCardOwnerId(sourceId);
+    final MarketData market = MarketData.fromJson(_state.marketData);
+    final String sourceCurrency = currency.trim().toUpperCase();
+    final List<CreditCard> adjusted = cards
+        .map((CreditCard card) {
+          if (card.id != ownerId) return card;
+          final double cardAmount = ZakatEngineService.convertFromEgp(
+            ZakatEngineService.convertToEgp(amount, sourceCurrency, market),
+            card.currency,
+            market,
+          );
+          final double nextBalance =
+              (card.openingBalance + (cardAmount * multiplier))
+                  .clamp(0, double.infinity)
+                  .toDouble();
+          return card.copyWith(
+            openingBalance: nextBalance,
+            updatedAt: DateTime.now().toUtc().toIso8601String(),
+          );
+        })
+        .toList(growable: false);
+    return _inheritParentValues(adjusted);
   }
 
   Future<void> _saveTransactionViaLocalRepository(
@@ -3854,6 +4358,7 @@ class AppStateController extends ChangeNotifier {
       await _finalizeLocalWrite(
         previousState: previousState,
         transactionChanged: true,
+        mirrorSavings: !identical(previousState.savings, _state.savings),
       );
     } catch (error, stackTrace) {
       debugPrint(
@@ -3911,7 +4416,7 @@ class AppStateController extends ChangeNotifier {
       await _verifySqliteWrite(
         label: 'Transaction delete',
         id: transaction.id,
-        existsCheck: () async => sqliteTransactions.any(
+        existsCheck: () async => !sqliteTransactions.any(
           (Transaction item) => item.id == transaction.id,
         ),
       );
@@ -3927,6 +4432,7 @@ class AppStateController extends ChangeNotifier {
       await _finalizeLocalWrite(
         previousState: previousState,
         transactionChanged: true,
+        mirrorSavings: !identical(previousState.savings, _state.savings),
       );
     } catch (error, stackTrace) {
       debugPrint(
@@ -4098,7 +4604,7 @@ class AppStateController extends ChangeNotifier {
         label: 'Saving delete',
         id: saving.id,
         existsCheck: () async =>
-            sqliteSavings.any((Saving item) => item.id == saving.id),
+            !sqliteSavings.any((Saving item) => item.id == saving.id),
       );
       _state = _state.copyWith(
         savings: sqliteSavings,
@@ -4747,6 +5253,97 @@ class AppStateController extends ChangeNotifier {
     await updateState(_state.copyWith(investments: next));
   }
 
+  Future<void> addCreditCard(CreditCard card) async {
+    card = _normalizeCreditCard(card);
+    final String id = card.id.trim();
+    if (id.isEmpty) {
+      throw ArgumentError('Credit card id must not be empty.');
+    }
+    if (!RegExp(r'^\d{4}$').hasMatch(card.last4Digits)) {
+      throw ArgumentError('Credit card last four digits must be numeric.');
+    }
+    if (card.creditLimit < 0 || card.openingBalance < 0) {
+      throw ArgumentError('Credit card amounts must not be negative.');
+    }
+    if (_state.creditCards.any((CreditCard item) => item.id == id)) {
+      throw StateError('Credit card already exists.');
+    }
+    await updateState(
+      _state.copyWith(creditCards: <CreditCard>[..._state.creditCards, card]),
+      creditCardsOnly: true,
+    );
+  }
+
+  Future<void> updateCreditCard(CreditCard card) async {
+    final CreditCard normalized = _normalizeCreditCard(card);
+    final List<CreditCard> next = _state.creditCards
+        .map((CreditCard item) => item.id == normalized.id ? normalized : item)
+        .toList(growable: false);
+    await updateState(
+      _state.copyWith(creditCards: _inheritParentValues(next)),
+      creditCardsOnly: true,
+    );
+  }
+
+  Future<void> promoteCreditCard(String cardId) async {
+    final int index = _state.creditCards.indexWhere(
+      (CreditCard card) => card.id == cardId,
+    );
+    if (index <= 0) return;
+    final List<CreditCard> next = <CreditCard>[
+      _state.creditCards[index],
+      ..._state.creditCards.take(index),
+      ..._state.creditCards.skip(index + 1),
+    ];
+    await updateState(
+      _state.copyWith(creditCards: next),
+      creditCardsOnly: true,
+    );
+  }
+
+  Future<void> archiveCreditCard(
+    String cardId, {
+    String? balanceOwnerId,
+  }) async {
+    final CreditCard target = _state.creditCards.firstWhere(
+      (CreditCard card) => card.id == cardId,
+      orElse: () => throw StateError('Credit card not found.'),
+    );
+    final List<CreditCard> children = _state.creditCards
+        .where((CreditCard card) => card.parentCardId == cardId)
+        .toList(growable: false);
+    final String ownerId = balanceOwnerId ?? children.firstOrNull?.id ?? '';
+    if (ownerId.isNotEmpty &&
+        !children.any((CreditCard c) => c.id == ownerId)) {
+      throw StateError('The selected standalone balance owner is invalid.');
+    }
+    final List<CreditCard> next = _state.creditCards
+        .map((CreditCard card) {
+          if (card.id == cardId) return card.copyWith(isArchived: true);
+          if (card.parentCardId != cardId) return card;
+          return card.copyWith(
+            clearParentCardId: true,
+            creditLimit: card.id == ownerId ? target.creditLimit : 0,
+            openingBalance: card.id == ownerId ? target.openingBalance : 0,
+            currency: target.currency,
+          );
+        })
+        .toList(growable: false);
+    await updateState(
+      _state.copyWith(creditCards: next),
+      creditCardsOnly: true,
+    );
+  }
+
+  List<CreditCard> supplementaryCardsFor(String parentCardId) {
+    return _state.creditCards
+        .where(
+          (CreditCard card) =>
+              !card.isArchived && card.parentCardId == parentCardId,
+        )
+        .toList(growable: false);
+  }
+
   Future<void> addRecurringTransaction(RecurringTransaction recurring) async {
     unawaited(RecurringNotificationManager.scheduleReminder(recurring));
     if (_useSqliteLocalStore && localRecurringTransactionsRepository != null) {
@@ -4914,20 +5511,24 @@ class AppStateController extends ChangeNotifier {
       if (!_isRecurringDue(recurring, localNow, monthKey: monthKey)) {
         continue;
       }
-      final String occurrenceKey = _recurringOccurrenceKey(recurring, localNow);
+      final DateTime dueDate = _scheduledRecurringDate(recurring, localNow);
+      final String occurrenceKey = _recurringOccurrenceKey(
+        recurring,
+        localNow,
+        dueDate,
+      );
       final bool alreadyCreated = _state.transactions.any(
         (Transaction tx) => tx.id == occurrenceKey,
       );
       if (alreadyCreated) {
-        if (_monthKeyFromString(recurring.lastProcessed) != monthKey) {
+        if (recurring.lastProcessed != _formatDateKey(dueDate)) {
           await updateRecurringTransaction(
-            recurring.copyWith(lastProcessed: _formatDateKey(localNow)),
+            recurring.copyWith(lastProcessed: _formatDateKey(dueDate)),
           );
         }
         continue;
       }
 
-      final DateTime dueDate = _scheduledRecurringDate(recurring, localNow);
       if (!recurring.autoAdd) {
         await updateRecurringTransaction(
           recurring.copyWith(lastProcessed: _formatDateKey(dueDate)),
@@ -4945,11 +5546,17 @@ class AppStateController extends ChangeNotifier {
         createdAt: localNow.toUtc().toIso8601String(),
         rolledOver: false,
       );
-      await addTransaction(generated);
-      await updateRecurringTransaction(
-        recurring.copyWith(lastProcessed: _formatDateKey(dueDate)),
-      );
-      createdCount += 1;
+      try {
+        await addTransaction(generated);
+        await updateRecurringTransaction(
+          recurring.copyWith(lastProcessed: _formatDateKey(dueDate)),
+        );
+        createdCount += 1;
+      } catch (e) {
+        debugPrint(
+          'AppStateController.processDueRecurringTransactions: failed to process recurring tx ${recurring.id}: $e',
+        );
+      }
     }
 
     if (createdCount > 0 && kDebugMode) {
@@ -4966,16 +5573,20 @@ class AppStateController extends ChangeNotifier {
     required String monthKey,
   }) {
     final String frequency = recurring.frequency.trim().toLowerCase();
-    if (frequency.isNotEmpty && frequency != 'monthly') {
-      return false;
-    }
-    if (_monthKeyFromString(recurring.lastProcessed) == monthKey) {
-      return false;
-    }
-    if (recurring.skipMonth.trim() == monthKey) {
-      return false;
-    }
     final DateTime dueDate = _scheduledRecurringDate(recurring, now);
+
+    if (recurring.lastProcessed == _formatDateKey(dueDate)) {
+      return false;
+    }
+
+    if (frequency == 'monthly' || frequency.isEmpty) {
+      if (_monthKeyFromString(recurring.lastProcessed) == monthKey) {
+        return false;
+      }
+      if (recurring.skipMonth.trim() == monthKey) {
+        return false;
+      }
+    }
     return !now.isBefore(dueDate);
   }
 
@@ -4983,6 +5594,100 @@ class AppStateController extends ChangeNotifier {
     RecurringTransaction recurring,
     DateTime now,
   ) {
+    final String frequency = recurring.frequency.trim().toLowerCase();
+
+    if (frequency == 'quarterly') {
+      final DateTime start = DateTime.tryParse(recurring.createdAt) ?? now;
+      final int safeDay = recurring.dayOfMonth.clamp(1, 31);
+      DateTime candidate = DateTime(start.year, start.month, safeDay);
+      int monthsToAdd = 0;
+      final DateTime lastProcessedDate = recurring.lastProcessed != null
+          ? (DateTime.tryParse(recurring.lastProcessed!) ?? DateTime(1970))
+          : DateTime(1970);
+
+      while (true) {
+        final nextStartMonth = DateTime(
+          start.year,
+          start.month + monthsToAdd,
+          1,
+        );
+        final int daysInNextMonth = DateTime(
+          nextStartMonth.year,
+          nextStartMonth.month + 1,
+          0,
+        ).day;
+        final int day = safeDay > daysInNextMonth ? daysInNextMonth : safeDay;
+        final DateTime occ = DateTime(
+          nextStartMonth.year,
+          nextStartMonth.month,
+          day,
+        );
+        if (occ.isAfter(lastProcessedDate)) {
+          candidate = occ;
+          break;
+        }
+        monthsToAdd += 3;
+      }
+      return candidate;
+    }
+
+    if (frequency == 'yearly') {
+      final DateTime start = DateTime.tryParse(recurring.createdAt) ?? now;
+      final int safeDay = recurring.dayOfMonth.clamp(1, 31);
+      DateTime candidate = DateTime(start.year, start.month, safeDay);
+      int yearsToAdd = 0;
+      final DateTime lastProcessedDate = recurring.lastProcessed != null
+          ? (DateTime.tryParse(recurring.lastProcessed!) ?? DateTime(1970))
+          : DateTime(1970);
+
+      while (true) {
+        final nextStartMonth = DateTime(
+          start.year + yearsToAdd,
+          start.month,
+          1,
+        );
+        final int daysInNextMonth = DateTime(
+          nextStartMonth.year,
+          nextStartMonth.month + 1,
+          0,
+        ).day;
+        final int day = safeDay > daysInNextMonth ? daysInNextMonth : safeDay;
+        final DateTime occ = DateTime(
+          nextStartMonth.year,
+          nextStartMonth.month,
+          day,
+        );
+        if (occ.isAfter(lastProcessedDate)) {
+          candidate = occ;
+          break;
+        }
+        yearsToAdd += 1;
+      }
+      return candidate;
+    }
+
+    if (frequency == 'custom') {
+      final DateTime lastProcessedDate = recurring.lastProcessed != null
+          ? (DateTime.tryParse(recurring.lastProcessed!) ?? DateTime(1970))
+          : DateTime(1970);
+      final List<DateTime> candidates = <DateTime>[];
+      for (final String dStr in recurring.customDates) {
+        final DateTime? parsed = DateTime.tryParse(dStr);
+        if (parsed != null) {
+          final DateTime dt = DateTime(parsed.year, parsed.month, parsed.day);
+          if (dt.isAfter(lastProcessedDate)) {
+            candidates.add(dt);
+          }
+        }
+      }
+      if (candidates.isNotEmpty) {
+        candidates.sort();
+        return candidates.first;
+      }
+      return now.add(const Duration(days: 365));
+    }
+
+    // Default Monthly
     final int safeDay = recurring.dayOfMonth.clamp(1, 31);
     final int daysInMonth = DateTime(now.year, now.month + 1, 0).day;
     final int day = safeDay > daysInMonth ? daysInMonth : safeDay;
@@ -4996,12 +5701,19 @@ class AppStateController extends ChangeNotifier {
     final List<String> categories = income
         ? _state.categories.income
         : _state.categories.expense;
-    if (categories.isNotEmpty) return categories.first;
-    return income ? 'Income' : 'Expense';
+    return categories.isNotEmpty ? categories.first : '';
   }
 
-  String _recurringOccurrenceKey(RecurringTransaction recurring, DateTime now) {
-    return '${recurring.id}_${_monthKey(now)}';
+  String _recurringOccurrenceKey(
+    RecurringTransaction recurring,
+    DateTime now,
+    DateTime dueDate,
+  ) {
+    final String frequency = recurring.frequency.trim().toLowerCase();
+    if (frequency == 'monthly' || frequency.isEmpty) {
+      return '${recurring.id}_${_monthKey(now)}';
+    }
+    return '${recurring.id}_${_formatDateKey(dueDate)}';
   }
 
   String _monthKey(DateTime value) {
@@ -5501,6 +6213,7 @@ class AppStateController extends ChangeNotifier {
     required String category,
     required String description,
     required String date,
+    String? paymentSourceId,
   }) async {
     final PendingTransaction? pendingTx = _state.pendingTransactions
         .where((t) => t.id == pendingId)
@@ -5515,18 +6228,43 @@ class AppStateController extends ChangeNotifier {
       throw StateError('This capture is not linked to any ledger record.');
     }
 
-    if (type == 'expense') {
-      final Transaction? originalTx = _state.transactions
-          .where((t) => t.id == linkedId)
-          .firstOrNull;
-      final double originalAmount = originalTx?.amount ?? 0.0;
+    final Transaction? originalTx = _state.transactions
+        .where((t) => t.id == linkedId)
+        .firstOrNull;
+    if (type == 'expense' && paymentSourceId == null) {
       _ensureExpenseHasAvailableBalance(
         transactionId: linkedId,
         currency: currency,
         amount: amount,
         isUpdate: true,
-        originalAmount: originalAmount,
+        originalAmount: originalTx?.amount ?? 0.0,
       );
+    }
+    if (type == 'expense' && paymentSourceId != null) {
+      final String ownerId = _resolveCreditCardOwnerId(paymentSourceId);
+      final CreditCard card = _state.creditCards.firstWhere(
+        (CreditCard item) => item.id == ownerId,
+        orElse: () =>
+            throw StateError('The selected credit card is unavailable.'),
+      );
+      double available = card.availableCredit;
+      if (originalTx?.paymentSourceId != null &&
+          _resolveCreditCardOwnerId(originalTx!.paymentSourceId!) == card.id) {
+        available += _convertCurrencyAmount(
+          amount: originalTx!.amount,
+          fromCurrency: originalTx.currency,
+          toCurrency: card.currency,
+        );
+      }
+      final double requested = _convertCurrencyAmount(
+        amount: amount,
+        fromCurrency: currency,
+        toCurrency: card.currency,
+      );
+      if (!requested.isFinite ||
+          requested - available > ReconciliationService.minAmount) {
+        throw StateError('Not enough available credit on this card.');
+      }
     }
 
     AppStateModel nextState = _state;
@@ -5550,6 +6288,8 @@ class AppStateController extends ChangeNotifier {
             exchangePairId: t.exchangePairId,
             exchangeSourceIncomeId: t.exchangeSourceIncomeId,
             remainingAmount: t.remainingAmount,
+            paymentSourceId: type == 'expense' ? paymentSourceId : null,
+            creditCardPaymentId: t.creditCardPaymentId,
             activityType: type == 'transfer' ? 'transfer' : t.activityType,
             costBasis: t.costBasis,
             saleValue: t.saleValue,
@@ -5560,6 +6300,20 @@ class AppStateController extends ChangeNotifier {
         return t;
       }).toList();
       nextState = nextState.copyWith(transactions: nextTx);
+      List<CreditCard> nextCards = _adjustCreditCardBalance(
+        cards: nextState.creditCards,
+        sourceId: originalTx?.paymentSourceId,
+        amount: originalTx?.amount ?? 0,
+        currency: originalTx?.currency ?? currency,
+        multiplier: -1,
+      );
+      nextCards = _adjustCreditCardBalance(
+        cards: nextCards,
+        sourceId: type == 'expense' ? paymentSourceId : null,
+        amount: amount,
+        currency: currency,
+      );
+      nextState = nextState.copyWith(creditCards: nextCards);
     } else if (nextState.savings.any((s) => s.id == linkedId)) {
       final List<Saving> nextSav = nextState.savings.map((s) {
         if (s.id == linkedId) {
@@ -5707,6 +6461,8 @@ class AppStateController extends ChangeNotifier {
               suggestedCurrency: currency.trim().toUpperCase(),
               suggestedDescription: description,
               suggestedCategory: category,
+              suggestedPaymentSourceId: paymentSourceId,
+              clearSuggestedPaymentSourceId: paymentSourceId == null,
             );
           }
           return t;
@@ -5725,6 +6481,7 @@ class AppStateController extends ChangeNotifier {
     required String category,
     required String description,
     required String date,
+    String? paymentSourceId,
   }) async {
     // Locate the pending transaction
     final PendingTransaction? pendingTx = _state.pendingTransactions
@@ -5749,11 +6506,19 @@ class AppStateController extends ChangeNotifier {
 
     if (type == 'expense' || type == 'income' || type == 'transfer') {
       if (type == 'expense') {
-        _ensureExpenseHasAvailableBalance(
-          transactionId: generatedRecordId,
-          currency: currency,
-          amount: amount,
-        );
+        if (paymentSourceId == null) {
+          _ensureExpenseHasAvailableBalance(
+            transactionId: generatedRecordId,
+            currency: currency,
+            amount: amount,
+          );
+        } else {
+          _ensureCreditCardHasAvailableLimit(
+            cardId: paymentSourceId,
+            amount: amount,
+            currency: currency,
+          );
+        }
       }
       final Transaction newTx = Transaction(
         id: generatedRecordId,
@@ -5765,10 +6530,18 @@ class AppStateController extends ChangeNotifier {
         description: description,
         createdAt: timestampStr,
         rolledOver: false,
+        paymentSourceId: type == 'expense' ? paymentSourceId : null,
         activityType: type == 'transfer' ? 'transfer' : null,
+      );
+      List<CreditCard> nextCards = _adjustCreditCardBalance(
+        cards: nextState.creditCards,
+        sourceId: type == 'expense' ? paymentSourceId : null,
+        amount: amount,
+        currency: currency,
       );
       nextState = nextState.copyWith(
         transactions: <Transaction>[...nextState.transactions, newTx],
+        creditCards: nextCards,
       );
     } else if (type == 'gold_purchase' || type == 'silver_purchase') {
       final String metalType = type == 'gold_purchase' ? 'gold' : 'silver';
@@ -5954,6 +6727,8 @@ class AppStateController extends ChangeNotifier {
               suggestedCurrency: currency.trim().toUpperCase(),
               suggestedDescription: description,
               suggestedCategory: category,
+              suggestedPaymentSourceId: paymentSourceId,
+              clearSuggestedPaymentSourceId: paymentSourceId == null,
             );
           }
           return t;
@@ -5972,9 +6747,7 @@ class AppStateController extends ChangeNotifier {
     double originalAmount = 0.0,
   }) {
     final String normalizedCurrency = currency.trim().toUpperCase();
-    double availableBalance = getAvailableBalance(
-      currency: normalizedCurrency,
-    );
+    double availableBalance = getAvailableBalance(currency: normalizedCurrency);
     if (isUpdate) {
       availableBalance += originalAmount;
     }
@@ -5983,13 +6756,63 @@ class AppStateController extends ChangeNotifier {
     }
     if (kDebugMode) {
       debugPrint(
-        'AppStateController: blocked expense $transactionId '
-        'for $normalizedCurrency because amount is $amount '
-        'and available balance is $availableBalance',
+        'AppStateController: expense $transactionId for $normalizedCurrency ($amount) '
+        'exceeds available balance ($availableBalance)',
       );
     }
-    throw StateError(
-      'Insufficient available balance in $normalizedCurrency to approve this expense.',
+  }
+
+  void _ensureCreditCardHasAvailableLimit({
+    required String cardId,
+    required double amount,
+    required String currency,
+  }) {
+    final String ownerId = _resolveCreditCardOwnerId(cardId);
+    final CreditCard card = _state.creditCards.firstWhere(
+      (CreditCard item) => item.id == ownerId,
+      orElse: () =>
+          throw StateError('The selected credit card is unavailable.'),
+    );
+    final double amountInCardCurrency = _convertCurrencyAmount(
+      amount: amount,
+      fromCurrency: currency,
+      toCurrency: card.currency,
+    );
+    if (!amountInCardCurrency.isFinite ||
+        amountInCardCurrency - card.availableCredit >
+            ReconciliationService.minAmount) {
+      throw StateError('Not enough available credit on this card.');
+    }
+  }
+
+  String? _resolveCreditCardIdFromMessage(String rawMessage) {
+    final String? rawReference = SmartCaptureParser.parse(
+      rawMessage,
+      merchantRules: _state.merchantRules,
+      merchantAliases: _state.merchantAliases,
+    ).cardReference;
+    final String digits = (rawReference ?? '').replaceAll(RegExp(r'\D'), '');
+    if (digits.length < 4) return null;
+    final String last4 = digits.substring(digits.length - 4);
+    final List<CreditCard> matches = _state.creditCards
+        .where(
+          (CreditCard card) =>
+              !card.isArchived && card.last4Digits.trim() == last4,
+        )
+        .toList(growable: false);
+    return matches.length == 1 ? matches.single.id : null;
+  }
+
+  double _convertCurrencyAmount({
+    required double amount,
+    required String fromCurrency,
+    required String toCurrency,
+  }) {
+    final MarketData market = MarketData.fromJson(_state.marketData);
+    return ZakatEngineService.convertFromEgp(
+      ZakatEngineService.convertToEgp(amount, fromCurrency, market),
+      toCurrency,
+      market,
     );
   }
 
@@ -6266,6 +7089,7 @@ class AppStateController extends ChangeNotifier {
     String? suggestedDescription,
     String? merchantName,
     String? suggestedCategory,
+    String? suggestedPaymentSourceId,
     String? parserVersion,
     String? detectedBank,
     bool requiresReview = true,
@@ -6282,6 +7106,7 @@ class AppStateController extends ChangeNotifier {
       suggestedDescription: suggestedDescription,
       merchantName: merchantName,
       suggestedCategory: suggestedCategory,
+      suggestedPaymentSourceId: suggestedPaymentSourceId,
       confidence: confidence,
       status: CaptureStatus.pendingReview,
       parserVersion: parserVersion,
@@ -6305,7 +7130,14 @@ class AppStateController extends ChangeNotifier {
     String? sourceIdentifier,
     bool sendNotification = true,
   }) async {
-    if (!_state.smartCaptureEnabled) return false;
+    // Manual paste is an explicit user action and must work on iOS even when
+    // automatic capture is disabled. Native automatic sources still respect
+    // the Smart Capture setting.
+    if (!_state.smartCaptureEnabled &&
+        !Platform.isIOS &&
+        source != PendingTransactionSource.manual) {
+      return false;
+    }
 
     final String cleanMessage = rawMessage.trim();
     if (cleanMessage.isEmpty || cleanMessage.length > 10000) {
@@ -6350,6 +7182,9 @@ class AppStateController extends ChangeNotifier {
         ? SmartCaptureParser.normalizeMerchantName(parsed.merchantName!).trim()
         : '';
     final String merchantKey = normMerchant.toLowerCase();
+    final String? suggestedPaymentSourceId = parsed.type == 'expense'
+        ? _resolveCreditCardIdFromMessage(cleanMessage)
+        : null;
 
     CaptureAnalytics nextAnalytics = _state.captureAnalytics.copyWith(
       parsedMessages: _state.captureAnalytics.parsedMessages + 1,
@@ -6359,6 +7194,39 @@ class AppStateController extends ChangeNotifier {
     );
 
     if (!parsed.isValid) {
+      if (source == PendingTransactionSource.manual &&
+          parsed.ignoreReason != 'Verification Code Message' &&
+          parsed.ignoreReason != 'Subscription Activation Message') {
+        final PendingTransaction manualReview = PendingTransaction(
+          id: const Uuid().v4(),
+          source: source,
+          sourceIdentifier: sourceIdentifier ?? 'Manual Entry',
+          rawMessage: cleanMessage,
+          createdAt: DateTime.now().toUtc().toIso8601String(),
+          suggestedType: parsed.type == 'income' ? 'income' : 'expense',
+          suggestedAmount: parsed.amount,
+          suggestedCurrency: parsed.currency,
+          suggestedDescription: parsed.description,
+          merchantName: parsed.merchantName,
+          suggestedCategory: parsed.suggestedCategory,
+          suggestedPaymentSourceId: suggestedPaymentSourceId,
+          confidence: parsed.confidence,
+          status: CaptureStatus.pendingReview,
+          detectedBank: detectedBank,
+          requiresReview: true,
+          isRead: false,
+        );
+        await updateState(
+          _state.copyWith(
+            pendingTransactions: <PendingTransaction>[
+              ..._state.pendingTransactions,
+              manualReview,
+            ],
+            captureAnalytics: nextAnalytics,
+          ),
+        );
+        return true;
+      }
       nextAnalytics = nextAnalytics.copyWith(
         ignoredMessages: nextAnalytics.ignoredMessages + 1,
         capturedFromAppleShortcutsIgnored:
@@ -6389,6 +7257,7 @@ class AppStateController extends ChangeNotifier {
               suggestedDescription: parsed.description,
               merchantName: parsed.merchantName,
               suggestedCategory: parsed.suggestedCategory,
+              suggestedPaymentSourceId: suggestedPaymentSourceId,
               confidence: parsed.confidence,
               status: CaptureStatus.ignored,
               ignoreReason: parsed.ignoreReason ?? 'Invalid Transaction',
@@ -6475,6 +7344,7 @@ class AppStateController extends ChangeNotifier {
         suggestedDescription: parsed.description,
         merchantName: parsed.merchantName,
         suggestedCategory: parsed.suggestedCategory,
+        suggestedPaymentSourceId: suggestedPaymentSourceId,
         confidence: 0.0,
         status: CaptureStatus.ignored,
         ignoreReason: 'Duplicate',
@@ -6550,6 +7420,23 @@ class AppStateController extends ChangeNotifier {
         debugPrint('[Shortcut] Flutter outcome: auto_approved');
       }
 
+      final String? paymentSourceId = finalType == 'expense'
+          ? suggestedPaymentSourceId
+          : null;
+      if (paymentSourceId == null && finalType == 'expense') {
+        _ensureExpenseHasAvailableBalance(
+          transactionId: generatedId,
+          currency: parsed.currency ?? 'EGP',
+          amount: parsed.amount!,
+        );
+      } else if (paymentSourceId != null) {
+        _ensureCreditCardHasAvailableLimit(
+          cardId: paymentSourceId,
+          amount: parsed.amount!,
+          currency: parsed.currency ?? 'EGP',
+        );
+      }
+
       final Transaction newTx = Transaction(
         id: generatedId,
         type: finalType,
@@ -6560,6 +7447,7 @@ class AppStateController extends ChangeNotifier {
         description: parsed.description,
         createdAt: timestampStr,
         rolledOver: false,
+        paymentSourceId: paymentSourceId,
       );
 
       final PendingTransaction transaction = PendingTransaction(
@@ -6579,6 +7467,7 @@ class AppStateController extends ChangeNotifier {
         suggestedDescription: parsed.description,
         merchantName: parsed.merchantName,
         suggestedCategory: finalCategory,
+        suggestedPaymentSourceId: paymentSourceId,
         confidence: parsed.confidence,
         status: CaptureStatus.autoApproved,
         approvalSource: ApprovalSource.auto,
@@ -6598,6 +7487,12 @@ class AppStateController extends ChangeNotifier {
       await updateState(
         nextState.copyWith(
           transactions: <Transaction>[...nextState.transactions, newTx],
+          creditCards: _adjustCreditCardBalance(
+            cards: nextState.creditCards,
+            sourceId: paymentSourceId,
+            amount: parsed.amount!,
+            currency: parsed.currency ?? 'EGP',
+          ),
           pendingTransactions: nextPending,
           captureAnalytics: nextAnalytics,
         ),
@@ -6631,6 +7526,7 @@ class AppStateController extends ChangeNotifier {
         suggestedDescription: parsed.description,
         merchantName: parsed.merchantName,
         suggestedCategory: finalCategory,
+        suggestedPaymentSourceId: suggestedPaymentSourceId,
         confidence: parsed.confidence,
         status: CaptureStatus.pendingReview,
         merchantRuleUsed: ruleName,
@@ -7373,11 +8269,11 @@ class AppStateController extends ChangeNotifier {
       app: DebugDiagnosticsAppInfo(
         version: const String.fromEnvironment(
           'APP_VERSION',
-          defaultValue: '1.0.4',
+          defaultValue: '1.5.0',
         ),
         buildNumber: const String.fromEnvironment(
           'APP_BUILD_NUMBER',
-          defaultValue: '5',
+          defaultValue: '36',
         ),
         platform: kIsWeb ? 'web' : defaultTargetPlatform.name,
         device: kIsWeb ? 'web' : defaultTargetPlatform.name,
@@ -7677,6 +8573,7 @@ extension AppStateModelCopyWith on AppStateModel {
     List<Saving>? savings,
     List<RecurringTransaction>? recurringTransactions,
     List<InvestmentAsset>? investments,
+    List<CreditCard>? creditCards,
     List<FinancialPlan>? financialPlans,
     List<PendingTransaction>? pendingTransactions,
     String? lastRollover,
@@ -7728,6 +8625,7 @@ extension AppStateModelCopyWith on AppStateModel {
       recurringTransactions:
           recurringTransactions ?? this.recurringTransactions,
       investments: investments ?? this.investments,
+      creditCards: creditCards ?? this.creditCards,
       financialPlans: financialPlans ?? this.financialPlans,
       pendingTransactions: pendingTransactions ?? this.pendingTransactions,
       lastRollover: lastRollover ?? this.lastRollover,

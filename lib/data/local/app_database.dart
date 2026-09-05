@@ -68,6 +68,38 @@ class AppDatabase extends _$AppDatabase {
       final File file = File(p.join(directory.path, name));
       await _deleteFileArtifacts(file);
     }
+
+    try {
+      if (await directory.exists()) {
+        await for (final FileSystemEntity entity in directory.list(
+          followLinks: false,
+        )) {
+          if (entity is! File) continue;
+          final String name = p.basename(entity.path);
+          if (name.contains('.restore_backup_') ||
+              name.startsWith('restored_user_backup_')) {
+            await _deleteFileArtifacts(entity);
+          }
+        }
+      }
+    } catch (_) {}
+
+    try {
+      final Directory tempDir = await getTemporaryDirectory();
+      if (await tempDir.exists()) {
+        await for (final FileSystemEntity entity in tempDir.list(
+          followLinks: false,
+        )) {
+          if (entity is! File) continue;
+          final String name = p.basename(entity.path);
+          if (name.contains('.restore_backup_') ||
+              name.startsWith('restored_user_backup_') ||
+              name.startsWith('zakatapp-backup-')) {
+            await _deleteFileArtifacts(entity);
+          }
+        }
+      }
+    } catch (_) {}
   }
 
   static Future<void> deleteAllDatabaseFiles() async {

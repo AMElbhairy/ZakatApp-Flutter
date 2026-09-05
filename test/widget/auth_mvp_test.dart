@@ -1187,8 +1187,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(controller.visible, isFalse);
-    expect(controller.visible, isFalse);
-    expect(find.byKey(const Key('premiumBottomNav')), findsOneWidget);
+      expect(controller.visible, isFalse);
+      expect(find.byKey(const Key('premiumBottomNav')), findsOneWidget);
 
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
       await tester.pump();

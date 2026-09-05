@@ -860,7 +860,14 @@ class FirestoreSyncManager {
       await _deleteCollection(uid, financialPlansCollection);
       await _deleteCollection(uid, correctionFeedbackCollection);
       await _deleteCollection(uid, merchantConfirmationsCollection);
-      await _userSettingsDocument(uid).delete();
+      await _deleteCollection(uid, 'security');
+      try {
+        await _userSettingsDocument(uid).delete();
+      } catch (_) {}
+      await _deleteCollection(uid, userSettingsCollection);
+      try {
+        await _firestore.collection('users').doc(uid).delete();
+      } catch (_) {}
     } on FirebaseException catch (error) {
       throw _mapFirebaseException(error);
     }

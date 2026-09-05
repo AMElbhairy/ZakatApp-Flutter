@@ -59,6 +59,17 @@ class _AccountScreenState extends State<AccountScreen> {
   bool _isTestingConnection = false;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      try {
+        final backupController = context.read<CloudBackupController>();
+        backupController.refreshCloudState(evaluatePrompt: false);
+      } catch (_) {}
+    });
+  }
+
+  @override
   void dispose() {
     _scrollController.dispose();
     _aiKey1Controller.dispose();
@@ -131,9 +142,8 @@ class _AccountScreenState extends State<AccountScreen> {
                   name: authController?.currentUser?.displayName,
                   email: authController?.currentUser?.email,
                   photoUrl: authController?.currentUser?.photoUrl,
-                  connected: authController?.isSignedIn == true,
-                  backupEnabled:
-                      backupController?.automaticBackupEnabled == true,
+                  connected: authController?.currentUser != null,
+                  backupEnabled: backupController?.isDriveConnected == true,
                   isLoading: authController?.isLoading == true,
                   onSignIn: authController == null
                       ? null
@@ -155,18 +165,14 @@ class _AccountScreenState extends State<AccountScreen> {
                                       .state
                                       .biometricExportEnabled) &&
                               await BiometricService.canAuthenticate()) {
-                            final bool
-                            auth = await BiometricService.authenticate(
-                              reason:
-                                  'Confirm identity to sign out and clear local data',
-                              isSensitiveAction: true,
-                            );
+                            final bool auth =
+                                await BiometricService.authenticate(
+                                  reason: 'Confirm identity to sign out',
+                                  isSensitiveAction: true,
+                                );
                             if (!auth) return;
                           }
 
-                          await appStateController.clearLocalDataForSignOut(
-                            userId: user.id,
-                          );
                           await authController.signOut();
                         },
                 ),
@@ -382,7 +388,8 @@ class _AccountScreenState extends State<AccountScreen> {
                         onTap: () {
                           Navigator.of(context).push(
                             MaterialPageRoute<void>(
-                              builder: (_) => const AndroidSmartCaptureSetupScreen(),
+                              builder: (_) =>
+                                  const AndroidSmartCaptureSetupScreen(),
                             ),
                           );
                         },
@@ -527,26 +534,69 @@ class _AccountScreenState extends State<AccountScreen> {
                 }
               }
 
+              final bool isArabic =
+                  Localizations.localeOf(context).languageCode.toLowerCase() ==
+                  'ar';
               return AlertDialog(
-                title: Text(l10n.tr('delete_account')),
-                content: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                title: Row(
                   children: <Widget>[
-                    const Text('Type DELETE to confirm account deletion.'),
-                    const SizedBox(height: 12),
-                    TextField(
-                      key: const Key('deleteAccountConfirmField'),
-                      controller: confirmController,
-                      autofocus: true,
-                      textCapitalization: TextCapitalization.characters,
-                      decoration: const InputDecoration(
-                        labelText: 'DELETE',
-                        hintText: 'DELETE',
-                      ),
-                      onChanged: refreshConfirmState,
+                    const Icon(
+                      Icons.warning_amber_rounded,
+                      color: AppColors.redStrong,
                     ),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(l10n.tr('delete_account'))),
                   ],
+                ),
+                content: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Text(
+                        isArabic
+                            ? 'سيتم حذف كل ما يتعلق بهذا الحساب نهائياً، بما في ذلك:'
+                            : 'This action is permanent. The following will be completely deleted:',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        isArabic
+                            ? '• جميع النسخ الاحتياطية السحابية (Google Drive و iCloud و Firestore)\n• حسابك وبيانات تسجيل الدخول في Firebase\n• قاعدة البيانات المحلية وجميع النسخ الاحتياطية على هذا الجهاز\n• مفاتيح الأمان ومفاتيح الذكاء الاصطناعي والإعدادات'
+                            : '• All online cloud backups (Google Drive, iCloud, Firestore)\n• Your Firebase account & login credentials\n• Local SQLite database & local backup snapshots on this device\n• Security encryption keys, AI keys, & device settings',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Text(
+                        isArabic
+                            ? 'اكتب DELETE للتأكيد:'
+                            : 'Type DELETE to confirm account deletion:',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        key: const Key('deleteAccountConfirmField'),
+                        controller: confirmController,
+                        autofocus: true,
+                        textCapitalization: TextCapitalization.characters,
+                        decoration: const InputDecoration(
+                          labelText: 'DELETE',
+                          hintText: 'DELETE',
+                        ),
+                        onChanged: refreshConfirmState,
+                      ),
+                    ],
+                  ),
                 ),
                 actions: <Widget>[
                   TextButton(
@@ -572,23 +622,20 @@ class _AccountScreenState extends State<AccountScreen> {
       confirmController.dispose();
     }
     if (ok == true && context.mounted) {
-      final AppStateController appStateController = context
-          .read<AppStateController>();
+      final AppStateController appStateController =
+          context.read<AppStateController>();
       final FirebaseAccountDeletionAuthBackend authBackend =
           FirebaseAccountDeletionAuthBackend();
       final AccountDeletionService deletionService = AccountDeletionService(
         appStateController: appStateController,
-        authController: authController!,
+        authController: authController ?? context.read<AuthController>(),
         authBackend: authBackend,
         reauthenticationService: AccountReauthenticationService(
           authBackend: authBackend,
-          promptPassword: (UserProfile reauthUser) {
-            return _promptPasswordForReauthentication(context, reauthUser);
-          },
+          promptPassword: (UserProfile reauthUser) async => null,
           chooseMethod:
-              ({required List<AccountReauthMethod> availableMethods}) {
-                return _chooseReauthMethod(context, availableMethods);
-              },
+              ({required List<AccountReauthMethod> availableMethods}) async =>
+                  availableMethods.firstOrNull,
         ),
         deleteCloudBackupData: (UserProfile user) async {
           CloudBackupController? cloudBackupController;
@@ -602,12 +649,54 @@ class _AccountScreenState extends State<AccountScreen> {
           }
         },
       );
+
+      final bool isArabic =
+          Localizations.localeOf(context).languageCode.toLowerCase() == 'ar';
+
+      // Show deleting progress dialog
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext loadingContext) => PopScope(
+          canPop: false,
+          child: AlertDialog(
+            content: Row(
+              children: <Widget>[
+                const CircularProgressIndicator(),
+                const SizedBox(width: 20),
+                Expanded(
+                  child: Text(
+                    isArabic
+                        ? 'جاري حذف الحساب وجميع البيانات...'
+                        : 'Deleting account and all data...',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
       try {
-        await deletionService.deleteAccount();
+        await deletionService.deleteAccount(requireReauth: false);
+        if (authController != null && authController.isSignedIn) {
+          await authController.signOut();
+        }
+        if (!context.mounted) return;
+        Navigator.of(context, rootNavigator: true).pop(); // dismiss loading
+        showTopSnackBar(
+          context,
+          isArabic
+              ? 'تم حذف الحساب وجميع البيانات بنجاح.'
+              : 'Account and all data successfully deleted.',
+          kind: AppToastKind.success,
+        );
       } catch (error, stackTrace) {
         debugPrint('AccountScreen.deleteAccount failed: $error');
         debugPrintStack(stackTrace: stackTrace);
         if (!context.mounted) return;
+        Navigator.of(context, rootNavigator: true).pop(); // dismiss loading
         showTopSnackBar(
           context,
           _presentDeleteAccountError(error),
@@ -615,91 +704,6 @@ class _AccountScreenState extends State<AccountScreen> {
         );
       }
     }
-  }
-
-  Future<String?> _promptPasswordForReauthentication(
-    BuildContext context,
-    UserProfile user,
-  ) async {
-    final TextEditingController passwordController = TextEditingController();
-    try {
-      final bool? confirmed = await showDialog<bool>(
-        context: context,
-        builder: (BuildContext dialogContext) => AlertDialog(
-          title: Text(context.l10n.tr('delete_account')),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Text(
-                user.email.isEmpty
-                    ? 'Re-enter your password to continue.'
-                    : 'Re-enter the password for ${user.email} to continue.',
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: passwordController,
-                obscureText: true,
-                autofocus: true,
-                decoration: InputDecoration(
-                  labelText: context.l10n.tr('password'),
-                ),
-              ),
-            ],
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: Text(context.l10n.tr('cancel')),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: Text(context.l10n.tr('continue')),
-            ),
-          ],
-        ),
-      );
-      if (confirmed != true) return null;
-      return passwordController.text;
-    } finally {
-      passwordController.dispose();
-    }
-  }
-
-  Future<AccountReauthMethod?> _chooseReauthMethod(
-    BuildContext context,
-    List<AccountReauthMethod> availableMethods,
-  ) async {
-    final bool hasGoogle = availableMethods.contains(
-      AccountReauthMethod.google,
-    );
-    final bool hasPassword = availableMethods.contains(
-      AccountReauthMethod.password,
-    );
-    if (!hasGoogle || !hasPassword) {
-      return availableMethods.isEmpty ? null : availableMethods.first;
-    }
-    final bool? google = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
-        title: Text(context.l10n.tr('delete_account')),
-        content: Text(
-          'Choose how to reauthenticate before deleting your account.',
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Continue with Password'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Continue with Google'),
-          ),
-        ],
-      ),
-    );
-    if (google == null) return null;
-    return google ? AccountReauthMethod.google : AccountReauthMethod.password;
   }
 
   String _presentDeleteAccountError(Object error) {
@@ -1205,10 +1209,20 @@ class _BackupOverviewCard extends StatelessWidget {
     final ColorScheme colors = Theme.of(context).colorScheme;
     final bool compact = ResponsiveLayout.isCompact(context);
     final bool connected = controller?.isDriveConnected == true;
+    final String providerId =
+        controller?.selectedProviderId ??
+        context.read<AuthController?>()?.currentUser?.provider ??
+        'google';
+    final bool isICloud =
+        providerId.toLowerCase().trim() == 'icloud' ||
+        providerId.toLowerCase().trim() == 'apple';
+    final String providerLabel = isICloud
+        ? (isArabic ? 'iCloud' : 'iCloud')
+        : (isArabic ? 'Google Drive' : 'Google Drive');
     final String backupStatus = connected
         ? (isArabic ? 'متصل' : 'Connected')
         : (isArabic ? 'غير متصل' : 'Disconnected');
-    final DateTime? lastBackupAt = controller?.lastBackupAt;
+    final DateTime? lastBackupAt = _resolveLastBackupTime(controller);
     final DateTime? nextCheckAt = controller?.nextEligibleBackupAt;
     final Duration interval =
         controller?.minimumInterval ?? const Duration(hours: 3);
@@ -1231,7 +1245,7 @@ class _BackupOverviewCard extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    isArabic ? 'نسخ Google Drive' : 'Google Drive Backup',
+                    isArabic ? 'نسخ $providerLabel' : '$providerLabel Backup',
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
@@ -1291,7 +1305,7 @@ class _BackupOverviewCard extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    isArabic ? 'نسخ Google Drive' : 'Google Drive Backup',
+                    isArabic ? 'نسخ $providerLabel' : '$providerLabel Backup',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.w800,
                     ),
@@ -1359,8 +1373,8 @@ class _BackupOverviewCard extends StatelessWidget {
             const SizedBox(height: 12),
             Text(
               isArabic
-                  ? 'اربط Google Drive لتفعيل النسخ المشفر.'
-                  : 'Connect Google Drive to enable encrypted backups.',
+                  ? 'اربط $providerLabel لتفعيل النسخ المشفر.'
+                  : 'Connect $providerLabel to enable encrypted backups.',
               style: Theme.of(
                 context,
               ).textTheme.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
@@ -1370,7 +1384,9 @@ class _BackupOverviewCard extends StatelessWidget {
           const Divider(),
           const SizedBox(height: 12),
           Text(
-            isArabic ? 'النسخ الاحتياطي المحلي (JSON)' : 'Local JSON Backup',
+            isArabic
+                ? 'النسخ الاحتياطي وتصدير/استيراد Excel و JSON'
+                : 'Local Backup, Excel & CSV Import/Export',
             style: Theme.of(
               context,
             ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
@@ -1381,6 +1397,16 @@ class _BackupOverviewCard extends StatelessWidget {
       ),
     );
   }
+}
+
+DateTime? _resolveLastBackupTime(CloudBackupController? controller) {
+  final DateTime? controllerLastBackupAt = controller?.lastBackupAt;
+  final DateTime? latestSnapshotAt = controller?.latestSnapshotAt;
+  if (controllerLastBackupAt == null) return latestSnapshotAt;
+  if (latestSnapshotAt == null) return controllerLastBackupAt;
+  return latestSnapshotAt.isAfter(controllerLastBackupAt)
+      ? latestSnapshotAt
+      : controllerLastBackupAt;
 }
 
 class _InfoColumn extends StatelessWidget {
@@ -1610,7 +1636,9 @@ class _WealthZakatCard extends StatelessWidget {
             title: context.l10n.tr('how_calculation_works'),
             subtitle: context.l10n.tr('how_calculation_works_subtitle'),
             onTap: () {
-              Navigator.of(context).push(ZakatCalculationExplanationScreen.route());
+              Navigator.of(
+                context,
+              ).push(ZakatCalculationExplanationScreen.route());
             },
           ),
           if (zakatMethod == 'annual') ...<Widget>[
@@ -2444,11 +2472,11 @@ class _AboutCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final String version = const String.fromEnvironment(
       'APP_VERSION',
-      defaultValue: '1.2.0',
+      defaultValue: '1.5.0',
     );
     final String buildNumber = const String.fromEnvironment(
       'APP_BUILD_NUMBER',
-      defaultValue: '16',
+      defaultValue: '36',
     );
 
     return _CompactSectionCard(
@@ -2478,7 +2506,9 @@ class _AboutCard extends StatelessWidget {
               ? 'اقرأ كيف تتم معالجة بياناتك'
               : 'Read how your data is handled',
           onTap: () {
-            Navigator.of(context).push(PolicyDetailScreen.route(type: 'privacy'));
+            Navigator.of(
+              context,
+            ).push(PolicyDetailScreen.route(type: 'privacy'));
           },
         ),
         _ActionSettingTile(
@@ -2496,7 +2526,9 @@ class _AboutCard extends StatelessWidget {
               ? 'أرسل ملاحظاتك أو احصل على المساعدة'
               : 'Send feedback or get help',
           onTap: () {
-            Navigator.of(context).push(PolicyDetailScreen.route(type: 'support'));
+            Navigator.of(
+              context,
+            ).push(PolicyDetailScreen.route(type: 'support'));
           },
         ),
         Padding(
@@ -2777,14 +2809,16 @@ class _SettingsProfileHeader extends StatelessWidget {
                           icon: connected
                               ? Icons.check_circle_outline
                               : Icons.link,
-                          label: isArabic ? 'Google متصل' : 'Google Connected',
+                          label: isArabic ? 'الحساب متصل' : 'Account Signed In',
                           active: connected,
                         ),
                         _ProfileChip(
                           icon: backupEnabled
                               ? Icons.cloud_done_outlined
                               : Icons.cloud_off_outlined,
-                          label: isArabic ? 'النسخ مفعّل' : 'Backup Enabled',
+                          label: isArabic
+                              ? 'النسخ السحابي متصل'
+                              : 'Drive Backup Connected',
                           active: backupEnabled,
                         ),
                       ],
@@ -2851,8 +2885,8 @@ class _SettingsProfileHeader extends StatelessWidget {
                                     ? Icons.check_circle_outline
                                     : Icons.link,
                                 label: isArabic
-                                    ? 'Google متصل'
-                                    : 'Google Connected',
+                                    ? 'الحساب متصل'
+                                    : 'Account Signed In',
                                 active: connected,
                               ),
                               _ProfileChip(
@@ -2860,8 +2894,8 @@ class _SettingsProfileHeader extends StatelessWidget {
                                     ? Icons.cloud_done_outlined
                                     : Icons.cloud_off_outlined,
                                 label: isArabic
-                                    ? 'النسخ مفعّل'
-                                    : 'Backup Enabled',
+                                    ? 'النسخ السحابي متصل'
+                                    : 'Drive Backup Connected',
                                 active: backupEnabled,
                               ),
                             ],
@@ -2930,5 +2964,3 @@ class _ProfileChip extends StatelessWidget {
     );
   }
 }
-
-

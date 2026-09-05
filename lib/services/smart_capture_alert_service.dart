@@ -341,6 +341,9 @@ class PlatformSmartCaptureAlertService extends SmartCaptureAlertService {
       pendingTransaction,
       parsed,
     );
+    final String? rejectionReason = pendingTransaction.status == CaptureStatus.ignored
+        ? pendingTransaction.ignoreReason?.trim()
+        : null;
 
     final String title = switch (displayStatus) {
       CaptureStatus.pendingReview => l10n.smartCapturePendingForApproval,
@@ -348,10 +351,19 @@ class PlatformSmartCaptureAlertService extends SmartCaptureAlertService {
       CaptureStatus.manuallyApproved => l10n.smartCaptureAutoApproved,
       CaptureStatus.ignored => l10n.smartCaptureRejected,
     };
-    final String body = <String>[merchant, amountStr]
+    final List<String> bodyLines = <String>[
+      merchant,
+      if (rejectionReason != null && rejectionReason.isNotEmpty)
+        _localizedNotificationLine(
+          line: isArabic
+              ? 'السبب: $rejectionReason'
+              : 'Reason: $rejectionReason',
+        ),
+      amountStr,
+    ]
         .where((String line) => line.trim().isNotEmpty)
-        .map((String line) => _localizedNotificationLine(line: line))
-        .join('\n');
+        .toList();
+    final String body = bodyLines.join('\n');
     final int notificationId = smartCaptureNotificationId(
       source: pendingTransaction.source,
       rawMessage: pendingTransaction.rawMessage,

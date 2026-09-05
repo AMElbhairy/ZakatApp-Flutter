@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 
 import '../features/auth/auth_service.dart';
+import '../models/backup_preview.dart';
 import '../models/user_profile.dart';
 import 'apple_shortcuts_service.dart';
 import 'app_state_controller.dart';
@@ -10,8 +11,10 @@ import 'auth_controller.dart';
 import 'biometric_service.dart';
 import 'biometric_auth_result.dart';
 import 'backup_service.dart';
+import 'backup_restore_service.dart';
 import 'bootstrap_cloud_service.dart';
 import 'launch_diagnostics.dart';
+import 'local_backup_service.dart';
 import 'startup_restore_discovery.dart';
 
 enum BootstrapPhase {
@@ -497,15 +500,9 @@ class BootstrapCoordinator extends ChangeNotifier {
     final bool localHasData = BackupService.hasData(
       appStateController.state.toJson(),
     );
-    final StartupRestoreDiscoveryResult discovery =
-        localHasData || cloudBackupController == null
-        ? const StartupRestoreDiscoveryResult(
-            status: StartupRestoreDiscoveryStatus.none,
-            message: '',
-          )
-        : await cloudBackupController.discoverStartupRestore(
-            localHasData: false,
-          );
+    final StartupRestoreDiscoveryResult discovery = await _discoverStartupRestore(
+      localHasData: localHasData,
+    );
     _restoreGateDiscovery = discovery;
     if (!localHasData &&
         discovery.status == StartupRestoreDiscoveryStatus.restorePrompt) {
@@ -608,6 +605,12 @@ class BootstrapCoordinator extends ChangeNotifier {
     required int generation,
     required BootstrapRequest request,
   }) async {
+    if (discovery.isLocalBackup) {
+      return _autoRestoreLocalBackup(
+        discovery,
+        generation: generation,
+      );
+    }
     final BootstrapCloudService? cloudBackupController =
         _dependencies.cloudBackupController;
     if (cloudBackupController == null) {
@@ -632,6 +635,101 @@ class BootstrapCoordinator extends ChangeNotifier {
       generation: generation,
     );
     return true;
+  }
+
+  Future<bool> _autoRestoreLocalBackup(
+    StartupRestoreDiscoveryResult discovery, {
+    required int generation,
+  }) async {
+    final BackupPreview? preview = discovery.preview;
+    if (preview == null || preview.rawJson.trim().isEmpty) {
+      _setPhase(BootstrapPhase.restoreGate, loadingMessage: discovery.message);
+      _setRestoreGateDiscovery(
+        discovery.copyWith(error: 'Local backup preview is missing.'),
+      );
+      return false;
+    }
+
+    _setPhase(BootstrapPhase.loading, loadingMessage: discovery.message);
+    try {
+      final BackupRestoreService restoreService = BackupRestoreService(
+        controller: _dependencies.appStateController,
+      );
+      final String startupUserId = _startupUserId();
+      await restoreService.restoreReplace(
+        preview.rawJson,
+        allowWhenLocalDataExists: true,
+        expectedUserId: startupUserId.isEmpty ? null : startupUserId,
+      );
+      if (!_isCurrentGeneration(generation)) {
+        return false;
+      }
+      await _enterShellAfterRestore(
+        generation: generation,
+      );
+      return true;
+    } catch (error, stackTrace) {
+      debugPrint('Local backup auto-restore failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      _setPhase(BootstrapPhase.restoreGate, loadingMessage: discovery.message);
+      _setRestoreGateDiscovery(discovery.copyWith(error: error.toString()));
+      return false;
+    }
+  }
+
+  Future<StartupRestoreDiscoveryResult> _discoverStartupRestore({
+    required bool localHasData,
+  }) async {
+    final AppStateController appStateController = _dependencies.appStateController;
+    final BootstrapCloudService? cloudBackupController =
+        _dependencies.cloudBackupController;
+    final LocalBackupService? localBackupService =
+        appStateController.localBackupService;
+    final String currentUserId = _startupUserId();
+
+    if (localHasData) {
+      return const StartupRestoreDiscoveryResult(
+        status: StartupRestoreDiscoveryStatus.none,
+        message: '',
+      );
+    }
+
+    if (cloudBackupController == null) {
+      if (localBackupService == null) {
+        return const StartupRestoreDiscoveryResult(
+          status: StartupRestoreDiscoveryStatus.none,
+          message: '',
+        );
+      }
+      return localBackupService.discoverStartupRestore(
+        userId: currentUserId,
+        localHasData: localHasData,
+      );
+    }
+
+    final StartupRestoreDiscoveryResult cloudDiscovery =
+        await cloudBackupController.discoverStartupRestore(
+          localHasData: false,
+        );
+    if (cloudDiscovery.status == StartupRestoreDiscoveryStatus.restorePrompt ||
+        cloudDiscovery.status == StartupRestoreDiscoveryStatus.dismissed) {
+      return cloudDiscovery;
+    }
+
+    if (localBackupService == null || currentUserId.trim().isEmpty) {
+      return cloudDiscovery;
+    }
+
+    final StartupRestoreDiscoveryResult localDiscovery =
+        await localBackupService.discoverStartupRestore(
+          userId: currentUserId,
+          localHasData: localHasData,
+        );
+    if (localDiscovery.status == StartupRestoreDiscoveryStatus.restorePrompt) {
+      return localDiscovery;
+    }
+
+    return cloudDiscovery;
   }
 
   Future<void> _finishBootstrapBackgroundTasks({
@@ -856,6 +954,11 @@ class BootstrapCoordinator extends ChangeNotifier {
   }
 
   Future<void> restoreBackup() async {
+    final StartupRestoreDiscoveryResult? discovery = _restoreGateDiscovery;
+    if (discovery != null && discovery.isLocalBackup) {
+      await _restoreLocalBackup(discovery);
+      return;
+    }
     final BootstrapCloudService? cloudBackupController =
         _dependencies.cloudBackupController;
     if (cloudBackupController == null) {
@@ -873,6 +976,40 @@ class BootstrapCoordinator extends ChangeNotifier {
     await _enterShellAfterRestore(
       generation: _generation,
     );
+  }
+
+  Future<void> _restoreLocalBackup(
+    StartupRestoreDiscoveryResult discovery,
+  ) async {
+    final BackupPreview? preview = discovery.preview;
+    if (preview == null || preview.rawJson.trim().isEmpty) {
+      _setPhase(BootstrapPhase.restoreGate, loadingMessage: discovery.message);
+      _setRestoreGateDiscovery(
+        discovery.copyWith(error: 'Local backup preview is missing.'),
+      );
+      return;
+    }
+
+    _setPhase(BootstrapPhase.loading, loadingMessage: discovery.message);
+    try {
+      final BackupRestoreService restoreService = BackupRestoreService(
+        controller: _dependencies.appStateController,
+      );
+      final String startupUserId = _startupUserId();
+      await restoreService.restoreReplace(
+        preview.rawJson,
+        allowWhenLocalDataExists: true,
+        expectedUserId: startupUserId.isEmpty ? null : startupUserId,
+      );
+      await _enterShellAfterRestore(
+        generation: _generation,
+      );
+    } catch (error, stackTrace) {
+      debugPrint('Local backup restore failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      _setPhase(BootstrapPhase.restoreGate, loadingMessage: discovery.message);
+      _setRestoreGateDiscovery(discovery.copyWith(error: error.toString()));
+    }
   }
 
   Future<void> startFresh() async {
@@ -948,6 +1085,14 @@ class BootstrapCoordinator extends ChangeNotifier {
       debugPrintStack(stackTrace: stackTrace);
       return;
     }
+  }
+
+  String _startupUserId() {
+    final String authUserId = _dependencies.authController.currentUser?.id.trim() ?? '';
+    if (authUserId.isNotEmpty) {
+      return authUserId;
+    }
+    return _dependencies.appStateController.state.userId?.trim() ?? '';
   }
 
   static int _autoLockDelaySeconds(String delay) {

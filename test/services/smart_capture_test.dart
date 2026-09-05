@@ -1425,6 +1425,17 @@ void main() {
       expect(parsed.amount, isNull);
       expect(parsed.currency, isNull);
       expect(parsed.merchantName, isNull);
+
+      final purchaseCodeParsed = SmartCaptureParser.parse(
+        'رمز شراء أونلاين 6528\n'
+        'للبطاقة *0973\n'
+        'بـ 25 SAR\n'
+        'من Amazon SA\n'
+        'في 11:32 26-08-21',
+      );
+
+      expect(purchaseCodeParsed.isValid, isFalse);
+      expect(purchaseCodeParsed.ignoreReason, 'Verification Code Message');
     });
 
     test('subscription activation messages are excluded from smart capture', () {
@@ -1458,6 +1469,40 @@ void main() {
       expect(parsed.currency, 'EGP');
       expect(parsed.merchantName, 'E-Finance');
       expect(parsed.description, 'Purchase at E-Finance');
+    });
+
+    test('Arabic instant transfer messages are parsed correctly', () {
+      final msg = "تم إضافة تحويل لحظي لحسابكم رقم 0019 بمبلغ 35000.00 جم من احمد مصطفي الباز محمد البحيرى رقم مرجعي 341896635223 يوم 08-25 الساعة 17:33 للمزيد اتصل بـ 19623";
+      // 1. Inbound instant transfer
+      final inbound1 = SmartCaptureParser.parse(msg);
+      expect(inbound1.isValid, isTrue);
+      expect(inbound1.type, 'income');
+      expect(inbound1.direction, 'in');
+      expect(inbound1.amount, 35000.00);
+      expect(inbound1.currency, 'EGP');
+      expect(inbound1.merchantName, 'احمد مصطفي الباز محمد البحيرى');
+
+      // 2. Inbound instant transfer 2
+      final inbound2 = SmartCaptureParser.parse(
+        "تم إضافة تحويل لحظي لحسابكم رقم 0019 بمبلغ 2500.00 جم من احمد مصطفي الباز محمد البحيرى رقم مرجعي 255560970814 يوم 08-25 الساعة 17:33 للمزيد اتصل بـ 19623"
+      );
+      expect(inbound2.isValid, isTrue);
+      expect(inbound2.type, 'income');
+      expect(inbound2.direction, 'in');
+      expect(inbound2.amount, 2500.00);
+      expect(inbound2.currency, 'EGP');
+      expect(inbound2.merchantName, 'احمد مصطفي الباز محمد البحيرى');
+
+      // 3. Outbound instant transfer
+      final outbound = SmartCaptureParser.parse(
+        "تم تنفيذ تحويل لحظي من حسابكم رقم 0190 بمبلغ 70000.00 جم إلى احمد ع*** ا***** ا**** رقم مرجعي 545351432177 يوم 08-25 الساعة 10:26 للمزيد اتصل بـ 19623"
+      );
+      expect(outbound.isValid, isTrue);
+      expect(outbound.type, 'expense');
+      expect(outbound.direction, 'out');
+      expect(outbound.amount, 70000.00);
+      expect(outbound.currency, 'EGP');
+      expect(outbound.merchantName, 'احمد ع*** ا***** ا****');
     });
 
     test(

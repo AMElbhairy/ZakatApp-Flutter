@@ -16,6 +16,7 @@ import '../../core/utils/amount_parser.dart';
 import '../../core/services/zakat_engine.dart';
 import '../../core/widgets/app_ui.dart';
 import '../../models/transaction.dart';
+import '../../models/credit_card.dart';
 import '../../services/app_state_controller.dart';
 
 bool isTransientReceiptScanStatus(int statusCode) {
@@ -76,6 +77,8 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   late String _type;
   late String _currency;
   String? _category;
+  String _deductFrom = 'cash';
+  String _transferTo = 'cash';
   late DateTime _selectedDate;
   bool _saving = false;
   bool _scanningReceipt = false;
@@ -97,6 +100,8 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
         tx?.currency ??
         (defaultEntryCurrency.trim().isEmpty ? 'EGP' : defaultEntryCurrency);
     _category = tx?.category;
+    _deductFrom = tx?.transferSourceId ?? tx?.paymentSourceId ?? 'cash';
+    _transferTo = tx?.transferDestinationId ?? 'cash';
     _selectedDate = _tryParseDate(tx?.date) ?? DateTime.now();
     if (tx != null) {
       _amountController.text = tx.amount.toStringAsFixed(
@@ -126,244 +131,338 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     } else if (categories.isEmpty) {
       _category = null;
     }
+    final List<CreditCard> creditCards = controller.state.creditCards
+        .where((CreditCard card) => !card.isArchived)
+        .toList(growable: false);
+    final List<String> paymentSources = <String>[
+      'cash',
+      ...creditCards.map((CreditCard card) => card.id),
+    ];
+    if (!paymentSources.contains(_deductFrom)) _deductFrom = 'cash';
+    if (_type == 'transfer' &&
+        _transferTo == 'cash' &&
+        _deductFrom == 'cash' &&
+        creditCards.isNotEmpty) {
+      _transferTo = creditCards.first.id;
+    }
+    if (!paymentSources.contains(_transferTo)) _transferTo = 'cash';
 
     return SensitiveContentScope(
       child: Scaffold(
-      appBar: AppBar(
-        title: Text(
-          widget.isEditMode
-              ? context.l10n.tr(
-                  widget.cashMode ? 'edit_cash_title' : 'edit_transaction',
-                )
-              : context.l10n.tr(
-                  widget.cashMode ? 'add_cash_title' : 'add_transaction',
-                ),
+        appBar: AppBar(
+          title: Text(
+            widget.isEditMode
+                ? context.l10n.tr(
+                    widget.cashMode ? 'edit_cash_title' : 'edit_transaction',
+                  )
+                : context.l10n.tr(
+                    widget.cashMode ? 'add_cash_title' : 'add_transaction',
+                  ),
+          ),
         ),
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                // Show income/expense toggle only when NOT in cashMode
-                if (!widget.cashMode) ...[
-                  SegmentedButton<String>(
-                    segments: <ButtonSegment<String>>[
-                      ButtonSegment<String>(
-                        value: 'income',
-                        label: Text(context.l10n.tr('income')),
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  // Show income/expense toggle only when NOT in cashMode
+                  if (!widget.cashMode) ...[
+                    SegmentedButton<String>(
+                      segments: <ButtonSegment<String>>[
+                        ButtonSegment<String>(
+                          value: 'income',
+                          label: Text(context.l10n.tr('income')),
+                        ),
+                        ButtonSegment<String>(
+                          value: 'expense',
+                          label: Text(context.l10n.tr('expense')),
+                        ),
+                        ButtonSegment<String>(
+                          value: 'transfer',
+                          label: Text(context.l10n.tr('transfer')),
+                        ),
+                      ],
+                      selected: <String>{_type},
+                      onSelectionChanged: (Set<String> selected) {
+                        setState(() {
+                          _type = selected.first;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  if (!widget.cashMode && _type == 'expense') ...[
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        key: const Key('scanReceiptAiButton'),
+                        onPressed: _scanningReceipt ? null : _scanReceiptWithAi,
+                        icon: _scanningReceipt
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.document_scanner),
+                        label: Text(
+                          Localizations.localeOf(context).languageCode == 'ar'
+                              ? 'مسح الفاتورة بالذكاء الاصطناعي'
+                              : 'Scan Receipt with AI',
+                        ),
                       ),
-                      ButtonSegment<String>(
-                        value: 'expense',
-                        label: Text(context.l10n.tr('expense')),
-                      ),
-                    ],
-                    selected: <String>{_type},
-                    onSelectionChanged: (Set<String> selected) {
-                      setState(() {
-                        _type = selected.first;
-                      });
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  TextFormField(
+                    key: const Key('amountField'),
+                    controller: _amountController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: context.l10n.tr('amount'),
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (String? value) {
+                      final double amount = tryParseAmount(value) ?? 0;
+                      if (amount <= 0) return context.l10n.tr('amount_gt_zero');
+                      return null;
                     },
                   ),
                   const SizedBox(height: 16),
-                ],
-                if (!widget.cashMode && _type == 'expense') ...[
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      key: const Key('scanReceiptAiButton'),
-                      onPressed: _scanningReceipt ? null : _scanReceiptWithAi,
-                      icon: _scanningReceipt
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.document_scanner),
-                      label: Text(
-                        Localizations.localeOf(context).languageCode == 'ar'
-                            ? 'مسح الفاتورة بالذكاء الاصطناعي'
-                            : 'Scan Receipt with AI',
-                      ),
+                  CompactDropdownFormField<String>(
+                    key: const Key('currencyField'),
+                    value: _currency,
+                    labelText: context.l10n.tr('currency'),
+                    items: ZakatEngineService.supportedCurrencies,
+                    itemLabel: (String currency) =>
+                        CurrencyPresentation.selectorLabel(
+                          currency,
+                          isRtl:
+                              Localizations.localeOf(
+                                context,
+                              ).languageCode.toLowerCase() ==
+                              'ar',
+                        ),
+                    onChanged: (String value) {
+                      setState(() => _currency = value);
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  if (_type != 'transfer')
+                    CompactDropdownFormField<String>(
+                      key: const Key('categoryField'),
+                      value: _category,
+                      labelText: context.l10n.tr('category'),
+                      items: categories,
+                      itemLabel: context.l10n.translateCategory,
+                      onChanged: (String value) {
+                        setState(() => _category = value);
+                      },
+                      validator: (String? value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return context.l10n.tr('category_required');
+                        }
+                        return null;
+                      },
+                    ),
+                  if (!widget.cashMode && _type == 'expense') ...[
+                    const SizedBox(height: 16),
+                    CompactDropdownFormField<String>(
+                      key: const Key('deductFromField'),
+                      value: _deductFrom,
+                      labelText: context.l10n.tr('deduct_from'),
+                      items: paymentSources,
+                      itemLabel: (String source) {
+                        if (source == 'cash') return context.l10n.tr('cash');
+                        final CreditCard card = creditCards.firstWhere(
+                          (CreditCard item) => item.id == source,
+                        );
+                        final String name = card.cardNickname.trim().isEmpty
+                            ? card.bankName
+                            : '${card.bankName} - ${card.cardNickname}';
+                        return '$name **** ${card.last4Digits}';
+                      },
+                      onChanged: (String value) {
+                        setState(() => _deductFrom = value);
+                      },
+                    ),
+                  ],
+                  if (!widget.cashMode && _type == 'transfer') ...[
+                    const SizedBox(height: 16),
+                    CompactDropdownFormField<String>(
+                      key: const Key('transferSourceField'),
+                      value: _deductFrom,
+                      labelText: context.l10n.tr('transfer_source'),
+                      items: paymentSources,
+                      itemLabel: (String source) =>
+                          _accountLabel(source, creditCards, context),
+                      onChanged: (String value) {
+                        setState(() => _deductFrom = value);
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    CompactDropdownFormField<String>(
+                      key: const Key('transferDestinationField'),
+                      value: _transferTo,
+                      labelText: context.l10n.tr('transfer_destination'),
+                      items: paymentSources,
+                      itemLabel: (String source) =>
+                          _accountLabel(source, creditCards, context),
+                      onChanged: (String value) {
+                        setState(() => _transferTo = value);
+                      },
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    key: const Key('notesField'),
+                    controller: _notesController,
+                    maxLines: 2,
+                    decoration: InputDecoration(
+                      labelText: context.l10n.tr('notes'),
+                      border: OutlineInputBorder(),
                     ),
                   ),
                   const SizedBox(height: 16),
-                ],
-                TextFormField(
-                  key: const Key('amountField'),
-                  controller: _amountController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(context.l10n.tr('date')),
+                    subtitle: Text(_dateLabel(_selectedDate)),
+                    trailing: const Icon(Icons.calendar_today),
+                    onTap: () async {
+                      final DateTime? picked = await showDatePicker(
+                        context: context,
+                        initialDate: _selectedDate,
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime(2100),
+                      );
+                      if (picked != null) {
+                        setState(() => _selectedDate = picked);
+                      }
+                    },
                   ),
-                  decoration: InputDecoration(
-                    labelText: context.l10n.tr('amount'),
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: (String? value) {
-                    final double amount = tryParseAmount(value) ?? 0;
-                    if (amount <= 0) return context.l10n.tr('amount_gt_zero');
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                CompactDropdownFormField<String>(
-                  key: const Key('currencyField'),
-                  value: _currency,
-                  labelText: context.l10n.tr('currency'),
-                  items: ZakatEngineService.supportedCurrencies,
-                  itemLabel: (String currency) =>
-                      CurrencyPresentation.selectorLabel(
-                        currency,
-                        isRtl:
-                            Localizations.localeOf(
-                              context,
-                            ).languageCode.toLowerCase() == 'ar',
-                      ),
-                  onChanged: (String value) {
-                    setState(() => _currency = value);
-                  },
-                ),
-                const SizedBox(height: 16),
-                CompactDropdownFormField<String>(
-                  key: const Key('categoryField'),
-                  value: _category,
-                  labelText: context.l10n.tr('category'),
-                  items: categories,
-                  itemLabel: context.l10n.translateCategory,
-                  onChanged: (String value) {
-                    setState(() => _category = value);
-                  },
-                  validator: (String? value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return context.l10n.tr('category_required');
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  key: const Key('notesField'),
-                  controller: _notesController,
-                  maxLines: 2,
-                  decoration: InputDecoration(
-                    labelText: context.l10n.tr('notes'),
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(context.l10n.tr('date')),
-                  subtitle: Text(_dateLabel(_selectedDate)),
-                  trailing: const Icon(Icons.calendar_today),
-                  onTap: () async {
-                    final DateTime? picked = await showDatePicker(
-                      context: context,
-                      initialDate: _selectedDate,
-                      firstDate: DateTime(2000),
-                      lastDate: DateTime(2100),
-                    );
-                    if (picked != null) {
-                      setState(() => _selectedDate = picked);
-                    }
-                  },
-                ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  child: AppPrimaryButton(
-                    key: const Key('saveTransactionButton'),
-                    onPressed: _saving
-                        ? null
-                        : () async {
-                            if (!(_formKey.currentState?.validate() ?? false)) {
-                              return;
-                            }
-                            setState(() => _saving = true);
-                            final double amount =
-                                tryParseAmount(_amountController.text) ?? 0;
-
-                            if (!widget.isEditMode && _type == 'expense') {
-                              final double availableBalance = context
-                                  .read<AppStateController>()
-                                  .getAvailableBalance(currency: _currency);
-                              if (availableBalance <= 0) {
-                                setState(() => _saving = false);
-                                _showError(
-                                  _expenseBlockedMessage(context, _currency),
-                                );
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: AppPrimaryButton(
+                      key: const Key('saveTransactionButton'),
+                      onPressed: _saving
+                          ? null
+                          : () async {
+                              if (!(_formKey.currentState?.validate() ??
+                                  false)) {
                                 return;
                               }
-                            }
+                              setState(() => _saving = true);
+                              final double amount =
+                                  tryParseAmount(_amountController.text) ?? 0;
 
-                            final Transaction? original =
-                                widget.initialTransaction;
-                            final Transaction transaction = Transaction(
-                              id: original?.id ?? _uuid.v4(),
-                              type: _type,
-                              date: _dateIso(_selectedDate),
-                              amount: amount,
-                              currency: _currency,
-                              category: _category!,
-                              description: _notesController.text.trim(),
-                              createdAt:
-                                  original?.createdAt ??
-                                  DateTime.now().toIso8601String(),
-                              rolledOver: original?.rolledOver ?? false,
-                              rolledAmount: original?.rolledAmount,
-                              sourceIncomeId: original?.sourceIncomeId,
-                              exchangePairId: original?.exchangePairId,
-                              exchangeSourceIncomeId:
-                                  original?.exchangeSourceIncomeId,
-                              remainingAmount: original?.remainingAmount,
-                            );
-
-                            final AppStateController appStateController =
-                                context.read<AppStateController>();
-                            try {
-                              if (widget.isEditMode) {
-                                await appStateController.updateTransaction(
-                                  transaction,
-                                );
-                              } else {
-                                await appStateController.addTransaction(
-                                  transaction,
-                                );
+                              if (!widget.isEditMode &&
+                                  _type == 'expense' &&
+                                  _deductFrom == 'cash') {
+                                final double availableBalance = context
+                                    .read<AppStateController>()
+                                    .getAvailableBalance(currency: _currency);
+                                if (availableBalance <= 0) {
+                                  setState(() => _saving = false);
+                                  _showError(
+                                    _expenseBlockedMessage(context, _currency),
+                                  );
+                                  return;
+                                }
                               }
-                              if (!context.mounted) return;
-                              Navigator.of(context).pop();
-                            } catch (e) {
-                              setState(() => _saving = false);
-                              final String message =
-                                  e is StateError ? e.message : e.toString();
-                              _showError(message);
-                            }
-                          },
-                    label: _saving
-                        ? context.l10n.tr('saving_progress')
-                        : (widget.isEditMode
-                              ? context.l10n.tr(
-                                  widget.cashMode
-                                      ? 'update_cash'
-                                      : 'update_transaction',
-                                )
-                              : context.l10n.tr(
-                                  widget.cashMode
-                                      ? 'save_cash'
-                                      : 'save_transaction',
-                                )),
-                    icon: Icons.check,
+
+                              final Transaction? original =
+                                  widget.initialTransaction;
+                              final Transaction transaction = Transaction(
+                                id: original?.id ?? _uuid.v4(),
+                                type: _type,
+                                date: _dateIso(_selectedDate),
+                                amount: amount,
+                                currency: _currency,
+                                category: _type == 'transfer'
+                                    ? 'Account Transfer'
+                                    : _category!,
+                                description: _notesController.text.trim(),
+                                createdAt:
+                                    original?.createdAt ??
+                                    DateTime.now().toIso8601String(),
+                                rolledOver: original?.rolledOver ?? false,
+                                rolledAmount: original?.rolledAmount,
+                                sourceIncomeId: original?.sourceIncomeId,
+                                exchangePairId: original?.exchangePairId,
+                                exchangeSourceIncomeId:
+                                    original?.exchangeSourceIncomeId,
+                                remainingAmount: original?.remainingAmount,
+                                paymentSourceId:
+                                    _type == 'expense' && _deductFrom != 'cash'
+                                    ? _deductFrom
+                                    : null,
+                                creditCardPaymentId:
+                                    _type == 'expense'
+                                    ? original?.creditCardPaymentId
+                                    : null,
+                                transferSourceId: _type == 'transfer'
+                                    ? _deductFrom
+                                    : null,
+                                transferDestinationId: _type == 'transfer'
+                                    ? _transferTo
+                                    : null,
+                                activityType:
+                                    _type == 'transfer' ? 'transfer' : null,
+                              );
+
+                              final AppStateController appStateController =
+                                  context.read<AppStateController>();
+                              try {
+                                if (widget.isEditMode) {
+                                  await appStateController.updateTransaction(
+                                    transaction,
+                                  );
+                                } else {
+                                  await appStateController.addTransaction(
+                                    transaction,
+                                  );
+                                }
+                                if (!context.mounted) return;
+                                Navigator.of(context).pop();
+                              } catch (e) {
+                                setState(() => _saving = false);
+                                final String message = e is StateError
+                                    ? e.message
+                                    : e.toString();
+                                _showError(message);
+                              }
+                            },
+                      label: _saving
+                          ? context.l10n.tr('saving_progress')
+                          : (widget.isEditMode
+                                ? context.l10n.tr(
+                                    widget.cashMode
+                                        ? 'update_cash'
+                                        : 'update_transaction',
+                                  )
+                                : context.l10n.tr(
+                                    widget.cashMode
+                                        ? 'save_cash'
+                                        : 'save_transaction',
+                                  )),
+                      icon: Icons.check,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
       ),
-    ));
+    );
   }
 
   static DateTime? _tryParseDate(String? value) {
@@ -386,6 +485,21 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     return _dateIso(date);
   }
 
+  static String _accountLabel(
+    String source,
+    List<CreditCard> cards,
+    BuildContext context,
+  ) {
+    if (source == 'cash') return context.l10n.tr('cash');
+    final CreditCard card = cards.firstWhere(
+      (CreditCard item) => item.id == source,
+    );
+    final String name = card.cardNickname.trim().isEmpty
+        ? card.bankName
+        : '${card.bankName} - ${card.cardNickname}';
+    return '$name **** ${card.last4Digits}';
+  }
+
   void _showError(String message) {
     if (!mounted) return;
     showTopSnackBar(context, message);
@@ -396,10 +510,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     showTopSnackBar(context, message);
   }
 
-  static String _expenseBlockedMessage(
-    BuildContext context,
-    String currency,
-  ) {
+  static String _expenseBlockedMessage(BuildContext context, String currency) {
     final bool isArabic =
         Localizations.localeOf(context).languageCode.toLowerCase() == 'ar';
     final String normalizedCurrency = currency.trim().toUpperCase();
@@ -460,7 +571,9 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
               ),
               ListTile(
                 leading: const Icon(Icons.insert_drive_file),
-                title: Text(isArabic ? 'ملف مستند / صورة' : 'Document / File Picker'),
+                title: Text(
+                  isArabic ? 'ملف مستند / صورة' : 'Document / File Picker',
+                ),
                 onTap: () => Navigator.pop(ctx, 'file'),
               ),
             ],

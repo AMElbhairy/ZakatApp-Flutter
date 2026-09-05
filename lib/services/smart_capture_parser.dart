@@ -397,7 +397,7 @@ class SmartCaptureParser {
     );
     // Remove Account numbers e.g. account:1234, رقم الحساب:5000, account 123456
     scrubbed = scrubbed.replaceAll(
-      RegExp(r'(?:account|رقم الحساب|حساب)[\s:\-*]*\d+', caseSensitive: false),
+      RegExp(r'(?:account|رقم\s*الحساب|لحسابكم|حسابكم|حساب)(?:\s*رقم)?[\s:\-*]*\d+', caseSensitive: false),
       ' ',
     );
     // Remove Masked identifiers e.g. ****1234, xxxx1234
@@ -610,7 +610,7 @@ class SmartCaptureParser {
         String? localCurrency;
         final String fullContext = '$contextBefore $contextAfter';
         final RegExp curFinder = RegExp(
-          r'(sar|sr|s\.r|egp|usd|\$|aed|درهم|ريال|جنيه|ر\.س|ج\.م)',
+          r'(sar|sr|s\.r|egp|usd|\$|aed|درهم|ريال|جنيه|ر\.س|ج\.م|جم)',
           caseSensitive: false,
         );
         final Match? curMatch = curFinder.firstMatch(fullContext);
@@ -640,7 +640,7 @@ class SmartCaptureParser {
     // Fallback general currency finder in the entire message if not found near the best amount
     if (currency == null) {
       final RegExp currencyFinder = RegExp(
-        r'(sar|sr|s\.r|egp|usd|\$|aed|درهم|ريال|جنيه|ر\.س|ج\.م)',
+        r'(sar|sr|s\.r|egp|usd|\$|aed|درهم|ريال|جنيه|ر\.س|ج\.م|جم)',
         caseSensitive: false,
       );
       final Match? curMatch = currencyFinder.firstMatch(scrubbed);
@@ -1283,7 +1283,7 @@ class SmartCaptureParser {
   ) {
     final List<RegExp> patterns = <RegExp>[
       RegExp(
-        r'(?:(?<![A-Za-z0-9])(?:at|merchant|store)(?![A-Za-z0-9])|لدى|عند|في)\s*[:\-]?\s*([A-Za-z\u0600-\u06FF0-9][A-Za-z0-9\u0600-\u06FF&*.,\- ]{1,80})',
+        r'(?:(?<![A-Za-z0-9])(?:at|merchant|store)(?![A-Za-z0-9])|(?<![\u0600-\u06FF0-9])(?:لدى|عند|في)(?![\u0600-\u06FF0-9]))\s*[:\-]?\s*([A-Za-z\u0600-\u06FF0-9][A-Za-z0-9\u0600-\u06FF&*.,\- ]{1,80})',
         caseSensitive: false,
       ),
     ];
@@ -1307,7 +1307,7 @@ class SmartCaptureParser {
         .map((String line) => line.trim())
         .where((String line) => line.isNotEmpty)
         .toList();
-    final String? senderName = _extractTransferParty(lines, <String>[
+    String? senderName = _extractTransferParty(lines, <String>[
       'sender',
       'from account',
       'from',
@@ -1316,7 +1316,7 @@ class SmartCaptureParser {
       'من حساب',
       'من',
     ]);
-    final String? recipientName = _extractTransferParty(lines, <String>[
+    String? recipientName = _extractTransferParty(lines, <String>[
       'to account',
       'to',
       'recipient',
@@ -1326,6 +1326,34 @@ class SmartCaptureParser {
       'إلى',
       'الى',
     ]);
+
+    if (senderName == null) {
+      final Match? match = RegExp(
+        r'(?:\bfrom\b|من)\s+([A-Za-z\u0600-\u06FF\*\s]{2,80})',
+        caseSensitive: false,
+      ).firstMatch(rawMessage);
+      if (match != null) {
+        final String candidate = match.group(1)?.trim() ?? '';
+        if (candidate.isNotEmpty && !_isTransferPartyNoise(candidate)) {
+          senderName = _trimMerchantCandidate(candidate);
+          if (senderName.isEmpty) senderName = null;
+        }
+      }
+    }
+    if (recipientName == null) {
+      final Match? match = RegExp(
+        r'(?:\bto\b|إلى|الى)\s+([A-Za-z\u0600-\u06FF\*\s]{2,80})',
+        caseSensitive: false,
+      ).firstMatch(rawMessage);
+      if (match != null) {
+        final String candidate = match.group(1)?.trim() ?? '';
+        if (candidate.isNotEmpty && !_isTransferPartyNoise(candidate)) {
+          recipientName = _trimMerchantCandidate(candidate);
+          if (recipientName.isEmpty) recipientName = null;
+        }
+      }
+    }
+
     final bool hasExplicitTransferPartyLabels =
         _hasMatch(rawMessage.toLowerCase(), <String>[
           'sender:',
@@ -1493,6 +1521,9 @@ class SmartCaptureParser {
       'صادرة',
       'صادر',
       'تم التحويل إلى',
+      'تم تنفيذ تحويل',
+      'من حسابكم',
+      'تحويل لحظي من',
     ])) {
       return 'out';
     }
@@ -1514,6 +1545,12 @@ class SmartCaptureParser {
       'تم استلام',
       'credited',
       'received',
+      'تم إضافة تحويل',
+      'تم اضافة تحويل',
+      'تحويل لحظي لحسابكم',
+      'تحويل لحسابكم',
+      'تم إضافة',
+      'تم اضافة',
     ])) {
       return 'in';
     }
@@ -2090,28 +2127,28 @@ class SmartCaptureParser {
 
     addCandidates(
       regex: RegExp(
-        r'(?<!\d)((?:sar|sr|s\.r|egp|usd|\$|aed|درهم|ريال|جنيه|ر\.س|ج\.م))\s*(?:amount|المبلغ|مبلغ)\s*[:\-]?\s*(\d+(?:[,\s]\d{3})*(?:\.\d+)?)',
+        r'(?<!\d)((?:sar|sr|s\.r|egp|usd|\$|aed|درهم|ريال|جنيه|ر\.س|ج\.م|جم))\s*(?:amount|المبلغ|مبلغ)\s*[:\-]?\s*(\d+(?:[,\s]\d{3})*(?:\.\d+)?)',
         caseSensitive: false,
       ),
       currencyAfterAmount: false,
     );
     addCandidates(
       regex: RegExp(
-        r'(?<!\d)(?:sar|sr|s\.r|egp|usd|\$|aed|درهم|ريال|جنيه|ر\.س|ج\.م)\s*(?:amount|المبلغ|مبلغ)\s*[:\-]?\s*(\d+(?:[,\s]\d{3})*(?:\.\d+)?)',
+        r'(?<!\d)(?:sar|sr|s\.r|egp|usd|\$|aed|درهم|ريال|جنيه|ر\.س|ج\.م|جم)\s*(?:amount|المبلغ|مبلغ)\s*[:\-]?\s*(\d+(?:[,\s]\d{3})*(?:\.\d+)?)',
         caseSensitive: false,
       ),
       currencyAfterAmount: false,
     );
     addCandidates(
       regex: RegExp(
-        r'(?<!\d)(\d+(?:[,\s]\d{3})*(?:\.\d+)?)\s*(sar|sr|s\.r|egp|usd|\$|aed|درهم|ريال|جنيه|ر\.س|ج\.م)\b',
+        r'(?<!\d)(\d+(?:[,\s]\d{3})*(?:\.\d+)?)\s*(sar|sr|s\.r|egp|usd|\$|aed|درهم|ريال|جنيه|ر\.س|ج\.م|جم)\b',
         caseSensitive: false,
       ),
       currencyAfterAmount: true,
     );
     addCandidates(
       regex: RegExp(
-        r'(?:\b(sar|sr|s\.r|egp|usd|\$|aed|درهم|ريال|جنيه|ر\.س|ج\.م)\b\s*)(\d+(?:[,\s]\d{3})*(?:\.\d+)?)',
+        r'(?:\b(sar|sr|s\.r|egp|usd|\$|aed|درهم|ريال|جنيه|ر\.س|ج\.م|جم)\b\s*)(\d+(?:[,\s]\d{3})*(?:\.\d+)?)',
         caseSensitive: false,
       ),
       currencyAfterAmount: false,

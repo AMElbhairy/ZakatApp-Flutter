@@ -28,45 +28,91 @@ class RecurringNotificationManager {
     RecurringTransaction recurring,
     DateTime now,
   ) {
-    final int safeDay = recurring.dayOfMonth.clamp(1, 31);
+    final String freq = recurring.frequency.trim().toLowerCase();
     final List<String> parts = recurring.reminderTime.split(':');
     final int hour = parts.isNotEmpty ? (int.tryParse(parts[0]) ?? 9) : 9;
     final int minute = parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0;
 
-    // Construct scheduled date in the current month
+    if (freq == 'quarterly') {
+      final DateTime start = DateTime.tryParse(recurring.createdAt) ?? now;
+      final int safeDay = recurring.dayOfMonth.clamp(1, 31);
+      DateTime candidate = DateTime(start.year, start.month, safeDay, hour, minute)
+          .subtract(Duration(days: recurring.reminderDayOffset));
+      int monthsToAdd = 0;
+      while (candidate.isBefore(now)) {
+        monthsToAdd += 3;
+        final nextStartMonth = DateTime(start.year, start.month + monthsToAdd, 1);
+        final int daysInNextMonth = DateTime(nextStartMonth.year, nextStartMonth.month + 1, 0).day;
+        final int day = safeDay > daysInNextMonth ? daysInNextMonth : safeDay;
+        candidate = DateTime(nextStartMonth.year, nextStartMonth.month, day, hour, minute)
+            .subtract(Duration(days: recurring.reminderDayOffset));
+      }
+      return candidate;
+    }
+
+    if (freq == 'yearly') {
+      final DateTime start = DateTime.tryParse(recurring.createdAt) ?? now;
+      final int safeDay = recurring.dayOfMonth.clamp(1, 31);
+      DateTime candidate = DateTime(start.year, start.month, safeDay, hour, minute)
+          .subtract(Duration(days: recurring.reminderDayOffset));
+      int yearsToAdd = 0;
+      while (candidate.isBefore(now)) {
+        yearsToAdd += 1;
+        final nextStartMonth = DateTime(start.year + yearsToAdd, start.month, 1);
+        final int daysInNextMonth = DateTime(nextStartMonth.year, nextStartMonth.month + 1, 0).day;
+        final int day = safeDay > daysInNextMonth ? daysInNextMonth : safeDay;
+        candidate = DateTime(nextStartMonth.year, nextStartMonth.month, day, hour, minute)
+            .subtract(Duration(days: recurring.reminderDayOffset));
+      }
+      return candidate;
+    }
+
+    if (freq == 'custom') {
+      final List<DateTime> dates = <DateTime>[];
+      for (final String dStr in recurring.customDates) {
+        final DateTime? parsed = DateTime.tryParse(dStr);
+        if (parsed != null) {
+          final DateTime dt = DateTime(parsed.year, parsed.month, parsed.day, hour, minute)
+              .subtract(Duration(days: recurring.reminderDayOffset));
+          if (!dt.isBefore(now)) {
+            dates.add(dt);
+          }
+        }
+      }
+      if (dates.isNotEmpty) {
+        dates.sort();
+        return dates.first;
+      }
+      return now.add(const Duration(days: 1));
+    }
+
+    // Default Monthly
+    final int safeDay = recurring.dayOfMonth.clamp(1, 31);
     final int daysInMonth = DateTime(now.year, now.month + 1, 0).day;
     int targetDay = safeDay > daysInMonth ? daysInMonth : safeDay;
-
-    // Apply day offset
     targetDay -= recurring.reminderDayOffset;
 
-    // If target day falls below 1, we roll back to previous month
     DateTime scheduledDate;
     if (targetDay < 1) {
-      final prevMonth = DateTime(now.year, now.month, 0); // Last day of previous month
-      final dayVal = prevMonth.day + targetDay; // e.g. 30 + (-0) = 30
-      scheduledDate = DateTime(
-          prevMonth.year, prevMonth.month, dayVal, hour, minute);
+      final prevMonth = DateTime(now.year, now.month, 0);
+      final dayVal = prevMonth.day + targetDay;
+      scheduledDate = DateTime(prevMonth.year, prevMonth.month, dayVal, hour, minute);
     } else {
       scheduledDate = DateTime(now.year, now.month, targetDay, hour, minute);
     }
 
-    // If next notification date-time has already passed, move to next month
     if (scheduledDate.isBefore(now)) {
       final nextMonth = DateTime(now.year, now.month + 1, 1);
-      final int daysInNextMonth =
-          DateTime(nextMonth.year, nextMonth.month + 1, 0).day;
+      final int daysInNextMonth = DateTime(nextMonth.year, nextMonth.month + 1, 0).day;
       int nextTargetDay = safeDay > daysInNextMonth ? daysInNextMonth : safeDay;
       nextTargetDay -= recurring.reminderDayOffset;
 
       if (nextTargetDay < 1) {
         final prevOfNext = DateTime(nextMonth.year, nextMonth.month, 0);
         final dayVal = prevOfNext.day + nextTargetDay;
-        scheduledDate = DateTime(
-            prevOfNext.year, prevOfNext.month, dayVal, hour, minute);
+        scheduledDate = DateTime(prevOfNext.year, prevOfNext.month, dayVal, hour, minute);
       } else {
-        scheduledDate = DateTime(
-            nextMonth.year, nextMonth.month, nextTargetDay, hour, minute);
+        scheduledDate = DateTime(nextMonth.year, nextMonth.month, nextTargetDay, hour, minute);
       }
     }
     return scheduledDate;

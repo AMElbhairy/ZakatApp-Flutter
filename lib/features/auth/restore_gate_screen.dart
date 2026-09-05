@@ -18,7 +18,7 @@ class RestoreGateScreen extends StatefulWidget {
     this.onOpenBackupSync,
   });
 
-  final CloudBackupController cloudBackupController;
+  final CloudBackupController? cloudBackupController;
   final Future<void> Function() onRestore;
   final Future<void> Function() onStartFresh;
   final StartupRestoreDiscoveryResult discovery;
@@ -34,17 +34,25 @@ class _RestoreGateScreenState extends State<RestoreGateScreen> {
   @override
   void initState() {
     super.initState();
-    _previewFuture = widget.discovery.hasRestorableBackup
-        ? widget.cloudBackupController.previewLatestBackup()
+    _previewFuture = widget.discovery.isLocalBackup
+        ? Future<BackupPreview?>.value(widget.discovery.preview)
+        : widget.discovery.hasRestorableBackup
+        ? widget.cloudBackupController?.previewLatestBackup() ??
+            Future<BackupPreview?>.value(widget.discovery.preview)
         : Future<BackupPreview?>.value(widget.discovery.preview);
   }
 
   @override
   void didUpdateWidget(covariant RestoreGateScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.cloudBackupController != widget.cloudBackupController) {
-      _previewFuture = widget.discovery.hasRestorableBackup
-          ? widget.cloudBackupController.previewLatestBackup()
+    if (oldWidget.cloudBackupController != widget.cloudBackupController ||
+        oldWidget.discovery.source != widget.discovery.source ||
+        oldWidget.discovery.preview != widget.discovery.preview) {
+      _previewFuture = widget.discovery.isLocalBackup
+          ? Future<BackupPreview?>.value(widget.discovery.preview)
+          : widget.discovery.hasRestorableBackup
+          ? widget.cloudBackupController?.previewLatestBackup() ??
+              Future<BackupPreview?>.value(widget.discovery.preview)
           : Future<BackupPreview?>.value(widget.discovery.preview);
     }
   }
@@ -60,7 +68,10 @@ class _RestoreGateScreenState extends State<RestoreGateScreen> {
     final bool restoreAvailable = widget.discovery.hasRestorableBackup;
     final bool needsDrivePermission = widget.discovery.needsDrivePermission;
     final bool needsKeyRecovery = widget.discovery.needsKeyRecovery;
-    final String subtitle = needsDrivePermission
+    final bool isLocalBackup = widget.discovery.isLocalBackup;
+    final String subtitle = isLocalBackup
+        ? widget.discovery.message
+        : needsDrivePermission
         ? l10n.tr('restore_backup_may_exist')
         : needsKeyRecovery
         ? widget.discovery.message
@@ -92,7 +103,9 @@ class _RestoreGateScreenState extends State<RestoreGateScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: <Widget>[
                         Text(
-                          needsDrivePermission
+                          isLocalBackup
+                              ? 'Local backup found'
+                              : needsDrivePermission
                               ? l10n.tr('restore_backup_may_exist_title')
                               : needsKeyRecovery
                               ? l10n.tr('restore_backup_key_required')
@@ -106,7 +119,9 @@ class _RestoreGateScreenState extends State<RestoreGateScreen> {
                         ),
                         const SizedBox(height: AppSpacing.xs),
                         Text(
-                          needsDrivePermission
+                          isLocalBackup
+                              ? widget.discovery.message
+                              : needsDrivePermission
                               ? l10n.tr('restore_open_backup_sync')
                               : needsKeyRecovery
                               ? widget.discovery.message
@@ -153,8 +168,10 @@ class _RestoreGateScreenState extends State<RestoreGateScreen> {
                         if (restoreAvailable)
                           AuthBrandPrimaryButton(
                             label: l10n.tr('restore_backup'),
-                            leading: const Icon(
-                              Icons.cloud_download_rounded,
+                            leading: Icon(
+                              isLocalBackup
+                                  ? Icons.backup_rounded
+                                  : Icons.cloud_download_rounded,
                               size: 20,
                             ),
                             onPressed: () async {
