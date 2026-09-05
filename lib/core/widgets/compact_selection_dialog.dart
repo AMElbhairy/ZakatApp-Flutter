@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 
@@ -180,19 +182,37 @@ Future<T?> showCompactSelectionDialogAfterFocus<T>({
   final Stopwatch? stopwatch = kDebugMode || kProfileMode
       ? (Stopwatch()..start())
       : null;
+  final double initialViewInsetsBottom = _viewInsetsBottom(context);
+  final bool keyboardInitiallyVisible = initialViewInsetsBottom > 0.5;
+  if (stopwatch != null) {
+    debugPrint(
+      'Selector keyboard initially visible: $keyboardInitiallyVisible',
+    );
+  }
   final FocusNode? primaryFocus = FocusManager.instance.primaryFocus;
   if (primaryFocus != null && primaryFocus.hasFocus) {
     primaryFocus.unfocus();
     if (stopwatch != null) {
-      debugPrint('Selector focus release: ${stopwatch.elapsedMicroseconds}us');
+      debugPrint('Selector unfocus: ${stopwatch.elapsedMilliseconds}ms');
     }
-    // Let the current frame consume the focus change and start keyboard
-    // dismissal before the dialog route is built. This avoids a fixed delay
-    // and leaves the fast unfocused path immediate.
-    await WidgetsBinding.instance.endOfFrame;
+  }
+  if (keyboardInitiallyVisible) {
+    final Stopwatch keyboardWait = Stopwatch()..start();
+    int stableZeroFrames = 0;
+    while (keyboardWait.elapsedMilliseconds < 900) {
+      await WidgetsBinding.instance.endOfFrame;
+      if (!context.mounted) return null;
+      final double bottom = _viewInsetsBottom(context);
+      if (bottom <= 0.5) {
+        stableZeroFrames++;
+        if (stableZeroFrames >= 2) break;
+      } else {
+        stableZeroFrames = 0;
+      }
+    }
     if (stopwatch != null) {
       debugPrint(
-        'Selector keyboard/viewInsets frame: '
+        'Selector keyboard fully dismissed: '
         '${stopwatch.elapsedMilliseconds}ms',
       );
     }
@@ -200,7 +220,7 @@ Future<T?> showCompactSelectionDialogAfterFocus<T>({
   if (!context.mounted) return null;
   if (stopwatch != null) {
     debugPrint(
-      'Selector showGeneralDialog preparation: '
+      'Selector dialog invoked: '
       '${stopwatch.elapsedMilliseconds}ms',
     );
   }
@@ -216,4 +236,9 @@ Future<T?> showCompactSelectionDialogAfterFocus<T>({
             'Selector first frame: ${stopwatch.elapsedMilliseconds}ms',
           ),
   );
+}
+
+double _viewInsetsBottom(BuildContext context) {
+  final ui.FlutterView view = View.of(context);
+  return view.viewInsets.bottom / view.devicePixelRatio;
 }
