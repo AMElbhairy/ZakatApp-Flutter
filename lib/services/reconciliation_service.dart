@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import '../models/app_state.dart';
 import '../models/investment_asset.dart';
 import '../models/transaction.dart';
@@ -56,6 +58,35 @@ class CashSource {
   final String description;
 }
 
+class _WorkingIncomeLot {
+  _WorkingIncomeLot({
+    required this.id,
+    required this.date,
+    required this.originalAmount,
+    required this.remainingAmount,
+    required this.rolledOver,
+    required this.currency,
+    this.category,
+    this.description,
+  });
+
+  final String id;
+  final String date;
+  final double originalAmount;
+  double remainingAmount;
+  final bool rolledOver;
+  final String currency;
+  final String? category;
+  final String? description;
+}
+
+class _IndexedTransaction {
+  const _IndexedTransaction(this.transaction, this.index);
+
+  final Transaction transaction;
+  final int index;
+}
+
 class ReconciliationResult {
   const ReconciliationResult({required this.state, required this.modified});
 
@@ -66,13 +97,41 @@ class ReconciliationResult {
 class ReconciliationService {
   static const double minAmount = 0.005;
 
+  final Map<String, List<CashSource>> _cashSourcesCache =
+      <String, List<CashSource>>{};
+  String? _cashSourcesDependencyKey;
+
+  void _profile(String message) {
+    if (kDebugMode || kProfileMode) debugPrint(message);
+  }
+
   List<CashSource> getAvailableCashSources({
     required AppStateModel state,
     required String currency,
     bool newestFirst = false,
     String? asOfDate,
   }) {
+    final Stopwatch? stopwatch = kDebugMode || kProfileMode
+        ? (Stopwatch()..start())
+        : null;
     final String normalizedCurrency = currency.trim().toUpperCase();
+    final String dependencyKey = _cashSourcesDependencyKeyFor(state);
+    if (_cashSourcesDependencyKey != dependencyKey) {
+      // Financial inputs changed: discard all currency/date variants, but do
+      // not invalidate this cache for unrelated UI/settings state changes.
+      _cashSourcesCache.clear();
+      _cashSourcesDependencyKey = dependencyKey;
+    }
+    final String cacheKey = _cashSourcesCacheKey(
+      state: state,
+      currency: normalizedCurrency,
+      asOfDate: asOfDate,
+    );
+    final List<CashSource>? cached = _cashSourcesCache[cacheKey];
+    if (cached != null) {
+      _profile('CashSources cache hit');
+      return newestFirst ? cached.reversed.toList(growable: false) : cached;
+    }
 
     List<Saving> savingsList = state.savings;
     List<Transaction> transactionsList = state.transactions;
@@ -105,10 +164,8 @@ class ReconciliationService {
               description: saving.description,
             ),
           ),
-      ...getNetIncomeLotsForCurrency(
-            transactions: transactionsList
-                .map((transaction) => transaction.toJson())
-                .toList(growable: false),
+      ..._getNetIncomeLotsForTypedTransactions(
+            transactions: transactionsList,
             currency: normalizedCurrency,
             lastRollover: state.lastRollover,
           )
@@ -214,7 +271,243 @@ class ReconciliationService {
       );
     }
 
-    return newestFirst ? sources.reversed.toList(growable: false) : sources;
+    final List<CashSource> canonical = List<CashSource>.unmodifiable(sources);
+    _cashSourcesCache[cacheKey] = canonical;
+    _profile(
+      'CashSources recompute: ${stopwatch?.elapsedMilliseconds ?? 0}ms, '
+      'tx=${transactionsList.length}, savings=${savingsList.length}, '
+      'sources=${canonical.length}',
+    );
+    return newestFirst ? canonical.reversed.toList(growable: false) : canonical;
+  }
+
+  String _cashSourcesCacheKey({
+    required AppStateModel state,
+    required String currency,
+    String? asOfDate,
+  }) {
+    // AppStateModel collections are treated as immutable. Identity is used so
+    // unrelated settings/UI state changes retain this cache entry, while any
+    // transaction/saving replacement invalidates it naturally.
+    return '${identityHashCode(state.transactions)}|'
+        '${identityHashCode(state.savings)}|'
+        '${identityHashCode(state.marketData)}|'
+        '${state.lastRollover}|$currency|${asOfDate ?? ''}';
+  }
+
+  String _cashSourcesDependencyKeyFor(AppStateModel state) {
+    return '${identityHashCode(state.transactions)}|'
+        '${identityHashCode(state.savings)}|'
+        '${identityHashCode(state.marketData)}|${state.lastRollover}';
+  }
+
+  List<IncomeLot> _getNetIncomeLotsForTypedTransactions({
+    required List<Transaction> transactions,
+    required String currency,
+    String? lastRollover,
+  }) {
+    final Stopwatch? stopwatch = kDebugMode || kProfileMode
+        ? (Stopwatch()..start())
+        : null;
+    final List<_IndexedTransaction> indexed = transactions
+        .asMap()
+        .entries
+        .where(
+          (MapEntry<int, Transaction> entry) =>
+              entry.value.currency == currency,
+        )
+        .map(
+          (MapEntry<int, Transaction> entry) =>
+              _IndexedTransaction(entry.value, entry.key),
+        )
+        .toList(growable: false);
+    final List<_IndexedTransaction> ordered = List<_IndexedTransaction>.from(
+      indexed,
+    )..sort(_compareIndexedTransactionsForLotMatching);
+    final List<_WorkingIncomeLot> lots = <_WorkingIncomeLot>[];
+    final Map<String, _WorkingIncomeLot> lotsById =
+        <String, _WorkingIncomeLot>{};
+
+    void addLot(_WorkingIncomeLot lot) {
+      lots.add(lot);
+      lotsById.putIfAbsent(lot.id, () => lot);
+    }
+
+    for (final _IndexedTransaction entry in ordered) {
+      final Transaction tx = entry.transaction;
+      final double amount = tx.amount;
+      if (tx.type == 'transfer') {
+        if (tx.transferDestinationId == 'cash') {
+          addLot(
+            _WorkingIncomeLot(
+              id: 'transfer_${tx.id}',
+              date: tx.date,
+              originalAmount: amount,
+              remainingAmount: amount,
+              rolledOver: false,
+              currency: currency,
+              category: tx.category,
+              description: tx.description,
+            ),
+          );
+        }
+        if (tx.transferSourceId != 'cash') continue;
+      }
+      if (tx.type == 'income') {
+        double effectiveAmount = amount;
+        if (tx.rolledOver && (tx.rolledAmount ?? 0) > 0) {
+          effectiveAmount = amount - tx.rolledAmount!;
+          if (effectiveAmount < minAmount) continue;
+        }
+        addLot(
+          _WorkingIncomeLot(
+            id: tx.id,
+            date: tx.date,
+            originalAmount: effectiveAmount,
+            remainingAmount: effectiveAmount,
+            rolledOver: tx.rolledOver,
+            currency: currency,
+            category: tx.category,
+            description: tx.description,
+          ),
+        );
+      } else if (tx.type == 'expense' || tx.type == 'transfer') {
+        if ((tx.paymentSourceId ?? '').trim().isNotEmpty) continue;
+        if (lastRollover != null &&
+            lastRollover.isNotEmpty &&
+            tx.date.isNotEmpty &&
+            tx.date.compareTo(lastRollover) <= 0) {
+          continue;
+        }
+        double toDeduct = amount;
+        final String sourceIncomeId = (tx.sourceIncomeId ?? '').trim();
+        final _WorkingIncomeLot? linked = sourceIncomeId.isEmpty
+            ? null
+            : lotsById[sourceIncomeId];
+        if (linked != null) {
+          final double deduction = _min(linked.remainingAmount, toDeduct);
+          linked.remainingAmount = _round6(linked.remainingAmount - deduction);
+          toDeduct = _round6(toDeduct - deduction);
+        }
+        for (int i = lots.length - 1; i >= 0 && toDeduct > 0; i--) {
+          final _WorkingIncomeLot lot = lots[i];
+          final double deduction = _min(lot.remainingAmount, toDeduct);
+          lot.remainingAmount = _round6(lot.remainingAmount - deduction);
+          toDeduct = _round6(toDeduct - deduction);
+        }
+      }
+    }
+
+    double transactionBalance = 0;
+    for (final _IndexedTransaction entry in ordered) {
+      final Transaction tx = entry.transaction;
+      if (tx.type == 'income') {
+        transactionBalance += tx.rolledOver && (tx.rolledAmount ?? 0) > 0
+            ? tx.amount - tx.rolledAmount!
+            : tx.amount;
+      } else if (tx.type == 'expense') {
+        if ((tx.paymentSourceId ?? '').trim().isNotEmpty) continue;
+        if (lastRollover != null &&
+            lastRollover.isNotEmpty &&
+            tx.date.isNotEmpty &&
+            tx.date.compareTo(lastRollover) <= 0) {
+          continue;
+        }
+        transactionBalance -= tx.amount;
+      } else if (tx.type == 'transfer') {
+        if (tx.transferSourceId == 'cash') transactionBalance -= tx.amount;
+        if (tx.transferDestinationId == 'cash') transactionBalance += tx.amount;
+      }
+    }
+
+    double delta = _round6(
+      transactionBalance -
+          lots.fold<double>(
+            0,
+            (double sum, _WorkingIncomeLot lot) => sum + lot.remainingAmount,
+          ),
+    );
+    if (delta > minAmount) {
+      for (int i = lots.length - 1; i >= 0 && delta > minAmount; i--) {
+        lots[i].remainingAmount = _round6(lots[i].remainingAmount + delta);
+        delta = 0;
+      }
+    } else if (delta < -minAmount) {
+      double toReduce = delta.abs();
+      for (int i = lots.length - 1; i >= 0 && toReduce > minAmount; i--) {
+        final _WorkingIncomeLot lot = lots[i];
+        final double deduction = _min(lot.remainingAmount, toReduce);
+        lot.remainingAmount = _round6(lot.remainingAmount - deduction);
+        toReduce = _round6(toReduce - deduction);
+      }
+    }
+    final List<IncomeLot> result = lots
+        .map(
+          (_WorkingIncomeLot lot) => IncomeLot(
+            id: lot.id,
+            date: lot.date,
+            originalAmount: lot.originalAmount,
+            remainingAmount: lot.remainingAmount,
+            rolledOver: lot.rolledOver,
+            currency: lot.currency,
+            category: lot.category,
+            description: lot.description,
+          ),
+        )
+        .toList(growable: false);
+    _profile(
+      'IncomeLots typed recompute: ${stopwatch?.elapsedMilliseconds ?? 0}ms, '
+      'tx=${ordered.length}, lots=${result.length}',
+    );
+    return result;
+  }
+
+  /// Typed equivalent of [getNetIncomeLotsForCurrency] for internal hot paths.
+  /// The map-based method remains available for compatibility and tests.
+  List<IncomeLot> getNetIncomeLotsForTransactions({
+    required List<Transaction> transactions,
+    required String currency,
+    String? lastRollover,
+  }) {
+    return _getNetIncomeLotsForTypedTransactions(
+      transactions: transactions,
+      currency: currency,
+      lastRollover: lastRollover,
+    );
+  }
+
+  int _compareIndexedTransactionsForLotMatching(
+    _IndexedTransaction a,
+    _IndexedTransaction b,
+  ) {
+    final Transaction at = a.transaction;
+    final Transaction bt = b.transaction;
+    final DateTime ad =
+        DateTime.tryParse(normalizeDateText(at.date)) ??
+        DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+    final DateTime bd =
+        DateTime.tryParse(normalizeDateText(bt.date)) ??
+        DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+    final int dateComp = ad.compareTo(bd);
+    if (dateComp != 0) return dateComp;
+    final DateTime ac =
+        DateTime.tryParse(
+          normalizeTimestampText(
+            _stableCreatedAt(at.createdAt, at.date, a.index),
+          ),
+        ) ??
+        DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+    final DateTime bc =
+        DateTime.tryParse(
+          normalizeTimestampText(
+            _stableCreatedAt(bt.createdAt, bt.date, b.index),
+          ),
+        ) ??
+        DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+    final int createdComp = ac.compareTo(bc);
+    if (createdComp != 0) return createdComp;
+    if (at.type != bt.type) return at.type == 'income' ? -1 : 1;
+    return 0;
   }
 
   CashSource _copyCashSource(
@@ -522,6 +815,9 @@ class ReconciliationService {
     required String currency,
     String? lastRollover,
   }) {
+    final Stopwatch? stopwatch = kDebugMode || kProfileMode
+        ? (Stopwatch()..start())
+        : null;
     final List<Map<String, dynamic>> sorted = _sortTransactionsForLotMatching(
       transactions
           .asMap()
@@ -696,7 +992,7 @@ class ReconciliationService {
       }
     }
 
-    return lots
+    final List<IncomeLot> result = lots
         .map(
           (Map<String, dynamic> lot) => IncomeLot(
             id: (lot['id'] ?? '').toString(),
@@ -710,6 +1006,11 @@ class ReconciliationService {
           ),
         )
         .toList(growable: false);
+    _profile(
+      'IncomeLots recompute: ${stopwatch?.elapsedMilliseconds ?? 0}ms, '
+      'tx=${sorted.length}, lots=${result.length}',
+    );
+    return result;
   }
 
   ReconciliationResult toggleInstallmentPaid({

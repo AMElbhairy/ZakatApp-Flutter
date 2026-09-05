@@ -1884,6 +1884,18 @@ class AppStateController extends ChangeNotifier {
     return merged;
   }
 
+  Future<void> _syncWidgetDataWithProfile(AppStateModel state) async {
+    final Stopwatch? stopwatch = kDebugMode || kProfileMode
+        ? (Stopwatch()..start())
+        : null;
+    await WidgetDataService.syncFromState(state);
+    if (stopwatch != null) {
+      debugPrint(
+        'AppState update widget sync: ${stopwatch.elapsedMilliseconds}ms',
+      );
+    }
+  }
+
   Future<void> save({
     bool creditCardsOnly = false,
     bool mirrorTransactions = true,
@@ -2601,23 +2613,43 @@ class AppStateController extends ChangeNotifier {
     bool creditCardsOnly = false,
   }) async {
     if (hasHydrationFailure) return;
+    final Stopwatch? updateWatch = kDebugMode || kProfileMode
+        ? (Stopwatch()..start())
+        : null;
     newState = _normalizePlatformState(newState);
     final AppStateModel previousState = _state;
     final bool transactionOrSavingsInputChanged =
         !identical(previousState.transactions, newState.transactions) ||
         !identical(previousState.savings, newState.savings);
+    final Stopwatch? reconciliationWatch = kDebugMode || kProfileMode
+        ? (Stopwatch()..start())
+        : null;
     final AppStateModel stateToSave = creditCardsOnly
         ? newState
         : transactionOrSavingsInputChanged
         ? reconciliationService.reconcileExpensesWithSavings(newState).state
         : newState;
+    if (reconciliationWatch != null) {
+      debugPrint(
+        'AppState update reconciliation: ${reconciliationWatch.elapsedMilliseconds}ms, '
+        'tx=${newState.transactions.length}, savings=${newState.savings.length}',
+      );
+    }
     _state = stateToSave.copyWith(
       lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
     );
     // Publish the reconciled local state before compatibility mirrors and
     // background sync continue. The write still completes before this
     // method returns, but the current frame is not held by serialization.
+    final int beforeNotifyElapsed = updateWatch?.elapsedMilliseconds ?? 0;
     notifyListeners();
+    final int notifyElapsed = updateWatch?.elapsedMilliseconds ?? 0;
+    if (updateWatch != null) {
+      debugPrint(
+        'AppState update notifyListeners: '
+        '${notifyElapsed - beforeNotifyElapsed}ms',
+      );
+    }
     await save(
       creditCardsOnly: creditCardsOnly,
       mirrorTransactions: !identical(
@@ -2627,7 +2659,19 @@ class AppStateController extends ChangeNotifier {
       mirrorSavings: !identical(previousState.savings, _state.savings),
       mirrorOtherCollections: _isApplyingRemoteSync,
     );
-    unawaited(WidgetDataService.syncFromState(_state));
+    if (updateWatch != null) {
+      debugPrint(
+        'AppState update persistence: '
+        '${updateWatch.elapsedMilliseconds - notifyElapsed}ms',
+      );
+    }
+    unawaited(_syncWidgetDataWithProfile(_state));
+    if (updateWatch != null) {
+      debugPrint(
+        'AppState update total: ${updateWatch.elapsedMilliseconds}ms, '
+        'tx=${_state.transactions.length}, savings=${_state.savings.length}',
+      );
+    }
     if (creditCardsOnly) {
       if (!_isApplyingRemoteSync) {
         _syncSensitiveCollectionsInBackground(previousState, _state);
@@ -7153,11 +7197,14 @@ class AppStateController extends ChangeNotifier {
     bool sendNotification = true,
   }) async {
     final String source = payload.sourceString;
-    final String sourceIdentifier = payload.sourceIdentifier ??
+    final String sourceIdentifier =
+        payload.sourceIdentifier ??
         payload.senderHeader ??
         (payload.source == CaptureSource.shortcut
             ? 'Apple Automation'
-            : (payload.source == CaptureSource.sms ? 'Android SMS' : 'Manual Entry'));
+            : (payload.source == CaptureSource.sms
+                  ? 'Android SMS'
+                  : 'Manual Entry'));
 
     // Manual paste is an explicit user action and must work on iOS even when
     // automatic capture is disabled. Native automatic sources still respect
@@ -7181,8 +7228,9 @@ class AppStateController extends ChangeNotifier {
     }
 
     // Step 1: Canonical Input Normalization (transport-level normalization)
-    final String normalizedMessage =
-        CanonicalCaptureNormalizer.normalize(cleanMessage);
+    final String normalizedMessage = CanonicalCaptureNormalizer.normalize(
+      cleanMessage,
+    );
 
     // Step 2: Canonical Financial Parsing (SmartCaptureParser as single source of truth)
     final parsed = SmartCaptureParser.parse(
@@ -7251,10 +7299,12 @@ class AppStateController extends ChangeNotifier {
           : _state.captureAnalytics.capturedFromAppleShortcuts,
     );
 
-    final String? cardLast4 =
-        SmartCaptureDeduplicator.extractLast4(parsed.cardReference);
-    final String? accountLast4 =
-        SmartCaptureDeduplicator.extractLast4(parsed.accountReference);
+    final String? cardLast4 = SmartCaptureDeduplicator.extractLast4(
+      parsed.cardReference,
+    );
+    final String? accountLast4 = SmartCaptureDeduplicator.extractLast4(
+      parsed.accountReference,
+    );
     final String receivedAtIso = payload.receivedAt.toUtc().toIso8601String();
 
     if (!parsed.isValid) {
@@ -7341,13 +7391,14 @@ class AppStateController extends ChangeNotifier {
     }
 
     // Step 5: Deduplication via High-Precision Tiered SmartCaptureDeduplicator
-    final DeduplicationDecision dedupDecision = SmartCaptureDeduplicator.evaluate(
-      parsed: parsed,
-      payload: payload,
-      pendingTransactions: _state.pendingTransactions,
-      transactions: _state.transactions,
-      suggestedPaymentSourceId: suggestedPaymentSourceId,
-    );
+    final DeduplicationDecision dedupDecision =
+        SmartCaptureDeduplicator.evaluate(
+          parsed: parsed,
+          payload: payload,
+          pendingTransactions: _state.pendingTransactions,
+          transactions: _state.transactions,
+          suggestedPaymentSourceId: suggestedPaymentSourceId,
+        );
 
     if (dedupDecision.classification ==
         DeduplicationClassification.definiteDuplicate) {
@@ -7404,7 +7455,8 @@ class AppStateController extends ChangeNotifier {
       return true;
     }
 
-    final bool isPossibleDuplicate = dedupDecision.classification ==
+    final bool isPossibleDuplicate =
+        dedupDecision.classification ==
         DeduplicationClassification.possibleDuplicate;
 
     final String generatedId = const Uuid().v4();

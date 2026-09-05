@@ -16,7 +16,7 @@ Future<T?> showCompactSelectionDialog<T>({
     barrierDismissible: true,
     barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
     barrierColor: AppColors.black54,
-    transitionDuration: AppMotion.dialogDuration,
+    transitionDuration: const Duration(milliseconds: 100),
     pageBuilder:
         (
           BuildContext dialogContext,

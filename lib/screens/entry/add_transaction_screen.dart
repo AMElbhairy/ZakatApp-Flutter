@@ -135,6 +135,9 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     final List<CreditCard> creditCards = controller.state.creditCards
         .where((CreditCard card) => !card.isArchived)
         .toList(growable: false);
+    final Map<String, CreditCard> creditCardsById = <String, CreditCard>{
+      for (final CreditCard card in creditCards) card.id: card,
+    };
     final List<String> paymentSources = <String>[
       'cash',
       ...creditCards.map((CreditCard card) => card.id),
@@ -281,9 +284,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                       items: paymentSources,
                       itemLabel: (String source) {
                         if (source == 'cash') return context.l10n.tr('cash');
-                        final CreditCard card = creditCards.firstWhere(
-                          (CreditCard item) => item.id == source,
-                        );
+                        final CreditCard card = creditCardsById[source]!;
                         final String name = card.cardNickname.trim().isEmpty
                             ? card.bankName
                             : '${card.bankName} - ${card.cardNickname}';

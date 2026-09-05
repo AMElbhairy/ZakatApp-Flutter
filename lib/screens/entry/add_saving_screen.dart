@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import '../../widgets/sensitive_content_scope.dart';
 import 'package:uuid/uuid.dart';
@@ -42,6 +43,8 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
   late String _purchaseCurrency;
   bool _linkPurchaseToCashEntries = false;
   bool _saving = false;
+  String? _fundingSourcesCacheKey;
+  List<_FundingSource>? _fundingSourcesCache;
   final Map<String, TextEditingController> _allocationControllers =
       <String, TextEditingController>{};
 
@@ -550,8 +553,20 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
   }
 
   List<_FundingSource> _fundingSources() {
+    final Stopwatch? stopwatch = kDebugMode || kProfileMode
+        ? (Stopwatch()..start())
+        : null;
     final AppStateController controller = context.read<AppStateController>();
     final String targetCurrency = _purchaseCurrency.trim().toUpperCase();
+    final String cacheKey =
+        '${identityHashCode(controller.state.transactions)}|'
+        '${identityHashCode(controller.state.savings)}|'
+        '${identityHashCode(controller.state.marketData)}|'
+        '${controller.state.lastRollover}|$targetCurrency';
+    if (_fundingSourcesCacheKey == cacheKey && _fundingSourcesCache != null) {
+      if (stopwatch != null) debugPrint('FundingSources cache hit');
+      return _fundingSourcesCache!;
+    }
 
     final List<CashSource> availableSources = controller
         .getAvailableCashSources(currency: targetCurrency, newestFirst: true);
@@ -607,7 +622,16 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
       addedIds.add(source.id);
     }
 
-    return sources;
+    _fundingSourcesCacheKey = cacheKey;
+    _fundingSourcesCache = List<_FundingSource>.unmodifiable(sources);
+    if (kDebugMode || kProfileMode) {
+      debugPrint(
+        'FundingSources recompute: ${stopwatch?.elapsedMilliseconds ?? 0}ms, '
+        'tx=${controller.state.transactions.length}, '
+        'savings=${controller.state.savings.length}, sources=${sources.length}',
+      );
+    }
+    return _fundingSourcesCache!;
   }
 
   TextEditingController _allocationController(String sourceId) {

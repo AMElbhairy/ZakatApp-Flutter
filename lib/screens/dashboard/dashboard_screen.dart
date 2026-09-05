@@ -69,6 +69,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final Stopwatch? derivedWatch = kDebugMode || kProfileMode
+        ? (Stopwatch()..start())
+        : null;
     final controller = context.watch<AppStateController>();
     final authController = context.watch<AuthController>();
     final user = authController.currentUser;
@@ -306,6 +309,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final tokens = context.premiumTokens;
     final double navSafeBottomPadding =
         112 + MediaQuery.paddingOf(context).bottom;
+    if (derivedWatch != null) {
+      debugPrint(
+        'Dashboard derived/build: ${derivedWatch.elapsedMilliseconds}ms, '
+        'tx=${transactions.length}, savings=${savings.length}',
+      );
+    }
     return Container(
       color: tokens.colors.background,
       child: ListView(
