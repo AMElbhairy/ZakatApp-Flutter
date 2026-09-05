@@ -180,6 +180,29 @@ Date: 2026-06-28 09:15:00''',
 
       'bank_sms_charged_glued_preposition': '''
 شكرًا لاستخدامك بطاقة بنك مصر ****8799، تم الآن خصم EGP 105.06عند  MY FAWRY يوم 30/06 ، الرصيد المتاح EGP 1614.88 لمزيد من المعلومات عن الحساب، تفضل بزيارة الرابط التالي https://bnkmsr.com/online.''',
+
+      'real_device_test_a_banque_misr_purchase': 'شكرًا لاستخدامك بطاقة بنك مصر ***8799، تم الآن خصم 99.00 EGPعند Talabat Pro يوم 05/09/2026 ، الرصيد المتاح EGP 5378.54 لمزيد من المعلومات عن الحساب، تفضل بزيارة الرابط التالي',
+
+      'real_device_test_b_incoming_transfer': '''حوالة واردة محلية
+إلى:6403*
+مبلغ:500 SAR
+من:AHMED MOSTAFA ELBHAIRY
+عبر:D360 bank
+في:26/07/26 12:52''',
+
+      'real_device_test_c_outgoing_transfer': '''Debit Transfer Local
+Amount:5,000 SAR
+To: Ahmed Elbhairy
+From:**4870
+Fees:0 SAR
+On :2026-09-03 22:20''',
+
+      'real_device_test_d_alinmapay_purchase': '''Online Purchase
+By:0669 ;Visa-Apple Pay
+Amount:4200 SR
+At:AlinmaPay
+Balance:1225 SR
+2/9/26 22:19''',
     };
 
     for (final entry in bankFixtures.entries) {

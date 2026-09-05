@@ -183,5 +183,108 @@ void main() {
         });
       }
     });
+
+    group('Real-Device Regression Fixtures & Native Consistency', () {
+      test('Test A: Banque Misr purchase extracts 99.00 EGP and Talabat, strongly excluding balance 5378.54', () {
+        const rawText = 'شكرًا لاستخدامك بطاقة بنك مصر ***8799، تم الآن خصم 99.00 EGPعند Talabat Pro يوم 05/09/2026 ، الرصيد المتاح EGP 5378.54 لمزيد من المعلومات عن الحساب، تفضل بزيارة الرابط التالي';
+        final normalized = CanonicalCaptureNormalizer.normalize(rawText);
+        final parsed = SmartCaptureParser.parse(normalized);
+
+        expect(parsed.amount, 99.0);
+        expect(parsed.currency, 'EGP');
+        expect(parsed.merchantName, 'Talabat');
+        expect(parsed.amount, isNot(5378.54), reason: 'Available balance must never be selected as transaction amount');
+      });
+
+      test('Test B: Incoming transfer extracts 500 SAR and counterparty AHMED MOSTAFA ELBHAIRY', () {
+        const rawText = '''حوالة واردة محلية
+إلى:6403*
+مبلغ:500 SAR
+من:AHMED MOSTAFA ELBHAIRY
+عبر:D360 bank
+في:26/07/26 12:52''';
+        final normalized = CanonicalCaptureNormalizer.normalize(rawText);
+        final parsed = SmartCaptureParser.parse(normalized);
+
+        expect(parsed.amount, 500.0);
+        expect(parsed.currency, 'SAR');
+        expect(parsed.merchantName, 'AHMED MOSTAFA ELBHAIRY');
+        expect(parsed.merchantName, isNot(contains('6403')), reason: 'Masked account must not be selected as counterparty');
+      });
+
+      test('Test C: Outgoing transfer extracts 5,000 SAR and counterparty Ahmed Elbhairy', () {
+        const rawText = '''Debit Transfer Local
+Amount:5,000 SAR
+To: Ahmed Elbhairy
+From:**4870
+Fees:0 SAR
+On :2026-09-03 22:20''';
+        final normalized = CanonicalCaptureNormalizer.normalize(rawText);
+        final parsed = SmartCaptureParser.parse(normalized);
+
+        expect(parsed.amount, 5000.0);
+        expect(parsed.currency, 'SAR');
+        expect(parsed.merchantName, 'Ahmed Elbhairy');
+        expect(parsed.merchantName, isNot(contains('4870')), reason: 'Masked account must not be selected as counterparty');
+      });
+
+      test('Test D: AlinmaPay purchase extracts 4200 SAR and AlinmaPay, excluding balance 1225 SR', () {
+        const rawText = '''Online Purchase
+By:0669 ;Visa-Apple Pay
+Amount:4200 SR
+At:AlinmaPay
+Balance:1225 SR
+2/9/26 22:19''';
+        final normalized = CanonicalCaptureNormalizer.normalize(rawText);
+        final parsed = SmartCaptureParser.parse(normalized);
+
+        expect(parsed.amount, 4200.0);
+        expect(parsed.currency, 'SAR');
+        expect(parsed.merchantName, 'AlinmaPay');
+        expect(parsed.amount, isNot(1225.0), reason: 'Balance must not be selected as transaction amount');
+      });
+
+      group('Negative Balance-Selection Invariants', () {
+        test('transaction amount + balance', () {
+          const rawText = '''Online Purchase
+By:0669 ;Visa-Apple Pay
+Amount:4200 SR
+At:AlinmaPay
+Balance:1225 SR
+2/9/26 22:19''';
+          final normalized = CanonicalCaptureNormalizer.normalize(rawText);
+          final parsed = SmartCaptureParser.parse(normalized);
+
+          expect(parsed.amount, 4200.0);
+          expect(parsed.amount, isNot(1225.0));
+          expect(parsed.currency, 'SAR');
+        });
+
+        test('transaction amount + available balance', () {
+          const rawText = 'شكرًا لاستخدامك بطاقة بنك مصر ***8799، تم الآن خصم 99.00 EGPعند Talabat Pro يوم 05/09/2026 ، الرصيد المتاح EGP 5378.54 لمزيد من المعلومات عن الحساب، تفضل بزيارة الرابط التالي';
+          final normalized = CanonicalCaptureNormalizer.normalize(rawText);
+          final parsed = SmartCaptureParser.parse(normalized);
+
+          expect(parsed.amount, 99.0);
+          expect(parsed.amount, isNot(5378.54));
+          expect(parsed.currency, 'EGP');
+        });
+
+        test('amount + fee + balance', () {
+          const rawText = '''Debit Transfer Local
+Amount:5,000 SAR
+To: Ahmed Elbhairy
+From:**4870
+Fees:0 SAR
+On :2026-09-03 22:20''';
+          final normalized = CanonicalCaptureNormalizer.normalize(rawText);
+          final parsed = SmartCaptureParser.parse(normalized);
+
+          expect(parsed.amount, 5000.0);
+          expect(parsed.amount, isNot(0.0));
+          expect(parsed.currency, 'SAR');
+        });
+      });
+    });
   });
 }

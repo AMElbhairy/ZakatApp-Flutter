@@ -328,66 +328,9 @@ object AndroidSmsCaptureBridge {
         state: NativeSmartCaptureStateSnapshot?,
     ): String {
         val isArabic = languageCode.lowercase(Locale.ROOT).startsWith("ar")
-        val normalized = message.lowercase(Locale.ROOT)
-
-        if (nativeWasRecentlyCaptured(context, message)) {
-            return nativeLocalizedLabel(
-                english = "Rejected",
-                arabic = "مرفوض",
-                isArabic = isArabic,
-            )
-        }
-
-        if (isLikelyOtpOrSecurityMessage(normalized) ||
-            nativeContainsRejectionIndicators(normalized) ||
-            nativeContainsSubscriptionActivationIndicators(normalized)
-        ) {
-            return nativeLocalizedLabel(
-                english = "Rejected",
-                arabic = "مرفوض",
-                isArabic = isArabic,
-            )
-        }
-
-        if (nativeContainsAny(normalized, listOf(
-                "pending for approval",
-                "pending approval",
-                "pending review",
-                "awaiting approval",
-                "awaiting your approval",
-                "approval required",
-                "requires approval",
-                "requires your approval",
-                "waiting for approval",
-                "بانتظار الموافقة",
-                "في انتظار الموافقة",
-                "معلق للموافقة",
-                "معلّق للموافقة",
-                "محتاج موافقة",
-            ))
-        ) {
-            return nativeLocalizedLabel(
-                english = "Pending for Approval",
-                arabic = "بانتظار الموافقة",
-                isArabic = isArabic,
-            )
-        }
-
-        if (merchant != null &&
-            amount != null &&
-            state != null &&
-            nativeShouldAutoApprove(message, merchant, amount, state)
-        ) {
-            return nativeLocalizedLabel(
-                english = "Auto approved",
-                arabic = "موافق عليه تلقائيًا",
-                isArabic = isArabic,
-            )
-        }
-
         return nativeLocalizedLabel(
-            english = "Pending for Approval",
-            arabic = "بانتظار الموافقة",
+            english = "Transaction captured",
+            arabic = "تم التقاط عملية",
             isArabic = isArabic,
         )
     }
@@ -488,7 +431,11 @@ object AndroidSmsCaptureBridge {
         }
         return when {
             bodyParts.isNotEmpty() -> bodyParts.joinToString(separator = "\n")
-            else -> nativeWrapNotificationLine(truncateMessage(fallbackMessage), isArabic)
+            else -> nativeLocalizedLabel(
+                english = "Bank message captured",
+                arabic = "تم التقاط رسالة بنكية",
+                isArabic = isArabic,
+            )
         }
     }
 
@@ -693,6 +640,33 @@ object AndroidSmsCaptureBridge {
         return seen
     }
 
+    private fun nativeIsBalanceContext(text: String): Boolean {
+        val lower = text.lowercase(Locale.ROOT)
+        return nativeContainsAny(lower, listOf(
+            "available balance",
+            "current balance",
+            "remaining balance",
+            "available credit",
+            "remaining limit",
+            "spending limit",
+            "remaining amount",
+            "credit limit",
+            "balance",
+            "limit",
+            "exchange rate",
+            "الرصيد المتاح",
+            "الرصيد الحالي",
+            "رصيدك الحالي",
+            "حد الصرف المتبقي",
+            "حد الصرف",
+            "الحد المتاح",
+            "الرصيد",
+            "رصيد",
+            "المتبقي",
+            "سعر الصرف",
+        ))
+    }
+
     private fun extractAmount(message: String): String? {
         val normalized = message.replace("\r", "\n")
         val explicit = nativeExplicitAmountCandidate(normalized)
@@ -715,20 +689,12 @@ object AndroidSmsCaptureBridge {
                 if (value < 100 && nativeLooksLikeDateNumberCandidate(line, value)) {
                     continue
                 }
-                if (nativeContainsAny(lower, listOf(
-                        "الرصيد",
-                        "رصيدك الحالي",
-                        "حد الصرف",
-                        "حد الصرف المتبقي",
-                        "remaining amount",
-                        "remaining limit",
-                        "سعر الصرف",
-                        "exchange rate",
-                        "available balance",
-                        "remaining balance",
-                        "credit limit",
-                    ))
-                ) {
+
+                // Check local preceding window (up to 45 chars) for balance context
+                val matchIndex = match.range.first
+                val prefixStart = (matchIndex - 45).coerceAtLeast(0)
+                val localPreceding = line.substring(prefixStart, matchIndex)
+                if (nativeIsBalanceContext(localPreceding)) {
                     continue
                 }
 
@@ -769,25 +735,50 @@ object AndroidSmsCaptureBridge {
         if (intentMerchant != null) {
             merchantName = nativeNormalizeMerchantName(intentMerchant)
         } else {
-            nativeMerchantFromInlinePatterns(message, effectiveAliases)?.let {
-                merchantName = it
-            } ?: run {
-                val transferDetails = nativeTransferDetails(
-                    message,
-                    currentUserName = null,
-                )
+            val transferDetails = nativeTransferDetails(
+                message,
+                currentUserName = null,
+            )
+            if (transferDetails.isTransferMessage) {
                 when (transferDetails.direction) {
                     "out" -> {
                         merchantName = transferDetails.recipientName?.let {
+                            nativeResolveAlias(it, effectiveAliases)
+                        } ?: transferDetails.senderName?.let {
                             nativeResolveAlias(it, effectiveAliases)
                         }
                     }
                     "in" -> {
                         merchantName = transferDetails.senderName?.let {
                             nativeResolveAlias(it, effectiveAliases)
+                        } ?: transferDetails.recipientName?.let {
+                            nativeResolveAlias(it, effectiveAliases)
                         }
                     }
                     else -> {
+                        merchantName = (transferDetails.recipientName ?: transferDetails.senderName)?.let {
+                            nativeResolveAlias(it, effectiveAliases)
+                        }
+                    }
+                }
+                if (merchantName == null) {
+                    merchantName = nativeMerchantFromFieldLines(
+                        lines,
+                        effectiveAliases,
+                        listOf("مرسل", "المرسل", "sender", "من", "from"),
+                    ) ?: nativeMerchantFromFieldLines(
+                        lines,
+                        effectiveAliases,
+                        listOf("مستفيد", "المستفيد", "recipient", "إلى", "الى", "to"),
+                    )
+                }
+            }
+
+            if (merchantName == null) {
+                merchantName = nativeMerchantFromInlinePatterns(message, effectiveAliases)
+            }
+
+            if (merchantName == null) {
                         if (!transferDetails.isTransferMessage && !nativeIsWalletTopUpMessage(text)) {
                             merchantName = nativeMerchantFromTransactionField(
                                 message,
@@ -878,8 +869,6 @@ object AndroidSmsCaptureBridge {
                         }
                     }
                 }
-            }
-        }
 
         if (merchantName != null && nativeIsInvalidMerchantCandidate(merchantName)) {
             merchantName = null
@@ -1016,26 +1005,27 @@ object AndroidSmsCaptureBridge {
             .filter { it.isNotEmpty() }
         var senderName = nativeTransferParty(lines, listOf(
             "sender",
-            "from account",
             "from",
+            "from account",
             "المرسل",
             "مرسل",
-            "من حساب",
             "من",
+            "من حساب",
         ))
         var recipientName = nativeTransferParty(lines, listOf(
-            "to account",
             "to",
+            "to account",
             "recipient",
             "beneficiary",
             "المستفيد",
-            "إلى حساب",
             "إلى",
             "الى",
+            "إلى حساب",
+            "الى حساب",
         ))
 
         if (senderName == null) {
-            val match = Regex("""(?i)(?:\bfrom\b|من)\s+([A-Za-z\u0600-\u06FF\*\s]{2,80})""").find(rawMessage)
+            val match = Regex("""(?i)(?:\bfrom\b|من)\s*[:\-]?\s*([A-Za-z\u0600-\u06FF\s]{2,80})""").find(rawMessage)
             if (match != null) {
                 val candidate = match.groupValues[1].trim()
                 if (candidate.isNotEmpty() && !nativeIsTransferPartyNoise(candidate)) {
@@ -1048,7 +1038,7 @@ object AndroidSmsCaptureBridge {
         }
 
         if (recipientName == null) {
-            val match = Regex("""(?i)(?:\bto\b|إلى|الى)\s+([A-Za-z\u0600-\u06FF\*\s]{2,80})""").find(rawMessage)
+            val match = Regex("""(?i)(?:\bto\b|إلى|الى)\s*[:\-]?\s*([A-Za-z\u0600-\u06FF\s]{2,80})""").find(rawMessage)
             if (match != null) {
                 val candidate = match.groupValues[1].trim()
                 if (candidate.isNotEmpty() && !nativeIsTransferPartyNoise(candidate)) {
@@ -1133,22 +1123,16 @@ object AndroidSmsCaptureBridge {
 
     private fun nativeIsTransferPartyNoise(value: String): Boolean {
         val lower = value.lowercase(Locale.ROOT).trim()
+        if (Regex("""^[\d\*xX#\-\s]+$""").matches(lower)) {
+            return true
+        }
         return nativeContainsAny(lower, listOf(
-            "balance",
-            "الرصيد",
-            "amount",
-            "مبلغ",
-            "account",
-            "حساب",
-            "card",
-            "بطاقة",
-            "visa",
-            "mastercard",
-            "apple pay",
-            "mada",
-            "stc pay",
-            "stcpay",
-        )) || Regex("""^\d+$""").matches(lower)
+            "bank", "بنك", "مصرف", "d360", "alrajhi", "الراجحي", "alinma", "الإنماء", "الانماء",
+            "ahli", "الأهلي", "الاهلي", "riyad", "الرياض", "snb", "cib", "misr", "مصر",
+            "balance", "الرصيد", "amount", "مبلغ", "fees", "fee", "رسوم", "date", "تاريخ", "time", "وقت",
+            "account", "حساب", "card", "بطاقة", "iban", "أيبان", "ايبان",
+            "visa", "mastercard", "apple pay", "mada", "stc pay", "stcpay",
+        ))
     }
 
     private fun nativeLooksLikeOwnAccountReference(value: String?): Boolean {
@@ -1396,6 +1380,7 @@ object AndroidSmsCaptureBridge {
             normalized.startsWith("mobily pay") -> "Mobily Pay"
             normalized.startsWith("mobily") -> "Mobily"
             normalized.startsWith("zain") -> "Zain"
+            normalized.startsWith("alinmapay") || normalized.startsWith("alinma pay") -> "AlinmaPay"
             Regex("""^(?:s\d+\s+)?tamimi market""").matches(normalized) -> "Tamimi Market"
             else -> capitalizeWords(cleanMerchant)
         }
@@ -1580,20 +1565,53 @@ object AndroidSmsCaptureBridge {
     }
 
     private fun nativeExplicitAmountCandidate(text: String): Pair<Double, String?>? {
-        val patterns = listOf(
+        // 1. Explicit transaction action / amount patterns (highest priority)
+        val explicitActionPatterns = listOf(
+            Regex("""(?i)(?:تم\s+الآن\s+خصم|تم\s+الان\s+خصم|تم\s+خصم|خصم|خصمت|بقيمة|بقيمه|شراء|عملية\s+شراء|سداد|دفع|amount|charged\s+amount|transaction\s+amount|purchase\s+amount|total\s+due|charged|purchase|debit|spent|paid)\s*[:\-]?\s*(?:SAR|SR|S\.R|EGP|USD|AED|KWD|QAR|BHD|OMR|ر\.س|ج\.م|جم|ريال|جنيه|درهم|د\.إ|د.إ)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:SAR|SR|S\.R|EGP|USD|AED|KWD|QAR|BHD|OMR|ر\.س|ج\.م|جم|ريال|جنيه|درهم|د\.إ|د.إ)?"""),
             Regex("""(?i)(?:SAR|SR|S\.R|EGP|USD|AED|KWD|QAR|BHD|OMR|ر\.س|ج\.م|جم|ريال|جنيه|درهم|د\.إ|د.إ)\s*(?:amount|المبلغ|مبلغ)\s*[:\-]?\s*([0-9][0-9,]*(?:\.[0-9]+)?)"""),
-            Regex("""(?i)(?:amount|المبلغ|مبلغ|charged amount|transaction amount|purchase amount|total|value|price|due)\s*[:\-]?\s*(?:SAR|SR|S\.R|EGP|USD|AED|KWD|QAR|BHD|OMR|ر\.س|ج\.م|جم|ريال|جنيه|درهم|د\.إ|د.إ)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)"""),
-            Regex("""(?i)(?:SAR|SR|S\.R|EGP|USD|AED|KWD|QAR|BHD|OMR|ر\.س|ج\.م|جم|ريال|جنيه|درهم|د\.إ|د.إ)\s*([0-9][0-9,]*(?:\.[0-9]+)?)"""),
-            Regex("""(?i)([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:SAR|SR|S\.R|EGP|USD|AED|KWD|QAR|BHD|OMR|ر\.س|ج\.م|جم|ريال|جنيه|درهم|د\.إ|د.إ)"""),
+            Regex("""(?i)(?:amount|المبلغ|مبلغ)\s*[:\-]?\s*(?:SAR|SR|S\.R|EGP|USD|AED|KWD|QAR|BHD|OMR|ر\.س|ج\.م|جم|ريال|جنيه|درهم|د\.إ|د.إ)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)"""),
         )
-        for (pattern in patterns) {
-            val match = pattern.find(text) ?: continue
-            val rawAmount = match.groupValues.getOrNull(1).orEmpty().replace(",", "")
-            val parsedAmount = rawAmount.toDoubleOrNull() ?: continue
-            if (parsedAmount <= 0) continue
-            val currency = nativeCurrencyCode(match.value)
-            return parsedAmount to currency
+        for (pattern in explicitActionPatterns) {
+            for (match in pattern.findAll(text)) {
+                val rawAmount = match.groupValues.getOrNull(1).orEmpty().replace(",", "")
+                val parsedAmount = rawAmount.toDoubleOrNull() ?: continue
+                if (parsedAmount <= 0) continue
+
+                val matchIndex = match.range.first
+                val prefixStart = (matchIndex - 50).coerceAtLeast(0)
+                val precedingContext = text.substring(prefixStart, matchIndex)
+                if (nativeIsBalanceContext(precedingContext)) {
+                    continue
+                }
+
+                val currency = nativeCurrencyCode(match.value)
+                return parsedAmount to currency
+            }
         }
+
+        // 2. Generic patterns, strictly excluding balance context
+        val genericPatterns = listOf(
+            Regex("""(?i)([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:SAR|SR|S\.R|EGP|USD|AED|KWD|QAR|BHD|OMR|ر\.س|ج\.م|جم|ريال|جنيه|درهم|د\.إ|د.إ)"""),
+            Regex("""(?i)(?:SAR|SR|S\.R|EGP|USD|AED|KWD|QAR|BHD|OMR|ر\.س|ج\.م|جم|ريال|جنيه|درهم|د\.إ|د.إ)\s*([0-9][0-9,]*(?:\.[0-9]+)?)"""),
+        )
+        for (pattern in genericPatterns) {
+            for (match in pattern.findAll(text)) {
+                val rawAmount = match.groupValues.getOrNull(1).orEmpty().replace(",", "")
+                val parsedAmount = rawAmount.toDoubleOrNull() ?: continue
+                if (parsedAmount <= 0) continue
+
+                val matchIndex = match.range.first
+                val prefixStart = (matchIndex - 50).coerceAtLeast(0)
+                val precedingContext = text.substring(prefixStart, matchIndex)
+                if (nativeIsBalanceContext(precedingContext)) {
+                    continue
+                }
+
+                val currency = nativeCurrencyCode(match.value)
+                return parsedAmount to currency
+            }
+        }
+
         return null
     }
 
