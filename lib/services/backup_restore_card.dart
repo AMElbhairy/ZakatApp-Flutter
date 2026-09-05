@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../core/i18n/app_localizations.dart';
+import '../core/errors/user_facing_error_mapper.dart';
 import '../core/theme/app_colors.dart';
 import '../core/widgets/app_ui.dart';
 import '../models/backup_preview.dart';
@@ -60,7 +61,14 @@ class BackupRestoreCard extends StatelessWidget {
       );
     } catch (e) {
       if (!context.mounted) return;
-      showTopSnackBar(context, 'Failed to export backup: $e');
+      showTopSnackBar(
+        context,
+        UserFacingErrorMapper.message(
+          context.l10n,
+          e,
+          context: 'backup export',
+        ),
+      );
     }
   }
 
@@ -88,7 +96,10 @@ class BackupRestoreCard extends StatelessWidget {
       _showPreviewDialog(context, preview);
     } catch (e) {
       if (!context.mounted) return;
-      showTopSnackBar(context, 'Error: invalid backup file. $e');
+      showTopSnackBar(
+        context,
+        UserFacingErrorMapper.message(context.l10n, e, context: 'restore'),
+      );
     }
   }
 
@@ -337,7 +348,10 @@ class BackupRestoreCard extends StatelessWidget {
       }
     } catch (e) {
       if (!context.mounted) return;
-      showTopSnackBar(context, 'Failed to restore backup: $e');
+      showTopSnackBar(
+        context,
+        UserFacingErrorMapper.message(context.l10n, e, context: 'restore'),
+      );
     }
   }
 
@@ -530,7 +544,10 @@ class BackupRestoreCard extends StatelessWidget {
       );
     } catch (e) {
       if (!context.mounted) return;
-      showTopSnackBar(context, 'Failed to export CSV: $e');
+      showTopSnackBar(
+        context,
+        UserFacingErrorMapper.message(context.l10n, e, context: 'export'),
+      );
     }
   }
 
@@ -560,7 +577,10 @@ class BackupRestoreCard extends StatelessWidget {
       );
     } catch (e) {
       if (!context.mounted) return;
-      showTopSnackBar(context, 'Failed to export Zip: $e');
+      showTopSnackBar(
+        context,
+        UserFacingErrorMapper.message(context.l10n, e, context: 'export'),
+      );
     }
   }
 
@@ -609,7 +629,7 @@ class BackupRestoreCard extends StatelessWidget {
       if (!context.mounted) return;
       showTopSnackBar(
         context,
-        'Error importing file: $e',
+        UserFacingErrorMapper.message(context.l10n, e, context: 'import'),
         kind: AppToastKind.error,
       );
     }
@@ -743,7 +763,7 @@ class BackupRestoreCard extends StatelessWidget {
       if (!context.mounted) return;
       showTopSnackBar(
         context,
-        'Failed to apply import: $e',
+        UserFacingErrorMapper.message(context.l10n, e, context: 'import'),
         kind: AppToastKind.error,
       );
     }

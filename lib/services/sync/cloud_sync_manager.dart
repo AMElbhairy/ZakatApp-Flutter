@@ -44,11 +44,9 @@ class CloudSyncManager {
     required this.deviceName,
     required this.platform,
     String? appVersion,
-  }) : appVersion = appVersion ??
-            const String.fromEnvironment(
-              'APP_VERSION',
-              defaultValue: '1.5.0',
-            );
+  }) : appVersion =
+           appVersion ??
+           const String.fromEnvironment('APP_VERSION', defaultValue: '1.5.0');
 
   /// Configures the sync encryption passphrase.
   void setPassphrase(String passphrase) {
@@ -102,7 +100,8 @@ class CloudSyncManager {
         );
       }
 
-      if (latestSnapshot.sequence == localSequence && latestSnapshot.checksum == localChecksum) {
+      if (latestSnapshot.sequence == localSequence &&
+          latestSnapshot.checksum == localChecksum) {
         return CloudSyncResult(
           status: CloudSyncStatus.upToDate,
           message: 'Already up to date.',
@@ -113,7 +112,8 @@ class CloudSyncManager {
       if (latestSnapshot.sequence > localSequence) {
         return CloudSyncResult(
           status: CloudSyncStatus.newerAvailable,
-          message: 'Newer remote snapshot sequence ${latestSnapshot.sequence} is available.',
+          message:
+              'Newer remote snapshot sequence ${latestSnapshot.sequence} is available.',
           manifest: manifest,
         );
       }
@@ -127,7 +127,7 @@ class CloudSyncManager {
     } catch (e) {
       return CloudSyncResult(
         status: CloudSyncStatus.error,
-        message: 'Failed checking updates: $e',
+        message: 'Cloud sync could not check for updates.',
       );
     }
   }
@@ -174,7 +174,7 @@ class CloudSyncManager {
     } catch (e) {
       return CloudSyncResult(
         status: CloudSyncStatus.error,
-        message: 'Failed to pull and restore snapshot: $e',
+        message: 'Cloud backup could not be restored.',
       );
     }
   }
@@ -220,20 +220,22 @@ class CloudSyncManager {
         message: 'Snapshot pushed successfully.',
       );
     } on StateError catch (e) {
-      if (e.message.contains('Revision mismatch') || e.message.contains('ETag')) {
+      if (e.message.contains('Revision mismatch') ||
+          e.message.contains('ETag')) {
         return CloudSyncResult(
           status: CloudSyncStatus.conflict,
-          message: 'Manifest write failed: ETag revision collision. ${e.message}',
+          message:
+              'Cloud backup changed elsewhere. Please refresh and try again.',
         );
       }
       return CloudSyncResult(
         status: CloudSyncStatus.error,
-        message: 'Failed to push snapshot: ${e.message}',
+        message: 'Cloud backup could not be completed.',
       );
     } catch (e) {
       return CloudSyncResult(
         status: CloudSyncStatus.error,
-        message: 'Failed to push snapshot: $e',
+        message: 'Cloud backup could not be completed.',
       );
     }
   }

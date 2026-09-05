@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 
 import '../../core/i18n/app_localizations.dart';
+import '../../core/errors/user_facing_error_mapper.dart';
 import '../../core/services/zakat_engine.dart';
 import '../../core/theme/app_theme_extensions.dart';
 import '../../core/theme/app_radii.dart';
@@ -587,9 +588,12 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                                             Expanded(
                                               child: Text(
                                                 context.l10n
-                                                    .tr(widget.categoryType == 'liabilities'
-                                                        ? 'total_other_liabilities'
-                                                        : 'total_assets')
+                                                    .tr(
+                                                      widget.categoryType ==
+                                                              'liabilities'
+                                                          ? 'total_other_liabilities'
+                                                          : 'total_assets',
+                                                    )
                                                     .toUpperCase(),
                                                 maxLines: 1,
                                                 overflow: TextOverflow.ellipsis,
@@ -767,9 +771,12 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                                             Expanded(
                                               child: Text(
                                                 context.l10n
-                                                    .tr(widget.categoryType == 'liabilities'
-                                                        ? 'total_other_liabilities'
-                                                        : 'total_assets')
+                                                    .tr(
+                                                      widget.categoryType ==
+                                                              'liabilities'
+                                                          ? 'total_other_liabilities'
+                                                          : 'total_assets',
+                                                    )
                                                     .toUpperCase(),
                                                 maxLines: 1,
                                                 overflow: TextOverflow.ellipsis,
@@ -1051,13 +1058,13 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                         title: isCashCategory
                             ? context.l10n.tr('no_available_cash')
                             : (widget.categoryType == 'liabilities'
-                                ? context.l10n.tr('no_liabilities_yet')
-                                : context.l10n.tr('no_assets_yet')),
+                                  ? context.l10n.tr('no_liabilities_yet')
+                                  : context.l10n.tr('no_assets_yet')),
                         message: isCashCategory
                             ? context.l10n.tr('no_available_cash_message')
                             : (widget.categoryType == 'liabilities'
-                                ? context.l10n.tr('liabilities_empty_message')
-                                : context.l10n.tr('assets_empty_message')),
+                                  ? context.l10n.tr('liabilities_empty_message')
+                                  : context.l10n.tr('assets_empty_message')),
                       ),
                     )
                   : ListView.builder(
@@ -2806,7 +2813,11 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
                                                         }
                                                         showTopSnackBar(
                                                           context,
-                                                          error.message,
+                                                          UserFacingErrorMapper.message(
+                                                            context.l10n,
+                                                            error,
+                                                            context: 'save',
+                                                          ),
                                                         );
                                                         return;
                                                       }
@@ -2875,10 +2886,10 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
             initialAssetType: widget.categoryType == 'investments'
                 ? 'company_share'
                 : (widget.categoryType == 'liabilities'
-                    ? 'liability'
-                    : (widget.categoryType == 'other_assets'
-                        ? 'car'
-                        : 'property')),
+                      ? 'liability'
+                      : (widget.categoryType == 'other_assets'
+                            ? 'car'
+                            : 'property')),
           ),
         ),
       );

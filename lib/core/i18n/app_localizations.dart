@@ -347,6 +347,45 @@ class AppLocalizations {
       'transaction_added_successfully': 'Transaction added successfully',
       'transaction_rejected': 'Transaction rejected',
       'error_prefix': 'Error',
+      'error_unknown': 'Something went wrong. Please try again.',
+      'error_network_offline':
+          'No internet connection. Check your connection and try again.',
+      'error_network_timeout': 'The request took too long. Please try again.',
+      'error_permission_required': 'This permission is required to continue.',
+      'error_rate_limited': 'Too many attempts. Please try again later.',
+      'error_auth_account_disabled': 'This account is currently unavailable.',
+      'error_auth_session_expired':
+          'Your session expired. Please sign in again.',
+      'error_auth_invalid_credentials': 'The email or password is incorrect.',
+      'error_authorization_failed':
+          'Access is not available. Please reconnect and try again.',
+      'error_backup_failed':
+          'Cloud backup could not be completed. Your local data is safe.',
+      'error_restore_failed':
+          'The backup could not be restored. Please check the backup and try again.',
+      'error_restore_invalid_backup':
+          'This backup could not be restored because it appears invalid or damaged.',
+      'error_sync_failed':
+          'Your data could not be synced right now. It remains available on this device.',
+      'error_sync_conflict':
+          'Your data changed elsewhere. Please refresh and try again.',
+      'error_save_failed': "We couldn't save your changes. Please try again.",
+      'error_parsing_failed':
+          "We couldn't read this file or message. Please check it and try again.",
+      'smart_capture_reason_duplicate':
+          'This transaction appears to have already been captured.',
+      'smart_capture_reason_possible_duplicate':
+          'This may be a duplicate of a recent transaction. Please review it carefully.',
+      'smart_capture_reason_declined':
+          'This message refers to a declined transaction, so it was not added.',
+      'smart_capture_reason_security':
+          'This is a security or verification message, not a financial transaction.',
+      'smart_capture_reason_subscription':
+          'This message does not represent a completed financial transaction.',
+      'smart_capture_reason_invalid':
+          "We couldn't identify a valid transaction in this message.",
+      'smart_capture_reason_unknown':
+          'This message could not be added as a transaction.',
       'dashboard': 'Dashboard',
       'assets': 'Assets',
       'credit_cards': 'Credit Cards',
@@ -621,6 +660,11 @@ class AppLocalizations {
       'category': 'Category',
       'date': 'Date',
       'save_transaction': 'Save Transaction',
+      'review_transaction_warning': 'Review transaction',
+      'insufficient_cash_confirmation':
+          'This expense is {amount} {currency}, but only {available} {currency} is available in cash. Add it anyway?',
+      'different_card_currency_confirmation':
+          'The expense is entered in {entryCurrency}, while the selected credit card uses {cardCurrency}. Currency conversion will be applied. Add it anyway?',
       'update_transaction': 'Update Transaction',
       'save_cash': 'Save Cash',
       'update_cash': 'Update Cash',
@@ -1146,6 +1190,45 @@ class AppLocalizations {
       'transaction_added_successfully': 'تمت إضافة العملية بنجاح',
       'transaction_rejected': 'تم رفض العملية',
       'error_prefix': 'خطأ',
+      'error_unknown': 'حدث خطأ. يرجى المحاولة مرة أخرى.',
+      'error_network_offline':
+          'لا يوجد اتصال بالإنترنت. تحقق من الاتصال وحاول مرة أخرى.',
+      'error_network_timeout':
+          'استغرق الطلب وقتًا أطول من المتوقع. يرجى المحاولة مرة أخرى.',
+      'error_permission_required': 'هذا الإذن مطلوب للمتابعة.',
+      'error_rate_limited': 'عدد المحاولات كبير جدًا. يرجى المحاولة لاحقًا.',
+      'error_auth_account_disabled': 'هذا الحساب غير متاح حاليًا.',
+      'error_auth_session_expired': 'انتهت جلستك. يرجى تسجيل الدخول مرة أخرى.',
+      'error_auth_invalid_credentials':
+          'البريد الإلكتروني أو كلمة المرور غير صحيحة.',
+      'error_authorization_failed':
+          'الوصول غير متاح. أعد الاتصال وحاول مرة أخرى.',
+      'error_backup_failed':
+          'تعذر إكمال النسخ الاحتياطي السحابي. بياناتك المحلية آمنة.',
+      'error_restore_failed':
+          'تعذرت استعادة النسخة الاحتياطية. تحقق منها وحاول مرة أخرى.',
+      'error_restore_invalid_backup':
+          'تعذرت استعادة هذه النسخة لأنها غير صالحة أو تالفة.',
+      'error_sync_failed':
+          'تعذرت مزامنة بياناتك الآن. ما زالت متاحة على هذا الجهاز.',
+      'error_sync_conflict':
+          'تغيرت بياناتك في مكان آخر. حدّث البيانات وحاول مرة أخرى.',
+      'error_save_failed': 'تعذر حفظ التغييرات. يرجى المحاولة مرة أخرى.',
+      'error_parsing_failed':
+          'تعذرت قراءة هذا الملف أو هذه الرسالة. تحقق منها وحاول مرة أخرى.',
+      'smart_capture_reason_duplicate':
+          'يبدو أن هذه العملية تم التقاطها بالفعل.',
+      'smart_capture_reason_possible_duplicate':
+          'قد تكون هذه العملية مكررة لعملية حديثة. يرجى مراجعتها بعناية.',
+      'smart_capture_reason_declined':
+          'تشير هذه الرسالة إلى عملية مرفوضة، لذلك لم تتم إضافتها.',
+      'smart_capture_reason_security':
+          'هذه رسالة تحقق أو أمان وليست عملية مالية.',
+      'smart_capture_reason_subscription':
+          'هذه الرسالة لا تمثل عملية مالية مكتملة.',
+      'smart_capture_reason_invalid':
+          'تعذر التعرف على عملية مالية صالحة في هذه الرسالة.',
+      'smart_capture_reason_unknown': 'تعذر إضافة هذه الرسالة كعملية مالية.',
       'dashboard': 'الرئيسية',
       'assets': 'الأصول',
       'credit_cards': 'البطاقات الائتمانية',
@@ -1415,6 +1498,11 @@ class AppLocalizations {
       'category': 'الفئة',
       'date': 'التاريخ',
       'save_transaction': 'حفظ العملية',
+      'review_transaction_warning': 'مراجعة العملية',
+      'insufficient_cash_confirmation':
+          'هذا المصروف بقيمة {amount} {currency}، بينما المتاح نقدًا هو {available} {currency} فقط. هل تريد إضافته رغم ذلك؟',
+      'different_card_currency_confirmation':
+          'تم إدخال المصروف بعملة {entryCurrency}، بينما تستخدم البطاقة الائتمانية المحددة عملة {cardCurrency}. سيتم تطبيق تحويل العملة. هل تريد إضافته رغم ذلك؟',
       'update_transaction': 'تحديث العملية',
       'save_cash': 'حفظ النقد',
       'update_cash': 'تحديث النقد',

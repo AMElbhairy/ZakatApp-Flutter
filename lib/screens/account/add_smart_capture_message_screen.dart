@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/i18n/app_localizations.dart';
+import '../../core/errors/user_facing_error_mapper.dart';
 import '../../core/widgets/app_ui.dart';
 import '../../core/theme/app_theme_extensions.dart';
 import '../../core/theme/app_radii.dart';
@@ -40,8 +41,9 @@ class _AddSmartCaptureMessageScreenState
         sourceIdentifier: 'Manual Entry',
         receivedAt: DateTime.now().toUtc(),
       );
-      final bool created =
-          await controller.createPendingTransactionFromPayload(payload);
+      final bool created = await controller.createPendingTransactionFromPayload(
+        payload,
+      );
 
       if (mounted) {
         if (!created) {
@@ -63,7 +65,7 @@ class _AddSmartCaptureMessageScreenState
       if (mounted) {
         showTopSnackBar(
           context,
-          '${context.l10n.tr('error_prefix')}: ${e.toString()}',
+          UserFacingErrorMapper.message(context.l10n, e, context: 'parse'),
           kind: AppToastKind.error,
         );
       }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/i18n/app_localizations.dart';
+import '../../core/errors/user_facing_error_mapper.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_theme_extensions.dart';
 import '../../models/backup_preview.dart';
@@ -38,7 +39,7 @@ class _RestoreGateScreenState extends State<RestoreGateScreen> {
         ? Future<BackupPreview?>.value(widget.discovery.preview)
         : widget.discovery.hasRestorableBackup
         ? widget.cloudBackupController?.previewLatestBackup() ??
-            Future<BackupPreview?>.value(widget.discovery.preview)
+              Future<BackupPreview?>.value(widget.discovery.preview)
         : Future<BackupPreview?>.value(widget.discovery.preview);
   }
 
@@ -52,7 +53,7 @@ class _RestoreGateScreenState extends State<RestoreGateScreen> {
           ? Future<BackupPreview?>.value(widget.discovery.preview)
           : widget.discovery.hasRestorableBackup
           ? widget.cloudBackupController?.previewLatestBackup() ??
-              Future<BackupPreview?>.value(widget.discovery.preview)
+                Future<BackupPreview?>.value(widget.discovery.preview)
           : Future<BackupPreview?>.value(widget.discovery.preview);
     }
   }
@@ -133,7 +134,11 @@ class _RestoreGateScreenState extends State<RestoreGateScreen> {
                         if (widget.discovery.hasError) ...<Widget>[
                           const SizedBox(height: AppSpacing.sm),
                           Text(
-                            widget.discovery.error!,
+                            UserFacingErrorMapper.message(
+                              l10n,
+                              widget.discovery.error,
+                              context: 'restore',
+                            ),
                             textAlign: TextAlign.center,
                             style: Theme.of(context).textTheme.bodyMedium
                                 ?.copyWith(

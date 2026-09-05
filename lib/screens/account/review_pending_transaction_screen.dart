@@ -16,6 +16,7 @@ import '../../models/transaction.dart';
 import '../../services/app_state_controller.dart';
 import '../../services/smart_capture_parser.dart';
 import '../../core/i18n/app_localizations.dart';
+import '../../features/smart_capture/smart_capture_display_messages.dart';
 import '../../core/utils/amount_parser.dart';
 
 class ReviewPendingTransactionScreen extends StatefulWidget {
@@ -562,7 +563,9 @@ class _ReviewPendingTransactionScreenState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (widget.pendingTransaction.ignoreReason != null &&
-                    widget.pendingTransaction.ignoreReason!.startsWith('Possible duplicate')) ...[
+                    SmartCaptureDisplayMessages.isPossibleDuplicate(
+                      widget.pendingTransaction.ignoreReason,
+                    )) ...[
                   Container(
                     width: double.infinity,
                     margin: const EdgeInsets.only(bottom: 16.0),
@@ -591,7 +594,8 @@ class _ReviewPendingTransactionScreenState
                                 _isArabic(context)
                                     ? 'تنبيه: تكرار محتمل'
                                     : 'Warning: Possible Duplicate',
-                                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                style: Theme.of(context).textTheme.titleSmall
+                                    ?.copyWith(
                                       color: tokens.colors.warning,
                                       fontWeight: FontWeight.w600,
                                     ),
@@ -601,7 +605,8 @@ class _ReviewPendingTransactionScreenState
                                 _isArabic(context)
                                     ? 'تم التقاط هذه المعاملة لأنها تشبه معاملة سابقة قريبة جداً في التوقيت والتفاصيل. تم إيقاف الموافقة التلقائية حرصاً على الدقة.'
                                     : 'This transaction resembles a recent capture in amount, merchant, and timing. Auto-approval was suppressed. Please review carefully before approving.',
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
                                       color: tokens.colors.textSecondary,
                                       height: 1.3,
                                     ),

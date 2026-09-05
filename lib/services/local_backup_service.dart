@@ -36,9 +36,7 @@ class LocalBackupService {
           .toUtc()
           .toIso8601String()
           .replaceAll(':', '-');
-      final File file = File(
-        p.join(directory.path, 'backup_$timestamp.json'),
-      );
+      final File file = File(p.join(directory.path, 'backup_$timestamp.json'));
       final String backup = BackupService.exportBackup(
         state.toJson(),
         userId: userId,
@@ -111,7 +109,7 @@ class LocalBackupService {
       return StartupRestoreDiscoveryResult(
         status: StartupRestoreDiscoveryStatus.none,
         message: '',
-        error: error.toString(),
+        error: 'The local backup could not be read.',
         source: StartupRestoreSource.local,
       );
     }
@@ -129,7 +127,8 @@ class LocalBackupService {
         .toList(growable: false);
     if (files.isEmpty) return null;
     files.sort(
-      (File a, File b) => b.statSync().modified.compareTo(a.statSync().modified),
+      (File a, File b) =>
+          b.statSync().modified.compareTo(a.statSync().modified),
     );
     return files.first;
   }
@@ -137,15 +136,14 @@ class LocalBackupService {
   Future<void> _pruneBackups(String userId) async {
     final Directory directory = await _backupDirectory(userId);
     if (!await directory.exists()) return;
-    final List<File> files = (await directory
-            .list(followLinks: false)
-            .toList())
+    final List<File> files = (await directory.list(followLinks: false).toList())
         .whereType<File>()
         .where((File file) => file.path.endsWith('.json'))
         .toList(growable: false);
     if (files.length <= maxBackups) return;
     files.sort(
-      (File a, File b) => b.statSync().modified.compareTo(a.statSync().modified),
+      (File a, File b) =>
+          b.statSync().modified.compareTo(a.statSync().modified),
     );
     for (final File file in files.skip(maxBackups)) {
       try {

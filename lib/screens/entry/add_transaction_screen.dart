@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart' as image_picker;
 
 import '../../core/i18n/app_localizations.dart';
+import '../../core/errors/user_facing_error_mapper.dart';
 import '../../core/widgets/compact_dropdown.dart';
 import '../../core/utils/currency_presentation.dart';
 import '../../core/utils/amount_parser.dart';
@@ -363,19 +364,16 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                               final double amount =
                                   tryParseAmount(_amountController.text) ?? 0;
 
-                              if (!widget.isEditMode &&
-                                  _type == 'expense' &&
-                                  _deductFrom == 'cash') {
-                                final double availableBalance = context
-                                    .read<AppStateController>()
-                                    .getAvailableBalance(currency: _currency);
-                                if (availableBalance <= 0) {
-                                  setState(() => _saving = false);
-                                  _showError(
-                                    _expenseBlockedMessage(context, _currency),
-                                  );
-                                  return;
-                                }
+                              final AppStateController controller = context
+                                  .read<AppStateController>();
+                              final AppLocalizations l10n = context.l10n;
+                              if (_type == 'expense' &&
+                                  !await _confirmExpenseWarnings(
+                                    controller,
+                                    amount,
+                                  )) {
+                                if (mounted) setState(() => _saving = false);
+                                return;
                               }
 
                               final Transaction? original =
@@ -404,8 +402,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                                     _type == 'expense' && _deductFrom != 'cash'
                                     ? _deductFrom
                                     : null,
-                                creditCardPaymentId:
-                                    _type == 'expense'
+                                creditCardPaymentId: _type == 'expense'
                                     ? original?.creditCardPaymentId
                                     : null,
                                 transferSourceId: _type == 'transfer'
@@ -414,29 +411,29 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                                 transferDestinationId: _type == 'transfer'
                                     ? _transferTo
                                     : null,
-                                activityType:
-                                    _type == 'transfer' ? 'transfer' : null,
+                                activityType: _type == 'transfer'
+                                    ? 'transfer'
+                                    : null,
                               );
 
-                              final AppStateController appStateController =
-                                  context.read<AppStateController>();
                               try {
                                 if (widget.isEditMode) {
-                                  await appStateController.updateTransaction(
+                                  await controller.updateTransaction(
                                     transaction,
                                   );
                                 } else {
-                                  await appStateController.addTransaction(
-                                    transaction,
-                                  );
+                                  await controller.addTransaction(transaction);
                                 }
                                 if (!context.mounted) return;
                                 Navigator.of(context).pop();
                               } catch (e) {
                                 setState(() => _saving = false);
-                                final String message = e is StateError
-                                    ? e.message
-                                    : e.toString();
+                                final String message =
+                                    UserFacingErrorMapper.message(
+                                      l10n,
+                                      e,
+                                      context: 'save',
+                                    );
                                 _showError(message);
                               }
                             },
@@ -505,23 +502,66 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     showTopSnackBar(context, message);
   }
 
+  Future<bool> _confirmExpenseWarnings(
+    AppStateController controller,
+    double amount,
+  ) async {
+    final List<String> warnings = <String>[];
+    if (_deductFrom == 'cash') {
+      double available = controller.getAvailableBalance(currency: _currency);
+      if (widget.isEditMode &&
+          widget.initialTransaction?.paymentSourceId == null) {
+        available += widget.initialTransaction?.amount ?? 0;
+      }
+      if (amount > available) {
+        warnings.add(
+          context.l10n.trf('insufficient_cash_confirmation', <String, String>{
+            'amount': amount.toString(),
+            'available': available.toString(),
+            'currency': _currency.trim().toUpperCase(),
+          }),
+        );
+      }
+    } else {
+      final CreditCard? card = controller.state.creditCards
+          .where((CreditCard item) => item.id == _deductFrom)
+          .firstOrNull;
+      if (card != null &&
+          card.currency.trim().toUpperCase() !=
+              _currency.trim().toUpperCase()) {
+        warnings.add(
+          context.l10n
+              .trf('different_card_currency_confirmation', <String, String>{
+                'entryCurrency': _currency.trim().toUpperCase(),
+                'cardCurrency': card.currency.trim().toUpperCase(),
+              }),
+        );
+      }
+    }
+    if (warnings.isEmpty || !mounted) return true;
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: Text(context.l10n.tr('review_transaction_warning')),
+        content: Text(warnings.join('\n\n')),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(context.l10n.tr('cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(context.l10n.tr('confirm')),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
   void _showSuccess(String message) {
     if (!mounted) return;
     showTopSnackBar(context, message);
-  }
-
-  static String _expenseBlockedMessage(BuildContext context, String currency) {
-    final bool isArabic =
-        Localizations.localeOf(context).languageCode.toLowerCase() == 'ar';
-    final String normalizedCurrency = currency.trim().toUpperCase();
-    if (isArabic) {
-      return normalizedCurrency.isEmpty
-          ? 'لا يوجد رصيد متاح لإضافة هذا المصروف.'
-          : 'لا يوجد رصيد متاح بعملة $normalizedCurrency لإضافة هذا المصروف.';
-    }
-    return normalizedCurrency.isEmpty
-        ? 'No available balance to add this expense.'
-        : 'No available balance in $normalizedCurrency to add this expense.';
   }
 
   Future<void> _scanReceiptWithAi() async {
@@ -1115,9 +1155,11 @@ class _ScannedTransactionsConfirmationDialogState
                     setState(() => _saving = false);
                     showTopSnackBar(
                       context,
-                      isArabic
-                          ? 'فشل حفظ المعاملات: $error'
-                          : 'Failed to save transactions: $error',
+                      UserFacingErrorMapper.message(
+                        context.l10n,
+                        error,
+                        context: 'save',
+                      ),
                     );
                   }
                 },

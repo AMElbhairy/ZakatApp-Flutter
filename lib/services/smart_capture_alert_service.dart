@@ -9,6 +9,7 @@ import 'package:flutter_app_badger/flutter_app_badger.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/i18n/app_localizations.dart';
+import '../features/smart_capture/smart_capture_display_messages.dart';
 import '../core/services/zakat_engine.dart';
 import '../screens/account/notifications_screen.dart';
 import '../models/pending_transaction.dart';
@@ -341,8 +342,12 @@ class PlatformSmartCaptureAlertService extends SmartCaptureAlertService {
       pendingTransaction,
       parsed,
     );
-    final String? rejectionReason = pendingTransaction.status == CaptureStatus.ignored
-        ? pendingTransaction.ignoreReason?.trim()
+    final String? rejectionReason =
+        pendingTransaction.status == CaptureStatus.ignored
+        ? SmartCaptureDisplayMessages.reason(
+            l10n,
+            pendingTransaction.ignoreReason,
+          )
         : null;
 
     final String title = switch (displayStatus) {
@@ -360,9 +365,7 @@ class PlatformSmartCaptureAlertService extends SmartCaptureAlertService {
               : 'Reason: $rejectionReason',
         ),
       amountStr,
-    ]
-        .where((String line) => line.trim().isNotEmpty)
-        .toList();
+    ].where((String line) => line.trim().isNotEmpty).toList();
     final String body = bodyLines.join('\n');
     final int notificationId = smartCaptureNotificationId(
       source: pendingTransaction.source,

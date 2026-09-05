@@ -4,6 +4,7 @@ import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/i18n/app_localizations.dart';
+import '../../features/smart_capture/smart_capture_display_messages.dart';
 import '../../core/privacy/app_privacy.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
@@ -952,7 +953,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                             _badge(context, statusLabel, statusColor),
                             if (item.status == CaptureStatus.pendingReview &&
                                 item.ignoreReason != null &&
-                                item.ignoreReason!.startsWith('Possible duplicate'))
+                                item.ignoreReason!.startsWith(
+                                  'Possible duplicate',
+                                ))
                               _badge(
                                 context,
                                 _isArabic(context)
@@ -993,9 +996,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                 false)) ...<Widget>[
                           const SizedBox(height: 6),
                           Text(
-                            _isArabic(context)
-                                ? 'سبب الرفض: ${item.ignoreReason}'
-                                : 'Rejection reason: ${item.ignoreReason}',
+                            '${context.l10n.tr('error_prefix')}: ${SmartCaptureDisplayMessages.reason(context.l10n, item.ignoreReason)}',
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: Theme.of(context).textTheme.bodySmall

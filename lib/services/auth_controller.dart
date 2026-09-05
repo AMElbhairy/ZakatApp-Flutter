@@ -26,14 +26,16 @@ class AuthController extends ChangeNotifier {
   String _presentableError(Object error) {
     if (error is StateError) {
       final String message = error.message.toString().trim();
-      if (message.isNotEmpty) return message;
+      final String lower = message.toLowerCase();
+      final bool technical =
+          lower.contains('firebase') ||
+          lower.contains('platformexception') ||
+          lower.contains('socketexception') ||
+          lower.contains('exception:') ||
+          lower.contains('sql');
+      if (message.isNotEmpty && !technical) return message;
     }
-    final String raw = error.toString().trim();
-    const String statePrefix = 'Bad state: ';
-    if (raw.startsWith(statePrefix)) {
-      return raw.substring(statePrefix.length).trim();
-    }
-    return raw;
+    return 'We could not sign you in. Please try again.';
   }
 
   Future<bool> shouldPromptToSaveCredentials(String email) async {
@@ -72,8 +74,7 @@ class AuthController extends ChangeNotifier {
       );
       final UserProfile? restored = await authService.restoreSession();
       if (restored != null) {
-        _currentUser =
-            await _loadPersistedCurrentUser(restored.id) ?? restored;
+        _currentUser = await _loadPersistedCurrentUser(restored.id) ?? restored;
         await _persistCurrentUser();
       } else if (legacyPersistedUser != null) {
         _currentUser = legacyPersistedUser;
@@ -316,9 +317,9 @@ class AuthController extends ChangeNotifier {
         return scoped;
       }
     }
-    return _decodeUserProfile(await localStorage.loadString(
-      StorageKeys.userProfileKey,
-    ));
+    return _decodeUserProfile(
+      await localStorage.loadString(StorageKeys.userProfileKey),
+    );
   }
 
   UserProfile? _decodeUserProfile(String? raw) {

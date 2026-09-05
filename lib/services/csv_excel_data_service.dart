@@ -38,11 +38,11 @@ class CsvImportResult {
   bool get isNotEmpty => totalCount > 0;
 
   Map<String, int> get counts => <String, int>{
-        'transactions': transactions.length,
-        'savings': savings.length,
-        'investments': investments.length,
-        'recurring': recurringTransactions.length,
-      };
+    'transactions': transactions.length,
+    'savings': savings.length,
+    'investments': investments.length,
+    'recurring': recurringTransactions.length,
+  };
 }
 
 /// Service to export and import app operational entries (Transactions, Savings,
@@ -354,20 +354,28 @@ class CsvExcelDataService {
   static List<int> exportCsvZip(AppStateModel state) {
     final Archive archive = Archive();
 
-    final List<int> txBytes = utf8.encode(exportTransactionsCsv(state.transactions));
+    final List<int> txBytes = utf8.encode(
+      exportTransactionsCsv(state.transactions),
+    );
     archive.addFile(ArchiveFile('transactions.csv', txBytes.length, txBytes));
 
     final List<int> savBytes = utf8.encode(exportSavingsCsv(state.savings));
     archive.addFile(ArchiveFile('savings.csv', savBytes.length, savBytes));
 
-    final List<int> invBytes = utf8.encode(exportInvestmentsCsv(state.investments));
+    final List<int> invBytes = utf8.encode(
+      exportInvestmentsCsv(state.investments),
+    );
     archive.addFile(ArchiveFile('investments.csv', invBytes.length, invBytes));
 
-    final List<int> recBytes = utf8.encode(exportRecurringCsv(state.recurringTransactions));
+    final List<int> recBytes = utf8.encode(
+      exportRecurringCsv(state.recurringTransactions),
+    );
     archive.addFile(ArchiveFile('recurring.csv', recBytes.length, recBytes));
 
     final List<int> masterBytes = utf8.encode(exportMasterCsv(state));
-    archive.addFile(ArchiveFile('all_entries_master.csv', masterBytes.length, masterBytes));
+    archive.addFile(
+      ArchiveFile('all_entries_master.csv', masterBytes.length, masterBytes),
+    );
 
     return ZipEncoder().encode(archive);
   }
@@ -415,15 +423,20 @@ class CsvExcelDataService {
 
     final List<List<String>> table = decodeCsv(cleanText);
     if (table.isEmpty) {
-      return const CsvImportResult(warnings: <String>['File contains no rows.']);
+      return const CsvImportResult(
+        warnings: <String>['File contains no rows.'],
+      );
     }
 
-    final List<String> header = table.first.map((String c) => c.trim().toLowerCase()).toList();
+    final List<String> header = table.first
+        .map((String c) => c.trim().toLowerCase())
+        .toList();
     final List<List<String>> dataRows = table.skip(1).toList();
 
     // Detect format
     final bool isMaster = header.contains('recordtype');
-    final bool isTransactionFile = header.contains('rolledover') ||
+    final bool isTransactionFile =
+        header.contains('rolledover') ||
         header.contains('metalquantity') ||
         (header.contains('amount') &&
             header.contains('currency') &&
@@ -432,16 +445,19 @@ class CsvExcelDataService {
             !header.contains('investmenttype') &&
             !header.contains('frequency'));
 
-    final bool isSavingFile = header.contains('assettype') ||
+    final bool isSavingFile =
+        header.contains('assettype') ||
         header.contains('purchasecurrency') ||
         header.contains('dateacquired');
 
-    final bool isInvestmentFile = header.contains('investmenttype') ||
+    final bool isInvestmentFile =
+        header.contains('investmenttype') ||
         header.contains('valuationdate') ||
         header.contains('installmentplan') ||
         header.contains('totalpayable');
 
-    final bool isRecurringFile = header.contains('frequency') ||
+    final bool isRecurringFile =
+        header.contains('frequency') ||
         header.contains('dayofmonth') ||
         header.contains('skipmonth');
 
@@ -473,7 +489,7 @@ class CsvExcelDataService {
             if (item != null) recurring.add(item);
           }
         } catch (e) {
-          warnings.add('Skipped row due to error: $e');
+          warnings.add('One row could not be imported.');
         }
       }
     } else if (isSavingFile) {
@@ -491,7 +507,8 @@ class CsvExcelDataService {
         final RecurringTransaction? item = _parseRecurringRow(header, row);
         if (item != null) recurring.add(item);
       }
-    } else if (isTransactionFile || (defaultFileName?.toLowerCase().contains('transaction') ?? false)) {
+    } else if (isTransactionFile ||
+        (defaultFileName?.toLowerCase().contains('transaction') ?? false)) {
       for (final List<String> row in dataRows) {
         final Transaction? item = _parseTransactionRow(header, row);
         if (item != null) transactions.add(item);
@@ -527,21 +544,29 @@ class CsvExcelDataService {
   }) async {
     final Map<String, dynamic> current = controller.state.toJson();
 
-    final List<Map<String, dynamic>> incomingTx =
-        data.transactions.map((Transaction e) => e.toJson()).toList();
-    final List<Map<String, dynamic>> incomingSav =
-        data.savings.map((Saving e) => e.toJson()).toList();
-    final List<Map<String, dynamic>> incomingInv =
-        data.investments.map((InvestmentAsset e) => e.toJson()).toList();
-    final List<Map<String, dynamic>> incomingRec =
-        data.recurringTransactions.map((RecurringTransaction e) => e.toJson()).toList();
+    final List<Map<String, dynamic>> incomingTx = data.transactions
+        .map((Transaction e) => e.toJson())
+        .toList();
+    final List<Map<String, dynamic>> incomingSav = data.savings
+        .map((Saving e) => e.toJson())
+        .toList();
+    final List<Map<String, dynamic>> incomingInv = data.investments
+        .map((InvestmentAsset e) => e.toJson())
+        .toList();
+    final List<Map<String, dynamic>> incomingRec = data.recurringTransactions
+        .map((RecurringTransaction e) => e.toJson())
+        .toList();
 
-    final Map<String, dynamic> nextStateJson = Map<String, dynamic>.from(current);
+    final Map<String, dynamic> nextStateJson = Map<String, dynamic>.from(
+      current,
+    );
 
     if (replace) {
-      if (data.transactions.isNotEmpty) nextStateJson['transactions'] = incomingTx;
+      if (data.transactions.isNotEmpty)
+        nextStateJson['transactions'] = incomingTx;
       if (data.savings.isNotEmpty) nextStateJson['savings'] = incomingSav;
-      if (data.investments.isNotEmpty) nextStateJson['investments'] = incomingInv;
+      if (data.investments.isNotEmpty)
+        nextStateJson['investments'] = incomingInv;
       if (data.recurringTransactions.isNotEmpty) {
         nextStateJson['recurringTransactions'] = incomingRec;
       }
@@ -588,10 +613,7 @@ class CsvExcelDataService {
       level: 'info',
       subsystem: 'csv_import',
       message: 'CSV/Excel import completed',
-      metadata: <String, dynamic>{
-        'replace': replace,
-        'counts': data.counts,
-      },
+      metadata: <String, dynamic>{'replace': replace, 'counts': data.counts},
     );
 
     return RestoreResult(
@@ -666,7 +688,8 @@ class CsvExcelDataService {
         }
         currentRow.add(currentCell.toString().trim());
         currentCell.clear();
-        if (currentRow.isNotEmpty && currentRow.any((String c) => c.isNotEmpty)) {
+        if (currentRow.isNotEmpty &&
+            currentRow.any((String c) => c.isNotEmpty)) {
           rows.add(currentRow);
         }
         currentRow = <String>[];
@@ -733,7 +756,9 @@ class CsvExcelDataService {
         warnings: warnings,
       );
     } catch (e) {
-      return CsvImportResult(warnings: <String>['Failed to unzip archive: $e']);
+      return const CsvImportResult(
+        warnings: <String>['The archive could not be read.'],
+      );
     }
   }
 
@@ -749,7 +774,10 @@ class CsvExcelDataService {
       final List<String> sharedStrings = <String>[];
       final ArchiveFile? sstFile = archive.findFile('xl/sharedStrings.xml');
       if (sstFile != null) {
-        final String sstXml = utf8.decode(sstFile.content as List<int>, allowMalformed: true);
+        final String sstXml = utf8.decode(
+          sstFile.content as List<int>,
+          allowMalformed: true,
+        );
         final RegExp strRegex = RegExp(r'<si>([\s\S]*?)<\/si>');
         final RegExp tRegex = RegExp(r'<t[^>]*>([\s\S]*?)<\/t>');
         for (final Match match in strRegex.allMatches(sstXml)) {
@@ -771,9 +799,16 @@ class CsvExcelDataService {
       // 2. Parse all sheet*.xml
       for (final ArchiveFile file in archive) {
         if (!file.isFile) continue;
-        if (file.name.startsWith('xl/worksheets/sheet') && file.name.endsWith('.xml')) {
-          final String sheetXml = utf8.decode(file.content as List<int>, allowMalformed: true);
-          final List<List<String>> rows = _parseWorksheetXml(sheetXml, sharedStrings);
+        if (file.name.startsWith('xl/worksheets/sheet') &&
+            file.name.endsWith('.xml')) {
+          final String sheetXml = utf8.decode(
+            file.content as List<int>,
+            allowMalformed: true,
+          );
+          final List<List<String>> rows = _parseWorksheetXml(
+            sheetXml,
+            sharedStrings,
+          );
           if (rows.isNotEmpty) {
             final String csvContent = _encodeCsvTable(rows);
             final CsvImportResult parsed = parseCsvText(csvContent);
@@ -794,7 +829,9 @@ class CsvExcelDataService {
         warnings: warnings,
       );
     } catch (e) {
-      return CsvImportResult(warnings: <String>['Failed to parse Excel file: $e']);
+      return const CsvImportResult(
+        warnings: <String>['The spreadsheet could not be read.'],
+      );
     }
   }
 
@@ -804,7 +841,9 @@ class CsvExcelDataService {
   ) {
     final List<List<String>> rows = <List<String>>[];
     final RegExp rowRegex = RegExp(r'<row[^>]*>([\s\S]*?)<\/row>');
-    final RegExp cellRegex = RegExp(r'<c\s+([^>]*?)>(?:<v>([\s\S]*?)<\/v>|<is><t>([\s\S]*?)<\/t><\/is>)?<\/c>');
+    final RegExp cellRegex = RegExp(
+      r'<c\s+([^>]*?)>(?:<v>([\s\S]*?)<\/v>|<is><t>([\s\S]*?)<\/t><\/is>)?<\/c>',
+    );
     final RegExp tAttrRegex = RegExp(r't="([^"]*)"');
 
     for (final Match rowMatch in rowRegex.allMatches(sheetXml)) {
@@ -854,25 +893,58 @@ class CsvExcelDataService {
   // ROW CONVERTERS
   // ---------------------------------------------------------------------------
 
-  static Transaction? _parseTransactionRow(List<String> header, List<String> row) {
+  static Transaction? _parseTransactionRow(
+    List<String> header,
+    List<String> row,
+  ) {
     final String amountStr = _valByCol(header, row, <String>['amount']);
     final double? amount = tryParseAmount(amountStr);
     if (amount == null || amount <= 0) return null;
 
-    final String id = _valByCol(header, row, <String>['id'], fallback: 'tx_${DateTime.now().microsecondsSinceEpoch}');
-    final String date = normalizeDateText(_valByCol(header, row, <String>['date', 'transactiondate']));
-    final String description = _valByCol(header, row, <String>['description', 'title', 'note']);
-    final String category = _valByCol(header, row, <String>['category'], fallback: 'General');
-    final String type = _valByCol(header, row, <String>['type', 'transactiontype'], fallback: 'expense').toLowerCase();
-    final String currency = _valByCol(header, row, <String>['currency'], fallback: 'USD').toUpperCase();
-    final String createdAt = normalizeTimestampText(_valByCol(header, row, <String>['createdat']));
-    final bool rolledOver = _valByCol(header, row, <String>['rolledover']).toLowerCase() == 'true';
-    final double? rolledAmount = tryParseAmount(_valByCol(header, row, <String>['rolledamount']));
-    final String? sourceIncomeId = _nullIfEmpty(_valByCol(header, row, <String>['sourceincomeid']));
-    final String? exchangePairId = _nullIfEmpty(_valByCol(header, row, <String>['exchangepairid']));
-    final double? remainingAmount = tryParseAmount(_valByCol(header, row, <String>['remainingamount']));
-    final String? activityType = _nullIfEmpty(_valByCol(header, row, <String>['activitytype']));
-    final double? metalQuantity = tryParseAmount(_valByCol(header, row, <String>['metalquantity']));
+    final String id = _valByCol(header, row, <String>[
+      'id',
+    ], fallback: 'tx_${DateTime.now().microsecondsSinceEpoch}');
+    final String date = normalizeDateText(
+      _valByCol(header, row, <String>['date', 'transactiondate']),
+    );
+    final String description = _valByCol(header, row, <String>[
+      'description',
+      'title',
+      'note',
+    ]);
+    final String category = _valByCol(header, row, <String>[
+      'category',
+    ], fallback: 'General');
+    final String type = _valByCol(header, row, <String>[
+      'type',
+      'transactiontype',
+    ], fallback: 'expense').toLowerCase();
+    final String currency = _valByCol(header, row, <String>[
+      'currency',
+    ], fallback: 'USD').toUpperCase();
+    final String createdAt = normalizeTimestampText(
+      _valByCol(header, row, <String>['createdat']),
+    );
+    final bool rolledOver =
+        _valByCol(header, row, <String>['rolledover']).toLowerCase() == 'true';
+    final double? rolledAmount = tryParseAmount(
+      _valByCol(header, row, <String>['rolledamount']),
+    );
+    final String? sourceIncomeId = _nullIfEmpty(
+      _valByCol(header, row, <String>['sourceincomeid']),
+    );
+    final String? exchangePairId = _nullIfEmpty(
+      _valByCol(header, row, <String>['exchangepairid']),
+    );
+    final double? remainingAmount = tryParseAmount(
+      _valByCol(header, row, <String>['remainingamount']),
+    );
+    final String? activityType = _nullIfEmpty(
+      _valByCol(header, row, <String>['activitytype']),
+    );
+    final double? metalQuantity = tryParseAmount(
+      _valByCol(header, row, <String>['metalquantity']),
+    );
 
     return Transaction(
       id: id,
@@ -898,19 +970,49 @@ class CsvExcelDataService {
     final double? amount = tryParseAmount(amountStr);
     if (amount == null || amount <= 0) return null;
 
-    final String id = _valByCol(header, row, <String>['id'], fallback: 'sav_${DateTime.now().microsecondsSinceEpoch}');
-    final String dateAcquired = normalizeDateText(_valByCol(header, row, <String>['dateacquired', 'date']));
-    final String description = _valByCol(header, row, <String>['description', 'name', 'title']);
-    final String assetType = _valByCol(header, row, <String>['assettype'], fallback: 'cash');
-    final String unit = _valByCol(header, row, <String>['unit', 'currency'], fallback: 'USD').toUpperCase();
-    final double remainingAmount = tryParseAmount(_valByCol(header, row, <String>['remainingamount'])) ?? amount;
-    final String purchaseCurrency = _valByCol(header, row, <String>['purchasecurrency', 'currency'], fallback: unit).toUpperCase();
-    final double purchaseAmount = tryParseAmount(_valByCol(header, row, <String>['purchaseamount'])) ?? amount;
-    final String createdAt = normalizeTimestampText(_valByCol(header, row, <String>['createdat']));
-    final String? linkedCashEntryId = _nullIfEmpty(_valByCol(header, row, <String>['linkedcashentryid']));
-    final String? sourceIncomeId = _nullIfEmpty(_valByCol(header, row, <String>['sourceincomeid']));
-    final String? exchangeSourceSavingId = _nullIfEmpty(_valByCol(header, row, <String>['exchangesourcesavingid']));
-    final String? transferActivityId = _nullIfEmpty(_valByCol(header, row, <String>['transferactivityid']));
+    final String id = _valByCol(header, row, <String>[
+      'id',
+    ], fallback: 'sav_${DateTime.now().microsecondsSinceEpoch}');
+    final String dateAcquired = normalizeDateText(
+      _valByCol(header, row, <String>['dateacquired', 'date']),
+    );
+    final String description = _valByCol(header, row, <String>[
+      'description',
+      'name',
+      'title',
+    ]);
+    final String assetType = _valByCol(header, row, <String>[
+      'assettype',
+    ], fallback: 'cash');
+    final String unit = _valByCol(header, row, <String>[
+      'unit',
+      'currency',
+    ], fallback: 'USD').toUpperCase();
+    final double remainingAmount =
+        tryParseAmount(_valByCol(header, row, <String>['remainingamount'])) ??
+        amount;
+    final String purchaseCurrency = _valByCol(header, row, <String>[
+      'purchasecurrency',
+      'currency',
+    ], fallback: unit).toUpperCase();
+    final double purchaseAmount =
+        tryParseAmount(_valByCol(header, row, <String>['purchaseamount'])) ??
+        amount;
+    final String createdAt = normalizeTimestampText(
+      _valByCol(header, row, <String>['createdat']),
+    );
+    final String? linkedCashEntryId = _nullIfEmpty(
+      _valByCol(header, row, <String>['linkedcashentryid']),
+    );
+    final String? sourceIncomeId = _nullIfEmpty(
+      _valByCol(header, row, <String>['sourceincomeid']),
+    );
+    final String? exchangeSourceSavingId = _nullIfEmpty(
+      _valByCol(header, row, <String>['exchangesourcesavingid']),
+    );
+    final String? transferActivityId = _nullIfEmpty(
+      _valByCol(header, row, <String>['transferactivityid']),
+    );
 
     return Saving(
       id: id,
@@ -930,30 +1032,71 @@ class CsvExcelDataService {
     );
   }
 
-  static InvestmentAsset? _parseInvestmentRow(List<String> header, List<String> row) {
-    final String originalPriceStr = _valByCol(header, row, <String>['originalprice', 'value', 'amount']);
+  static InvestmentAsset? _parseInvestmentRow(
+    List<String> header,
+    List<String> row,
+  ) {
+    final String originalPriceStr = _valByCol(header, row, <String>[
+      'originalprice',
+      'value',
+      'amount',
+    ]);
     final double? originalPrice = tryParseAmount(originalPriceStr);
     if (originalPrice == null || originalPrice <= 0) return null;
 
-    final String id = _valByCol(header, row, <String>['id'], fallback: 'inv_${DateTime.now().microsecondsSinceEpoch}');
-    final String valuationDate = normalizeDateText(_valByCol(header, row, <String>['valuationdate', 'date']));
-    final String description = _valByCol(header, row, <String>['description', 'name']);
-    final String investmentType = _valByCol(header, row, <String>['investmenttype', 'category'], fallback: 'property');
-    final String assetSubtype = _valByCol(header, row, <String>['assetsubtype'], fallback: 'Real Estate');
-    final String valuationMode = _valByCol(header, row, <String>['valuationmode'], fallback: 'manual');
-    final String currency = _valByCol(header, row, <String>['currency'], fallback: 'USD').toUpperCase();
-    final double totalInterest = tryParseAmount(_valByCol(header, row, <String>['totalinterest'])) ?? 0.0;
-    final double totalPayable = tryParseAmount(_valByCol(header, row, <String>['totalpayable'])) ?? originalPrice;
-    final double paidAmount = tryParseAmount(_valByCol(header, row, <String>['paidamount'])) ?? 0.0;
-    final double remainingAmount = tryParseAmount(_valByCol(header, row, <String>['remainingamount'])) ?? (totalPayable - paidAmount);
-    final double marketValue = tryParseAmount(_valByCol(header, row, <String>['marketvalue'])) ?? originalPrice;
-    final String marketValueDate = normalizeDateText(_valByCol(header, row, <String>['marketvaluedate', 'valuationdate']));
-    final double ownershipSharePct = tryParseAmount(_valByCol(header, row, <String>['ownershipsharepct'])) ?? 100.0;
+    final String id = _valByCol(header, row, <String>[
+      'id',
+    ], fallback: 'inv_${DateTime.now().microsecondsSinceEpoch}');
+    final String valuationDate = normalizeDateText(
+      _valByCol(header, row, <String>['valuationdate', 'date']),
+    );
+    final String description = _valByCol(header, row, <String>[
+      'description',
+      'name',
+    ]);
+    final String investmentType = _valByCol(header, row, <String>[
+      'investmenttype',
+      'category',
+    ], fallback: 'property');
+    final String assetSubtype = _valByCol(header, row, <String>[
+      'assetsubtype',
+    ], fallback: 'Real Estate');
+    final String valuationMode = _valByCol(header, row, <String>[
+      'valuationmode',
+    ], fallback: 'manual');
+    final String currency = _valByCol(header, row, <String>[
+      'currency',
+    ], fallback: 'USD').toUpperCase();
+    final double totalInterest =
+        tryParseAmount(_valByCol(header, row, <String>['totalinterest'])) ??
+        0.0;
+    final double totalPayable =
+        tryParseAmount(_valByCol(header, row, <String>['totalpayable'])) ??
+        originalPrice;
+    final double paidAmount =
+        tryParseAmount(_valByCol(header, row, <String>['paidamount'])) ?? 0.0;
+    final double remainingAmount =
+        tryParseAmount(_valByCol(header, row, <String>['remainingamount'])) ??
+        (totalPayable - paidAmount);
+    final double marketValue =
+        tryParseAmount(_valByCol(header, row, <String>['marketvalue'])) ??
+        originalPrice;
+    final String marketValueDate = normalizeDateText(
+      _valByCol(header, row, <String>['marketvaluedate', 'valuationdate']),
+    );
+    final double ownershipSharePct =
+        tryParseAmount(_valByCol(header, row, <String>['ownershipsharepct'])) ??
+        100.0;
     final String country = _valByCol(header, row, <String>['country']);
     final String location = _valByCol(header, row, <String>['location']);
-    final bool noZakat = _valByCol(header, row, <String>['nozakat']).toLowerCase() != 'false';
-    final String createdAt = normalizeTimestampText(_valByCol(header, row, <String>['createdat']));
-    final double yearlyGrowthRate = tryParseAmount(_valByCol(header, row, <String>['yearlygrowthrate'])) ?? 0.0;
+    final bool noZakat =
+        _valByCol(header, row, <String>['nozakat']).toLowerCase() != 'false';
+    final String createdAt = normalizeTimestampText(
+      _valByCol(header, row, <String>['createdat']),
+    );
+    final double yearlyGrowthRate =
+        tryParseAmount(_valByCol(header, row, <String>['yearlygrowthrate'])) ??
+        0.0;
 
     final String planRaw = _valByCol(header, row, <String>['installmentplan']);
     List<Map<String, dynamic>> plan = const <Map<String, dynamic>>[];
@@ -996,25 +1139,52 @@ class CsvExcelDataService {
     );
   }
 
-  static RecurringTransaction? _parseRecurringRow(List<String> header, List<String> row) {
+  static RecurringTransaction? _parseRecurringRow(
+    List<String> header,
+    List<String> row,
+  ) {
     final String amountStr = _valByCol(header, row, <String>['amount']);
     final double? amount = tryParseAmount(amountStr);
     if (amount == null || amount <= 0) return null;
 
-    final String id = _valByCol(header, row, <String>['id'], fallback: 'rec_${DateTime.now().microsecondsSinceEpoch}');
-    final String name = _valByCol(header, row, <String>['name', 'title'], fallback: 'Recurring Item');
-    final String category = _valByCol(header, row, <String>['category'], fallback: 'General');
-    final String type = _valByCol(header, row, <String>['type'], fallback: 'expense').toLowerCase();
-    final String currency = _valByCol(header, row, <String>['currency'], fallback: 'USD').toUpperCase();
-    final String frequency = _valByCol(header, row, <String>['frequency'], fallback: 'monthly').toLowerCase();
-    final int dayOfMonth = int.tryParse(_valByCol(header, row, <String>['dayofmonth'])) ?? 1;
-    final bool enabled = _valByCol(header, row, <String>['enabled']).toLowerCase() != 'false';
-    final bool autoAdd = _valByCol(header, row, <String>['autoadd']).toLowerCase() != 'false';
+    final String id = _valByCol(header, row, <String>[
+      'id',
+    ], fallback: 'rec_${DateTime.now().microsecondsSinceEpoch}');
+    final String name = _valByCol(header, row, <String>[
+      'name',
+      'title',
+    ], fallback: 'Recurring Item');
+    final String category = _valByCol(header, row, <String>[
+      'category',
+    ], fallback: 'General');
+    final String type = _valByCol(header, row, <String>[
+      'type',
+    ], fallback: 'expense').toLowerCase();
+    final String currency = _valByCol(header, row, <String>[
+      'currency',
+    ], fallback: 'USD').toUpperCase();
+    final String frequency = _valByCol(header, row, <String>[
+      'frequency',
+    ], fallback: 'monthly').toLowerCase();
+    final int dayOfMonth =
+        int.tryParse(_valByCol(header, row, <String>['dayofmonth'])) ?? 1;
+    final bool enabled =
+        _valByCol(header, row, <String>['enabled']).toLowerCase() != 'false';
+    final bool autoAdd =
+        _valByCol(header, row, <String>['autoadd']).toLowerCase() != 'false';
     final String skipMonth = _valByCol(header, row, <String>['skipmonth']);
-    final bool reminderEnabled = _valByCol(header, row, <String>['reminderenabled']).toLowerCase() == 'true';
-    final String reminderTime = _valByCol(header, row, <String>['remindertime'], fallback: '09:00');
-    final String? lastProcessed = _nullIfEmpty(_valByCol(header, row, <String>['lastprocessed']));
-    final String createdAt = normalizeTimestampText(_valByCol(header, row, <String>['createdat']));
+    final bool reminderEnabled =
+        _valByCol(header, row, <String>['reminderenabled']).toLowerCase() ==
+        'true';
+    final String reminderTime = _valByCol(header, row, <String>[
+      'remindertime',
+    ], fallback: '09:00');
+    final String? lastProcessed = _nullIfEmpty(
+      _valByCol(header, row, <String>['lastprocessed']),
+    );
+    final String createdAt = normalizeTimestampText(
+      _valByCol(header, row, <String>['createdat']),
+    );
     final String description = _valByCol(header, row, <String>['description']);
 
     return RecurringTransaction(
@@ -1044,7 +1214,9 @@ class CsvExcelDataService {
     if (amount == null || amount <= 0) return null;
 
     return Transaction(
-      id: row[1].isNotEmpty ? row[1] : 'tx_${DateTime.now().microsecondsSinceEpoch}',
+      id: row[1].isNotEmpty
+          ? row[1]
+          : 'tx_${DateTime.now().microsecondsSinceEpoch}',
       date: normalizeDateText(row[2]),
       description: row[3],
       category: row[4].isNotEmpty ? row[4] : 'General',
@@ -1067,15 +1239,21 @@ class CsvExcelDataService {
     if (amount == null || amount <= 0) return null;
 
     return Saving(
-      id: row[1].isNotEmpty ? row[1] : 'sav_${DateTime.now().microsecondsSinceEpoch}',
+      id: row[1].isNotEmpty
+          ? row[1]
+          : 'sav_${DateTime.now().microsecondsSinceEpoch}',
       dateAcquired: normalizeDateText(row[2]),
       description: row[3],
       assetType: row[4].isNotEmpty ? row[4] : 'cash',
       unit: row[5].toUpperCase(),
       amount: amount,
       purchaseCurrency: row[7].toUpperCase(),
-      remainingAmount: row.length > 8 ? (tryParseAmount(row[8]) ?? amount) : amount,
-      purchaseAmount: row.length > 9 ? (tryParseAmount(row[9]) ?? amount) : amount,
+      remainingAmount: row.length > 8
+          ? (tryParseAmount(row[8]) ?? amount)
+          : amount,
+      purchaseAmount: row.length > 9
+          ? (tryParseAmount(row[9]) ?? amount)
+          : amount,
       linkedCashEntryId: row.length > 10 ? _nullIfEmpty(row[10]) : null,
       sourceIncomeId: row.length > 11 ? _nullIfEmpty(row[11]) : null,
       exchangeSourceSavingId: row.length > 12 ? _nullIfEmpty(row[12]) : null,
@@ -1098,7 +1276,9 @@ class CsvExcelDataService {
     }
 
     return InvestmentAsset(
-      id: row[1].isNotEmpty ? row[1] : 'inv_${DateTime.now().microsecondsSinceEpoch}',
+      id: row[1].isNotEmpty
+          ? row[1]
+          : 'inv_${DateTime.now().microsecondsSinceEpoch}',
       valuationDate: normalizeDateText(row[2]),
       description: row[3],
       investmentType: row[4].isNotEmpty ? row[4] : 'property',
@@ -1107,21 +1287,31 @@ class CsvExcelDataService {
       currency: row[7].toUpperCase(),
       valuationMode: row.length > 8 && row[8].isNotEmpty ? row[8] : 'manual',
       totalInterest: 0.0,
-      totalPayable: row.length > 9 ? (tryParseAmount(row[9]) ?? amount) : amount,
+      totalPayable: row.length > 9
+          ? (tryParseAmount(row[9]) ?? amount)
+          : amount,
       paidAmount: row.length > 10 ? (tryParseAmount(row[10]) ?? 0.0) : 0.0,
-      remainingAmount: row.length > 11 ? (tryParseAmount(row[11]) ?? amount) : amount,
-      marketValue: row.length > 12 ? (tryParseAmount(row[12]) ?? amount) : amount,
+      remainingAmount: row.length > 11
+          ? (tryParseAmount(row[11]) ?? amount)
+          : amount,
+      marketValue: row.length > 12
+          ? (tryParseAmount(row[12]) ?? amount)
+          : amount,
       marketValueDate: normalizeDateText(row[2]),
       ownershipType: 'Sole',
       valuationSource: 'CSV Master Import',
       loanBalance: 0.0,
       loanAsOfDate: normalizeDateText(row[2]),
-      paidAmountToDate: row.length > 10 ? (tryParseAmount(row[10]) ?? 0.0) : 0.0,
+      paidAmountToDate: row.length > 10
+          ? (tryParseAmount(row[10]) ?? 0.0)
+          : 0.0,
       ownershipSharePct: 100.0,
       country: '',
       location: '',
       inflationRateAnnual: 0.0,
-      estimatedCurrentValue: row.length > 12 ? (tryParseAmount(row[12]) ?? amount) : amount,
+      estimatedCurrentValue: row.length > 12
+          ? (tryParseAmount(row[12]) ?? amount)
+          : amount,
       noZakat: true,
       installmentPlan: plan,
       createdAt: row.length > 14 ? normalizeTimestampText(row[14]) : '',
@@ -1134,14 +1324,18 @@ class CsvExcelDataService {
     if (amount == null || amount <= 0) return null;
 
     return RecurringTransaction(
-      id: row[1].isNotEmpty ? row[1] : 'rec_${DateTime.now().microsecondsSinceEpoch}',
+      id: row[1].isNotEmpty
+          ? row[1]
+          : 'rec_${DateTime.now().microsecondsSinceEpoch}',
       lastProcessed: _nullIfEmpty(row[2]),
       name: row[3],
       category: row[4].isNotEmpty ? row[4] : 'General',
       type: row[5].toLowerCase(),
       amount: amount,
       currency: row[7].toUpperCase(),
-      frequency: row.length > 8 && row[8].isNotEmpty ? row[8].toLowerCase() : 'monthly',
+      frequency: row.length > 8 && row[8].isNotEmpty
+          ? row[8].toLowerCase()
+          : 'monthly',
       dayOfMonth: row.length > 9 ? (int.tryParse(row[9]) ?? 1) : 1,
       enabled: row.length > 10 ? row[10].toLowerCase() != 'disabled' : true,
       skipMonth: row.length > 11 ? row[11] : '',
@@ -1170,13 +1364,15 @@ class CsvExcelDataService {
     return fallback;
   }
 
-  static String? _nullIfEmpty(String val) => val.trim().isEmpty ? null : val.trim();
+  static String? _nullIfEmpty(String val) =>
+      val.trim().isEmpty ? null : val.trim();
 
   static List<Map<String, dynamic>> _mergeMapListsById(
     List<dynamic> current,
     List<Map<String, dynamic>> incoming,
   ) {
-    final Map<String, Map<String, dynamic>> byId = <String, Map<String, dynamic>>{};
+    final Map<String, Map<String, dynamic>> byId =
+        <String, Map<String, dynamic>>{};
     for (final dynamic item in current) {
       if (item is Map) {
         final Map<String, dynamic> map = Map<String, dynamic>.from(item);

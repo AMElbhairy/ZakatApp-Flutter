@@ -8,6 +8,7 @@ import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/i18n/app_localizations.dart';
+import '../../core/errors/user_facing_error_mapper.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/services/zakat_engine.dart';
 import '../../core/services/zakat_schedule_service.dart';
@@ -1744,7 +1745,10 @@ class ActivityScreenState extends State<ActivityScreen> {
     final double totalZakat = ((row?['totalZakat'] ?? 0) as num).toDouble();
     final String nextDueLabel = paymentDate.isEmpty
         ? context.l10n.tr('upcoming')
-        : _formatHumanDate(paymentDate, Localizations.localeOf(context).toString());
+        : _formatHumanDate(
+            paymentDate,
+            Localizations.localeOf(context).toString(),
+          );
     return PremiumCard(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2133,7 +2137,14 @@ class ActivityScreenState extends State<ActivityScreen> {
                                     );
                               } on StateError catch (error) {
                                 if (!context.mounted) return;
-                                showTopSnackBar(context, error.message);
+                                showTopSnackBar(
+                                  context,
+                                  UserFacingErrorMapper.message(
+                                    context.l10n,
+                                    error,
+                                    context: 'save',
+                                  ),
+                                );
                               }
                             },
                             child: Text(context.l10n.tr('pay')),
@@ -3344,34 +3355,22 @@ class _ActivityEntry {
     final String trimmed = value.trim();
     final String lower = trimmed.toLowerCase();
     if (lower == 'currency exchange') {
-      return context.l10n.locale.languageCode == 'ar'
-          ? 'تحويل عملة'
-          : trimmed;
+      return context.l10n.locale.languageCode == 'ar' ? 'تحويل عملة' : trimmed;
     }
     if (lower == 'cash transfer') {
-      return context.l10n.locale.languageCode == 'ar'
-          ? 'تحويل نقدي'
-          : trimmed;
+      return context.l10n.locale.languageCode == 'ar' ? 'تحويل نقدي' : trimmed;
     }
     if (lower == 'gold sale') {
-      return context.l10n.locale.languageCode == 'ar'
-          ? 'بيع الذهب'
-          : trimmed;
+      return context.l10n.locale.languageCode == 'ar' ? 'بيع الذهب' : trimmed;
     }
     if (lower == 'silver sale') {
-      return context.l10n.locale.languageCode == 'ar'
-          ? 'بيع الفضة'
-          : trimmed;
+      return context.l10n.locale.languageCode == 'ar' ? 'بيع الفضة' : trimmed;
     }
     if (lower == 'gold purchase') {
-      return context.l10n.locale.languageCode == 'ar'
-          ? 'شراء الذهب'
-          : trimmed;
+      return context.l10n.locale.languageCode == 'ar' ? 'شراء الذهب' : trimmed;
     }
     if (lower == 'silver purchase') {
-      return context.l10n.locale.languageCode == 'ar'
-          ? 'شراء الفضة'
-          : trimmed;
+      return context.l10n.locale.languageCode == 'ar' ? 'شراء الفضة' : trimmed;
     }
     if (lower == 'precious metals purchase') {
       return context.l10n.locale.languageCode == 'ar'

@@ -16,6 +16,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/i18n/app_localizations.dart';
+import '../../core/errors/user_facing_error_mapper.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/app_ui.dart';
 import '../../core/widgets/compact_dropdown.dart';
@@ -566,19 +567,13 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
   }
 
   String _mapErrorToMessage(Object e) {
-    if (_isWrongPassphraseError(e)) {
-      return 'Wrong passphrase';
-    }
-    if (_isPermissionRevokedError(e)) {
-      return 'Google Drive permission was revoked. Please reconnect.';
-    }
-    if (_isNetworkError(e)) {
-      return 'Network error';
-    }
-    if (_isConflictError(e)) {
-      return 'Conflict / try again';
-    }
-    return 'Error: $e';
+    if (_isWrongPassphraseError(e))
+      return context.l10n.tr('error_restore_invalid_backup');
+    if (_isPermissionRevokedError(e))
+      return context.l10n.tr('error_authorization_failed');
+    if (_isNetworkError(e)) return context.l10n.tr('error_network_offline');
+    if (_isConflictError(e)) return context.l10n.tr('error_sync_conflict');
+    return UserFacingErrorMapper.message(context.l10n, e, context: 'backup');
   }
 
   UserCloudStorageProvider _getProvider() {
@@ -905,7 +900,11 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
           _statusMessage = _mapErrorToMessage(result.message);
         });
         _showToast(
-          'Backup failed: ${result.message}',
+          UserFacingErrorMapper.message(
+            context.l10n,
+            result.message,
+            context: 'backup',
+          ),
           kind: AppToastKind.error,
         );
       }
@@ -918,7 +917,10 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
         }
         _statusMessage = _mapErrorToMessage(e);
       });
-      _showToast('Backup failed: $e', kind: AppToastKind.error);
+      _showToast(
+        UserFacingErrorMapper.message(context.l10n, e, context: 'backup'),
+        kind: AppToastKind.error,
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -1019,7 +1021,10 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
       setState(() {
         _statusMessage = _mapErrorToMessage(e);
       });
-      _showToast('Failed to delete backups: $e', kind: AppToastKind.error);
+      _showToast(
+        UserFacingErrorMapper.message(context.l10n, e, context: 'backup'),
+        kind: AppToastKind.error,
+      );
     } finally {
       if (mounted) {
         setState(() {

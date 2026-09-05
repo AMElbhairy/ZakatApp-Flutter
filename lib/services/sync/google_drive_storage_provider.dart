@@ -339,7 +339,7 @@ class GoogleDriveStorageProvider implements UserCloudStorageProvider {
     if (error.status == 404) {
       return 'Google Drive API appears to be unavailable for this account.';
     }
-    return 'Google Drive access failed: ${error.message ?? raw}';
+    return 'Google Drive access could not be completed.';
   }
 
   String _mapGenericConnectionError(Object error) {
@@ -354,7 +354,7 @@ class GoogleDriveStorageProvider implements UserCloudStorageProvider {
         lower.contains('gidclientid')) {
       return 'Google Drive iOS client configuration is missing or invalid.';
     }
-    return 'Google Drive connection failed: $raw';
+    return 'Google Drive connection could not be completed.';
   }
 
   Future<DriveConnectionStatus> resolveConnection({

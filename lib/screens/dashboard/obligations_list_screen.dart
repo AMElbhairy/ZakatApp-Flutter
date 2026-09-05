@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 
 import '../../core/i18n/app_localizations.dart';
+import '../../core/errors/user_facing_error_mapper.dart';
 import '../../core/services/zakat_engine.dart';
 import '../../core/services/zakat_schedule_service.dart';
 import '../../core/theme/app_theme_extensions.dart';
@@ -735,7 +736,11 @@ class _ObligationsListScreenState extends State<ObligationsListScreen> {
                                                 if (!context.mounted) return;
                                                 showTopSnackBar(
                                                   context,
-                                                  error.message,
+                                                  UserFacingErrorMapper.message(
+                                                    context.l10n,
+                                                    error,
+                                                    context: 'save',
+                                                  ),
                                                 );
                                               }
                                             },

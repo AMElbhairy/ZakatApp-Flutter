@@ -83,7 +83,7 @@ class FirebaseAuthService implements AuthService, AuthGateStateSource {
         _authGateStateController.add(
           AuthGateState(
             status: AuthGateStatus.error,
-            message: error.toString(),
+            message: 'We could not restore your session. Please try again.',
           ),
         );
       },
@@ -117,7 +117,10 @@ class FirebaseAuthService implements AuthService, AuthGateStateSource {
       );
     } catch (error) {
       _authGateStateController.add(
-        AuthGateState(status: AuthGateStatus.error, message: error.toString()),
+        const AuthGateState(
+          status: AuthGateStatus.error,
+          message: 'We could not restore your session. Please try again.',
+        ),
       );
     }
   }
@@ -153,10 +156,10 @@ class FirebaseAuthService implements AuthService, AuthGateStateSource {
       _authGateStateController.add(
         AuthGateState(
           status: AuthGateStatus.error,
-          message: 'Apple sign-in failed: ${error.message}',
+          message: 'We could not sign you in. Please try again.',
         ),
       );
-      throw StateError('Apple sign-in failed: ${error.message}');
+      throw StateError('We could not sign you in. Please try again.');
     }
   }
 
@@ -429,7 +432,7 @@ class FirebaseAuthService implements AuthService, AuthGateStateSource {
       case 'too-many-requests':
         return 'Too many attempts. Please try again later.';
       default:
-        return error.message ?? 'Authentication failed. Please try again.';
+        return 'We could not sign you in. Please try again.';
     }
   }
 }

@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../../core/i18n/app_localizations.dart';
+import '../../core/errors/user_facing_error_mapper.dart';
 import '../../core/privacy/app_privacy.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/motion/app_motion.dart';
@@ -622,8 +623,8 @@ class _AccountScreenState extends State<AccountScreen> {
       confirmController.dispose();
     }
     if (ok == true && context.mounted) {
-      final AppStateController appStateController =
-          context.read<AppStateController>();
+      final AppStateController appStateController = context
+          .read<AppStateController>();
       final FirebaseAccountDeletionAuthBackend authBackend =
           FirebaseAccountDeletionAuthBackend();
       final AccountDeletionService deletionService = AccountDeletionService(
@@ -699,21 +700,23 @@ class _AccountScreenState extends State<AccountScreen> {
         Navigator.of(context, rootNavigator: true).pop(); // dismiss loading
         showTopSnackBar(
           context,
-          _presentDeleteAccountError(error),
+          _presentDeleteAccountError(context, error),
           kind: AppToastKind.error,
         );
       }
     }
   }
 
-  String _presentDeleteAccountError(Object error) {
+  String _presentDeleteAccountError(BuildContext context, Object error) {
     if (error is StateError) {
       final String message = error.message.trim();
       if (message.isNotEmpty) return message;
     }
-    final String raw = error.toString().trim();
-    const String prefix = 'Bad state: ';
-    return raw.startsWith(prefix) ? raw.substring(prefix.length) : raw;
+    return UserFacingErrorMapper.message(
+      context.l10n,
+      error,
+      context: 'delete account',
+    );
   }
 
   Future<void> _refreshMarketData() async {
@@ -860,9 +863,7 @@ class _AccountScreenState extends State<AccountScreen> {
       if (mounted) {
         showTopSnackBar(
           context,
-          Localizations.localeOf(context).languageCode == 'ar'
-              ? 'فشل الاتصال: $e'
-              : 'Connection failed: $e',
+          UserFacingErrorMapper.message(context.l10n, e, context: 'network'),
         );
       }
     } finally {

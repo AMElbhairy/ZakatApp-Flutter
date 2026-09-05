@@ -4,6 +4,7 @@ import '../../widgets/sensitive_content_scope.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/i18n/app_localizations.dart';
+import '../../core/errors/user_facing_error_mapper.dart';
 import '../../core/widgets/compact_dropdown.dart';
 import '../../core/utils/currency_presentation.dart';
 import '../../core/utils/amount_parser.dart';
@@ -118,216 +119,218 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
   Widget build(BuildContext context) {
     return SensitiveContentScope(
       child: Scaffold(
-      appBar: AppBar(
-        title: Text(
-          widget.isEditMode
-              ? context.l10n.tr('edit_saving_title')
-              : context.l10n.tr('add_saving_title'),
+        appBar: AppBar(
+          title: Text(
+            widget.isEditMode
+                ? context.l10n.tr('edit_saving_title')
+                : context.l10n.tr('add_saving_title'),
+          ),
         ),
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                CompactDropdownFormField<String>(
-                  key: const Key('savingTypeField'),
-                  value: _assetType,
-                  labelText: context.l10n.tr('type'),
-                  items: const <String>['cash', 'gold', 'silver'],
-                  itemLabel: (String value) => switch (value) {
-                    'cash' => context.l10n.tr('cash'),
-                    'gold' => context.l10n.tr('gold'),
-                    'silver' => context.l10n.tr('silver'),
-                    _ => value,
-                  },
-                  onChanged: (String value) {
-                    setState(() {
-                      _assetType = value;
-                      if (_assetType == 'cash') {
-                        _linkPurchaseToCashEntries = false;
-                      }
-                    });
-                  },
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  key: const Key('savingAmountField'),
-                  controller: _amountController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: InputDecoration(
-                    labelText: _assetType == 'cash'
-                        ? context.l10n.tr('amount')
-                        : context.l10n.tr('weight_grams'),
-                    border: const OutlineInputBorder(),
-                  ),
-                  validator: (String? value) {
-                    final double amount = tryParseAmount(value) ?? 0;
-                    if (amount <= 0) return context.l10n.tr('amount_gt_zero');
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                if (_assetType == 'cash')
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
                   CompactDropdownFormField<String>(
-                    key: const Key('savingCurrencyField'),
-                    value: _cashCurrency,
-                    labelText: context.l10n.tr('currency'),
-                    items: ZakatEngineService.supportedCurrencies,
-                    itemLabel: (String currency) =>
-                        CurrencyPresentation.selectorLabel(
-                          currency,
-                          isRtl:
-                              Localizations.localeOf(
-                                context,
-                              ).languageCode.toLowerCase() == 'ar',
-                        ),
-                    onChanged: (String value) {
-                      setState(() => _cashCurrency = value);
+                    key: const Key('savingTypeField'),
+                    value: _assetType,
+                    labelText: context.l10n.tr('type'),
+                    items: const <String>['cash', 'gold', 'silver'],
+                    itemLabel: (String value) => switch (value) {
+                      'cash' => context.l10n.tr('cash'),
+                      'gold' => context.l10n.tr('gold'),
+                      'silver' => context.l10n.tr('silver'),
+                      _ => value,
                     },
-                    validator: (String? value) {
-                      if ((value ?? '').isEmpty) {
-                        return context.l10n.tr('currency_required');
-                      }
-                      return null;
-                    },
-                  ),
-                if (_assetType == 'gold')
-                  CompactDropdownFormField<String>(
-                    key: const Key('savingGoldPurityField'),
-                    value: _goldPurity,
-                    labelText: context.l10n.tr('gold_purity'),
-                    items: const <String>['24', '21', '18'],
-                    itemLabel: (String value) => '${value}K',
-                    onChanged: (String value) {
-                      setState(() => _goldPurity = value);
-                    },
-                    validator: (String? value) {
-                      if ((value ?? '').isEmpty) {
-                        return context.l10n.tr('gold_purity_required');
-                      }
-                      return null;
-                    },
-                  ),
-                if (_assetType == 'silver')
-                  Text(
-                    context.l10n.tr('silver_uses_grams'),
-                    style: TextStyle(fontWeight: FontWeight.w500),
-                  ),
-                if (_assetType != 'cash') ...<Widget>[
-                  const SizedBox(height: 16),
-                  CompactDropdownFormField<String>(
-                    key: const Key('savingPurchaseCurrencyField'),
-                    value: _purchaseCurrency,
-                    labelText: context.l10n.tr('purchase_currency'),
-                    items: ZakatEngineService.supportedCurrencies,
-                    itemLabel: (String currency) => currency,
                     onChanged: (String value) {
                       setState(() {
-                        _purchaseCurrency = value;
-                        _autoAllocateFunding();
+                        _assetType = value;
+                        if (_assetType == 'cash') {
+                          _linkPurchaseToCashEntries = false;
+                        }
                       });
                     },
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
-                    key: const Key('savingPurchaseAmountField'),
-                    controller: _purchaseAmountController,
+                    key: const Key('savingAmountField'),
+                    controller: _amountController,
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: true,
                     ),
                     decoration: InputDecoration(
-                      labelText: context.l10n.tr('purchase_amount'),
-                      border: OutlineInputBorder(),
+                      labelText: _assetType == 'cash'
+                          ? context.l10n.tr('amount')
+                          : context.l10n.tr('weight_grams'),
+                      border: const OutlineInputBorder(),
                     ),
-                    onChanged: (_) {
-                      if (_linkPurchaseToCashEntries) {
-                        setState(_autoAllocateFunding);
-                      }
-                    },
                     validator: (String? value) {
                       final double amount = tryParseAmount(value) ?? 0;
-                      if (_assetType != 'cash' && amount <= 0) {
-                        return context.l10n.tr('amount_gt_zero');
-                      }
+                      if (amount <= 0) return context.l10n.tr('amount_gt_zero');
                       return null;
                     },
                   ),
-                  const SizedBox(height: 12),
-                  CheckboxListTile(
-                    key: const Key('linkMetalPurchaseToCashEntries'),
-                    contentPadding: EdgeInsets.zero,
-                    value: _linkPurchaseToCashEntries,
-                    title: Text(
-                      context.l10n.tr('link_this_purchase_to_cash_entries'),
-                    ),
-                    onChanged: (bool? value) {
-                      setState(() {
-                        _linkPurchaseToCashEntries = value ?? false;
-                        if (_linkPurchaseToCashEntries) {
-                          _autoAllocateFunding();
-                        } else {
-                          _clearAllocations();
+                  const SizedBox(height: 16),
+                  if (_assetType == 'cash')
+                    CompactDropdownFormField<String>(
+                      key: const Key('savingCurrencyField'),
+                      value: _cashCurrency,
+                      labelText: context.l10n.tr('currency'),
+                      items: ZakatEngineService.supportedCurrencies,
+                      itemLabel: (String currency) =>
+                          CurrencyPresentation.selectorLabel(
+                            currency,
+                            isRtl:
+                                Localizations.localeOf(
+                                  context,
+                                ).languageCode.toLowerCase() ==
+                                'ar',
+                          ),
+                      onChanged: (String value) {
+                        setState(() => _cashCurrency = value);
+                      },
+                      validator: (String? value) {
+                        if ((value ?? '').isEmpty) {
+                          return context.l10n.tr('currency_required');
                         }
-                      });
+                        return null;
+                      },
+                    ),
+                  if (_assetType == 'gold')
+                    CompactDropdownFormField<String>(
+                      key: const Key('savingGoldPurityField'),
+                      value: _goldPurity,
+                      labelText: context.l10n.tr('gold_purity'),
+                      items: const <String>['24', '21', '18'],
+                      itemLabel: (String value) => '${value}K',
+                      onChanged: (String value) {
+                        setState(() => _goldPurity = value);
+                      },
+                      validator: (String? value) {
+                        if ((value ?? '').isEmpty) {
+                          return context.l10n.tr('gold_purity_required');
+                        }
+                        return null;
+                      },
+                    ),
+                  if (_assetType == 'silver')
+                    Text(
+                      context.l10n.tr('silver_uses_grams'),
+                      style: TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                  if (_assetType != 'cash') ...<Widget>[
+                    const SizedBox(height: 16),
+                    CompactDropdownFormField<String>(
+                      key: const Key('savingPurchaseCurrencyField'),
+                      value: _purchaseCurrency,
+                      labelText: context.l10n.tr('purchase_currency'),
+                      items: ZakatEngineService.supportedCurrencies,
+                      itemLabel: (String currency) => currency,
+                      onChanged: (String value) {
+                        setState(() {
+                          _purchaseCurrency = value;
+                          _autoAllocateFunding();
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      key: const Key('savingPurchaseAmountField'),
+                      controller: _purchaseAmountController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: InputDecoration(
+                        labelText: context.l10n.tr('purchase_amount'),
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (_) {
+                        if (_linkPurchaseToCashEntries) {
+                          setState(_autoAllocateFunding);
+                        }
+                      },
+                      validator: (String? value) {
+                        final double amount = tryParseAmount(value) ?? 0;
+                        if (_assetType != 'cash' && amount <= 0) {
+                          return context.l10n.tr('amount_gt_zero');
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    CheckboxListTile(
+                      key: const Key('linkMetalPurchaseToCashEntries'),
+                      contentPadding: EdgeInsets.zero,
+                      value: _linkPurchaseToCashEntries,
+                      title: Text(
+                        context.l10n.tr('link_this_purchase_to_cash_entries'),
+                      ),
+                      onChanged: (bool? value) {
+                        setState(() {
+                          _linkPurchaseToCashEntries = value ?? false;
+                          if (_linkPurchaseToCashEntries) {
+                            _autoAllocateFunding();
+                          } else {
+                            _clearAllocations();
+                          }
+                        });
+                      },
+                    ),
+                    if (_linkPurchaseToCashEntries)
+                      _buildFundingAllocationSection(context),
+                  ],
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    key: const Key('savingNotesField'),
+                    controller: _notesController,
+                    maxLines: 2,
+                    decoration: InputDecoration(
+                      labelText: context.l10n.tr('notes'),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(context.l10n.tr('date')),
+                    subtitle: Text(_dateIso(_selectedDate)),
+                    trailing: const Icon(Icons.calendar_today),
+                    onTap: () async {
+                      final DateTime? picked = await showDatePicker(
+                        context: context,
+                        initialDate: _selectedDate,
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime(2100),
+                      );
+                      if (picked != null) {
+                        setState(() => _selectedDate = picked);
+                      }
                     },
                   ),
-                  if (_linkPurchaseToCashEntries)
-                    _buildFundingAllocationSection(context),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: AppPrimaryButton(
+                      key: const Key('saveSavingButton'),
+                      onPressed: _saving ? null : _submit,
+                      label: _saving
+                          ? context.l10n.tr('saving_progress')
+                          : (widget.isEditMode
+                                ? context.l10n.tr('update_saving')
+                                : context.l10n.tr('save_saving')),
+                      icon: Icons.check,
+                    ),
+                  ),
                 ],
-                const SizedBox(height: 16),
-                TextFormField(
-                  key: const Key('savingNotesField'),
-                  controller: _notesController,
-                  maxLines: 2,
-                  decoration: InputDecoration(
-                    labelText: context.l10n.tr('notes'),
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(context.l10n.tr('date')),
-                  subtitle: Text(_dateIso(_selectedDate)),
-                  trailing: const Icon(Icons.calendar_today),
-                  onTap: () async {
-                    final DateTime? picked = await showDatePicker(
-                      context: context,
-                      initialDate: _selectedDate,
-                      firstDate: DateTime(2000),
-                      lastDate: DateTime(2100),
-                    );
-                    if (picked != null) {
-                      setState(() => _selectedDate = picked);
-                    }
-                  },
-                ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  child: AppPrimaryButton(
-                    key: const Key('saveSavingButton'),
-                    onPressed: _saving ? null : _submit,
-                    label: _saving
-                        ? context.l10n.tr('saving_progress')
-                        : (widget.isEditMode
-                              ? context.l10n.tr('update_saving')
-                              : context.l10n.tr('save_saving')),
-                    icon: Icons.check,
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ),
       ),
-    ));
+    );
   }
 
   Future<void> _submit() async {
@@ -410,7 +413,10 @@ class _AddSavingScreenState extends State<AddSavingScreen> {
     } on StateError catch (error) {
       if (!mounted) return;
       setState(() => _saving = false);
-      showTopSnackBar(context, error.message);
+      showTopSnackBar(
+        context,
+        UserFacingErrorMapper.message(context.l10n, error, context: 'save'),
+      );
       return;
     }
 
