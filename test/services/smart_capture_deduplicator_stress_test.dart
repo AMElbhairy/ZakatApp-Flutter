@@ -45,6 +45,8 @@ void main() {
       required DateTime createdAt,
       CaptureStatus status = CaptureStatus.pendingReview,
       String? ignoreReason,
+      String? cardLast4,
+      String? accountLast4,
     }) {
       return PendingTransaction(
         id: id,
@@ -61,6 +63,9 @@ void main() {
         confidence: parsed.confidence,
         status: status,
         ignoreReason: ignoreReason,
+        receivedAt: payload.receivedAt.toUtc().toIso8601String(),
+        cardLast4: cardLast4 ?? SmartCaptureDeduplicator.extractLast4(parsed.cardReference),
+        accountLast4: accountLast4 ?? SmartCaptureDeduplicator.extractLast4(parsed.accountReference),
       );
     }
 
@@ -216,7 +221,7 @@ void main() {
           referenceNow: baseTime.add(const Duration(seconds: 30)),
         );
 
-        expect(diag.isDuplicate, isTrue);
+        expect(diag.classification, equals(DeduplicationClassification.possibleDuplicate));
         expect(diag.matchedRecordId, 'pt-fmt-1');
       });
     });
@@ -252,7 +257,7 @@ void main() {
           referenceNow: baseTime.add(const Duration(minutes: 1)),
         );
 
-        expect(diag.isDuplicate, isTrue);
+        expect(diag.classification, equals(DeduplicationClassification.possibleDuplicate));
         expect(diag.matchedRecordId, 'tx-settled-1');
         expect(diag.matchedRecordType, 'transaction');
         expect(diag.timeDifferenceMinutes, 1);
@@ -269,6 +274,14 @@ void main() {
         final payload1 = createPayload(text: msg);
         final parsed1 = parsePayload(payload1);
 
+        final autoApprovedPending = createPendingFromParsed(
+          id: 'pt-auto-1',
+          parsed: parsed1,
+          payload: payload1,
+          createdAt: baseTime,
+          status: CaptureStatus.autoApproved,
+        );
+
         final autoApprovedTx = createSettledFromParsed(
           id: 'tx-auto-1',
           parsed: parsed1,
@@ -284,14 +297,14 @@ void main() {
         final diag = SmartCaptureDeduplicator.evaluate(
           parsed: parsed2,
           payload: payload2,
-          pendingTransactions: const [],
+          pendingTransactions: [autoApprovedPending],
           transactions: [autoApprovedTx],
           referenceNow: baseTime.add(const Duration(minutes: 2)),
         );
 
         expect(diag.isDuplicate, isTrue);
-        expect(diag.matchedRecordId, 'tx-auto-1');
-        expect(diag.matchedRecordType, 'transaction');
+        expect(diag.matchedRecordId, 'pt-auto-1');
+        expect(diag.matchedRecordType, 'pendingTransaction');
       });
     });
 
@@ -328,12 +341,12 @@ void main() {
           referenceNow: baseTime.add(const Duration(minutes: 2)),
         );
 
-        // AUDIT OBSERVATION:
-        // Expected ideal business behavior: Legitimate purchase #2 should NOT be rejected.
-        // Current actual implementation: Treats it as duplicate because (type, amount, currency, merchant) match!
-        expect(diag.isDuplicate, isTrue,
-            reason: 'Documents that current 5-minute heuristic produces a FALSE POSITIVE for repeated coffee purchase');
-        expect(diag.matchedRecordId, 'pt-sbux-1');
+        // Under High-Precision Tiered Deduplication:
+        // Bare messages without card or timestamp outside 60s are NOT falsely rejected as duplicates.
+        // The legitimate second coffee is accepted!
+        expect(diag.isDuplicate, isFalse);
+        expect(diag.classification, equals(DeduplicationClassification.notDuplicate));
+        expect(diag.matchedRecordId, isNull);
       });
     });
 
@@ -371,13 +384,12 @@ void main() {
           referenceNow: baseTime.add(const Duration(minutes: 1)),
         );
 
-        // AUDIT OBSERVATION:
-        // Diagnostic captures cardOrAccountLast4 (*5678), but the comparison logic in
-        // SmartCaptureDeduplicator ignores cardReference.
-        // Thus, it flags card *5678 as duplicate of *1234!
-        expect(diag.cardOrAccountLast4, equals('*5678'));
-        expect(diag.isDuplicate, isTrue,
-            reason: 'Documents that different card is ignored by current matching key');
+        // Under High-Precision Tiered Deduplication:
+        // Explicit card conflict (*1234 vs *5678) prevents false duplicate rejection!
+        expect(diag.cardLast4, equals('5678'));
+        expect(diag.isDuplicate, isFalse);
+        expect(diag.classification, equals(DeduplicationClassification.notDuplicate));
+        expect(diag.matchedRecordId, isNull);
       });
     });
 
@@ -385,10 +397,11 @@ void main() {
     // Scenario G: Same Amount + Same Merchant Outside 5 Minutes (Boundary Audit)
     // =========================================================================
     group('Scenario G: Same Amount + Same Merchant Outside 5 Minutes (Boundary Audit)', () {
-      const msg = 'Purchase of SAR 50.00 at Starbucks';
+      const msg1 = 'Purchase of SAR 50.00 at Starbucks with card *1234';
+      const msg2 = 'POS Transaction: Starbucks SAR 50.00 Card ending 1234';
 
-      test('Boundary at 5:00 (300 seconds) -> inMinutes == 5 -> duplicate', () {
-        final payload1 = createPayload(text: msg);
+      test('Boundary at 5:00 (300 seconds) -> exact second match -> duplicate', () {
+        final payload1 = createPayload(text: msg1);
         final parsed1 = parsePayload(payload1);
         final pending1 = createPendingFromParsed(
           id: 'pt-bound-1',
@@ -397,19 +410,25 @@ void main() {
           createdAt: baseTime,
         );
 
+        final payload2 = createPayload(
+          text: msg2,
+          receivedAt: baseTime.add(const Duration(seconds: 300)),
+        );
+        final parsed2 = parsePayload(payload2);
+
         final diag5m00s = SmartCaptureDeduplicator.evaluate(
-          parsed: parsed1,
-          payload: payload1,
+          parsed: parsed2,
+          payload: payload2,
           pendingTransactions: [pending1],
           transactions: const [],
-          referenceNow: baseTime.add(const Duration(minutes: 5)),
+          referenceNow: baseTime.add(const Duration(seconds: 300)),
         );
-        expect(diag5m00s.timeDifferenceMinutes, equals(5));
+        expect(diag5m00s.timeDifferenceSeconds, equals(300));
         expect(diag5m00s.isDuplicate, isTrue);
       });
 
-      test('Boundary at 5:59 (359 seconds) -> inMinutes == 5 -> STILL treated as duplicate!', () {
-        final payload1 = createPayload(text: msg);
+      test('Boundary at 5:01 (301 seconds) -> exceeds 300s -> NOT duplicate', () {
+        final payload1 = createPayload(text: msg1);
         final parsed1 = parsePayload(payload1);
         final pending1 = createPendingFromParsed(
           id: 'pt-bound-1',
@@ -418,23 +437,53 @@ void main() {
           createdAt: baseTime,
         );
 
-        // 5 minutes and 59 seconds later:
-        // Duration(minutes: 5, seconds: 59).inMinutes evaluates to 5 in Dart!
-        // Because diffMinutes <= 5, 5 <= 5 is TRUE!
-        final diag5m59s = SmartCaptureDeduplicator.evaluate(
+        final payload2 = createPayload(
+          text: msg2,
+          receivedAt: baseTime.add(const Duration(seconds: 301)),
+        );
+        final parsed2 = parsePayload(payload2);
+
+        final diag301s = SmartCaptureDeduplicator.evaluate(
+          parsed: parsed2,
+          payload: payload2,
+          pendingTransactions: [pending1],
+          transactions: const [],
+          referenceNow: baseTime.add(const Duration(seconds: 301)),
+        );
+        expect(diag301s.isDuplicate, isFalse);
+        expect(diag301s.classification, equals(DeduplicationClassification.notDuplicate));
+      });
+
+      test('Boundary at 5:59 (359 seconds) -> exceeds 300s -> NOT duplicate (drift fixed)', () {
+        final payload1 = createPayload(text: msg1);
+        final parsed1 = parsePayload(payload1);
+        final pending1 = createPendingFromParsed(
+          id: 'pt-bound-1',
           parsed: parsed1,
           payload: payload1,
+          createdAt: baseTime,
+        );
+
+        final payload2 = createPayload(
+          text: msg2,
+          receivedAt: baseTime.add(const Duration(minutes: 5, seconds: 59)),
+        );
+        final parsed2 = parsePayload(payload2);
+
+        final diag5m59s = SmartCaptureDeduplicator.evaluate(
+          parsed: parsed2,
+          payload: payload2,
           pendingTransactions: [pending1],
           transactions: const [],
           referenceNow: baseTime.add(const Duration(minutes: 5, seconds: 59)),
         );
-        expect(diag5m59s.timeDifferenceMinutes, equals(5));
-        expect(diag5m59s.isDuplicate, isTrue,
-            reason: 'Dart .inMinutes truncates seconds, widening effective window to 5m59s');
+        expect(diag5m59s.isDuplicate, isFalse,
+            reason: 'Exact second arithmetic fixes the previous 59-second window drift');
+        expect(diag5m59s.classification, equals(DeduplicationClassification.notDuplicate));
       });
 
-      test('Boundary at 6:00 (360 seconds) -> inMinutes == 6 -> NOT duplicate', () {
-        final payload1 = createPayload(text: msg);
+      test('Boundary at 6:00 (360 seconds) -> NOT duplicate', () {
+        final payload1 = createPayload(text: msg1);
         final parsed1 = parsePayload(payload1);
         final pending1 = createPendingFromParsed(
           id: 'pt-bound-1',
@@ -443,9 +492,15 @@ void main() {
           createdAt: baseTime,
         );
 
+        final payload2 = createPayload(
+          text: msg2,
+          receivedAt: baseTime.add(const Duration(minutes: 6)),
+        );
+        final parsed2 = parsePayload(payload2);
+
         final diag6m00s = SmartCaptureDeduplicator.evaluate(
-          parsed: parsed1,
-          payload: payload1,
+          parsed: parsed2,
+          payload: payload2,
           pendingTransactions: [pending1],
           transactions: const [],
           referenceNow: baseTime.add(const Duration(minutes: 6)),
@@ -455,7 +510,7 @@ void main() {
       });
 
       test('Boundary at 10:00 (600 seconds) -> NOT duplicate', () {
-        final payload1 = createPayload(text: msg);
+        final payload1 = createPayload(text: msg1);
         final parsed1 = parsePayload(payload1);
         final pending1 = createPendingFromParsed(
           id: 'pt-bound-1',
@@ -464,9 +519,15 @@ void main() {
           createdAt: baseTime,
         );
 
+        final payload2 = createPayload(
+          text: msg2,
+          receivedAt: baseTime.add(const Duration(minutes: 10)),
+        );
+        final parsed2 = parsePayload(payload2);
+
         final diag10m = SmartCaptureDeduplicator.evaluate(
-          parsed: parsed1,
-          payload: payload1,
+          parsed: parsed2,
+          payload: payload2,
           pendingTransactions: [pending1],
           transactions: const [],
           referenceNow: baseTime.add(const Duration(minutes: 10)),
@@ -483,16 +544,17 @@ void main() {
       test('Deduplication compares referenceNow/DateTime.now against createdAt, ignoring receivedAt', () {
         const msg = 'Debit Card Purchase at Talabat SAR 45.50';
 
-        // 1. First transaction captured and settled at 12:00
+        // 1. First transaction captured at 12:00
         final payload1 = createPayload(
           text: msg,
           receivedAt: baseTime, // 12:00
         );
         final parsed1 = parsePayload(payload1);
-        final settledTx = createSettledFromParsed(
-          id: 'tx-queue-1',
+        final pending1 = createPendingFromParsed(
+          id: 'pt-queue-1',
           parsed: parsed1,
-          createdAt: baseTime, // 12:00
+          payload: payload1,
+          createdAt: baseTime,
         );
 
         // 2. Second capture occurred natively at 12:01 (receivedAt: 12:01)
@@ -509,18 +571,17 @@ void main() {
         final diag = SmartCaptureDeduplicator.evaluate(
           parsed: parsed2,
           payload: payload2,
-          pendingTransactions: const [],
-          transactions: [settledTx],
+          pendingTransactions: [pending1],
+          transactions: const [],
           referenceNow: queueEvaluationTime, // evaluation time is 10 min later
         );
 
-        // AUDIT OBSERVATION:
-        // Because evaluation uses `referenceNow` (DateTime.now() in production) rather than
-        // `payload.receivedAt`, `diffMinutes` = |12:10 - 12:00| = 10 minutes > 5 minutes.
-        // Result: The duplicate was MISSED (FALSE NEGATIVE)!
-        expect(diag.isDuplicate, isFalse,
-            reason: 'Delayed processing causes false negative because receivedAt is not used');
-        expect(diag.matchedRecordId, isNull);
+        // Under High-Precision Tiered Deduplication:
+        // Comparing payload2.receivedAt (12:01) against pending1.receivedAt (12:00) gives 60s,
+        // so delayed queue processing does NOT miss the duplicate!
+        expect(diag.isDuplicate, isTrue);
+        expect(diag.classification, equals(DeduplicationClassification.definiteDuplicate));
+        expect(diag.matchedRecordId, equals('pt-queue-1'));
       });
     });
 
@@ -587,7 +648,8 @@ void main() {
           transactions: const [],
           referenceNow: baseTime.add(const Duration(seconds: 15)),
         );
-        expect(diag2.isDuplicate, isTrue);
+        expect(diag2.classification, equals(DeduplicationClassification.possibleDuplicate));
+        expect(diag2.matchedRecordId, equals('pt-talabat-1'));
 
         final parsed3 = parsePayload(createPayload(text: msg3));
         final diag3 = SmartCaptureDeduplicator.evaluate(
@@ -597,7 +659,8 @@ void main() {
           transactions: const [],
           referenceNow: baseTime.add(const Duration(seconds: 30)),
         );
-        expect(diag3.isDuplicate, isTrue);
+        expect(diag3.classification, equals(DeduplicationClassification.possibleDuplicate));
+        expect(diag3.matchedRecordId, equals('pt-talabat-1'));
       });
 
       test('Amazon vs Amazon SA: audit behavior', () {
@@ -622,13 +685,12 @@ void main() {
           referenceNow: baseTime.add(const Duration(minutes: 1)),
         );
 
-        // AUDIT OBSERVATION:
-        // In SmartCaptureParser, "Amazon SA" strips safe country suffix "SA" and normalizes to "Amazon".
-        // Therefore, both messages normalize to merchant "Amazon", and deduplicator treats them as DUPLICATES!
+        // Under High-Precision Tiered Deduplication:
+        // Both messages normalize to merchant "Amazon", and within 60s without card identity,
+        // it surfaces as possibleDuplicate (Tier 3) for review.
         expect(parsed1.merchantName, equals('Amazon'));
         expect(parsed2.merchantName, equals('Amazon'));
-        expect(diag.isDuplicate, isTrue,
-            reason: 'Current behavior: Amazon and Amazon SA normalize to Amazon and match as duplicate');
+        expect(diag.classification, equals(DeduplicationClassification.possibleDuplicate));
         expect(diag.matchedRecordId, 'pt-amz-1');
       });
     });
@@ -670,11 +732,13 @@ void main() {
           referenceNow: baseTime.add(const Duration(minutes: 1)),
         );
 
-        // AUDIT OBSERVATION:
-        // pending1 has merchant "LocalCafe", parsed2 has merchant "Starbucks".
-        // Deduplication fails because merchant strings differ!
-        expect(diag.isDuplicate, isFalse,
-            reason: 'Alias introduction changes parsed merchant, causing deduplication mismatch');
+        // Under High-Precision Tiered Deduplication:
+        // Tier 1 raw message fingerprint matches identical raw text, preventing duplicate miss
+        // when merchant alias rules evolve!
+        expect(diag.isDuplicate, isTrue);
+        expect(diag.classification, equals(DeduplicationClassification.definiteDuplicate));
+        expect(diag.tier, equals(DeduplicationTier.tier1ExactIdentity));
+        expect(diag.matchedRecordId, equals('pt-alias-1'));
       });
     });
 
@@ -875,12 +939,28 @@ void main() {
           referenceNow: baseTime.add(const Duration(minutes: 3)),
         );
 
-        // AUDIT OBSERVATION:
-        // Current logic treats this as duplicate because amount, currency, merchant/counterparty, and type match.
-        // If these were two separate transfers (e.g. splitting bills or two separate rent tranches),
-        // the second transfer is erroneously blocked!
-        expect(diag.isDuplicate, isTrue,
-            reason: 'Documents false positive risk for legitimate back-to-back transfers');
+        // Under High-Precision Tiered Deduplication:
+        // 1. Identical re-delivered transfer notification (same timestamp & counterparty) is caught under Tier 1
+        expect(diag.isDuplicate, isTrue);
+        expect(diag.tier, equals(DeduplicationTier.tier1ExactIdentity));
+
+        // 2. Distinct back-to-back transfer (different timestamp/content) outside 60s is accepted
+        const distinctOutgoingMsg =
+            'Debit Transfer Local\nAmount:500 SAR\nTo: Ahmed Elbhairy\nOn :2026-09-03 22:23';
+        final distinctPayload = createPayload(
+          text: distinctOutgoingMsg,
+          receivedAt: baseTime.add(const Duration(minutes: 3)),
+        );
+        final distinctParsed = parsePayload(distinctPayload);
+        final distinctDiag = SmartCaptureDeduplicator.evaluate(
+          parsed: distinctParsed,
+          payload: distinctPayload,
+          pendingTransactions: [pending1],
+          transactions: const [],
+          referenceNow: baseTime.add(const Duration(minutes: 3)),
+        );
+        expect(distinctDiag.isDuplicate, isFalse);
+        expect(distinctDiag.classification, equals(DeduplicationClassification.notDuplicate));
       });
     });
 

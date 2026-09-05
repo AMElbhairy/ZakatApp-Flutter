@@ -7251,6 +7251,12 @@ class AppStateController extends ChangeNotifier {
           : _state.captureAnalytics.capturedFromAppleShortcuts,
     );
 
+    final String? cardLast4 =
+        SmartCaptureDeduplicator.extractLast4(parsed.cardReference);
+    final String? accountLast4 =
+        SmartCaptureDeduplicator.extractLast4(parsed.accountReference);
+    final String receivedAtIso = payload.receivedAt.toUtc().toIso8601String();
+
     if (!parsed.isValid) {
       if (payload.source == CaptureSource.manual &&
           parsed.ignoreReason != 'Verification Code Message' &&
@@ -7273,6 +7279,9 @@ class AppStateController extends ChangeNotifier {
           detectedBank: detectedBank,
           requiresReview: true,
           isRead: false,
+          receivedAt: receivedAtIso,
+          cardLast4: cardLast4,
+          accountLast4: accountLast4,
         );
         await updateState(
           _state.copyWith(
@@ -7317,6 +7326,9 @@ class AppStateController extends ChangeNotifier {
               ignoreReason: parsed.ignoreReason ?? 'Invalid Transaction',
               requiresReview: false,
               isRead: true,
+              receivedAt: receivedAtIso,
+              cardLast4: cardLast4,
+              accountLast4: accountLast4,
             ),
           ],
           captureAnalytics: nextAnalytics,
@@ -7328,16 +7340,17 @@ class AppStateController extends ChangeNotifier {
       return true;
     }
 
-    // Step 5: Deduplication via SmartCaptureDeduplicator (preserving existing 5-minute behavior)
-    final DeduplicationDiagnostics dedupDiag = SmartCaptureDeduplicator.evaluate(
+    // Step 5: Deduplication via High-Precision Tiered SmartCaptureDeduplicator
+    final DeduplicationDecision dedupDecision = SmartCaptureDeduplicator.evaluate(
       parsed: parsed,
       payload: payload,
       pendingTransactions: _state.pendingTransactions,
       transactions: _state.transactions,
+      suggestedPaymentSourceId: suggestedPaymentSourceId,
     );
-    final bool isDuplicate = dedupDiag.isDuplicate;
 
-    if (isDuplicate) {
+    if (dedupDecision.classification ==
+        DeduplicationClassification.definiteDuplicate) {
       nextAnalytics = nextAnalytics.copyWith(
         duplicateMessages: nextAnalytics.duplicateMessages + 1,
         ignoredMessages: nextAnalytics.ignoredMessages + 1,
@@ -7347,7 +7360,9 @@ class AppStateController extends ChangeNotifier {
             : nextAnalytics.capturedFromAppleShortcutsIgnored,
       );
       if (payload.source == CaptureSource.shortcut) {
-        debugPrint('[Shortcut] Flutter outcome: duplicate');
+        debugPrint(
+          '[Shortcut] Flutter outcome: duplicate (${dedupDecision.tier.name})',
+        );
       }
       final PendingTransaction transaction = PendingTransaction(
         id: const Uuid().v4(),
@@ -7364,10 +7379,14 @@ class AppStateController extends ChangeNotifier {
         suggestedPaymentSourceId: suggestedPaymentSourceId,
         confidence: 0.0,
         status: CaptureStatus.ignored,
-        ignoreReason: 'Duplicate',
+        ignoreReason:
+            'Duplicate: ${dedupDecision.reason ?? 'High-confidence match'}',
         detectedBank: detectedBank,
         requiresReview: false,
         isRead: true,
+        receivedAt: receivedAtIso,
+        cardLast4: cardLast4,
+        accountLast4: accountLast4,
       );
       final List<PendingTransaction> nextPending = <PendingTransaction>[
         ..._state.pendingTransactions,
@@ -7384,6 +7403,9 @@ class AppStateController extends ChangeNotifier {
       }
       return true;
     }
+
+    final bool isPossibleDuplicate = dedupDecision.classification ==
+        DeduplicationClassification.possibleDuplicate;
 
     final String generatedId = const Uuid().v4();
     final String timestampStr = DateTime.now().toUtc().toIso8601String();
@@ -7402,7 +7424,8 @@ class AppStateController extends ChangeNotifier {
       finalType = persistedRule.defaultType;
     }
 
-    if (_state.smartCaptureAutoApproveEnabled &&
+    if (!isPossibleDuplicate &&
+        _state.smartCaptureAutoApproveEnabled &&
         parsed.confidence >= 0.95 &&
         parsed.merchantName != null &&
         parsed.amount != null &&
@@ -7490,6 +7513,9 @@ class AppStateController extends ChangeNotifier {
         requiresReview: false,
         isRead: true,
         linkedTransactionId: generatedId,
+        receivedAt: receivedAtIso,
+        cardLast4: cardLast4,
+        accountLast4: accountLast4,
       );
 
       final List<PendingTransaction> nextPending = <PendingTransaction>[
@@ -7543,6 +7569,12 @@ class AppStateController extends ChangeNotifier {
         detectedBank: detectedBank,
         requiresReview: true,
         isRead: false,
+        ignoreReason: isPossibleDuplicate
+            ? 'Possible duplicate: ${dedupDecision.reason ?? 'Similar to recent transaction'}'
+            : null,
+        receivedAt: receivedAtIso,
+        cardLast4: cardLast4,
+        accountLast4: accountLast4,
       );
       final List<PendingTransaction> nextPending = <PendingTransaction>[
         ...nextState.pendingTransactions,

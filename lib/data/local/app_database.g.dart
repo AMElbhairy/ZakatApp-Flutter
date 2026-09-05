@@ -4539,6 +4539,39 @@ class $PendingTransactionsTable extends PendingTransactions
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _receivedAtMeta = const VerificationMeta(
+    'receivedAt',
+  );
+  @override
+  late final GeneratedColumn<String> receivedAt = GeneratedColumn<String>(
+    'received_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _cardLast4Meta = const VerificationMeta(
+    'cardLast4',
+  );
+  @override
+  late final GeneratedColumn<String> cardLast4 = GeneratedColumn<String>(
+    'card_last4',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _accountLast4Meta = const VerificationMeta(
+    'accountLast4',
+  );
+  @override
+  late final GeneratedColumn<String> accountLast4 = GeneratedColumn<String>(
+    'account_last4',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -4566,6 +4599,9 @@ class $PendingTransactionsTable extends PendingTransactions
     linkedTransactionId,
     updatedAt,
     deletedAt,
+    receivedAt,
+    cardLast4,
+    accountLast4,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -4790,6 +4826,27 @@ class $PendingTransactionsTable extends PendingTransactions
         deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
       );
     }
+    if (data.containsKey('received_at')) {
+      context.handle(
+        _receivedAtMeta,
+        receivedAt.isAcceptableOrUnknown(data['received_at']!, _receivedAtMeta),
+      );
+    }
+    if (data.containsKey('card_last4')) {
+      context.handle(
+        _cardLast4Meta,
+        cardLast4.isAcceptableOrUnknown(data['card_last4']!, _cardLast4Meta),
+      );
+    }
+    if (data.containsKey('account_last4')) {
+      context.handle(
+        _accountLast4Meta,
+        accountLast4.isAcceptableOrUnknown(
+          data['account_last4']!,
+          _accountLast4Meta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -4899,6 +4956,18 @@ class $PendingTransactionsTable extends PendingTransactions
         DriftSqlType.string,
         data['${effectivePrefix}deleted_at'],
       ),
+      receivedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}received_at'],
+      ),
+      cardLast4: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}card_last4'],
+      ),
+      accountLast4: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}account_last4'],
+      ),
     );
   }
 
@@ -4935,6 +5004,9 @@ class PendingTransaction extends DataClass
   final String? linkedTransactionId;
   final String updatedAt;
   final String? deletedAt;
+  final String? receivedAt;
+  final String? cardLast4;
+  final String? accountLast4;
   const PendingTransaction({
     required this.id,
     required this.source,
@@ -4961,6 +5033,9 @@ class PendingTransaction extends DataClass
     this.linkedTransactionId,
     required this.updatedAt,
     this.deletedAt,
+    this.receivedAt,
+    this.cardLast4,
+    this.accountLast4,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -5019,6 +5094,15 @@ class PendingTransaction extends DataClass
     map['updated_at'] = Variable<String>(updatedAt);
     if (!nullToAbsent || deletedAt != null) {
       map['deleted_at'] = Variable<String>(deletedAt);
+    }
+    if (!nullToAbsent || receivedAt != null) {
+      map['received_at'] = Variable<String>(receivedAt);
+    }
+    if (!nullToAbsent || cardLast4 != null) {
+      map['card_last4'] = Variable<String>(cardLast4);
+    }
+    if (!nullToAbsent || accountLast4 != null) {
+      map['account_last4'] = Variable<String>(accountLast4);
     }
     return map;
   }
@@ -5080,6 +5164,15 @@ class PendingTransaction extends DataClass
       deletedAt: deletedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(deletedAt),
+      receivedAt: receivedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(receivedAt),
+      cardLast4: cardLast4 == null && nullToAbsent
+          ? const Value.absent()
+          : Value(cardLast4),
+      accountLast4: accountLast4 == null && nullToAbsent
+          ? const Value.absent()
+          : Value(accountLast4),
     );
   }
 
@@ -5126,6 +5219,9 @@ class PendingTransaction extends DataClass
       ),
       updatedAt: serializer.fromJson<String>(json['updatedAt']),
       deletedAt: serializer.fromJson<String?>(json['deletedAt']),
+      receivedAt: serializer.fromJson<String?>(json['receivedAt']),
+      cardLast4: serializer.fromJson<String?>(json['cardLast4']),
+      accountLast4: serializer.fromJson<String?>(json['accountLast4']),
     );
   }
   @override
@@ -5157,6 +5253,9 @@ class PendingTransaction extends DataClass
       'linkedTransactionId': serializer.toJson<String?>(linkedTransactionId),
       'updatedAt': serializer.toJson<String>(updatedAt),
       'deletedAt': serializer.toJson<String?>(deletedAt),
+      'receivedAt': serializer.toJson<String?>(receivedAt),
+      'cardLast4': serializer.toJson<String?>(cardLast4),
+      'accountLast4': serializer.toJson<String?>(accountLast4),
     };
   }
 
@@ -5186,6 +5285,9 @@ class PendingTransaction extends DataClass
     Value<String?> linkedTransactionId = const Value.absent(),
     String? updatedAt,
     Value<String?> deletedAt = const Value.absent(),
+    Value<String?> receivedAt = const Value.absent(),
+    Value<String?> cardLast4 = const Value.absent(),
+    Value<String?> accountLast4 = const Value.absent(),
   }) => PendingTransaction(
     id: id ?? this.id,
     source: source ?? this.source,
@@ -5232,6 +5334,9 @@ class PendingTransaction extends DataClass
         : this.linkedTransactionId,
     updatedAt: updatedAt ?? this.updatedAt,
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+    receivedAt: receivedAt.present ? receivedAt.value : this.receivedAt,
+    cardLast4: cardLast4.present ? cardLast4.value : this.cardLast4,
+    accountLast4: accountLast4.present ? accountLast4.value : this.accountLast4,
   );
   PendingTransaction copyWithCompanion(PendingTransactionsCompanion data) {
     return PendingTransaction(
@@ -5296,6 +5401,13 @@ class PendingTransaction extends DataClass
           : this.linkedTransactionId,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+      receivedAt: data.receivedAt.present
+          ? data.receivedAt.value
+          : this.receivedAt,
+      cardLast4: data.cardLast4.present ? data.cardLast4.value : this.cardLast4,
+      accountLast4: data.accountLast4.present
+          ? data.accountLast4.value
+          : this.accountLast4,
     );
   }
 
@@ -5326,7 +5438,10 @@ class PendingTransaction extends DataClass
           ..write('isRead: $isRead, ')
           ..write('linkedTransactionId: $linkedTransactionId, ')
           ..write('updatedAt: $updatedAt, ')
-          ..write('deletedAt: $deletedAt')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('receivedAt: $receivedAt, ')
+          ..write('cardLast4: $cardLast4, ')
+          ..write('accountLast4: $accountLast4')
           ..write(')'))
         .toString();
   }
@@ -5358,6 +5473,9 @@ class PendingTransaction extends DataClass
     linkedTransactionId,
     updatedAt,
     deletedAt,
+    receivedAt,
+    cardLast4,
+    accountLast4,
   ]);
   @override
   bool operator ==(Object other) =>
@@ -5387,7 +5505,10 @@ class PendingTransaction extends DataClass
           other.isRead == this.isRead &&
           other.linkedTransactionId == this.linkedTransactionId &&
           other.updatedAt == this.updatedAt &&
-          other.deletedAt == this.deletedAt);
+          other.deletedAt == this.deletedAt &&
+          other.receivedAt == this.receivedAt &&
+          other.cardLast4 == this.cardLast4 &&
+          other.accountLast4 == this.accountLast4);
 }
 
 class PendingTransactionsCompanion extends UpdateCompanion<PendingTransaction> {
@@ -5416,6 +5537,9 @@ class PendingTransactionsCompanion extends UpdateCompanion<PendingTransaction> {
   final Value<String?> linkedTransactionId;
   final Value<String> updatedAt;
   final Value<String?> deletedAt;
+  final Value<String?> receivedAt;
+  final Value<String?> cardLast4;
+  final Value<String?> accountLast4;
   final Value<int> rowid;
   const PendingTransactionsCompanion({
     this.id = const Value.absent(),
@@ -5443,6 +5567,9 @@ class PendingTransactionsCompanion extends UpdateCompanion<PendingTransaction> {
     this.linkedTransactionId = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.deletedAt = const Value.absent(),
+    this.receivedAt = const Value.absent(),
+    this.cardLast4 = const Value.absent(),
+    this.accountLast4 = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   PendingTransactionsCompanion.insert({
@@ -5471,6 +5598,9 @@ class PendingTransactionsCompanion extends UpdateCompanion<PendingTransaction> {
     this.linkedTransactionId = const Value.absent(),
     required String updatedAt,
     this.deletedAt = const Value.absent(),
+    this.receivedAt = const Value.absent(),
+    this.cardLast4 = const Value.absent(),
+    this.accountLast4 = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        source = Value(source),
@@ -5506,6 +5636,9 @@ class PendingTransactionsCompanion extends UpdateCompanion<PendingTransaction> {
     Expression<String>? linkedTransactionId,
     Expression<String>? updatedAt,
     Expression<String>? deletedAt,
+    Expression<String>? receivedAt,
+    Expression<String>? cardLast4,
+    Expression<String>? accountLast4,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -5538,6 +5671,9 @@ class PendingTransactionsCompanion extends UpdateCompanion<PendingTransaction> {
         'linked_transaction_id': linkedTransactionId,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (deletedAt != null) 'deleted_at': deletedAt,
+      if (receivedAt != null) 'received_at': receivedAt,
+      if (cardLast4 != null) 'card_last4': cardLast4,
+      if (accountLast4 != null) 'account_last4': accountLast4,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -5568,6 +5704,9 @@ class PendingTransactionsCompanion extends UpdateCompanion<PendingTransaction> {
     Value<String?>? linkedTransactionId,
     Value<String>? updatedAt,
     Value<String?>? deletedAt,
+    Value<String?>? receivedAt,
+    Value<String?>? cardLast4,
+    Value<String?>? accountLast4,
     Value<int>? rowid,
   }) {
     return PendingTransactionsCompanion(
@@ -5596,6 +5735,9 @@ class PendingTransactionsCompanion extends UpdateCompanion<PendingTransaction> {
       linkedTransactionId: linkedTransactionId ?? this.linkedTransactionId,
       updatedAt: updatedAt ?? this.updatedAt,
       deletedAt: deletedAt ?? this.deletedAt,
+      receivedAt: receivedAt ?? this.receivedAt,
+      cardLast4: cardLast4 ?? this.cardLast4,
+      accountLast4: accountLast4 ?? this.accountLast4,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -5684,6 +5826,15 @@ class PendingTransactionsCompanion extends UpdateCompanion<PendingTransaction> {
     if (deletedAt.present) {
       map['deleted_at'] = Variable<String>(deletedAt.value);
     }
+    if (receivedAt.present) {
+      map['received_at'] = Variable<String>(receivedAt.value);
+    }
+    if (cardLast4.present) {
+      map['card_last4'] = Variable<String>(cardLast4.value);
+    }
+    if (accountLast4.present) {
+      map['account_last4'] = Variable<String>(accountLast4.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -5718,6 +5869,9 @@ class PendingTransactionsCompanion extends UpdateCompanion<PendingTransaction> {
           ..write('linkedTransactionId: $linkedTransactionId, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
+          ..write('receivedAt: $receivedAt, ')
+          ..write('cardLast4: $cardLast4, ')
+          ..write('accountLast4: $accountLast4, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -13367,6 +13521,9 @@ typedef $$PendingTransactionsTableCreateCompanionBuilder =
       Value<String?> linkedTransactionId,
       required String updatedAt,
       Value<String?> deletedAt,
+      Value<String?> receivedAt,
+      Value<String?> cardLast4,
+      Value<String?> accountLast4,
       Value<int> rowid,
     });
 typedef $$PendingTransactionsTableUpdateCompanionBuilder =
@@ -13396,6 +13553,9 @@ typedef $$PendingTransactionsTableUpdateCompanionBuilder =
       Value<String?> linkedTransactionId,
       Value<String> updatedAt,
       Value<String?> deletedAt,
+      Value<String?> receivedAt,
+      Value<String?> cardLast4,
+      Value<String?> accountLast4,
       Value<int> rowid,
     });
 
@@ -13530,6 +13690,21 @@ class $$PendingTransactionsTableFilterComposer
 
   ColumnFilters<String> get deletedAt => $composableBuilder(
     column: $table.deletedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get receivedAt => $composableBuilder(
+    column: $table.receivedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get cardLast4 => $composableBuilder(
+    column: $table.cardLast4,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get accountLast4 => $composableBuilder(
+    column: $table.accountLast4,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -13667,6 +13842,21 @@ class $$PendingTransactionsTableOrderingComposer
     column: $table.deletedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get receivedAt => $composableBuilder(
+    column: $table.receivedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get cardLast4 => $composableBuilder(
+    column: $table.cardLast4,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get accountLast4 => $composableBuilder(
+    column: $table.accountLast4,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$PendingTransactionsTableAnnotationComposer
@@ -13788,6 +13978,19 @@ class $$PendingTransactionsTableAnnotationComposer
 
   GeneratedColumn<String> get deletedAt =>
       $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get receivedAt => $composableBuilder(
+    column: $table.receivedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get cardLast4 =>
+      $composableBuilder(column: $table.cardLast4, builder: (column) => column);
+
+  GeneratedColumn<String> get accountLast4 => $composableBuilder(
+    column: $table.accountLast4,
+    builder: (column) => column,
+  );
 }
 
 class $$PendingTransactionsTableTableManager
@@ -13858,6 +14061,9 @@ class $$PendingTransactionsTableTableManager
                 Value<String?> linkedTransactionId = const Value.absent(),
                 Value<String> updatedAt = const Value.absent(),
                 Value<String?> deletedAt = const Value.absent(),
+                Value<String?> receivedAt = const Value.absent(),
+                Value<String?> cardLast4 = const Value.absent(),
+                Value<String?> accountLast4 = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => PendingTransactionsCompanion(
                 id: id,
@@ -13885,6 +14091,9 @@ class $$PendingTransactionsTableTableManager
                 linkedTransactionId: linkedTransactionId,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
+                receivedAt: receivedAt,
+                cardLast4: cardLast4,
+                accountLast4: accountLast4,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -13914,6 +14123,9 @@ class $$PendingTransactionsTableTableManager
                 Value<String?> linkedTransactionId = const Value.absent(),
                 required String updatedAt,
                 Value<String?> deletedAt = const Value.absent(),
+                Value<String?> receivedAt = const Value.absent(),
+                Value<String?> cardLast4 = const Value.absent(),
+                Value<String?> accountLast4 = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => PendingTransactionsCompanion.insert(
                 id: id,
@@ -13941,6 +14153,9 @@ class $$PendingTransactionsTableTableManager
                 linkedTransactionId: linkedTransactionId,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
+                receivedAt: receivedAt,
+                cardLast4: cardLast4,
+                accountLast4: accountLast4,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

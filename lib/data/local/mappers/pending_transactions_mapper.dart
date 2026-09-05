@@ -40,6 +40,9 @@ class PendingTransactionsMapper {
       linkedTransactionId: Value<String?>(pending.linkedTransactionId),
       updatedAt: Value<String>(_timestampOrFallback(updatedAt ?? pending.createdAt)),
       deletedAt: Value<String?>(deletedAt),
+      receivedAt: Value<String?>(pending.receivedAt),
+      cardLast4: Value<String?>(pending.cardLast4),
+      accountLast4: Value<String?>(pending.accountLast4),
     );
   }
 
@@ -68,6 +71,9 @@ class PendingTransactionsMapper {
       requiresReview: row.requiresReview,
       isRead: row.isRead,
       linkedTransactionId: row.linkedTransactionId,
+      receivedAt: row.receivedAt,
+      cardLast4: row.cardLast4,
+      accountLast4: row.accountLast4,
     );
   }
 

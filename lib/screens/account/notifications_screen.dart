@@ -950,6 +950,16 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                           runSpacing: 6,
                           children: <Widget>[
                             _badge(context, statusLabel, statusColor),
+                            if (item.status == CaptureStatus.pendingReview &&
+                                item.ignoreReason != null &&
+                                item.ignoreReason!.startsWith('Possible duplicate'))
+                              _badge(
+                                context,
+                                _isArabic(context)
+                                    ? 'تكرار محتمل'
+                                    : 'Possible Duplicate',
+                                tokens.colors.warning,
+                              ),
                             _badge(
                               context,
                               _isArabic(context)

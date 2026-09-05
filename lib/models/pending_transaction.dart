@@ -38,6 +38,9 @@ class PendingTransaction {
     this.requiresReview = true,
     this.isRead = false,
     this.linkedTransactionId,
+    this.receivedAt,
+    this.cardLast4,
+    this.accountLast4,
   });
 
   final String id;
@@ -64,6 +67,9 @@ class PendingTransaction {
   final bool requiresReview;
   final bool isRead;
   final String? linkedTransactionId;
+  final String? receivedAt;
+  final String? cardLast4;
+  final String? accountLast4;
 
   String get sourceDisplayLabel {
     switch (source) {
@@ -105,6 +111,9 @@ class PendingTransaction {
     bool? requiresReview,
     bool? isRead,
     String? linkedTransactionId,
+    String? receivedAt,
+    String? cardLast4,
+    String? accountLast4,
     bool clearReviewedAt = false,
     bool clearApprovalSource = false,
     bool clearLinkedTransactionId = false,
@@ -141,6 +150,9 @@ class PendingTransaction {
       linkedTransactionId: clearLinkedTransactionId
           ? null
           : linkedTransactionId ?? this.linkedTransactionId,
+      receivedAt: receivedAt ?? this.receivedAt,
+      cardLast4: cardLast4 ?? this.cardLast4,
+      accountLast4: accountLast4 ?? this.accountLast4,
     );
   }
 
@@ -174,6 +186,11 @@ class PendingTransaction {
       requiresReview: _asBool(json['requiresReview'] ?? true),
       isRead: _asBool(json['isRead'] ?? false),
       linkedTransactionId: json['linkedTransactionId']?.toString(),
+      receivedAt: normalizeNullableTimestampText(
+        json['receivedAt']?.toString(),
+      ),
+      cardLast4: json['cardLast4']?.toString(),
+      accountLast4: json['accountLast4']?.toString(),
     );
   }
 
@@ -206,6 +223,9 @@ class PendingTransaction {
       'isRead': isRead,
       if (linkedTransactionId != null)
         'linkedTransactionId': linkedTransactionId,
+      if (receivedAt != null) 'receivedAt': receivedAt,
+      if (cardLast4 != null) 'cardLast4': cardLast4,
+      if (accountLast4 != null) 'accountLast4': accountLast4,
     };
   }
 
@@ -270,7 +290,10 @@ class PendingTransaction {
         other.detectedBank == detectedBank &&
         other.requiresReview == requiresReview &&
         other.isRead == isRead &&
-        other.linkedTransactionId == linkedTransactionId;
+        other.linkedTransactionId == linkedTransactionId &&
+        other.receivedAt == receivedAt &&
+        other.cardLast4 == cardLast4 &&
+        other.accountLast4 == accountLast4;
   }
 
   @override
@@ -300,6 +323,10 @@ class PendingTransaction {
       requiresReview,
       isRead,
       linkedTransactionId,
+      receivedAt,
+      cardLast4,
+      accountLast4,
     ]);
   }
+
 }

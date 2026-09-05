@@ -561,6 +561,58 @@ class _ReviewPendingTransactionScreenState
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (widget.pendingTransaction.ignoreReason != null &&
+                    widget.pendingTransaction.ignoreReason!.startsWith('Possible duplicate')) ...[
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 16.0),
+                    padding: const EdgeInsets.all(12.0),
+                    decoration: BoxDecoration(
+                      color: tokens.colors.warning.withOpacity(0.12),
+                      borderRadius: AppRadii.card,
+                      border: Border.all(
+                        color: tokens.colors.warning.withOpacity(0.4),
+                      ),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.warning_amber_rounded,
+                          color: tokens.colors.warning,
+                          size: 22,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _isArabic(context)
+                                    ? 'تنبيه: تكرار محتمل'
+                                    : 'Warning: Possible Duplicate',
+                                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                      color: tokens.colors.warning,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                _isArabic(context)
+                                    ? 'تم التقاط هذه المعاملة لأنها تشبه معاملة سابقة قريبة جداً في التوقيت والتفاصيل. تم إيقاف الموافقة التلقائية حرصاً على الدقة.'
+                                    : 'This transaction resembles a recent capture in amount, merchant, and timing. Auto-approval was suppressed. Please review carefully before approving.',
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: tokens.colors.textSecondary,
+                                      height: 1.3,
+                                    ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 // Read-only Details Section
                 Card(
                   color: tokens.colors.hero,
@@ -987,5 +1039,9 @@ class _ReviewPendingTransactionScreenState
         borderSide: BorderSide(color: tokens.colors.gold),
       ),
     );
+  }
+
+  bool _isArabic(BuildContext context) {
+    return Localizations.localeOf(context).languageCode == 'ar';
   }
 }
