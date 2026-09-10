@@ -694,12 +694,14 @@ class ZakatEngineService {
     required List<Transaction> transactions,
     required List<Saving> savings,
     String? lastRollover,
+    Set<String>? creditCardIds,
   }) {
     final String normalizedCurrency = currency.trim().toUpperCase();
     final double txnBalance = _calculateTransactionBalanceByCurrency(
       currency: normalizedCurrency,
       transactions: transactions,
       lastRollover: lastRollover,
+      creditCardIds: creditCardIds,
     );
     final double savingsContribution = savings
         .where(
@@ -718,6 +720,7 @@ class ZakatEngineService {
     required String currency,
     required List<Transaction> transactions,
     String? lastRollover,
+    Set<String>? creditCardIds,
   }) {
     final String normalizedCurrency = currency.trim().toUpperCase();
     return transactions
@@ -726,7 +729,12 @@ class ZakatEngineService {
               tx.currency.trim().toUpperCase() == normalizedCurrency,
         )
         .fold<double>(0, (double sum, Transaction tx) {
+          final bool isCardTx = creditCardIds != null
+              ? (tx.paymentSourceId != null &&
+                  creditCardIds.contains(tx.paymentSourceId))
+              : (tx.paymentSourceId ?? '').trim().isNotEmpty;
           if (tx.type == 'income') {
+            if (isCardTx) return sum;
             if (tx.rolledOver && tx.rolledAmount != null) {
               return sum + (tx.amount - tx.rolledAmount!);
             }
@@ -737,8 +745,7 @@ class ZakatEngineService {
             if (tx.transferDestinationId == 'cash') return sum + tx.amount;
             return sum;
           }
-          if (tx.type == 'expense' &&
-              (tx.paymentSourceId ?? '').trim().isNotEmpty) {
+          if (tx.type == 'expense' && isCardTx) {
             return sum;
           }
           if (lastRollover != null &&
@@ -1258,6 +1265,7 @@ class ZakatEngineService {
     required List<Transaction> transactions,
     required MarketData marketData,
     String? lastRollover,
+    Set<String>? creditCardIds,
   }) {
     // Group transactions by currency
     final Map<String, List<Transaction>> groups = <String, List<Transaction>>{};
@@ -1293,12 +1301,18 @@ class ZakatEngineService {
       final List<Map<String, dynamic>> lots = <Map<String, dynamic>>[];
 
       for (final Transaction tx in sorted) {
+        final bool isCardTx = creditCardIds != null
+            ? (tx.paymentSourceId != null &&
+                creditCardIds.contains(tx.paymentSourceId))
+            : (tx.paymentSourceId ?? '').trim().isNotEmpty;
+
         final double amountEgp = convertToEgp(
           tx.amount,
           tx.currency,
           marketData,
         );
         if (tx.type == 'income') {
+          if (isCardTx) continue;
           double effectiveAmountEgp;
           if (tx.rolledOver && tx.rolledAmount != null) {
             effectiveAmountEgp = convertToEgp(
@@ -1326,6 +1340,7 @@ class ZakatEngineService {
             'description': tx.description,
           });
         } else {
+          if (isCardTx) continue;
           if (lastRollover != null &&
               lastRollover.isNotEmpty &&
               tx.date.isNotEmpty &&

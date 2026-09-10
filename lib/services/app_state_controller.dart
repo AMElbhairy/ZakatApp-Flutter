@@ -3856,23 +3856,14 @@ class AppStateController extends ChangeNotifier {
       );
       return;
     }
-    final List<CreditCard> nextCards = _adjustCreditCardBalance(
-      cards: _state.creditCards,
-      sourceId: transaction.paymentSourceId,
-      amount: transaction.amount,
-      currency: transaction.currency,
-    );
-    final List<CreditCard> nextCardsAfterPayment = _adjustCreditCardBalance(
-      cards: nextCards,
-      sourceId: transaction.creditCardPaymentId,
-      amount: transaction.amount,
-      currency: transaction.currency,
-      multiplier: -1,
+    final List<CreditCard> nextCards = _applyTransactionCardSideEffects(
+      _state.creditCards,
+      transaction,
     );
     await updateState(
       _state.copyWith(
         transactions: <Transaction>[..._state.transactions, transaction],
-        creditCards: nextCardsAfterPayment,
+        creditCards: nextCards,
       ),
     );
   }
@@ -3940,8 +3931,20 @@ class AppStateController extends ChangeNotifier {
     final Transaction? originalTx = _state.transactions
         .where((Transaction tx) => tx.id == transaction.id)
         .firstOrNull;
+
+    // Architectural Rule: Reversal of original transaction financial side effects first
+    final List<CreditCard> cardsAfterReversal = originalTx != null
+        ? _reverseTransactionCardSideEffects(_state.creditCards, originalTx)
+        : _state.creditCards;
+
     if (transaction.type == 'expense' && transaction.paymentSourceId == null) {
-      final double originalAmount = originalTx?.amount ?? 0.0;
+      final double originalAmount = (originalTx != null &&
+              originalTx.type == 'expense' &&
+              originalTx.paymentSourceId == null &&
+              originalTx.currency.trim().toUpperCase() ==
+                  transaction.currency.trim().toUpperCase())
+          ? originalTx.amount
+          : 0.0;
       _ensureExpenseHasAvailableBalance(
         transactionId: transaction.id,
         currency: transaction.currency,
@@ -3954,20 +3957,12 @@ class AppStateController extends ChangeNotifier {
       final String ownerId = _resolveCreditCardOwnerId(
         transaction.paymentSourceId!,
       );
-      final CreditCard card = _state.creditCards.firstWhere(
+      final CreditCard card = cardsAfterReversal.firstWhere(
         (CreditCard item) => item.id == ownerId,
         orElse: () =>
             throw StateError('The selected credit card is unavailable.'),
       );
-      double available = card.availableCredit;
-      if (originalTx?.paymentSourceId != null &&
-          _resolveCreditCardOwnerId(originalTx!.paymentSourceId!) == card.id) {
-        available += _convertCurrencyAmount(
-          amount: originalTx!.amount,
-          fromCurrency: originalTx.currency,
-          toCurrency: card.currency,
-        );
-      }
+      final double available = card.availableCredit;
       final double requested = _convertCurrencyAmount(
         amount: transaction.amount,
         fromCurrency: transaction.currency,
@@ -3986,74 +3981,19 @@ class AppStateController extends ChangeNotifier {
         originalTx?.paymentSourceId == null &&
         transaction.paymentSourceId == null &&
         originalTx?.creditCardPaymentId == null &&
-        transaction.creditCardPaymentId == null) {
+        transaction.creditCardPaymentId == null &&
+        originalTx?.type != 'transfer' &&
+        transaction.type != 'transfer') {
       await _saveTransactionViaLocalRepository(
         transaction,
         fallbackState: _state.copyWith(transactions: next),
       );
       return;
     }
-    List<CreditCard> nextCards = _adjustCreditCardBalance(
-      cards: _state.creditCards,
-      sourceId: originalTx?.paymentSourceId,
-      amount: originalTx?.amount ?? 0,
-      currency: originalTx?.currency ?? transaction.currency,
-      multiplier: -1,
-    );
-    nextCards = _adjustCreditCardBalance(
-      cards: nextCards,
-      sourceId: transaction.paymentSourceId,
-      amount: transaction.amount,
-      currency: transaction.currency,
-    );
-    nextCards = _adjustCreditCardBalance(
-      cards: nextCards,
-      sourceId: originalTx?.creditCardPaymentId,
-      amount: originalTx?.amount ?? 0,
-      currency: originalTx?.currency ?? transaction.currency,
-      multiplier: 1,
-    );
-    nextCards = _adjustCreditCardBalance(
-      cards: nextCards,
-      sourceId: transaction.creditCardPaymentId,
-      amount: transaction.amount,
-      currency: transaction.currency,
-      multiplier: -1,
-    );
-    nextCards = _adjustCreditCardBalance(
-      cards: nextCards,
-      sourceId: originalTx?.transferSourceId == 'cash'
-          ? null
-          : originalTx?.transferSourceId,
-      amount: originalTx?.amount ?? 0,
-      currency: originalTx?.currency ?? transaction.currency,
-      multiplier: -1,
-    );
-    nextCards = _adjustCreditCardBalance(
-      cards: nextCards,
-      sourceId: originalTx?.transferDestinationId == 'cash'
-          ? null
-          : originalTx?.transferDestinationId,
-      amount: originalTx?.amount ?? 0,
-      currency: originalTx?.currency ?? transaction.currency,
-      multiplier: 1,
-    );
-    nextCards = _adjustCreditCardBalance(
-      cards: nextCards,
-      sourceId: transaction.transferSourceId == 'cash'
-          ? null
-          : transaction.transferSourceId,
-      amount: transaction.amount,
-      currency: transaction.currency,
-    );
-    nextCards = _adjustCreditCardBalance(
-      cards: nextCards,
-      sourceId: transaction.transferDestinationId == 'cash'
-          ? null
-          : transaction.transferDestinationId,
-      amount: transaction.amount,
-      currency: transaction.currency,
-      multiplier: -1,
+
+    final List<CreditCard> nextCards = _applyTransactionCardSideEffects(
+      cardsAfterReversal,
+      transaction,
     );
     await updateState(
       _state.copyWith(transactions: next, creditCards: nextCards),
@@ -4155,45 +4095,14 @@ class AppStateController extends ChangeNotifier {
         })
         .toList(growable: false);
 
-    final List<CreditCard> nextCreditCards = _adjustCreditCardBalance(
-      cards: _state.creditCards,
-      sourceId: txTarget.paymentSourceId,
-      amount: txTarget.amount,
-      currency: txTarget.currency,
-      multiplier: -1,
-    );
-    final List<CreditCard> nextCreditCardsAfterPayment =
-        _adjustCreditCardBalance(
-          cards: nextCreditCards,
-          sourceId: txTarget.creditCardPaymentId,
-          amount: txTarget.amount,
-          currency: txTarget.currency,
-          multiplier: 1,
-        );
-    List<CreditCard> nextCreditCardsAfterTransfer = _adjustCreditCardBalance(
-      cards: nextCreditCardsAfterPayment,
-      sourceId: txTarget.transferSourceId == 'cash'
-          ? null
-          : txTarget.transferSourceId,
-      amount: txTarget.amount,
-      currency: txTarget.currency,
-      multiplier: -1,
-    );
-    nextCreditCardsAfterTransfer = _adjustCreditCardBalance(
-      cards: nextCreditCardsAfterTransfer,
-      sourceId: txTarget.transferDestinationId == 'cash'
-          ? null
-          : txTarget.transferDestinationId,
-      amount: txTarget.amount,
-      currency: txTarget.currency,
-      multiplier: 1,
-    );
+    final List<CreditCard> nextCreditCards =
+        _reverseTransactionCardSideEffects(_state.creditCards, txTarget);
 
     await updateState(
       _state.copyWith(
         savings: nextSavings,
         transactions: nextTransactions,
-        creditCards: nextCreditCardsAfterTransfer,
+        creditCards: nextCreditCards,
       ),
     );
   }
@@ -4371,11 +4280,16 @@ class AppStateController extends ChangeNotifier {
     final List<CreditCard> adjusted = cards
         .map((CreditCard card) {
           if (card.id != ownerId) return card;
-          final double cardAmount = ZakatEngineService.convertFromEgp(
-            ZakatEngineService.convertToEgp(amount, sourceCurrency, market),
-            card.currency,
-            market,
-          );
+          final double convertedAmount = sourceCurrency == card.currency.trim().toUpperCase()
+              ? amount
+              : ZakatEngineService.convertFromEgp(
+                  ZakatEngineService.convertToEgp(amount, sourceCurrency, market),
+                  card.currency,
+                  market,
+                );
+          final double cardAmount = (convertedAmount.isFinite && !convertedAmount.isNaN)
+              ? convertedAmount
+              : amount;
           final double nextBalance =
               (card.openingBalance + (cardAmount * multiplier))
                   .clamp(0, double.infinity)
@@ -4387,6 +4301,104 @@ class AppStateController extends ChangeNotifier {
         })
         .toList(growable: false);
     return _inheritParentValues(adjusted);
+  }
+
+  List<CreditCard> _applyTransactionCardSideEffects(
+    List<CreditCard> cards,
+    Transaction tx,
+  ) {
+    List<CreditCard> result = cards;
+    if (tx.paymentSourceId != null && tx.paymentSourceId!.trim().isNotEmpty) {
+      final double mult = tx.type == 'income' ? -1.0 : 1.0;
+      result = _adjustCreditCardBalance(
+        cards: result,
+        sourceId: tx.paymentSourceId,
+        amount: tx.amount,
+        currency: tx.currency,
+        multiplier: mult,
+      );
+    }
+    if (tx.creditCardPaymentId != null &&
+        tx.creditCardPaymentId!.trim().isNotEmpty) {
+      result = _adjustCreditCardBalance(
+        cards: result,
+        sourceId: tx.creditCardPaymentId,
+        amount: tx.amount,
+        currency: tx.currency,
+        multiplier: -1,
+      );
+    }
+    if (tx.type == 'transfer' || tx.activityType == 'transfer') {
+      if (tx.transferSourceId != null && tx.transferSourceId != 'cash') {
+        result = _adjustCreditCardBalance(
+          cards: result,
+          sourceId: tx.transferSourceId,
+          amount: tx.amount,
+          currency: tx.currency,
+          multiplier: 1,
+        );
+      }
+      if (tx.transferDestinationId != null &&
+          tx.transferDestinationId != 'cash') {
+        result = _adjustCreditCardBalance(
+          cards: result,
+          sourceId: tx.transferDestinationId,
+          amount: tx.amount,
+          currency: tx.currency,
+          multiplier: -1,
+        );
+      }
+    }
+    return result;
+  }
+
+  List<CreditCard> _reverseTransactionCardSideEffects(
+    List<CreditCard> cards,
+    Transaction tx,
+  ) {
+    List<CreditCard> result = cards;
+    if (tx.paymentSourceId != null && tx.paymentSourceId!.trim().isNotEmpty) {
+      final double mult = tx.type == 'income' ? 1.0 : -1.0;
+      result = _adjustCreditCardBalance(
+        cards: result,
+        sourceId: tx.paymentSourceId,
+        amount: tx.amount,
+        currency: tx.currency,
+        multiplier: mult,
+      );
+    }
+    if (tx.creditCardPaymentId != null &&
+        tx.creditCardPaymentId!.trim().isNotEmpty) {
+      result = _adjustCreditCardBalance(
+        cards: result,
+        sourceId: tx.creditCardPaymentId,
+        amount: tx.amount,
+        currency: tx.currency,
+        multiplier: 1,
+      );
+    }
+    if (tx.type == 'transfer' || tx.activityType == 'transfer') {
+      if (tx.transferSourceId != null && tx.transferSourceId != 'cash') {
+        result = _adjustCreditCardBalance(
+          cards: result,
+          sourceId: tx.transferSourceId,
+          amount: tx.amount,
+          currency: tx.currency,
+          multiplier: -1,
+        );
+      }
+      if (tx.transferDestinationId != null &&
+          tx.transferDestinationId != 'cash') {
+        result = _adjustCreditCardBalance(
+          cards: result,
+          sourceId: tx.transferDestinationId,
+          amount: tx.amount,
+          currency: tx.currency,
+          multiplier: 1,
+        );
+      }
+    }
+    return result;
   }
 
   Future<void> _saveTransactionViaLocalRepository(
@@ -6316,7 +6328,7 @@ class AppStateController extends ChangeNotifier {
       if (originalTx?.paymentSourceId != null &&
           _resolveCreditCardOwnerId(originalTx!.paymentSourceId!) == card.id) {
         available += _convertCurrencyAmount(
-          amount: originalTx!.amount,
+          amount: originalTx.amount,
           fromCurrency: originalTx.currency,
           toCurrency: card.currency,
         );
@@ -6353,7 +6365,8 @@ class AppStateController extends ChangeNotifier {
             exchangePairId: t.exchangePairId,
             exchangeSourceIncomeId: t.exchangeSourceIncomeId,
             remainingAmount: t.remainingAmount,
-            paymentSourceId: type == 'expense' ? paymentSourceId : null,
+            paymentSourceId:
+                (type == 'expense' || type == 'income') ? paymentSourceId : null,
             creditCardPaymentId: t.creditCardPaymentId,
             activityType: type == 'transfer' ? 'transfer' : t.activityType,
             costBasis: t.costBasis,
@@ -6365,19 +6378,12 @@ class AppStateController extends ChangeNotifier {
         return t;
       }).toList();
       nextState = nextState.copyWith(transactions: nextTx);
-      List<CreditCard> nextCards = _adjustCreditCardBalance(
-        cards: nextState.creditCards,
-        sourceId: originalTx?.paymentSourceId,
-        amount: originalTx?.amount ?? 0,
-        currency: originalTx?.currency ?? currency,
-        multiplier: -1,
-      );
-      nextCards = _adjustCreditCardBalance(
-        cards: nextCards,
-        sourceId: type == 'expense' ? paymentSourceId : null,
-        amount: amount,
-        currency: currency,
-      );
+      final Transaction updatedTx = nextTx.firstWhere((t) => t.id == linkedId);
+
+      List<CreditCard> nextCards = originalTx != null
+          ? _reverseTransactionCardSideEffects(nextState.creditCards, originalTx)
+          : nextState.creditCards;
+      nextCards = _applyTransactionCardSideEffects(nextCards, updatedTx);
       nextState = nextState.copyWith(creditCards: nextCards);
     } else if (nextState.savings.any((s) => s.id == linkedId)) {
       final List<Saving> nextSav = nextState.savings.map((s) {
@@ -6595,14 +6601,13 @@ class AppStateController extends ChangeNotifier {
         description: description,
         createdAt: timestampStr,
         rolledOver: false,
-        paymentSourceId: type == 'expense' ? paymentSourceId : null,
+        paymentSourceId:
+            (type == 'expense' || type == 'income') ? paymentSourceId : null,
         activityType: type == 'transfer' ? 'transfer' : null,
       );
-      List<CreditCard> nextCards = _adjustCreditCardBalance(
-        cards: nextState.creditCards,
-        sourceId: type == 'expense' ? paymentSourceId : null,
-        amount: amount,
-        currency: currency,
+      final List<CreditCard> nextCards = _applyTransactionCardSideEffects(
+        nextState.creditCards,
+        newTx,
       );
       nextState = nextState.copyWith(
         transactions: <Transaction>[...nextState.transactions, newTx],
@@ -6851,21 +6856,47 @@ class AppStateController extends ChangeNotifier {
   }
 
   String? _resolveCreditCardIdFromMessage(String rawMessage) {
+    final List<CreditCard> activeCards = _state.creditCards
+        .where((CreditCard card) => !card.isArchived)
+        .toList(growable: false);
+
+    if (activeCards.isEmpty) return null;
+
     final String? rawReference = SmartCaptureParser.parse(
       rawMessage,
       merchantRules: _state.merchantRules,
       merchantAliases: _state.merchantAliases,
     ).cardReference;
     final String digits = (rawReference ?? '').replaceAll(RegExp(r'\D'), '');
-    if (digits.length < 4) return null;
-    final String last4 = digits.substring(digits.length - 4);
-    final List<CreditCard> matches = _state.creditCards
-        .where(
-          (CreditCard card) =>
-              !card.isArchived && card.last4Digits.trim() == last4,
-        )
-        .toList(growable: false);
-    return matches.length == 1 ? matches.single.id : null;
+    if (digits.length >= 4) {
+      final String last4 = digits.substring(digits.length - 4);
+      final List<CreditCard> matches = activeCards
+          .where(
+            (CreditCard card) => card.last4Digits.trim() == last4,
+          )
+          .toList(growable: false);
+      if (matches.length == 1) return matches.single.id;
+      // If ambiguous (multiple active cards share the last 4 digits), do not auto-select
+      if (matches.length > 1) return null;
+    }
+
+    // Conservative contextual fallback: require strict card keyword immediately preceding or following last 4
+    final List<CreditCard> directMatches = <CreditCard>[];
+    for (final CreditCard card in activeCards) {
+      final String l4 = card.last4Digits.trim();
+      if (l4.length != 4) continue;
+      final RegExp cardRegex = RegExp(
+        r'(?:(?:بطاقتك|البطاقة|بطاقة)(?:\s+الائتمانية)?(?:\s+المنتهية(?:\s+بـ|\s+ب|\s+برقم)?)?|credit\s+card|card|visa|mastercard|mada)(?:\s*(?:ending(?:\s+in)?|no\.?|num(?:ber)?|رقم)?)?[\s:\-*•#xX]{1,10}' +
+            RegExp.escape(l4) +
+            r'\b',
+        caseSensitive: false,
+      );
+      if (cardRegex.hasMatch(rawMessage)) {
+        directMatches.add(card);
+      }
+    }
+
+    return directMatches.length == 1 ? directMatches.single.id : null;
   }
 
   double _convertCurrencyAmount({
@@ -7306,9 +7337,10 @@ class AppStateController extends ChangeNotifier {
         ? SmartCaptureParser.normalizeMerchantName(parsed.merchantName!).trim()
         : '';
     final String merchantKey = normMerchant.toLowerCase();
-    final String? suggestedPaymentSourceId = parsed.type == 'expense'
-        ? _resolveCreditCardIdFromMessage(normalizedMessage)
-        : null;
+    final String? suggestedPaymentSourceId =
+        (parsed.type == 'expense' || parsed.type == 'income')
+            ? _resolveCreditCardIdFromMessage(normalizedMessage)
+            : null;
 
     CaptureAnalytics nextAnalytics = _state.captureAnalytics.copyWith(
       parsedMessages: _state.captureAnalytics.parsedMessages + 1,
@@ -7530,16 +7562,17 @@ class AppStateController extends ChangeNotifier {
         debugPrint('[Shortcut] Flutter outcome: auto_approved');
       }
 
-      final String? paymentSourceId = finalType == 'expense'
-          ? suggestedPaymentSourceId
-          : null;
+      final String? paymentSourceId =
+          (finalType == 'expense' || finalType == 'income')
+              ? suggestedPaymentSourceId
+              : null;
       if (paymentSourceId == null && finalType == 'expense') {
         _ensureExpenseHasAvailableBalance(
           transactionId: generatedId,
           currency: parsed.currency ?? 'EGP',
           amount: parsed.amount!,
         );
-      } else if (paymentSourceId != null) {
+      } else if (paymentSourceId != null && finalType == 'expense') {
         _ensureCreditCardHasAvailableLimit(
           cardId: paymentSourceId,
           amount: parsed.amount!,
@@ -7593,15 +7626,13 @@ class AppStateController extends ChangeNotifier {
         transaction,
       ];
 
+      final List<CreditCard> nextCards =
+          _applyTransactionCardSideEffects(nextState.creditCards, newTx);
+
       await updateState(
         nextState.copyWith(
           transactions: <Transaction>[...nextState.transactions, newTx],
-          creditCards: _adjustCreditCardBalance(
-            cards: nextState.creditCards,
-            sourceId: paymentSourceId,
-            amount: parsed.amount!,
-            currency: parsed.currency ?? 'EGP',
-          ),
+          creditCards: nextCards,
           pendingTransactions: nextPending,
           captureAnalytics: nextAnalytics,
         ),

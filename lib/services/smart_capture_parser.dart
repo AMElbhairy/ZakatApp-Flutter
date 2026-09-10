@@ -1775,6 +1775,61 @@ class SmartCaptureParser {
         .map((String line) => line.trim())
         .where((String line) => line.isNotEmpty)
         .toList();
+
+    // 1. Explicit key-value labeled lines (e.g. "Card: *6011 - mada", "From Card:1897*MADA", "بطاقة: ...")
+    final List<RegExp> labeledLinePatterns = <RegExp>[
+      RegExp(
+        r'(?:^|\s)(?:البطاقة\s+الائتمانية|بطاقة\s+ائتمانية)\s*[:\-]\s*(.+)$',
+        caseSensitive: false,
+      ),
+      RegExp(r'(?:^|\s)بطاقة\s*[:\-]\s*(.+)$', caseSensitive: false),
+      RegExp(
+        r'(?:^|\s)(?:from\s+card|credit\s+card|card|visa|mastercard)\s*[:\-]\s*(.+)$',
+        caseSensitive: false,
+      ),
+    ];
+    for (final String line in lines) {
+      final String lower = line.toLowerCase();
+      if (_hasMatch(lower, <String>[
+        'credit card:payment',
+        'debit: loan instalment',
+      ])) {
+        continue;
+      }
+      for (final RegExp pattern in labeledLinePatterns) {
+        final Match? match = pattern.firstMatch(line);
+        if (match == null) continue;
+        final String candidate = match.group(1)?.trim() ?? '';
+        if (candidate.isNotEmpty) {
+          return candidate;
+        }
+      }
+    }
+
+    // 2. High-precision patterns for sentences / inline text
+    // e.g. "بطاقتك الائتمانية المنتهية بـ 1234", "بطاقتك ****1234", "إلى بطاقة 1234", "card ending in 1234", "card ****1234"
+    final List<RegExp> targetedPatterns = <RegExp>[
+      RegExp(
+        r'(?:(?:تم\s+(?:رد|إيداع|اضافة|إضافة|استرداد|استرجاع)\s+المبلغ\s+إلى\s+)?(?:إلى\s+|في\s+)?(?:بطاقتك|البطاقة|بطاقة)(?:\s+الائتمانية)?(?:\s+المنتهية(?:\s+بـ|\s+برقم|\s+ب)?)?)\s*[:\-]?\s*([*xX•\d]{4,}|(?:visa|mastercard|mada)\s*[*xX•\d]{4,})',
+        caseSensitive: false,
+      ),
+      RegExp(
+        r'(?:(?:refund\s+to|credited\s+to(?:\s+your)?|deposit\s+to)\s+)?(?:credit\s+card|card|visa|mastercard)\s*(?:ending(?:\s+in)?)?\s*[:\-]?\s*([*xX•\d]{4,}|(?:visa|mastercard|mada)\s*[*xX•\d]{4,})',
+        caseSensitive: false,
+      ),
+    ];
+
+    for (final RegExp pattern in targetedPatterns) {
+      final Match? match = pattern.firstMatch(rawMessage);
+      if (match != null) {
+        final String candidate = match.group(1)?.trim() ?? '';
+        if (candidate.isNotEmpty) {
+          return candidate;
+        }
+      }
+    }
+
+    // 3. Fallback to line patterns without required colon
     final List<RegExp> patterns = <RegExp>[
       RegExp(
         r'(?:^|\s)(?:البطاقة\s+الائتمانية|بطاقة\s+ائتمانية)\s*[:\-]?\s*(.+)$',

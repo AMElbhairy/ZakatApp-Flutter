@@ -132,9 +132,20 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     } else if (categories.isEmpty) {
       _category = null;
     }
-    final List<CreditCard> creditCards = controller.state.creditCards
+    final List<CreditCard> activeCreditCards = controller.state.creditCards
         .where((CreditCard card) => !card.isArchived)
         .toList(growable: false);
+    final List<CreditCard> creditCards = <CreditCard>[
+      ...activeCreditCards,
+      if (widget.isEditMode)
+        ...controller.state.creditCards.where(
+          (CreditCard card) =>
+              card.isArchived &&
+              (card.id == widget.initialTransaction?.paymentSourceId ||
+                  card.id == widget.initialTransaction?.transferSourceId ||
+                  card.id == widget.initialTransaction?.transferDestinationId),
+        ),
+    ];
     final Map<String, CreditCard> creditCardsById = <String, CreditCard>{
       for (final CreditCard card in creditCards) card.id: card,
     };
@@ -275,20 +286,30 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                         return null;
                       },
                     ),
-                  if (!widget.cashMode && _type == 'expense') ...[
+                  if (!widget.cashMode &&
+                      (_type == 'expense' || _type == 'income')) ...[
                     const SizedBox(height: 16),
                     CompactDropdownFormField<String>(
-                      key: const Key('deductFromField'),
+                      key: Key(
+                        _type == 'expense'
+                            ? 'deductFromField'
+                            : 'depositToField',
+                      ),
                       value: _deductFrom,
-                      labelText: context.l10n.tr('deduct_from'),
+                      labelText: context.l10n.tr(
+                        _type == 'expense' ? 'deduct_from' : 'deposit_to',
+                      ),
                       items: paymentSources,
                       itemLabel: (String source) {
                         if (source == 'cash') return context.l10n.tr('cash');
-                        final CreditCard card = creditCardsById[source]!;
+                        final CreditCard? card = creditCardsById[source];
+                        if (card == null) return source;
                         final String name = card.cardNickname.trim().isEmpty
                             ? card.bankName
                             : '${card.bankName} - ${card.cardNickname}';
-                        return '$name **** ${card.last4Digits}';
+                        final String archivedSuffix =
+                            card.isArchived ? ' (Archived)' : '';
+                        return '$name **** ${card.last4Digits}$archivedSuffix';
                       },
                       onChanged: (String value) {
                         setState(() => _deductFrom = value);
@@ -424,9 +445,10 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                                     original?.exchangeSourceIncomeId,
                                 remainingAmount: original?.remainingAmount,
                                 paymentSourceId:
-                                    _type == 'expense' && _deductFrom != 'cash'
-                                    ? _deductFrom
-                                    : null,
+                                    (_type == 'expense' || _type == 'income') &&
+                                            _deductFrom != 'cash'
+                                        ? _deductFrom
+                                        : null,
                                 creditCardPaymentId: _type == 'expense'
                                     ? original?.creditCardPaymentId
                                     : null,

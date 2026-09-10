@@ -229,9 +229,11 @@ class _ReviewPendingTransactionScreenState
           category: _selectedCategory ?? '',
           description: _descriptionController.text.trim(),
           date: dateStr,
-          paymentSourceId: _selectedType == 'expense' && _deductFrom != 'cash'
-              ? _deductFrom
-              : null,
+          paymentSourceId:
+              (_selectedType == 'expense' || _selectedType == 'income') &&
+                      _deductFrom != 'cash'
+                  ? _deductFrom
+                  : null,
         );
       } else {
         await controller.approvePendingTransaction(
@@ -242,9 +244,11 @@ class _ReviewPendingTransactionScreenState
           category: _selectedCategory ?? '',
           description: _descriptionController.text.trim(),
           date: dateStr,
-          paymentSourceId: _selectedType == 'expense' && _deductFrom != 'cash'
-              ? _deductFrom
-              : null,
+          paymentSourceId:
+              (_selectedType == 'expense' || _selectedType == 'income') &&
+                      _deductFrom != 'cash'
+                  ? _deductFrom
+                  : null,
         );
       }
 
@@ -523,9 +527,19 @@ class _ReviewPendingTransactionScreenState
     final tokens = context.premiumTokens;
     final state = context.watch<AppStateController>().state;
     final availableCategories = _getAvailableCategories(state.categories);
-    final List<CreditCard> creditCards = state.creditCards
+    final List<CreditCard> activeCreditCards = state.creditCards
         .where((CreditCard card) => !card.isArchived)
         .toList(growable: false);
+    final String? historicalSourceId =
+        widget.pendingTransaction.suggestedPaymentSourceId;
+    final List<CreditCard> creditCards = <CreditCard>[
+      ...activeCreditCards,
+      if (historicalSourceId != null)
+        ...state.creditCards.where(
+          (CreditCard card) =>
+              card.isArchived && card.id == historicalSourceId,
+        ),
+    ];
     final List<String> paymentSources = <String>[
       'cash',
       ...creditCards.map((CreditCard card) => card.id),
@@ -766,17 +780,23 @@ class _ReviewPendingTransactionScreenState
                   const SizedBox(height: 16),
                 ],
 
-                if (_selectedType == 'expense') ...[
+                if (_selectedType == 'expense' ||
+                    _selectedType == 'income') ...[
                   _buildDropdownField<String>(
-                    label: context.l10n.tr('deduct_from'),
+                    label: context.l10n.tr(
+                      _selectedType == 'expense' ? 'deduct_from' : 'deposit_to',
+                    ),
                     value: _deductFrom,
                     items: paymentSources,
                     itemLabel: (String source) {
                       if (source == 'cash') return context.l10n.tr('cash');
-                      final CreditCard card = creditCards.firstWhere(
-                        (CreditCard item) => item.id == source,
-                      );
-                      return '${card.bankName} ${card.cardNickname} **** ${card.last4Digits}';
+                      final CreditCard? card = creditCards
+                          .where((CreditCard item) => item.id == source)
+                          .firstOrNull;
+                      if (card == null) return source;
+                      final String archivedSuffix =
+                          card.isArchived ? ' (Archived)' : '';
+                      return '${card.bankName} ${card.cardNickname} **** ${card.last4Digits}$archivedSuffix';
                     },
                     onChanged: (String source) {
                       setState(() => _deductFrom = source);

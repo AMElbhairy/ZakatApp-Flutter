@@ -4,6 +4,7 @@ import '../models/app_state.dart';
 import '../models/investment_asset.dart';
 import '../models/transaction.dart';
 import '../models/saving.dart';
+import '../models/credit_card.dart';
 import '../core/utils/amount_parser.dart';
 import '../core/services/zakat_engine.dart';
 
@@ -171,6 +172,8 @@ class ReconciliationService {
             transactions: transactionsList,
             currency: normalizedCurrency,
             lastRollover: state.lastRollover,
+            creditCardIds:
+                state.creditCards.map((CreditCard c) => c.id).toSet(),
           )
           .where((lot) => lot.remainingAmount >= minAmount)
           .map(
@@ -308,6 +311,7 @@ class ReconciliationService {
     required List<Transaction> transactions,
     required String currency,
     String? lastRollover,
+    Set<String>? creditCardIds,
   }) {
     final Stopwatch? stopwatch = kDebugMode || kProfileMode
         ? (Stopwatch()..start())
@@ -356,7 +360,12 @@ class ReconciliationService {
         }
         if (tx.transferSourceId != 'cash') continue;
       }
+      final bool isCardTx = creditCardIds != null
+          ? (tx.paymentSourceId != null &&
+              creditCardIds.contains(tx.paymentSourceId))
+          : (tx.paymentSourceId ?? '').trim().isNotEmpty;
       if (tx.type == 'income') {
+        if (isCardTx) continue;
         double effectiveAmount = amount;
         if (tx.rolledOver && (tx.rolledAmount ?? 0) > 0) {
           effectiveAmount = amount - tx.rolledAmount!;
@@ -375,7 +384,7 @@ class ReconciliationService {
           ),
         );
       } else if (tx.type == 'expense' || tx.type == 'transfer') {
-        if ((tx.paymentSourceId ?? '').trim().isNotEmpty) continue;
+        if (isCardTx) continue;
         if (lastRollover != null &&
             lastRollover.isNotEmpty &&
             tx.date.isNotEmpty &&
@@ -404,12 +413,17 @@ class ReconciliationService {
     double transactionBalance = 0;
     for (final _IndexedTransaction entry in ordered) {
       final Transaction tx = entry.transaction;
+      final bool isCardTx = creditCardIds != null
+          ? (tx.paymentSourceId != null &&
+              creditCardIds.contains(tx.paymentSourceId))
+          : (tx.paymentSourceId ?? '').trim().isNotEmpty;
       if (tx.type == 'income') {
+        if (isCardTx) continue;
         transactionBalance += tx.rolledOver && (tx.rolledAmount ?? 0) > 0
             ? tx.amount - tx.rolledAmount!
             : tx.amount;
       } else if (tx.type == 'expense') {
-        if ((tx.paymentSourceId ?? '').trim().isNotEmpty) continue;
+        if (isCardTx) continue;
         if (lastRollover != null &&
             lastRollover.isNotEmpty &&
             tx.date.isNotEmpty &&
@@ -471,11 +485,13 @@ class ReconciliationService {
     required List<Transaction> transactions,
     required String currency,
     String? lastRollover,
+    Set<String>? creditCardIds,
   }) {
     return _getNetIncomeLotsForTypedTransactions(
       transactions: transactions,
       currency: currency,
       lastRollover: lastRollover,
+      creditCardIds: creditCardIds,
     );
   }
 
@@ -768,7 +784,9 @@ class ReconciliationService {
           if (destination == 'cash') runningBalance += amount;
           if (source != 'cash') continue;
         }
+        final bool isCardTx = (tx['paymentSourceId'] ?? '').toString().trim().isNotEmpty;
         if (type == 'income') {
+          if (isCardTx) continue;
           if (_asBool(tx['rolledOver']) && _asDouble(tx['rolledAmount']) > 0) {
             runningBalance += (amount - _asDouble(tx['rolledAmount'])).clamp(
               0,
@@ -780,7 +798,7 @@ class ReconciliationService {
           continue;
         }
         if (type != 'expense' && type != 'transfer') continue;
-        if ((tx['paymentSourceId'] ?? '').toString().trim().isNotEmpty) {
+        if (isCardTx) {
           continue;
         }
 
@@ -885,7 +903,9 @@ class ReconciliationService {
         }
         if (source != 'cash') continue;
       }
+      final bool isCardTx = (tx['paymentSourceId'] ?? '').toString().trim().isNotEmpty;
       if (type == 'income') {
+        if (isCardTx) continue;
         double effectiveAmount = amount;
         if (_asBool(tx['rolledOver']) && _asDouble(tx['rolledAmount']) > 0) {
           effectiveAmount = amount - _asDouble(tx['rolledAmount']);
@@ -902,7 +922,7 @@ class ReconciliationService {
           'description': tx['description'],
         });
       } else if (type == 'expense' || type == 'transfer') {
-        if ((tx['paymentSourceId'] ?? '').toString().trim().isNotEmpty) {
+        if (isCardTx) {
           continue;
         }
         final String date = (tx['date'] ?? '').toString();
@@ -955,14 +975,16 @@ class ReconciliationService {
     ) {
       final String type = (tx['type'] ?? '').toString();
       final double amount = _asDouble(tx['amount']);
+      final bool isCardTx = (tx['paymentSourceId'] ?? '').toString().trim().isNotEmpty;
       if (type == 'income') {
+        if (isCardTx) return sum;
         if (_asBool(tx['rolledOver']) && _asDouble(tx['rolledAmount']) > 0) {
           return sum + (amount - _asDouble(tx['rolledAmount']));
         }
         return sum + amount;
       }
       if (type == 'expense') {
-        if ((tx['paymentSourceId'] ?? '').toString().trim().isNotEmpty) {
+        if (isCardTx) {
           return sum;
         }
         final String date = (tx['date'] ?? '').toString();
@@ -1785,10 +1807,6 @@ class ReconciliationService {
     return false;
   }
 
-  Set<String> _asStringSet(dynamic value) {
-    if (value is! List) return <String>{};
-    return value.map((dynamic e) => e.toString()).toSet();
-  }
 
   List<String> _asStringList(dynamic value) {
     if (value is! List) return <String>[];
