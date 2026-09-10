@@ -176,6 +176,10 @@ class ZakatEngineService {
         return '€';
       case 'GBP':
         return '£';
+      case 'AUD':
+        return r'A$';
+      case 'CAD':
+        return r'C$';
       case 'TRY':
         return '₺';
       case 'MYR':
@@ -193,11 +197,11 @@ class ZakatEngineService {
     if (!Platform.isAndroid) {
       return '⃁';
     }
-    final Match? match = RegExp(r'Android (\d+)').firstMatch(
-      Platform.operatingSystemVersion,
-    );
+    final Match? match = RegExp(
+      r'Android (\d+)',
+    ).firstMatch(Platform.operatingSystemVersion);
     final int androidVersion = int.tryParse(match?.group(1) ?? '') ?? 0;
-    return androidVersion >= 16 ? '⃁' : 'SR';
+    return androidVersion >= 16 ? '⃁' : 'SAR';
   }
 
   static String formatCurrency(
@@ -236,6 +240,8 @@ class ZakatEngineService {
     'SAR',
     'EUR',
     'GBP',
+    'AUD',
+    'CAD',
     'AED',
     'KWD',
     'QAR',
@@ -602,10 +608,17 @@ class ZakatEngineService {
     required InvestmentAsset asset,
     required MarketData marketData,
   }) {
+    final String type = normaliseInvestmentType(asset.investmentType);
+    if (type == 'liability' || type == 'loan') {
+      return 0.0;
+    }
+    final double rate = type == 'car'
+        ? -asset.inflationRateAnnual
+        : asset.inflationRateAnnual;
     final double fallbackMarketValue = estimateInflationAdjustedValue(
       originalPrice: asset.originalPrice,
       valuationDate: asset.valuationDate,
-      inflationRateAnnual: asset.inflationRateAnnual,
+      inflationRateAnnual: rate,
       ownershipType: 'fully_owned',
       paidAmount: asset.originalPrice,
     );
@@ -615,9 +628,7 @@ class ZakatEngineService {
         ? math.max(0, mv)
         : math.max(0, fallbackMarketValue);
 
-    final double share = asset.ownershipSharePct.isFinite
-        ? math.min(1, math.max(0, asset.ownershipSharePct / 100))
-        : 1;
+    final double share = 1.0;
     effectiveMarketValue *= share;
 
     return convertToEgp(effectiveMarketValue, asset.currency, marketData);
@@ -683,12 +694,14 @@ class ZakatEngineService {
     required List<Transaction> transactions,
     required List<Saving> savings,
     String? lastRollover,
+    Set<String>? creditCardIds,
   }) {
     final String normalizedCurrency = currency.trim().toUpperCase();
     final double txnBalance = _calculateTransactionBalanceByCurrency(
       currency: normalizedCurrency,
       transactions: transactions,
       lastRollover: lastRollover,
+      creditCardIds: creditCardIds,
     );
     final double savingsContribution = savings
         .where(
@@ -707,6 +720,7 @@ class ZakatEngineService {
     required String currency,
     required List<Transaction> transactions,
     String? lastRollover,
+    Set<String>? creditCardIds,
   }) {
     final String normalizedCurrency = currency.trim().toUpperCase();
     return transactions
@@ -715,13 +729,23 @@ class ZakatEngineService {
               tx.currency.trim().toUpperCase() == normalizedCurrency,
         )
         .fold<double>(0, (double sum, Transaction tx) {
+          final bool isCardTx = creditCardIds != null
+              ? (tx.paymentSourceId != null &&
+                  creditCardIds.contains(tx.paymentSourceId))
+              : (tx.paymentSourceId ?? '').trim().isNotEmpty;
           if (tx.type == 'income') {
+            if (isCardTx) return sum;
             if (tx.rolledOver && tx.rolledAmount != null) {
               return sum + (tx.amount - tx.rolledAmount!);
             }
             return sum + tx.amount;
           }
           if (tx.type == 'transfer') {
+            if (tx.transferSourceId == 'cash') return sum - tx.amount;
+            if (tx.transferDestinationId == 'cash') return sum + tx.amount;
+            return sum;
+          }
+          if (tx.type == 'expense' && isCardTx) {
             return sum;
           }
           if (lastRollover != null &&
@@ -913,8 +937,7 @@ class ZakatEngineService {
     return investments
         .where(
           (InvestmentAsset asset) =>
-              normaliseInvestmentType(asset.investmentType) !=
-              'company_investment',
+              normaliseInvestmentType(asset.investmentType) == 'real_estate',
         )
         .fold<double>(0, (double sum, InvestmentAsset asset) {
           return sum +
@@ -1242,6 +1265,7 @@ class ZakatEngineService {
     required List<Transaction> transactions,
     required MarketData marketData,
     String? lastRollover,
+    Set<String>? creditCardIds,
   }) {
     // Group transactions by currency
     final Map<String, List<Transaction>> groups = <String, List<Transaction>>{};
@@ -1277,12 +1301,18 @@ class ZakatEngineService {
       final List<Map<String, dynamic>> lots = <Map<String, dynamic>>[];
 
       for (final Transaction tx in sorted) {
+        final bool isCardTx = creditCardIds != null
+            ? (tx.paymentSourceId != null &&
+                creditCardIds.contains(tx.paymentSourceId))
+            : (tx.paymentSourceId ?? '').trim().isNotEmpty;
+
         final double amountEgp = convertToEgp(
           tx.amount,
           tx.currency,
           marketData,
         );
         if (tx.type == 'income') {
+          if (isCardTx) continue;
           double effectiveAmountEgp;
           if (tx.rolledOver && tx.rolledAmount != null) {
             effectiveAmountEgp = convertToEgp(
@@ -1310,6 +1340,7 @@ class ZakatEngineService {
             'description': tx.description,
           });
         } else {
+          if (isCardTx) continue;
           if (lastRollover != null &&
               lastRollover.isNotEmpty &&
               tx.date.isNotEmpty &&

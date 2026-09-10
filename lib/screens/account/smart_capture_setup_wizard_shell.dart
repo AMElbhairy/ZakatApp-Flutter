@@ -6,6 +6,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_theme_extensions.dart';
+import '../../features/auth/auth_brand_ui.dart';
 
 class SmartCaptureSetupWizardScaffold extends StatelessWidget {
   const SmartCaptureSetupWizardScaffold({
@@ -70,32 +71,10 @@ class SmartCaptureSetupWizardScaffold extends StatelessWidget {
     );
 
     return Scaffold(
-      backgroundColor: AppColors.backgroundHeroDark,
+      backgroundColor: Colors.transparent,
       body: Stack(
         children: <Widget>[
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: <Color>[
-                    AppColors.backgroundHeroDark,
-                    AppColors.backgroundDark.withValues(alpha: 0.96),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          Positioned.fill(
-            child: IgnorePointer(
-              child: CustomPaint(
-                painter: _SmartCapturePatternPainter(
-                  color: tokens.colors.onHero.withValues(alpha: 0.018),
-                ),
-              ),
-            ),
-          ),
+          const AuthBrandBackdrop(tone: AuthBackdropTone.shared),
           SafeArea(
             child: Padding(
               padding: horizontalPadding,
@@ -216,9 +195,7 @@ class SmartCaptureSetupWizardScaffold extends StatelessWidget {
                                                         .textTheme
                                                         .headlineMedium
                                                         ?.copyWith(
-                                                          color: tokens
-                                                              .colors
-                                                              .onHero,
+                                                          color: tokens.colors.textPrimary,
                                                           fontSize: 34,
                                                           fontWeight:
                                                               FontWeight.w700,
@@ -226,7 +203,7 @@ class SmartCaptureSetupWizardScaffold extends StatelessWidget {
                                                           height: 1.02,
                                                         ),
                                                   ),
-                                                  const SizedBox(height: 4),
+                                                  const SizedBox(height: 8),
                                                   Text(
                                                     subtitle,
                                                     textAlign: TextAlign.center,
@@ -234,18 +211,15 @@ class SmartCaptureSetupWizardScaffold extends StatelessWidget {
                                                         .textTheme
                                                         .bodyLarge
                                                         ?.copyWith(
-                                                          color: tokens
-                                                              .colors
-                                                              .onHero
-                                                              .withValues(
-                                                                alpha: 0.75,
-                                                              ),
+                                                          color: Theme.of(context).brightness == Brightness.dark
+                                                              ? tokens.colors.textSecondary
+                                                              : const Color(0xFF4A5D5A),
                                                           height: 1.45,
                                                         ),
                                                   ),
                                                   if (showIndicator) ...<Widget>[
                                                     const SizedBox(
-                                                      height: AppSpacing.xs,
+                                                      height: 16,
                                                     ),
                                                     _SmartCapturePageDots(
                                                       index: pageIndex,
@@ -253,9 +227,19 @@ class SmartCaptureSetupWizardScaffold extends StatelessWidget {
                                                     ),
                                                   ],
                                                   const SizedBox(
-                                                    height: AppSpacing.xs,
+                                                    height: 28,
                                                   ),
-                                                  body,
+                                                  Container(
+                                                    width: double.infinity,
+                                                    padding: const EdgeInsets.all(20.0),
+                                                    decoration: BoxDecoration(
+                                                      color: tokens.colors.card,
+                                                      borderRadius: BorderRadius.circular(AppRadii.md),
+                                                      border: Border.all(color: tokens.colors.divider),
+                                                      boxShadow: tokens.softShadow,
+                                                    ),
+                                                    child: body,
+                                                  ),
                                                 ],
                                               ),
                                             ),
@@ -270,7 +254,7 @@ class SmartCaptureSetupWizardScaffold extends StatelessWidget {
                           },
                     ),
                   ),
-                  const SizedBox(height: AppSpacing.xs),
+                  const SizedBox(height: 24),
                   _SmartCaptureFooterActions(
                     primaryLabel: primaryLabel,
                     onPrimary: onPrimary,
@@ -397,26 +381,7 @@ class _SmartCaptureHeroStage extends StatelessWidget {
                 ),
               ),
             ),
-            Positioned.fill(
-              child: IgnorePointer(
-                child: Align(
-                  alignment: Alignment.bottomCenter,
-                  child: Container(
-                    height: 126,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: <Color>[
-                          AppColors.transparent,
-                          AppColors.backgroundHeroDark.withValues(alpha: 0.56),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
+
           ],
         );
       },
@@ -595,21 +560,22 @@ class _ChecklistLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tokens = context.premiumTokens;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         Icon(
           Icons.check_circle_rounded,
           size: 20,
-          color: tokens.colors.success,
+          color: tokens.colors.gold,
         ),
-        const SizedBox(width: AppSpacing.xs),
+        const SizedBox(width: AppSpacing.sm),
         Expanded(
           child: Text(
             text,
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              color: tokens.colors.onHero.withValues(alpha: 0.84),
-              height: 1.35,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: isDark ? tokens.colors.textSecondary : const Color(0xFF4A5D5A),
+              height: 1.45,
             ),
           ),
         ),
@@ -691,6 +657,8 @@ class PremiumStatusBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.premiumTokens;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
@@ -698,20 +666,20 @@ class PremiumStatusBody extends StatelessWidget {
           title,
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            color: context.premiumTokens.colors.onHero.withValues(alpha: 0.90),
+            color: tokens.colors.textPrimary,
             fontWeight: FontWeight.w700,
           ),
         ),
-        const SizedBox(height: AppSpacing.xs),
+        const SizedBox(height: 8),
         Text(
           subtitle,
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: context.premiumTokens.colors.onHero.withValues(alpha: 0.74),
+            color: isDark ? tokens.colors.textSecondary : const Color(0xFF4A5D5A),
             height: 1.35,
           ),
         ),
-        const SizedBox(height: AppSpacing.sm),
+        const SizedBox(height: 16),
         PremiumChecklist(items: checks),
       ],
     );
@@ -768,7 +736,7 @@ class _SmartCaptureFooterActions extends StatelessWidget {
   Widget build(BuildContext context) {
     final tokens = context.premiumTokens;
     return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      padding: const EdgeInsets.only(bottom: 16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -776,7 +744,7 @@ class _SmartCaptureFooterActions extends StatelessWidget {
           if (showSecondary &&
               onSecondary != null &&
               secondaryLabel != null) ...<Widget>[
-            const SizedBox(height: AppSpacing.xs),
+            const SizedBox(height: 12),
             Align(
               alignment: AlignmentDirectional.center,
               child: TextButton(
@@ -825,8 +793,8 @@ class _SmartCapturePrimaryButton extends StatelessWidget {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: <Color>[
-                    tokens.colors.selected.withValues(alpha: 1.0),
-                    tokens.colors.selected.withValues(alpha: 0.92),
+                    tokens.colors.gold,
+                    tokens.colors.gold.withValues(alpha: 0.92),
                   ],
                 ),
                 borderRadius: BorderRadius.circular(AppRadii.x2l),
@@ -839,7 +807,7 @@ class _SmartCapturePrimaryButton extends StatelessWidget {
                 child: Text(
                   label,
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: Theme.of(context).colorScheme.onSecondary,
+                    color: Colors.white,
                     fontWeight: FontWeight.w700,
                     letterSpacing: -0.1,
                   ),
@@ -885,81 +853,4 @@ class _CaptionPill extends StatelessWidget {
   }
 }
 
-class _SmartCapturePatternPainter extends CustomPainter {
-  const _SmartCapturePatternPainter({required this.color});
 
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final Paint paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0
-      ..isAntiAlias = true;
-    final Paint fill = Paint()
-      ..color = color.withValues(alpha: 0.005)
-      ..style = PaintingStyle.fill
-      ..isAntiAlias = true;
-
-    const double step = 88;
-    for (double y = -step; y < size.height + step; y += step) {
-      for (double x = -step; x < size.width + step; x += step) {
-        final Offset center = Offset(x + (y / step).floorEven() * 12, y);
-        _drawMotif(canvas, center, paint, fill);
-      }
-    }
-  }
-
-  void _drawMotif(Canvas canvas, Offset center, Paint paint, Paint fill) {
-    const double radius = 22;
-    final Path diamond = Path()
-      ..moveTo(center.dx, center.dy - radius)
-      ..lineTo(center.dx + radius, center.dy)
-      ..lineTo(center.dx, center.dy + radius)
-      ..lineTo(center.dx - radius, center.dy)
-      ..close();
-    canvas.drawPath(diamond, paint);
-
-    final Path star = Path();
-    for (int i = 0; i < 8; i++) {
-      final double angle = (math.pi / 4) * i;
-      final Offset point =
-          center +
-          Offset(
-            math.cos(angle) * radius * 0.95,
-            math.sin(angle) * radius * 0.95,
-          );
-      if (i == 0) {
-        star.moveTo(point.dx, point.dy);
-      } else {
-        star.lineTo(point.dx, point.dy);
-      }
-    }
-    star.close();
-    canvas.drawPath(star, fill);
-
-    canvas.drawLine(
-      Offset(center.dx - radius * 1.1, center.dy),
-      Offset(center.dx + radius * 1.1, center.dy),
-      paint,
-    );
-    canvas.drawLine(
-      Offset(center.dx, center.dy - radius * 1.1),
-      Offset(center.dx, center.dy + radius * 1.1),
-      paint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _SmartCapturePatternPainter oldDelegate) {
-    return oldDelegate.color != color;
-  }
-}
-
-extension on double {
-  int floorEven() {
-    final int value = floor();
-    return value.isEven ? value : value - 1;
-  }
-}

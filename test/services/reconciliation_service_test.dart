@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zakatapp_flutter/core/services/zakat_engine.dart';
 import 'package:zakatapp_flutter/models/app_state.dart';
 import 'package:zakatapp_flutter/models/saving.dart';
+import 'package:zakatapp_flutter/models/transaction.dart';
 import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
 import 'package:zakatapp_flutter/services/reconciliation_service.dart';
 
@@ -644,6 +645,74 @@ void main() {
   });
 
   test(
+    'toggling installment paid status preserves the original custom paidAmount value',
+    () {
+      final base = AppStateDefaults.create();
+      final state = AppStateModel.fromJson(<String, dynamic>{
+        ...base.toJson(),
+        'investments': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'id': 'inv1',
+            'investmentType': 'company_investment',
+            'assetSubtype': 'company',
+            'ownershipType': 'installment',
+            'valuationMode': 'manual',
+            'currency': 'EGP',
+            'originalPrice': 1000,
+            'totalInterest': 0,
+            'totalPayable': 1000,
+            'paidAmount': 27800,
+            'remainingAmount': 1000,
+            'installmentPlan': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'date': '2026-01-01',
+                'amount': 200,
+                'currency': 'EGP',
+                'isPaid': false,
+              },
+            ],
+            'valuationDate': '2026-01-01',
+            'marketValue': 1000,
+            'marketValueDate': '2026-01-01',
+            'valuationSource': 'manual',
+            'loanBalance': 1000,
+            'loanAsOfDate': '2026-01-01',
+            'paidAmountToDate': 27800,
+            'ownershipSharePct': 100,
+            'country': '',
+            'location': 'Test',
+            'inflationRateAnnual': 0,
+            'estimatedCurrentValue': 1000,
+            'description': '',
+            'noZakat': false,
+            'createdAt': '2026-01-01T00:00:00.000Z',
+          },
+        ],
+      });
+      final market = const MarketData(
+        goldPrice24kEgp: 0,
+        silverPriceEgp: 0,
+        usdToEgp: 50,
+        sarToEgp: 13,
+        ratesToEgp: <String, double>{'EGP': 1},
+      );
+
+      final once = service
+          .toggleInstallmentPaid(
+            input: state,
+            assetId: 'inv1',
+            installmentIndex: 0,
+            paymentCategory: 'Housing & Rent',
+            marketData: market,
+          )
+          .state;
+
+      expect(once.investments.first.paidAmount, 27800.0);
+      expect(once.investments.first.paidAmountToDate, 27800.0);
+    },
+  );
+
+  test(
     'mark zakat paid creates expense and duplicate prevented via toggle',
     () {
       final state = AppStateDefaults.create();
@@ -1203,6 +1272,112 @@ void main() {
     expect(
       out.savings.firstWhere((Saving s) => s.id == 'gold-1').remainingAmount,
       15.5,
+    );
+  });
+
+  test('cash source results are cached for unchanged state', () {
+    final AppStateModel state = makeState(
+      transactions: <Map<String, dynamic>>[
+        <String, dynamic>{
+          'id': 'cache-income',
+          'type': 'income',
+          'date': '2026-01-01',
+          'amount': 100,
+          'currency': 'EGP',
+        },
+      ],
+      savings: <Map<String, dynamic>>[],
+    );
+    final List<CashSource> first = service.getAvailableCashSources(
+      state: state,
+      currency: 'EGP',
+    );
+    final List<CashSource> second = service.getAvailableCashSources(
+      state: state,
+      currency: 'EGP',
+    );
+    expect(identical(first, second), isTrue);
+  });
+
+  test('cash source cache invalidates when financial inputs change', () {
+    final AppStateModel state = makeState(
+      transactions: <Map<String, dynamic>>[
+        <String, dynamic>{
+          'id': 'invalidate-income',
+          'type': 'income',
+          'date': '2026-01-01',
+          'amount': 100,
+          'currency': 'EGP',
+        },
+      ],
+      savings: <Map<String, dynamic>>[],
+    );
+    final List<CashSource> first = service.getAvailableCashSources(
+      state: state,
+      currency: 'EGP',
+    );
+    final AppStateModel changed = AppStateModel.fromJson(<String, dynamic>{
+      ...state.toJson(),
+      'transactions': <Map<String, dynamic>>[
+        ...state.transactions.map((Transaction tx) => tx.toJson()),
+        const Transaction(
+          id: 'invalidate-expense',
+          type: 'expense',
+          date: '2026-01-02',
+          amount: 25,
+          currency: 'EGP',
+          category: 'Other',
+          description: '',
+          createdAt: '2026-01-02T00:00:00.000Z',
+          rolledOver: false,
+        ).toJson(),
+      ],
+    });
+    final List<CashSource> second = service.getAvailableCashSources(
+      state: changed,
+      currency: 'EGP',
+    );
+    expect(identical(first, second), isFalse);
+    expect(second.single.availableAmount, 75);
+  });
+
+  test('typed income lots match the compatibility map implementation', () {
+    final List<Map<String, dynamic>> raw = <Map<String, dynamic>>[
+      <String, dynamic>{
+        'id': 'typed-income',
+        'type': 'income',
+        'date': '2026-01-01',
+        'amount': 100,
+        'currency': 'EGP',
+        'createdAt': '2026-01-01T00:00:00.000Z',
+      },
+      <String, dynamic>{
+        'id': 'typed-expense',
+        'type': 'expense',
+        'date': '2026-01-02',
+        'amount': 40,
+        'currency': 'EGP',
+        'createdAt': '2026-01-02T00:00:00.000Z',
+      },
+    ];
+    final List<Transaction> typed = raw
+        .map(Transaction.fromJson)
+        .toList(growable: false);
+    final List<IncomeLot> compatibility = service.getNetIncomeLotsForCurrency(
+      transactions: raw,
+      currency: 'EGP',
+    );
+    final List<IncomeLot> optimized = service.getNetIncomeLotsForTransactions(
+      transactions: typed,
+      currency: 'EGP',
+    );
+    expect(
+      optimized.map((lot) => lot.toString()).toList(),
+      compatibility.map((lot) => lot.toString()).toList(),
+    );
+    expect(
+      optimized.map((lot) => lot.remainingAmount).toList(),
+      compatibility.map((lot) => lot.remainingAmount).toList(),
     );
   });
 }

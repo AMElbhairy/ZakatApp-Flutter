@@ -47,6 +47,12 @@
 		<string>413665925118-hg1l61pvc9k67g9p27epvtcsf5mpotdp.apps.googleusercontent.com</string>
 		<key>LSRequiresIPhoneOS</key>
 		<true/>
+		<key>NSPhotoLibraryUsageDescription</key>
+		<string>Allow access to your photo library so you can choose profile or document images to share in Zakah Wealth.</string>
+		<key>NSCameraUsageDescription</key>
+		<string>Allow access to your camera so you can capture profile or document images to share in Zakah Wealth.</string>
+		<key>NSLocationWhenInUseUsageDescription</key>
+		<string>Allow access to your location so Zakah Wealth can provide location-aware app features when needed.</string>
 		<key>NSFaceIDUsageDescription</key>
 		<string>Authenticate to access Zakah Wealth securely</string>
 		<key>UIApplicationSceneManifest</key>
@@ -83,11 +89,15 @@
 		<key>UISupportedInterfaceOrientations</key>
 		<array>
 			<string>UIInterfaceOrientationPortrait</string>
+			<string>UIInterfaceOrientationLandscapeLeft</string>
+			<string>UIInterfaceOrientationLandscapeRight</string>
 		</array>
 		<key>UISupportedInterfaceOrientations~ipad</key>
 		<array>
 			<string>UIInterfaceOrientationPortrait</string>
 			<string>UIInterfaceOrientationPortraitUpsideDown</string>
+			<string>UIInterfaceOrientationLandscapeLeft</string>
+			<string>UIInterfaceOrientationLandscapeRight</string>
 		</array>
 		<key>UIStatusBarHidden</key>
 		<false/>

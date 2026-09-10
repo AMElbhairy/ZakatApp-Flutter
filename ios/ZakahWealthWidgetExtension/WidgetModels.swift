@@ -23,7 +23,7 @@ struct WidgetSummary: Codable {
     let lastUpdated: String
 
     static func placeholder() -> WidgetSummary {
-        let isArabic = Locale.current.language.languageCode?.identifier.lowercased().hasPrefix("ar") == true
+        let isArabic = Locale.current.languageCode?.lowercased().hasPrefix("ar") == true
         return WidgetSummary(
             hasData: false,
             appName: "Zakah Wealth",
@@ -310,34 +310,58 @@ enum WidgetPalette {
 
 struct WidgetDataStore {
     static let suiteName = "group.com.zakahwealth.app"
+    static let activeUserIdKey = "zakah_wealth_widget_active_user_id"
     static let snapshotKey = "zakah_wealth_widget_snapshot"
 
     static var defaults: UserDefaults {
         UserDefaults(suiteName: suiteName) ?? .standard
     }
 
-    private static func snapshotData() -> Data? {
-        if let data = defaults.data(forKey: snapshotKey) {
-            NSLog("[WidgetKit][loadSummary] raw payload type=Data length=%d", data.count)
+    static func activeUserId() -> String? {
+        let value = defaults.string(forKey: activeUserIdKey)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let value, !value.isEmpty else {
+            return nil
+        }
+        return value
+    }
+
+    static func snapshotKeyForUser(_ userId: String) -> String {
+        "zakah_wealth_widget_snapshot_\(userId)"
+    }
+
+    static func portfolioSnapshotKeyForUser(_ userId: String) -> String {
+        "widget_portfolio_snapshot_\(userId)"
+    }
+
+    private static func snapshotData(for userId: String) -> Data? {
+        let key = snapshotKeyForUser(userId)
+        if let data = defaults.data(forKey: key) {
+            NSLog("[WidgetKit][loadSummary] raw payload type=Data length=%d key=%@", data.count, key)
             return data
         }
 
-        if let string = defaults.string(forKey: snapshotKey) {
-            NSLog("[WidgetKit][loadSummary] raw payload type=String length=%d", string.utf8.count)
+        if let string = defaults.string(forKey: key) {
+            NSLog("[WidgetKit][loadSummary] raw payload type=String length=%d key=%@", string.utf8.count, key)
             return string.data(using: .utf8)
         }
 
-        if let any = defaults.object(forKey: snapshotKey) {
-            NSLog("[WidgetKit][loadSummary] raw payload unsupported type=%@", String(describing: type(of: any)))
+        if let any = defaults.object(forKey: key) {
+            NSLog("[WidgetKit][loadSummary] raw payload unsupported type=%@ key=%@", String(describing: type(of: any)), key)
         } else {
-            NSLog("[WidgetKit][loadSummary] raw payload missing for key=%@", snapshotKey)
+            NSLog("[WidgetKit][loadSummary] raw payload missing for key=%@", key)
         }
         return nil
     }
 
     static func loadSummary() -> WidgetSummary {
-        guard let data = snapshotData() else {
-            NSLog("[WidgetKit][loadSummary] missing App Group payload for key=%@", snapshotKey)
+        guard let userId = activeUserId() else {
+            NSLog("[WidgetKit][loadSummary] missing active user id")
+            return .placeholder()
+        }
+
+        guard let data = snapshotData(for: userId) else {
+            NSLog("[WidgetKit][loadSummary] missing App Group payload for user=%@", userId)
             return .placeholder()
         }
 
@@ -365,8 +389,13 @@ struct WidgetDataStore {
     }
 
     static func loadSnapshot() -> WidgetSnapshot {
-        guard let data = snapshotData() else {
-            NSLog("[WidgetKit][loadSnapshot] failed to decode snapshot for key=%@", snapshotKey)
+        guard let userId = activeUserId() else {
+            NSLog("[WidgetKit][loadSnapshot] missing active user id")
+            return .placeholder()
+        }
+
+        guard let data = snapshotData(for: userId) else {
+            NSLog("[WidgetKit][loadSnapshot] failed to decode snapshot for user=%@", userId)
             return .placeholder()
         }
         do {

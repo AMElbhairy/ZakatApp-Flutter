@@ -8,6 +8,7 @@ import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/i18n/app_localizations.dart';
+import '../../core/errors/user_facing_error_mapper.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/services/zakat_engine.dart';
 import '../../core/services/zakat_schedule_service.dart';
@@ -684,9 +685,21 @@ class ActivityScreenState extends State<ActivityScreen> {
           locale: Localizations.localeOf(context).toString(),
         );
 
-    final double totalIncome = summaryMetrics.incomeCurrent;
-    final double totalExpenses = summaryMetrics.expenseCurrent;
-    final double totalTransfers = summaryMetrics.transferCurrent;
+    final double totalIncome = ZakatEngineService.convertFromEgp(
+      summaryMetrics.incomeCurrent,
+      mainCurrency,
+      market,
+    );
+    final double totalExpenses = ZakatEngineService.convertFromEgp(
+      summaryMetrics.expenseCurrent,
+      mainCurrency,
+      market,
+    );
+    final double totalTransfers = ZakatEngineService.convertFromEgp(
+      summaryMetrics.transferCurrent,
+      mainCurrency,
+      market,
+    );
 
     final Map<_ActivityFilter, List<CurrencyBreakdownItem>> breakdowns =
         <_ActivityFilter, List<CurrencyBreakdownItem>>{
@@ -800,6 +813,9 @@ class ActivityScreenState extends State<ActivityScreen> {
                         },
                       );
                       if (confirmed == true) {
+                        final Stopwatch? stopwatch = kDebugMode || kProfileMode
+                            ? (Stopwatch()..start())
+                            : null;
                         final bool isCurrencyExchange =
                             (entry.transferTitle ?? '').toLowerCase() ==
                             'currency exchange';
@@ -814,6 +830,12 @@ class ActivityScreenState extends State<ActivityScreen> {
                           );
                         } else if (entry.saving != null) {
                           await controller.deleteSaving(entry.saving!.id);
+                        }
+                        if (stopwatch != null) {
+                          debugPrint(
+                            'TransactionDelete total: '
+                            '${stopwatch.elapsedMilliseconds}ms',
+                          );
                         }
                       }
                     },
@@ -1439,6 +1461,8 @@ class ActivityScreenState extends State<ActivityScreen> {
     final controller = context.read<AppStateController>();
     final tokens = context.premiumTokens;
     final bool dark = Theme.of(context).brightness == Brightness.dark;
+    final double screenWidth = MediaQuery.sizeOf(context).width;
+    final bool isSmallScreen = screenWidth < 430;
     final Color expenseColor = dark
         ? const Color(0xFFFF7A7A)
         : tokens.colors.danger;
@@ -1486,7 +1510,10 @@ class ActivityScreenState extends State<ActivityScreen> {
           entry.displayTitle(context),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+          style: TextStyle(
+            fontSize: isSmallScreen ? 13 : 15,
+            fontWeight: FontWeight.w800,
+          ),
         ),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 2),
@@ -1535,7 +1562,7 @@ class ActivityScreenState extends State<ActivityScreen> {
                       showSign: !entry.isTransfer,
                     ),
               style: TextStyle(
-                fontSize: 16,
+                fontSize: isSmallScreen ? 14 : 16,
                 fontWeight: FontWeight.w800,
                 color: entry.isTransfer
                     ? tokens.colors.gold
@@ -1727,7 +1754,10 @@ class ActivityScreenState extends State<ActivityScreen> {
     final double totalZakat = ((row?['totalZakat'] ?? 0) as num).toDouble();
     final String nextDueLabel = paymentDate.isEmpty
         ? context.l10n.tr('upcoming')
-        : _formatHumanDate(paymentDate, Localizations.localeOf(context).toString());
+        : _formatHumanDate(
+            paymentDate,
+            Localizations.localeOf(context).toString(),
+          );
     return PremiumCard(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2116,7 +2146,14 @@ class ActivityScreenState extends State<ActivityScreen> {
                                     );
                               } on StateError catch (error) {
                                 if (!context.mounted) return;
-                                showTopSnackBar(context, error.message);
+                                showTopSnackBar(
+                                  context,
+                                  UserFacingErrorMapper.message(
+                                    context.l10n,
+                                    error,
+                                    context: 'save',
+                                  ),
+                                );
                               }
                             },
                             child: Text(context.l10n.tr('pay')),
@@ -2338,55 +2375,16 @@ class ActivityScreenState extends State<ActivityScreen> {
     final List<Map<String, dynamic>> transactionJson = transactions
         .map((e) => e.toJson())
         .toList(growable: false);
-    final List<Map<String, dynamic>> monthly =
-        ZakatScheduleService.calculateMonthlyZakatSchedule(
-          transactions: transactionJson,
-          savings: savings,
-          marketData: marketData,
-          lastRollover: lastRollover,
-          zakatNisabBasis: zakatNisabBasis,
-        );
-    final List<Map<String, dynamic>> savingsSchedule =
-        ZakatScheduleService.calculateSavingsZakatSchedule(
-          savings: savings,
-          transactions: transactionJson,
-          marketData: marketData,
-          lastRollover: lastRollover,
-          zakatNisabBasis: zakatNisabBasis,
-        );
-
-    final Map<String, Map<String, dynamic>> merged =
-        <String, Map<String, dynamic>>{};
-    for (final Map<String, dynamic> item in [...monthly, ...savingsSchedule]) {
-      final String monthKey = item['monthKey']?.toString() ?? '';
-      if (monthKey.isEmpty) continue;
-      if (!merged.containsKey(monthKey)) {
-        merged[monthKey] = <String, dynamic>{
-          'monthKey': monthKey,
-          'paymentDate': item['paymentDate'],
-          'totalZakat': (item['totalZakat'] as num).toDouble(),
-          'isPast': item['isPast'],
-          'isCurrentMonth': item['isCurrentMonth'],
-          'entries': List<Map<String, dynamic>>.from(
-            item['entries'] as Iterable,
-          ),
-        };
-      } else {
-        final Map<String, dynamic> existing = merged[monthKey]!;
-        existing['totalZakat'] =
-            (existing['totalZakat'] as num).toDouble() +
-            (item['totalZakat'] as num).toDouble();
-        (existing['entries'] as List<Map<String, dynamic>>).addAll(
-          List<Map<String, dynamic>>.from(item['entries'] as Iterable),
-        );
-      }
-    }
-
-    final List<Map<String, dynamic>> sorted = merged.values.toList()
-      ..sort(
-        (a, b) => a['monthKey'].toString().compareTo(b['monthKey'].toString()),
-      );
-    return sorted;
+    return ZakatScheduleService.calculateMergedZakatSchedule(
+      zakatMethod: zakatMethod,
+      zakatAnnualDate: zakatAnnualDate,
+      transactions: transactionJson,
+      savings: savings,
+      investments: investments,
+      marketData: marketData,
+      lastRollover: lastRollover,
+      zakatNisabBasis: zakatNisabBasis,
+    );
   }
 
   String _getTransferSubtitle(
@@ -3366,34 +3364,22 @@ class _ActivityEntry {
     final String trimmed = value.trim();
     final String lower = trimmed.toLowerCase();
     if (lower == 'currency exchange') {
-      return context.l10n.locale.languageCode == 'ar'
-          ? 'تحويل عملة'
-          : trimmed;
+      return context.l10n.locale.languageCode == 'ar' ? 'تحويل عملة' : trimmed;
     }
     if (lower == 'cash transfer') {
-      return context.l10n.locale.languageCode == 'ar'
-          ? 'تحويل نقدي'
-          : trimmed;
+      return context.l10n.locale.languageCode == 'ar' ? 'تحويل نقدي' : trimmed;
     }
     if (lower == 'gold sale') {
-      return context.l10n.locale.languageCode == 'ar'
-          ? 'بيع الذهب'
-          : trimmed;
+      return context.l10n.locale.languageCode == 'ar' ? 'بيع الذهب' : trimmed;
     }
     if (lower == 'silver sale') {
-      return context.l10n.locale.languageCode == 'ar'
-          ? 'بيع الفضة'
-          : trimmed;
+      return context.l10n.locale.languageCode == 'ar' ? 'بيع الفضة' : trimmed;
     }
     if (lower == 'gold purchase') {
-      return context.l10n.locale.languageCode == 'ar'
-          ? 'شراء الذهب'
-          : trimmed;
+      return context.l10n.locale.languageCode == 'ar' ? 'شراء الذهب' : trimmed;
     }
     if (lower == 'silver purchase') {
-      return context.l10n.locale.languageCode == 'ar'
-          ? 'شراء الفضة'
-          : trimmed;
+      return context.l10n.locale.languageCode == 'ar' ? 'شراء الفضة' : trimmed;
     }
     if (lower == 'precious metals purchase') {
       return context.l10n.locale.languageCode == 'ar'

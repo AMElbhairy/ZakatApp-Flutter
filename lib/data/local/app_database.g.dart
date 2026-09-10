@@ -4539,6 +4539,39 @@ class $PendingTransactionsTable extends PendingTransactions
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _receivedAtMeta = const VerificationMeta(
+    'receivedAt',
+  );
+  @override
+  late final GeneratedColumn<String> receivedAt = GeneratedColumn<String>(
+    'received_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _cardLast4Meta = const VerificationMeta(
+    'cardLast4',
+  );
+  @override
+  late final GeneratedColumn<String> cardLast4 = GeneratedColumn<String>(
+    'card_last4',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _accountLast4Meta = const VerificationMeta(
+    'accountLast4',
+  );
+  @override
+  late final GeneratedColumn<String> accountLast4 = GeneratedColumn<String>(
+    'account_last4',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -4566,6 +4599,9 @@ class $PendingTransactionsTable extends PendingTransactions
     linkedTransactionId,
     updatedAt,
     deletedAt,
+    receivedAt,
+    cardLast4,
+    accountLast4,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -4790,6 +4826,27 @@ class $PendingTransactionsTable extends PendingTransactions
         deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
       );
     }
+    if (data.containsKey('received_at')) {
+      context.handle(
+        _receivedAtMeta,
+        receivedAt.isAcceptableOrUnknown(data['received_at']!, _receivedAtMeta),
+      );
+    }
+    if (data.containsKey('card_last4')) {
+      context.handle(
+        _cardLast4Meta,
+        cardLast4.isAcceptableOrUnknown(data['card_last4']!, _cardLast4Meta),
+      );
+    }
+    if (data.containsKey('account_last4')) {
+      context.handle(
+        _accountLast4Meta,
+        accountLast4.isAcceptableOrUnknown(
+          data['account_last4']!,
+          _accountLast4Meta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -4899,6 +4956,18 @@ class $PendingTransactionsTable extends PendingTransactions
         DriftSqlType.string,
         data['${effectivePrefix}deleted_at'],
       ),
+      receivedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}received_at'],
+      ),
+      cardLast4: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}card_last4'],
+      ),
+      accountLast4: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}account_last4'],
+      ),
     );
   }
 
@@ -4935,6 +5004,9 @@ class PendingTransaction extends DataClass
   final String? linkedTransactionId;
   final String updatedAt;
   final String? deletedAt;
+  final String? receivedAt;
+  final String? cardLast4;
+  final String? accountLast4;
   const PendingTransaction({
     required this.id,
     required this.source,
@@ -4961,6 +5033,9 @@ class PendingTransaction extends DataClass
     this.linkedTransactionId,
     required this.updatedAt,
     this.deletedAt,
+    this.receivedAt,
+    this.cardLast4,
+    this.accountLast4,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -5019,6 +5094,15 @@ class PendingTransaction extends DataClass
     map['updated_at'] = Variable<String>(updatedAt);
     if (!nullToAbsent || deletedAt != null) {
       map['deleted_at'] = Variable<String>(deletedAt);
+    }
+    if (!nullToAbsent || receivedAt != null) {
+      map['received_at'] = Variable<String>(receivedAt);
+    }
+    if (!nullToAbsent || cardLast4 != null) {
+      map['card_last4'] = Variable<String>(cardLast4);
+    }
+    if (!nullToAbsent || accountLast4 != null) {
+      map['account_last4'] = Variable<String>(accountLast4);
     }
     return map;
   }
@@ -5080,6 +5164,15 @@ class PendingTransaction extends DataClass
       deletedAt: deletedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(deletedAt),
+      receivedAt: receivedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(receivedAt),
+      cardLast4: cardLast4 == null && nullToAbsent
+          ? const Value.absent()
+          : Value(cardLast4),
+      accountLast4: accountLast4 == null && nullToAbsent
+          ? const Value.absent()
+          : Value(accountLast4),
     );
   }
 
@@ -5126,6 +5219,9 @@ class PendingTransaction extends DataClass
       ),
       updatedAt: serializer.fromJson<String>(json['updatedAt']),
       deletedAt: serializer.fromJson<String?>(json['deletedAt']),
+      receivedAt: serializer.fromJson<String?>(json['receivedAt']),
+      cardLast4: serializer.fromJson<String?>(json['cardLast4']),
+      accountLast4: serializer.fromJson<String?>(json['accountLast4']),
     );
   }
   @override
@@ -5157,6 +5253,9 @@ class PendingTransaction extends DataClass
       'linkedTransactionId': serializer.toJson<String?>(linkedTransactionId),
       'updatedAt': serializer.toJson<String>(updatedAt),
       'deletedAt': serializer.toJson<String?>(deletedAt),
+      'receivedAt': serializer.toJson<String?>(receivedAt),
+      'cardLast4': serializer.toJson<String?>(cardLast4),
+      'accountLast4': serializer.toJson<String?>(accountLast4),
     };
   }
 
@@ -5186,6 +5285,9 @@ class PendingTransaction extends DataClass
     Value<String?> linkedTransactionId = const Value.absent(),
     String? updatedAt,
     Value<String?> deletedAt = const Value.absent(),
+    Value<String?> receivedAt = const Value.absent(),
+    Value<String?> cardLast4 = const Value.absent(),
+    Value<String?> accountLast4 = const Value.absent(),
   }) => PendingTransaction(
     id: id ?? this.id,
     source: source ?? this.source,
@@ -5232,6 +5334,9 @@ class PendingTransaction extends DataClass
         : this.linkedTransactionId,
     updatedAt: updatedAt ?? this.updatedAt,
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+    receivedAt: receivedAt.present ? receivedAt.value : this.receivedAt,
+    cardLast4: cardLast4.present ? cardLast4.value : this.cardLast4,
+    accountLast4: accountLast4.present ? accountLast4.value : this.accountLast4,
   );
   PendingTransaction copyWithCompanion(PendingTransactionsCompanion data) {
     return PendingTransaction(
@@ -5296,6 +5401,13 @@ class PendingTransaction extends DataClass
           : this.linkedTransactionId,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+      receivedAt: data.receivedAt.present
+          ? data.receivedAt.value
+          : this.receivedAt,
+      cardLast4: data.cardLast4.present ? data.cardLast4.value : this.cardLast4,
+      accountLast4: data.accountLast4.present
+          ? data.accountLast4.value
+          : this.accountLast4,
     );
   }
 
@@ -5326,7 +5438,10 @@ class PendingTransaction extends DataClass
           ..write('isRead: $isRead, ')
           ..write('linkedTransactionId: $linkedTransactionId, ')
           ..write('updatedAt: $updatedAt, ')
-          ..write('deletedAt: $deletedAt')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('receivedAt: $receivedAt, ')
+          ..write('cardLast4: $cardLast4, ')
+          ..write('accountLast4: $accountLast4')
           ..write(')'))
         .toString();
   }
@@ -5358,6 +5473,9 @@ class PendingTransaction extends DataClass
     linkedTransactionId,
     updatedAt,
     deletedAt,
+    receivedAt,
+    cardLast4,
+    accountLast4,
   ]);
   @override
   bool operator ==(Object other) =>
@@ -5387,7 +5505,10 @@ class PendingTransaction extends DataClass
           other.isRead == this.isRead &&
           other.linkedTransactionId == this.linkedTransactionId &&
           other.updatedAt == this.updatedAt &&
-          other.deletedAt == this.deletedAt);
+          other.deletedAt == this.deletedAt &&
+          other.receivedAt == this.receivedAt &&
+          other.cardLast4 == this.cardLast4 &&
+          other.accountLast4 == this.accountLast4);
 }
 
 class PendingTransactionsCompanion extends UpdateCompanion<PendingTransaction> {
@@ -5416,6 +5537,9 @@ class PendingTransactionsCompanion extends UpdateCompanion<PendingTransaction> {
   final Value<String?> linkedTransactionId;
   final Value<String> updatedAt;
   final Value<String?> deletedAt;
+  final Value<String?> receivedAt;
+  final Value<String?> cardLast4;
+  final Value<String?> accountLast4;
   final Value<int> rowid;
   const PendingTransactionsCompanion({
     this.id = const Value.absent(),
@@ -5443,6 +5567,9 @@ class PendingTransactionsCompanion extends UpdateCompanion<PendingTransaction> {
     this.linkedTransactionId = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.deletedAt = const Value.absent(),
+    this.receivedAt = const Value.absent(),
+    this.cardLast4 = const Value.absent(),
+    this.accountLast4 = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   PendingTransactionsCompanion.insert({
@@ -5471,6 +5598,9 @@ class PendingTransactionsCompanion extends UpdateCompanion<PendingTransaction> {
     this.linkedTransactionId = const Value.absent(),
     required String updatedAt,
     this.deletedAt = const Value.absent(),
+    this.receivedAt = const Value.absent(),
+    this.cardLast4 = const Value.absent(),
+    this.accountLast4 = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        source = Value(source),
@@ -5506,6 +5636,9 @@ class PendingTransactionsCompanion extends UpdateCompanion<PendingTransaction> {
     Expression<String>? linkedTransactionId,
     Expression<String>? updatedAt,
     Expression<String>? deletedAt,
+    Expression<String>? receivedAt,
+    Expression<String>? cardLast4,
+    Expression<String>? accountLast4,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -5538,6 +5671,9 @@ class PendingTransactionsCompanion extends UpdateCompanion<PendingTransaction> {
         'linked_transaction_id': linkedTransactionId,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (deletedAt != null) 'deleted_at': deletedAt,
+      if (receivedAt != null) 'received_at': receivedAt,
+      if (cardLast4 != null) 'card_last4': cardLast4,
+      if (accountLast4 != null) 'account_last4': accountLast4,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -5568,6 +5704,9 @@ class PendingTransactionsCompanion extends UpdateCompanion<PendingTransaction> {
     Value<String?>? linkedTransactionId,
     Value<String>? updatedAt,
     Value<String?>? deletedAt,
+    Value<String?>? receivedAt,
+    Value<String?>? cardLast4,
+    Value<String?>? accountLast4,
     Value<int>? rowid,
   }) {
     return PendingTransactionsCompanion(
@@ -5596,6 +5735,9 @@ class PendingTransactionsCompanion extends UpdateCompanion<PendingTransaction> {
       linkedTransactionId: linkedTransactionId ?? this.linkedTransactionId,
       updatedAt: updatedAt ?? this.updatedAt,
       deletedAt: deletedAt ?? this.deletedAt,
+      receivedAt: receivedAt ?? this.receivedAt,
+      cardLast4: cardLast4 ?? this.cardLast4,
+      accountLast4: accountLast4 ?? this.accountLast4,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -5684,6 +5826,15 @@ class PendingTransactionsCompanion extends UpdateCompanion<PendingTransaction> {
     if (deletedAt.present) {
       map['deleted_at'] = Variable<String>(deletedAt.value);
     }
+    if (receivedAt.present) {
+      map['received_at'] = Variable<String>(receivedAt.value);
+    }
+    if (cardLast4.present) {
+      map['card_last4'] = Variable<String>(cardLast4.value);
+    }
+    if (accountLast4.present) {
+      map['account_last4'] = Variable<String>(accountLast4.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -5718,6 +5869,9 @@ class PendingTransactionsCompanion extends UpdateCompanion<PendingTransaction> {
           ..write('linkedTransactionId: $linkedTransactionId, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
+          ..write('receivedAt: $receivedAt, ')
+          ..write('cardLast4: $cardLast4, ')
+          ..write('accountLast4: $accountLast4, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -5892,6 +6046,60 @@ class $RecurringTransactionsTable extends RecurringTransactions
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _autoAddMeta = const VerificationMeta(
+    'autoAdd',
+  );
+  @override
+  late final GeneratedColumn<bool> autoAdd = GeneratedColumn<bool>(
+    'auto_add',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("auto_add" IN (0, 1))',
+    ),
+    defaultValue: const Constant(true),
+  );
+  static const VerificationMeta _reminderEnabledMeta = const VerificationMeta(
+    'reminderEnabled',
+  );
+  @override
+  late final GeneratedColumn<bool> reminderEnabled = GeneratedColumn<bool>(
+    'reminder_enabled',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("reminder_enabled" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _reminderDayOffsetMeta = const VerificationMeta(
+    'reminderDayOffset',
+  );
+  @override
+  late final GeneratedColumn<int> reminderDayOffset = GeneratedColumn<int>(
+    'reminder_day_offset',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _reminderTimeMeta = const VerificationMeta(
+    'reminderTime',
+  );
+  @override
+  late final GeneratedColumn<String> reminderTime = GeneratedColumn<String>(
+    'reminder_time',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('09:00'),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -5909,6 +6117,10 @@ class $RecurringTransactionsTable extends RecurringTransactions
     createdAt,
     updatedAt,
     deletedAt,
+    autoAdd,
+    reminderEnabled,
+    reminderDayOffset,
+    reminderTime,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -6044,6 +6256,39 @@ class $RecurringTransactionsTable extends RecurringTransactions
         deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
       );
     }
+    if (data.containsKey('auto_add')) {
+      context.handle(
+        _autoAddMeta,
+        autoAdd.isAcceptableOrUnknown(data['auto_add']!, _autoAddMeta),
+      );
+    }
+    if (data.containsKey('reminder_enabled')) {
+      context.handle(
+        _reminderEnabledMeta,
+        reminderEnabled.isAcceptableOrUnknown(
+          data['reminder_enabled']!,
+          _reminderEnabledMeta,
+        ),
+      );
+    }
+    if (data.containsKey('reminder_day_offset')) {
+      context.handle(
+        _reminderDayOffsetMeta,
+        reminderDayOffset.isAcceptableOrUnknown(
+          data['reminder_day_offset']!,
+          _reminderDayOffsetMeta,
+        ),
+      );
+    }
+    if (data.containsKey('reminder_time')) {
+      context.handle(
+        _reminderTimeMeta,
+        reminderTime.isAcceptableOrUnknown(
+          data['reminder_time']!,
+          _reminderTimeMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -6113,6 +6358,22 @@ class $RecurringTransactionsTable extends RecurringTransactions
         DriftSqlType.string,
         data['${effectivePrefix}deleted_at'],
       ),
+      autoAdd: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}auto_add'],
+      )!,
+      reminderEnabled: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}reminder_enabled'],
+      )!,
+      reminderDayOffset: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}reminder_day_offset'],
+      )!,
+      reminderTime: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}reminder_time'],
+      )!,
     );
   }
 
@@ -6139,6 +6400,10 @@ class RecurringTransaction extends DataClass
   final String createdAt;
   final String updatedAt;
   final String? deletedAt;
+  final bool autoAdd;
+  final bool reminderEnabled;
+  final int reminderDayOffset;
+  final String reminderTime;
   const RecurringTransaction({
     required this.id,
     required this.name,
@@ -6155,6 +6420,10 @@ class RecurringTransaction extends DataClass
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,
+    required this.autoAdd,
+    required this.reminderEnabled,
+    required this.reminderDayOffset,
+    required this.reminderTime,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -6178,6 +6447,10 @@ class RecurringTransaction extends DataClass
     if (!nullToAbsent || deletedAt != null) {
       map['deleted_at'] = Variable<String>(deletedAt);
     }
+    map['auto_add'] = Variable<bool>(autoAdd);
+    map['reminder_enabled'] = Variable<bool>(reminderEnabled);
+    map['reminder_day_offset'] = Variable<int>(reminderDayOffset);
+    map['reminder_time'] = Variable<String>(reminderTime);
     return map;
   }
 
@@ -6202,6 +6475,10 @@ class RecurringTransaction extends DataClass
       deletedAt: deletedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(deletedAt),
+      autoAdd: Value(autoAdd),
+      reminderEnabled: Value(reminderEnabled),
+      reminderDayOffset: Value(reminderDayOffset),
+      reminderTime: Value(reminderTime),
     );
   }
 
@@ -6226,6 +6503,10 @@ class RecurringTransaction extends DataClass
       createdAt: serializer.fromJson<String>(json['createdAt']),
       updatedAt: serializer.fromJson<String>(json['updatedAt']),
       deletedAt: serializer.fromJson<String?>(json['deletedAt']),
+      autoAdd: serializer.fromJson<bool>(json['autoAdd']),
+      reminderEnabled: serializer.fromJson<bool>(json['reminderEnabled']),
+      reminderDayOffset: serializer.fromJson<int>(json['reminderDayOffset']),
+      reminderTime: serializer.fromJson<String>(json['reminderTime']),
     );
   }
   @override
@@ -6247,6 +6528,10 @@ class RecurringTransaction extends DataClass
       'createdAt': serializer.toJson<String>(createdAt),
       'updatedAt': serializer.toJson<String>(updatedAt),
       'deletedAt': serializer.toJson<String?>(deletedAt),
+      'autoAdd': serializer.toJson<bool>(autoAdd),
+      'reminderEnabled': serializer.toJson<bool>(reminderEnabled),
+      'reminderDayOffset': serializer.toJson<int>(reminderDayOffset),
+      'reminderTime': serializer.toJson<String>(reminderTime),
     };
   }
 
@@ -6266,6 +6551,10 @@ class RecurringTransaction extends DataClass
     String? createdAt,
     String? updatedAt,
     Value<String?> deletedAt = const Value.absent(),
+    bool? autoAdd,
+    bool? reminderEnabled,
+    int? reminderDayOffset,
+    String? reminderTime,
   }) => RecurringTransaction(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -6284,6 +6573,10 @@ class RecurringTransaction extends DataClass
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+    autoAdd: autoAdd ?? this.autoAdd,
+    reminderEnabled: reminderEnabled ?? this.reminderEnabled,
+    reminderDayOffset: reminderDayOffset ?? this.reminderDayOffset,
+    reminderTime: reminderTime ?? this.reminderTime,
   );
   RecurringTransaction copyWithCompanion(RecurringTransactionsCompanion data) {
     return RecurringTransaction(
@@ -6310,6 +6603,16 @@ class RecurringTransaction extends DataClass
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+      autoAdd: data.autoAdd.present ? data.autoAdd.value : this.autoAdd,
+      reminderEnabled: data.reminderEnabled.present
+          ? data.reminderEnabled.value
+          : this.reminderEnabled,
+      reminderDayOffset: data.reminderDayOffset.present
+          ? data.reminderDayOffset.value
+          : this.reminderDayOffset,
+      reminderTime: data.reminderTime.present
+          ? data.reminderTime.value
+          : this.reminderTime,
     );
   }
 
@@ -6330,7 +6633,11 @@ class RecurringTransaction extends DataClass
           ..write('skipMonth: $skipMonth, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
-          ..write('deletedAt: $deletedAt')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('autoAdd: $autoAdd, ')
+          ..write('reminderEnabled: $reminderEnabled, ')
+          ..write('reminderDayOffset: $reminderDayOffset, ')
+          ..write('reminderTime: $reminderTime')
           ..write(')'))
         .toString();
   }
@@ -6352,6 +6659,10 @@ class RecurringTransaction extends DataClass
     createdAt,
     updatedAt,
     deletedAt,
+    autoAdd,
+    reminderEnabled,
+    reminderDayOffset,
+    reminderTime,
   );
   @override
   bool operator ==(Object other) =>
@@ -6371,7 +6682,11 @@ class RecurringTransaction extends DataClass
           other.skipMonth == this.skipMonth &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
-          other.deletedAt == this.deletedAt);
+          other.deletedAt == this.deletedAt &&
+          other.autoAdd == this.autoAdd &&
+          other.reminderEnabled == this.reminderEnabled &&
+          other.reminderDayOffset == this.reminderDayOffset &&
+          other.reminderTime == this.reminderTime);
 }
 
 class RecurringTransactionsCompanion
@@ -6391,6 +6706,10 @@ class RecurringTransactionsCompanion
   final Value<String> createdAt;
   final Value<String> updatedAt;
   final Value<String?> deletedAt;
+  final Value<bool> autoAdd;
+  final Value<bool> reminderEnabled;
+  final Value<int> reminderDayOffset;
+  final Value<String> reminderTime;
   final Value<int> rowid;
   const RecurringTransactionsCompanion({
     this.id = const Value.absent(),
@@ -6408,6 +6727,10 @@ class RecurringTransactionsCompanion
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.deletedAt = const Value.absent(),
+    this.autoAdd = const Value.absent(),
+    this.reminderEnabled = const Value.absent(),
+    this.reminderDayOffset = const Value.absent(),
+    this.reminderTime = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   RecurringTransactionsCompanion.insert({
@@ -6426,6 +6749,10 @@ class RecurringTransactionsCompanion
     required String createdAt,
     required String updatedAt,
     this.deletedAt = const Value.absent(),
+    this.autoAdd = const Value.absent(),
+    this.reminderEnabled = const Value.absent(),
+    this.reminderDayOffset = const Value.absent(),
+    this.reminderTime = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        name = Value(name),
@@ -6456,6 +6783,10 @@ class RecurringTransactionsCompanion
     Expression<String>? createdAt,
     Expression<String>? updatedAt,
     Expression<String>? deletedAt,
+    Expression<bool>? autoAdd,
+    Expression<bool>? reminderEnabled,
+    Expression<int>? reminderDayOffset,
+    Expression<String>? reminderTime,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -6474,6 +6805,10 @@ class RecurringTransactionsCompanion
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (deletedAt != null) 'deleted_at': deletedAt,
+      if (autoAdd != null) 'auto_add': autoAdd,
+      if (reminderEnabled != null) 'reminder_enabled': reminderEnabled,
+      if (reminderDayOffset != null) 'reminder_day_offset': reminderDayOffset,
+      if (reminderTime != null) 'reminder_time': reminderTime,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -6494,6 +6829,10 @@ class RecurringTransactionsCompanion
     Value<String>? createdAt,
     Value<String>? updatedAt,
     Value<String?>? deletedAt,
+    Value<bool>? autoAdd,
+    Value<bool>? reminderEnabled,
+    Value<int>? reminderDayOffset,
+    Value<String>? reminderTime,
     Value<int>? rowid,
   }) {
     return RecurringTransactionsCompanion(
@@ -6512,6 +6851,10 @@ class RecurringTransactionsCompanion
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       deletedAt: deletedAt ?? this.deletedAt,
+      autoAdd: autoAdd ?? this.autoAdd,
+      reminderEnabled: reminderEnabled ?? this.reminderEnabled,
+      reminderDayOffset: reminderDayOffset ?? this.reminderDayOffset,
+      reminderTime: reminderTime ?? this.reminderTime,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -6564,6 +6907,18 @@ class RecurringTransactionsCompanion
     if (deletedAt.present) {
       map['deleted_at'] = Variable<String>(deletedAt.value);
     }
+    if (autoAdd.present) {
+      map['auto_add'] = Variable<bool>(autoAdd.value);
+    }
+    if (reminderEnabled.present) {
+      map['reminder_enabled'] = Variable<bool>(reminderEnabled.value);
+    }
+    if (reminderDayOffset.present) {
+      map['reminder_day_offset'] = Variable<int>(reminderDayOffset.value);
+    }
+    if (reminderTime.present) {
+      map['reminder_time'] = Variable<String>(reminderTime.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -6588,6 +6943,10 @@ class RecurringTransactionsCompanion
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
+          ..write('autoAdd: $autoAdd, ')
+          ..write('reminderEnabled: $reminderEnabled, ')
+          ..write('reminderDayOffset: $reminderDayOffset, ')
+          ..write('reminderTime: $reminderTime, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -13162,6 +13521,9 @@ typedef $$PendingTransactionsTableCreateCompanionBuilder =
       Value<String?> linkedTransactionId,
       required String updatedAt,
       Value<String?> deletedAt,
+      Value<String?> receivedAt,
+      Value<String?> cardLast4,
+      Value<String?> accountLast4,
       Value<int> rowid,
     });
 typedef $$PendingTransactionsTableUpdateCompanionBuilder =
@@ -13191,6 +13553,9 @@ typedef $$PendingTransactionsTableUpdateCompanionBuilder =
       Value<String?> linkedTransactionId,
       Value<String> updatedAt,
       Value<String?> deletedAt,
+      Value<String?> receivedAt,
+      Value<String?> cardLast4,
+      Value<String?> accountLast4,
       Value<int> rowid,
     });
 
@@ -13325,6 +13690,21 @@ class $$PendingTransactionsTableFilterComposer
 
   ColumnFilters<String> get deletedAt => $composableBuilder(
     column: $table.deletedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get receivedAt => $composableBuilder(
+    column: $table.receivedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get cardLast4 => $composableBuilder(
+    column: $table.cardLast4,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get accountLast4 => $composableBuilder(
+    column: $table.accountLast4,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -13462,6 +13842,21 @@ class $$PendingTransactionsTableOrderingComposer
     column: $table.deletedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get receivedAt => $composableBuilder(
+    column: $table.receivedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get cardLast4 => $composableBuilder(
+    column: $table.cardLast4,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get accountLast4 => $composableBuilder(
+    column: $table.accountLast4,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$PendingTransactionsTableAnnotationComposer
@@ -13583,6 +13978,19 @@ class $$PendingTransactionsTableAnnotationComposer
 
   GeneratedColumn<String> get deletedAt =>
       $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get receivedAt => $composableBuilder(
+    column: $table.receivedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get cardLast4 =>
+      $composableBuilder(column: $table.cardLast4, builder: (column) => column);
+
+  GeneratedColumn<String> get accountLast4 => $composableBuilder(
+    column: $table.accountLast4,
+    builder: (column) => column,
+  );
 }
 
 class $$PendingTransactionsTableTableManager
@@ -13653,6 +14061,9 @@ class $$PendingTransactionsTableTableManager
                 Value<String?> linkedTransactionId = const Value.absent(),
                 Value<String> updatedAt = const Value.absent(),
                 Value<String?> deletedAt = const Value.absent(),
+                Value<String?> receivedAt = const Value.absent(),
+                Value<String?> cardLast4 = const Value.absent(),
+                Value<String?> accountLast4 = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => PendingTransactionsCompanion(
                 id: id,
@@ -13680,6 +14091,9 @@ class $$PendingTransactionsTableTableManager
                 linkedTransactionId: linkedTransactionId,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
+                receivedAt: receivedAt,
+                cardLast4: cardLast4,
+                accountLast4: accountLast4,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -13709,6 +14123,9 @@ class $$PendingTransactionsTableTableManager
                 Value<String?> linkedTransactionId = const Value.absent(),
                 required String updatedAt,
                 Value<String?> deletedAt = const Value.absent(),
+                Value<String?> receivedAt = const Value.absent(),
+                Value<String?> cardLast4 = const Value.absent(),
+                Value<String?> accountLast4 = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => PendingTransactionsCompanion.insert(
                 id: id,
@@ -13736,6 +14153,9 @@ class $$PendingTransactionsTableTableManager
                 linkedTransactionId: linkedTransactionId,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
+                receivedAt: receivedAt,
+                cardLast4: cardLast4,
+                accountLast4: accountLast4,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -13784,6 +14204,10 @@ typedef $$RecurringTransactionsTableCreateCompanionBuilder =
       required String createdAt,
       required String updatedAt,
       Value<String?> deletedAt,
+      Value<bool> autoAdd,
+      Value<bool> reminderEnabled,
+      Value<int> reminderDayOffset,
+      Value<String> reminderTime,
       Value<int> rowid,
     });
 typedef $$RecurringTransactionsTableUpdateCompanionBuilder =
@@ -13803,6 +14227,10 @@ typedef $$RecurringTransactionsTableUpdateCompanionBuilder =
       Value<String> createdAt,
       Value<String> updatedAt,
       Value<String?> deletedAt,
+      Value<bool> autoAdd,
+      Value<bool> reminderEnabled,
+      Value<int> reminderDayOffset,
+      Value<String> reminderTime,
       Value<int> rowid,
     });
 
@@ -13887,6 +14315,26 @@ class $$RecurringTransactionsTableFilterComposer
 
   ColumnFilters<String> get deletedAt => $composableBuilder(
     column: $table.deletedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get autoAdd => $composableBuilder(
+    column: $table.autoAdd,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get reminderEnabled => $composableBuilder(
+    column: $table.reminderEnabled,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get reminderDayOffset => $composableBuilder(
+    column: $table.reminderDayOffset,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get reminderTime => $composableBuilder(
+    column: $table.reminderTime,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -13974,6 +14422,26 @@ class $$RecurringTransactionsTableOrderingComposer
     column: $table.deletedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<bool> get autoAdd => $composableBuilder(
+    column: $table.autoAdd,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get reminderEnabled => $composableBuilder(
+    column: $table.reminderEnabled,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get reminderDayOffset => $composableBuilder(
+    column: $table.reminderDayOffset,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get reminderTime => $composableBuilder(
+    column: $table.reminderTime,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$RecurringTransactionsTableAnnotationComposer
@@ -14037,6 +14505,24 @@ class $$RecurringTransactionsTableAnnotationComposer
 
   GeneratedColumn<String> get deletedAt =>
       $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get autoAdd =>
+      $composableBuilder(column: $table.autoAdd, builder: (column) => column);
+
+  GeneratedColumn<bool> get reminderEnabled => $composableBuilder(
+    column: $table.reminderEnabled,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get reminderDayOffset => $composableBuilder(
+    column: $table.reminderDayOffset,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get reminderTime => $composableBuilder(
+    column: $table.reminderTime,
+    builder: (column) => column,
+  );
 }
 
 class $$RecurringTransactionsTableTableManager
@@ -14100,6 +14586,10 @@ class $$RecurringTransactionsTableTableManager
                 Value<String> createdAt = const Value.absent(),
                 Value<String> updatedAt = const Value.absent(),
                 Value<String?> deletedAt = const Value.absent(),
+                Value<bool> autoAdd = const Value.absent(),
+                Value<bool> reminderEnabled = const Value.absent(),
+                Value<int> reminderDayOffset = const Value.absent(),
+                Value<String> reminderTime = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => RecurringTransactionsCompanion(
                 id: id,
@@ -14117,6 +14607,10 @@ class $$RecurringTransactionsTableTableManager
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
+                autoAdd: autoAdd,
+                reminderEnabled: reminderEnabled,
+                reminderDayOffset: reminderDayOffset,
+                reminderTime: reminderTime,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -14136,6 +14630,10 @@ class $$RecurringTransactionsTableTableManager
                 required String createdAt,
                 required String updatedAt,
                 Value<String?> deletedAt = const Value.absent(),
+                Value<bool> autoAdd = const Value.absent(),
+                Value<bool> reminderEnabled = const Value.absent(),
+                Value<int> reminderDayOffset = const Value.absent(),
+                Value<String> reminderTime = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => RecurringTransactionsCompanion.insert(
                 id: id,
@@ -14153,6 +14651,10 @@ class $$RecurringTransactionsTableTableManager
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
+                autoAdd: autoAdd,
+                reminderEnabled: reminderEnabled,
+                reminderDayOffset: reminderDayOffset,
+                reminderTime: reminderTime,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

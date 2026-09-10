@@ -31,10 +31,35 @@ struct ZakahWealthProvider: TimelineProvider {
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<ZakahWealthEntry>) -> Void) {
         widgetLog("getTimeline start family=\(context.family) preview=\(context.isPreview)")
-        let summary = WidgetDataStore.loadSummary()
-        widgetLog("getTimeline loaded summary family=\(context.family) hasData=\(summary.hasData)")
-        let entry = ZakahWealthEntry(date: Date(), summary: summary)
-        completion(Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(300))))
+
+        Task {
+            let fallbackSummary = WidgetDataStore.loadSummary()
+            var finalSummary = fallbackSummary
+
+            if let userId = WidgetDataStore.activeUserId(),
+               let jsonString = WidgetDataStore.defaults.string(forKey: WidgetDataStore.portfolioSnapshotKeyForUser(userId)),
+               let data = jsonString.data(using: .utf8) {
+                do {
+                    let snapshot = try JSONDecoder().decode(WidgetPortfolioSnapshot.self, from: data)
+                    if snapshot.schemaVersion == 1 {
+                        let isArabic = fallbackSummary.isArabic
+                        let rates = await WidgetMarketRatesService.fetchRates(baseCurrency: snapshot.baseCurrency)
+                        finalSummary = WidgetWealthCalculator.calculate(
+                            snapshot: snapshot,
+                            rates: rates,
+                            isArabic: isArabic
+                        )
+                        widgetLog("getTimeline native calculation completed successfully")
+                    }
+                } catch {
+                    widgetLog("getTimeline native calculation failed: \(error.localizedDescription), falling back to pre-calculated summary")
+                }
+            }
+
+            let entry = ZakahWealthEntry(date: Date(), summary: finalSummary)
+            let nextRefresh = Calendar.current.date(byAdding: .minute, value: 20, to: Date())!
+            completion(Timeline(entries: [entry], policy: .after(nextRefresh)))
+        }
     }
 }
 
@@ -620,16 +645,50 @@ struct ZakahWealthWidgetView: View {
         return dark ? successDark : successLight
     }
 
+    private func formatLastUpdated(rawString: String, isArabic: Bool) -> String {
+        if rawString.isEmpty { return "" }
+        if rawString.contains("Updated") || rawString.contains("تحديث") {
+            return rawString
+        }
+
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        var dateOpt = isoFormatter.date(from: rawString)
+        if dateOpt == nil {
+            let isoFormatter2 = ISO8601DateFormatter()
+            isoFormatter2.formatOptions = [.withInternetDateTime]
+            dateOpt = isoFormatter2.date(from: rawString)
+        }
+
+        guard let date = dateOpt else {
+            return rawString
+        }
+
+        let displayFormatter = DateFormatter()
+        displayFormatter.locale = Locale(identifier: isArabic ? "ar" : "en")
+        displayFormatter.dateFormat = "h:mm a"
+        let timeStr = displayFormatter.string(from: date)
+        return isArabic ? "تحديث \(timeStr)" : "Updated \(timeStr)"
+    }
+
+    private var lastUpdatedTimestampView: some View {
+        Text(formatLastUpdated(rawString: summary.lastUpdated, isArabic: rtl))
+            .font(.system(size: 8.5, weight: .semibold, design: .rounded))
+            .foregroundStyle(secondaryTextColor)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+    }
+
     private var footerZakahRow: some View {
         HStack(alignment: .center) {
             if rtl {
+                lastUpdatedTimestampView
                 Spacer(minLength: 0)
-            }
-
-            countdownBadge
-
-            if !rtl {
+                countdownBadge
+            } else {
+                countdownBadge
                 Spacer(minLength: 0)
+                lastUpdatedTimestampView
             }
         }
     }
@@ -939,7 +998,7 @@ struct RubElHizbIconView: View {
 
 struct AppIconView: View {
     var body: some View {
-        Image("WidgetAppIcon")
+        Image("WidgetAppIconSmall")
             .resizable()
             .scaledToFit()
     }
@@ -947,7 +1006,7 @@ struct AppIconView: View {
 
 struct SmallWidgetAppIconView: View {
     var body: some View {
-        Image("WidgetAppIcon")
+        Image("WidgetAppIconSmall")
             .resizable()
             .scaledToFit()
     }
@@ -1510,9 +1569,6 @@ struct ZakahWealthWidgets: WidgetBundle {
     var body: some Widget {
         ZakahWealthSmallWidget()
         ZakahWealthAppWidget()
-        if #available(iOS 16.0, *) {
-            ZakahWealthAccessoryWidget()
-        }
     }
 }
 

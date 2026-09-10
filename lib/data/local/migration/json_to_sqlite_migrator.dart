@@ -191,12 +191,16 @@ class JsonToSqliteMigrator {
       'zakat_paid_months': state.zakatPaidMonths,
       'zakat_expense_ids': state.zakatExpenseIds,
       'processed_expense_ids': state.processedExpenseIds,
+      'credit_cards': state.creditCards
+          .map((card) => card.toJson())
+          .toList(growable: false),
       'zakat_method': state.zakatMethod,
       'zakat_annual_date': state.zakatAnnualDate,
       'zakat_nisab_basis': state.zakatNisabBasis,
       'zakat_schedule_filter': state.zakatScheduleFilter,
       'main_currency': state.mainCurrency,
       'default_entry_currency': state.defaultEntryCurrency,
+      'financial_month_cycle': state.financialMonthCycle,
       'language_preference': state.languagePreference,
       'theme_mode': state.themeMode,
       'biometric_lock_enabled': state.biometricLockEnabled,

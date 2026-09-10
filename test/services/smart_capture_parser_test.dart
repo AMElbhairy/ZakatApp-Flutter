@@ -25,6 +25,57 @@ void main() {
       _expectDateTime(parsed.capturedAt, 2026, 6, 26, 10, 2);
     });
 
+    test('arabic purchase removes country code prefix (e.g., SA/Tamara)', () {
+      final parsed = SmartCaptureParser.parse(
+        'شراء إنترنت ApplePay\n'
+        'بـ 9.81 SAR\n'
+        'بطاقة ائتمانية *0973\n'
+        'لدى SA/Tamara\n'
+        'في 19:36 26-08-21\n'
+        'رصيد 13,874.59',
+      );
+
+      expect(parsed.type, 'expense');
+      expect(parsed.amount, 9.81);
+      expect(parsed.currency, 'SAR');
+      expect(parsed.merchantName, 'SA/Tamara');
+      expect(parsed.paymentMethod, 'Apple Pay');
+      expect(parsed.cardReference, '*0973');
+      expect(parsed.balance, 13874.59);
+    });
+
+    test('arabic purchase with country prefix in merchant line extracts merchant cleanly', () {
+      final parsed = SmartCaptureParser.parse(
+        'شراء POS-ApplePay\n'
+        'بـ SAR 45.00\n'
+        'بطاقة ائتمانية *0973\n'
+        'لدى SA /tashkilat *\n'
+        'في 26-08-21 18:13\n'
+        'الرصيد 11,355.40',
+      );
+
+      expect(parsed.type, 'expense');
+      expect(parsed.amount, 45.0);
+      expect(parsed.currency, 'SAR');
+      expect(parsed.merchantName, 'SA /tashkilat *');
+      expect(parsed.paymentMethod, 'Apple Pay');
+      expect(parsed.cardReference, '*0973');
+      expect(parsed.balance, 11355.4);
+    });
+
+    test('arabic purchase code message is recognized as OTP and ignored', () {
+      final parsed = SmartCaptureParser.parse(
+        'رمز شراء أونلاين 6528\n'
+        'للبطاقة *0973\n'
+        'بـ 25 SAR\n'
+        'من Amazon SA\n'
+        'في 11:32 26-08-21',
+      );
+
+      expect(parsed.isValid, false);
+      expect(parsed.ignoreReason, 'Verification Code Message');
+    });
+
     test('arabic Apple Pay purchase keeps merchant clean and ignores date line', () {
       final parsed = SmartCaptureParser.parse(
         'شراء 33.00 SAR POS - Apple Pay\n'
@@ -189,6 +240,42 @@ void main() {
       _expectDateTime(parsed.capturedAt, 2026, 6, 25, 21, 1);
     });
 
+    test('arabic incoming internal transfer with custom labels extracts sender and income type', () {
+      final parsed = SmartCaptureParser.parse(
+        'حوالة واردة داخلية\n'
+        'مبلغ:10000 SAR\n'
+        'مرسل:محمد احمد\n'
+        'من:6406*\n'
+        'إلى:6403*\n'
+        'في:21/07/26 18:23',
+      );
+
+      expect(parsed.type, 'income');
+      expect(parsed.direction, 'in');
+      expect(parsed.amount, 10000.0);
+      expect(parsed.currency, 'SAR');
+      expect(parsed.merchantName, 'محمد احمد');
+      expect(parsed.senderName, 'محمد احمد');
+    });
+
+    test('arabic incoming internal transfer notification omitting remittance keyword extracts sender and income type', () {
+      final parsed = SmartCaptureParser.parse(
+        'واردة داخلية\n'
+        'مبلغ:10000 SAR\n'
+        'مرسل:محمد احمد\n'
+        'من:6406*\n'
+        'إلى:6403*\n'
+        'في:21/07/26 18:23',
+      );
+
+      expect(parsed.type, 'income');
+      expect(parsed.direction, 'in');
+      expect(parsed.amount, 10000.0);
+      expect(parsed.currency, 'SAR');
+      expect(parsed.merchantName, 'محمد احمد');
+      expect(parsed.senderName, 'محمد احمد');
+    });
+
     test('internal transfer between own accounts stays transfer', () {
       final parsed = SmartCaptureParser.parse(
         'Internal Transfer\n'
@@ -198,7 +285,7 @@ void main() {
         '25/6/26 21:01',
       );
 
-      expect(parsed.type, 'transfer');
+      expect(parsed.type, 'expense');
       expect(parsed.direction, 'internal');
       expect(parsed.amount, 100.0);
       expect(parsed.currency, 'SAR');
@@ -326,7 +413,7 @@ void main() {
             caseData['message']! as String,
           );
 
-          expect(parsed.type, 'transfer');
+          expect(parsed.type, 'expense');
           expect(parsed.direction, 'out');
           expect(parsed.amount, caseData['amount'] as double);
           expect(parsed.currency, 'SAR');
@@ -348,7 +435,7 @@ void main() {
           'On: 08/07/2026 11:32:35',
         );
 
-        expect(parsed.type, 'transfer');
+        expect(parsed.type, 'expense');
         expect(parsed.direction, 'out');
         expect(parsed.amount, 58.5);
         expect(parsed.currency, 'SAR');
@@ -474,6 +561,151 @@ void main() {
         expect(parsed.merchantName, 'Thamara & Resha Establish');
       },
     );
+
+    test(
+      'investment account deposit in Arabic is treated as account funding and suppresses merchant extraction',
+      () {
+        final parsed = SmartCaptureParser.parse(
+          'إيداع إلى حساب استثماري\n'
+          'رقم: 4454\n'
+          'SAR المبلغ: 10000\n'
+          'في: 2026-08-03 12:36:05\n'
+          'أويس المالية',
+        );
+
+        expect(parsed.type, 'expense');
+        expect(parsed.amount, 10000.0);
+        expect(parsed.currency, 'SAR');
+        expect(parsed.merchantName, isNull);
+        expect(parsed.description, 'Account Deposit');
+      },
+    );
+
+    test('subscription activation messages are rejected before parsing', () {
+      final parsed = SmartCaptureParser.parse(
+        'مرحبا احمد البحيرى،\n'
+        'تم تفعيل اشتراكك في Mobily Welcome Prepaid بنجاح.\n'
+        'سعر الباقة: 0 ريال (تم احتساب الضريبة عند شحن الرصيد).\n'
+        'Dear Ahmed,\n'
+        'You have successfully subscribed to Mobily Welcome Prepaid.\n'
+        'Bundle price: SAR 0 (VAT has already been paid upon recharging).',
+      );
+
+      expect(parsed.isValid, isFalse);
+      expect(parsed.ignoreReason, 'Subscription Activation Message');
+      expect(parsed.description, 'Subscription Activation Message');
+      expect(parsed.amount, isNull);
+      expect(parsed.currency, isNull);
+      expect(parsed.merchantName, isNull);
+    });
+
+    test(
+      'instapay instant transfer in Arabic is captured as income',
+      () {
+        final parsed = SmartCaptureParser.parse(
+          'تم اضافة مبلغ 30000EGP      الى حساب رقم xxx7127      فى 26-JUL-2026  عن طريق التحويل اللحظي',
+        );
+
+        expect(parsed.type, 'income');
+        expect(parsed.amount, 30000.0);
+        expect(parsed.currency, 'EGP');
+      },
+    );
+
+    group('Phase 2A canonical parser accuracy regressions', () {
+      test('recognizes all ApplePay variations and normalizes to Apple Pay without making ApplePay merchant', () {
+        final variations = <String>[
+          'شراء إنترنت Apple Pay\nبـ 50 SAR\nلدى Jarir Bookstore',
+          'شراء إنترنت ApplePay\nبـ 50 SAR\nلدى Jarir Bookstore',
+          'شراء إنترنت apple pay\nبـ 50 SAR\nلدى Jarir Bookstore',
+          'شراء إنترنت applepay\nبـ 50 SAR\nلدى Jarir Bookstore',
+        ];
+
+        for (final msg in variations) {
+          final parsed = SmartCaptureParser.parse(msg);
+          expect(parsed.paymentMethod, 'Apple Pay', reason: 'Failed for: $msg');
+          expect(parsed.merchantName, 'Jarir', reason: 'Failed for: $msg');
+          expect(parsed.type, 'expense');
+          expect(parsed.amount, 50.0);
+        }
+      });
+
+      test('recognizes POS-ApplePay separator variations as Apple Pay and does not treat POS as merchant', () {
+        final variations = <String>[
+          'شراء POS-ApplePay\nبـ 75 SAR\nلدى Al Baik',
+          'شراء POS ApplePay\nبـ 75 SAR\nلدى Al Baik',
+          'شراء POS Apple Pay\nبـ 75 SAR\nلدى Al Baik',
+          'شراء POS - Apple Pay\nبـ 75 SAR\nلدى Al Baik',
+        ];
+
+        for (final msg in variations) {
+          final parsed = SmartCaptureParser.parse(msg);
+          expect(parsed.paymentMethod, 'Apple Pay', reason: 'Failed for: $msg');
+          expect(parsed.merchantName, 'Al Baik', reason: 'Failed for: $msg');
+          expect(parsed.type, 'expense');
+          expect(parsed.amount, 75.0);
+        }
+      });
+
+      test('recognizes Arabic purchase OTP phrases as verification messages and ignores them', () {
+        final otpMessages = <String>[
+          'رمز شراء أونلاين 6528\nللبطاقة *0973\nبـ 25 SAR',
+          'رمز شراء 1234 لبطاقتك *5678 بمبلغ 100 SAR',
+          'Purchase code: 9988 for your card ending 1234',
+        ];
+
+        for (final msg in otpMessages) {
+          final parsed = SmartCaptureParser.parse(msg);
+          expect(parsed.isValid, isFalse, reason: 'Should be ignored: $msg');
+          expect(parsed.ignoreReason, 'Verification Code Message');
+        }
+      });
+
+      test('negative test: ordinary online purchases containing شراء أونلاين remain valid transactions', () {
+        final purchaseMsg = 'شراء أونلاين بمبلغ 150 SAR\nلدى Amazon SA\nبطاقة *1234';
+        final parsed = SmartCaptureParser.parse(purchaseMsg);
+
+        expect(parsed.isValid, isTrue);
+        expect(parsed.type, 'expense');
+        expect(parsed.amount, 150.0);
+        expect(parsed.currency, 'SAR');
+        expect(parsed.merchantName, 'Amazon');
+      });
+
+      test('extracts merchant with glued Arabic preposition عند (spaced and glued, Arabic and English merchant)', () {
+        // Glued عند with English merchant
+        final gluedEnglish = SmartCaptureParser.parse(
+          'تم الآن خصم EGP 105.06عند  MY FAWRY يوم 30/06 ، الرصيد المتاح EGP 1614.88',
+        );
+        expect(gluedEnglish.amount, 105.06);
+        expect(gluedEnglish.currency, 'EGP');
+        expect(gluedEnglish.merchantName, 'MY FAWRY');
+
+        // Spaced عند with English merchant
+        final spacedEnglish = SmartCaptureParser.parse(
+          'تم الآن خصم EGP 105.06 عند MY FAWRY يوم 30/06 ، الرصيد المتاح EGP 1614.88',
+        );
+        expect(spacedEnglish.amount, 105.06);
+        expect(spacedEnglish.currency, 'EGP');
+        expect(spacedEnglish.merchantName, 'MY FAWRY');
+
+        // Glued عند with Arabic merchant
+        final gluedArabic = SmartCaptureParser.parse(
+          'تم الآن خصم EGP 105.06عند فوري يوم 30/06 ، الرصيد المتاح EGP 1614.88',
+        );
+        expect(gluedArabic.amount, 105.06);
+        expect(gluedArabic.currency, 'EGP');
+        expect(gluedArabic.merchantName, 'فوري');
+
+        // Glued لدى with Arabic merchant
+        final gluedLada = SmartCaptureParser.parse(
+          'تم الآن خصم SAR 50.00لدى جرير يوم 30/06',
+        );
+        expect(gluedLada.amount, 50.00);
+        expect(gluedLada.currency, 'SAR');
+        expect(gluedLada.merchantName, 'جرير');
+      });
+    });
   });
 }
 

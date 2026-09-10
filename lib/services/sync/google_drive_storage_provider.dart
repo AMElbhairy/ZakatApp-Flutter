@@ -99,13 +99,24 @@ class GoogleDriveStorageProvider implements UserCloudStorageProvider {
   @override
   Future<bool> isConnected() async {
     if (googleSignIn != null) {
-      if (hasGrantedDriveScope != null) {
-        try {
-          await hasGrantedDriveScope!();
-        } catch (_) {
-          // The local permission flag is advisory. Fall through to a silent probe.
+      try {
+        final bool canAccess = await googleSignIn!.canAccessScopes(
+          _driveScopes,
+        );
+        if (!canAccess) {
+          if (setGrantedDriveScope != null) {
+            await setGrantedDriveScope!(false);
+          }
+          _lastConnectionStatus = const DriveConnectionStatus(
+            connected: false,
+            message: 'Google Drive is not connected.',
+          );
+          return false;
         }
+      } catch (_) {
+        // Fall through to the slower probe when the client cannot confirm scope state.
       }
+
       final status = await resolveConnection(
         interactive: false,
         phase: 'is_connected',
@@ -328,7 +339,7 @@ class GoogleDriveStorageProvider implements UserCloudStorageProvider {
     if (error.status == 404) {
       return 'Google Drive API appears to be unavailable for this account.';
     }
-    return 'Google Drive access failed: ${error.message ?? raw}';
+    return 'Google Drive access could not be completed.';
   }
 
   String _mapGenericConnectionError(Object error) {
@@ -343,7 +354,7 @@ class GoogleDriveStorageProvider implements UserCloudStorageProvider {
         lower.contains('gidclientid')) {
       return 'Google Drive iOS client configuration is missing or invalid.';
     }
-    return 'Google Drive connection failed: $raw';
+    return 'Google Drive connection could not be completed.';
   }
 
   Future<DriveConnectionStatus> resolveConnection({
@@ -367,6 +378,27 @@ class GoogleDriveStorageProvider implements UserCloudStorageProvider {
     }
 
     if (!interactive) {
+      try {
+        final bool canAccess = await googleSignIn!.canAccessScopes(
+          _driveScopes,
+        );
+        if (!canAccess) {
+          final status = DriveConnectionStatus(
+            connected: false,
+            failureReason: DriveConnectionFailureReason.permissionDenied,
+            message: 'Google Drive permission is required for cloud backup.',
+            grantedScopes: const <String>[],
+            accountEmail: account.email,
+          );
+          if (setGrantedDriveScope != null) {
+            await setGrantedDriveScope!(false);
+          }
+          _lastConnectionStatus = status;
+          return status;
+        }
+      } catch (_) {
+        // If the plugin cannot answer scope access directly, fall back to probing.
+      }
       final status = await _probeAppDataAccess(phase: phase, account: account);
       if (status.connected && setGrantedDriveScope != null) {
         await setGrantedDriveScope!(true);
@@ -377,7 +409,12 @@ class GoogleDriveStorageProvider implements UserCloudStorageProvider {
       return status;
     }
 
-    final bool requested = await googleSignIn!.requestScopes(_driveScopes);
+    final bool alreadyAuthorized = await googleSignIn!.canAccessScopes(
+      _driveScopes,
+    );
+    final bool requested = alreadyAuthorized
+        ? true
+        : await googleSignIn!.requestScopes(_driveScopes);
     _logAuth(
       '$phase:request_scopes',
       account: account,

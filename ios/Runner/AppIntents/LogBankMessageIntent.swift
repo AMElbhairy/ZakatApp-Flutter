@@ -14,9 +14,6 @@ struct LogBankMessageIntent: AppIntent {
     func perform() async throws -> some IntentResult {
         NSLog("[Shortcut] Intent received")
         NSLog("[Shortcut] Length: \(messageContent.count)")
-        NSLog(
-            "[Shortcut] First 100 chars: \(String(messageContent.prefix(100)))"
-        )
         NSLog("[Shortcut] perform() started")
 
         let trimmed = messageContent.trimmingCharacters(in: .whitespacesAndNewlines)

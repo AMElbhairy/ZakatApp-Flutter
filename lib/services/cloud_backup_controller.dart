@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
-
+import 'package:http/http.dart' as http;
 import 'package:cryptography/cryptography.dart' as crypto;
 import 'package:flutter/widgets.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -25,6 +25,7 @@ import 'sync/google_drive_storage_provider.dart';
 import 'sync/snapshot_manager.dart';
 import 'sync/sync_encryption_service.dart';
 import 'sync/user_cloud_storage_provider.dart';
+import 'sync/icloud_storage_provider.dart';
 import 'backup_integrity_summary.dart';
 import 'google_sign_in_factory.dart';
 import 'startup_restore_discovery.dart';
@@ -85,7 +86,7 @@ class CloudBackupController extends ChangeNotifier
   String _lastBackupError = '';
   String? _backupPassphrase;
   String? _backupPassphraseUserId;
-  String? _lastObservedStateStamp;
+  String? _lastObservedSourceStamp;
   String? _lastOperationSyncAt;
   String _lastOperationSyncError = '';
   bool _isBackingUp = false;
@@ -95,6 +96,8 @@ class CloudBackupController extends ChangeNotifier
   bool _suppressOperationSyncAfterRestore = false;
   bool _startupRestoreDiscoveryActive = false;
   bool _isDriveConnected = false;
+  String? _selectedProviderId;
+  ICloudAvailability _icloudAvailability = ICloudAvailability.unavailable;
   Timer? _debounceTimer;
   Timer? _eligibleTimer;
   Timer? _retryTimer;
@@ -104,6 +107,8 @@ class CloudBackupController extends ChangeNotifier
   BackupPreview? _latestPreview;
   BackupIntegritySummary? _lastKnownGoodIntegritySummary;
   String _statusMessage = '';
+
+  GoogleSignIn get googleSignIn => _googleSignIn;
 
   static const List<int> _allowedIntervals = <int>[30, 60, 180, 360, 720];
 
@@ -120,15 +125,25 @@ class CloudBackupController extends ChangeNotifier
   }
 
   BackupPreview? get latestBackup => _latestPreview;
+  DateTime? get latestSnapshotAt => _latestSnapshot?.createdAt;
   bool get cloudBackupNewerThanLocal => false;
   bool get backupOwnershipMismatch => false;
   bool get isOperationSyncEnabled => enableOperationSync;
   bool get isOperationSyncing => _isOperationSyncing;
-  bool get isDriveConnected => _isDriveConnected;
+  String? get selectedProviderId => _selectedProviderId;
+  ICloudAvailability get icloudAvailability => _icloudAvailability;
+  bool get isDriveConnected {
+    if (_selectedProviderId == 'icloud') {
+      return _icloudAvailability == ICloudAvailability.connected ||
+          _icloudAvailability == ICloudAvailability.syncing;
+    }
+    return _isDriveConnected;
+  }
 
   String _languageCode() {
-    final String normalized =
-        appStateController.state.languagePreference.trim().toLowerCase();
+    final String normalized = appStateController.state.languagePreference
+        .trim()
+        .toLowerCase();
     return normalized == 'ar' ? 'ar' : 'en';
   }
 
@@ -140,49 +155,17 @@ class CloudBackupController extends ChangeNotifier
     return _languageCode() == 'ar' ? arabic : english;
   }
 
-  Future<bool> connectGoogleDrive({required bool interactive}) async {
-    final String userId = _currentUserId();
-    if (userId.isEmpty) return false;
-
-    final GoogleDriveStorageProvider provider = GoogleDriveStorageProvider(
-      googleSignIn: _googleSignIn,
-      getAuthHeaders: () async {
-        final headers = await _googleSignIn.currentUser?.authHeaders;
-        return headers ?? <String, String>{};
-      },
-      checkConnected: () async {
-        try {
-          final bool signedIn = await _googleSignIn.isSignedIn();
-          if (!signedIn) {
-            await _googleSignIn.signInSilently();
-          }
-          return _googleSignIn.currentUser != null;
-        } catch (_) {
-          return false;
-        }
-      },
-      requestConnect: () async => false,
-      requestDisconnect: () async {},
-      hasGrantedDriveScope: _hasDrivePermissionGranted,
-      setGrantedDriveScope: _setDrivePermissionGranted,
-      namespacePrefix: userId,
-    );
-
-    final status = await provider.resolveConnection(
-      interactive: interactive,
-      phase: 'connect',
-    );
-
-    if (status.connected) {
-      _isDriveConnected = true;
-      notifyListeners();
-      await refreshCloudState(evaluatePrompt: false);
-      return true;
-    } else {
-      _isDriveConnected = false;
-      notifyListeners();
-      return false;
+  String _backupProviderId() {
+    final String currentAuthProvider =
+        authController.currentUser?.provider.toLowerCase().trim() ?? '';
+    if (_selectedProviderId == 'icloud' || currentAuthProvider == 'apple') {
+      return 'icloud';
     }
+    return 'google_drive';
+  }
+
+  Future<bool> connectGoogleDrive({required bool interactive}) async {
+    return _connectSelectedProvider(interactive: interactive);
   }
 
   String get operationSyncModeLabel => enableOperationSync ? 'On' : 'Off';
@@ -215,9 +198,8 @@ class CloudBackupController extends ChangeNotifier
   BackupIntegritySummary? get lastKnownGoodIntegritySummary =>
       _lastKnownGoodIntegritySummary;
   @override
-  String get statusMessage => _statusMessage.isNotEmpty
-      ? _statusMessage
-      : currentStatus;
+  String get statusMessage =>
+      _statusMessage.isNotEmpty ? _statusMessage : currentStatus;
   String get currentStatus => _statusMessage.isNotEmpty
       ? _statusMessage
       : (_isDriveConnected
@@ -227,7 +209,19 @@ class CloudBackupController extends ChangeNotifier
               )
             : _tr('refreshing_backup_status'));
 
+  String get debugSessionUserId => _sessionUserId();
+
   Duration get autoBackupDelay => debounceDuration;
+
+  String _authStateStamp() {
+    final user = authController.currentUser;
+    if (user == null) return 'signed_out';
+    return '${user.id}|${user.provider}|${user.email}';
+  }
+
+  String _currentSourceStamp() {
+    return '${_currentStateStamp()}|${_authStateStamp()}';
+  }
 
   Future<void> refreshCloudState({bool evaluatePrompt = true}) async {
     if (!appStateController.isHydrationReady ||
@@ -369,10 +363,7 @@ class CloudBackupController extends ChangeNotifier
 
     if (isRestoring) {
       _setStatus(
-        _text(
-          english: 'Restore in progress',
-          arabic: 'الاستعادة قيد التنفيذ',
-        ),
+        _text(english: 'Restore in progress', arabic: 'الاستعادة قيد التنفيذ'),
         error: '',
       );
       return false;
@@ -384,7 +375,7 @@ class CloudBackupController extends ChangeNotifier
         ? _text(
             english: 'Backing up automatically...',
             arabic: 'جارٍ النسخ الاحتياطي تلقائياً...',
-        )
+          )
         : _text(english: 'Backing up...', arabic: 'جارٍ النسخ الاحتياطي...');
     notifyListeners();
     unawaited(
@@ -394,11 +385,13 @@ class CloudBackupController extends ChangeNotifier
           'automatic': automatic,
           'phase': appStateController.hydrationPhase.name,
           'transactionCount': appStateController.state.transactions.length,
+          'creditCardCount': appStateController.state.creditCards.length,
           'savingCount': appStateController.state.savings.length,
           'investmentCount': appStateController.state.investments.length,
           'pendingCount': appStateController.state.pendingTransactions.length,
           'planCount': appStateController.state.financialPlans.length,
-          'recurringCount': appStateController.state.recurringTransactions.length,
+          'recurringCount':
+              appStateController.state.recurringTransactions.length,
         },
       ),
     );
@@ -452,7 +445,8 @@ class CloudBackupController extends ChangeNotifier
     final bool candidateHasData = BackupService.hasData(
       appStateController.state.toJson(),
     );
-    final bool hasBackupHistory = _lastBackupAt != null || _latestSnapshot != null;
+    final bool hasBackupHistory =
+        _lastBackupAt != null || _latestSnapshot != null;
     if (automatic && !candidateHasData && hasBackupHistory) {
       _isBackingUp = false;
       _setStatus(
@@ -472,11 +466,13 @@ class CloudBackupController extends ChangeNotifier
             'reason': 'empty_candidate_has_history',
             'phase': appStateController.hydrationPhase.name,
             'transactionCount': appStateController.state.transactions.length,
+            'creditCardCount': appStateController.state.creditCards.length,
             'savingCount': appStateController.state.savings.length,
             'investmentCount': appStateController.state.investments.length,
             'pendingCount': appStateController.state.pendingTransactions.length,
             'planCount': appStateController.state.financialPlans.length,
-            'recurringCount': appStateController.state.recurringTransactions.length,
+            'recurringCount':
+                appStateController.state.recurringTransactions.length,
           },
         ),
       );
@@ -485,13 +481,14 @@ class CloudBackupController extends ChangeNotifier
 
     final BackupIntegritySummary candidateIntegritySummary =
         _currentIntegritySummary();
-    final BackupEligibilityResult eligibility = await _evaluateBackupEligibility(
-      automatic: automatic,
-      candidate: candidateIntegritySummary,
-    );
+    final BackupEligibilityResult eligibility =
+        await _evaluateBackupEligibility(
+          automatic: automatic,
+          candidate: candidateIntegritySummary,
+        );
     if (!eligibility.allowed) {
-      final BackupEligibilityBlocked blocked = eligibility
-          as BackupEligibilityBlocked;
+      final BackupEligibilityBlocked blocked =
+          eligibility as BackupEligibilityBlocked;
       _isBackingUp = false;
       _setStatus(
         _text(
@@ -509,6 +506,7 @@ class CloudBackupController extends ChangeNotifier
             'automatic': automatic,
             'reason': blocked.reason,
             'phase': appStateController.hydrationPhase.name,
+            'creditCardCount': appStateController.state.creditCards.length,
             'suspiciousCollections': blocked.suspiciousCollections,
             'candidateSignature': candidateIntegritySummary.signature,
             'baselineSignature': blocked.baseline?.signature,
@@ -643,11 +641,14 @@ class CloudBackupController extends ChangeNotifier
             metadata: <String, dynamic>{
               'automatic': automatic,
               'transactionCount': appStateController.state.transactions.length,
+              'creditCardCount': appStateController.state.creditCards.length,
               'savingCount': appStateController.state.savings.length,
               'investmentCount': appStateController.state.investments.length,
-              'pendingCount': appStateController.state.pendingTransactions.length,
+              'pendingCount':
+                  appStateController.state.pendingTransactions.length,
               'planCount': appStateController.state.financialPlans.length,
-              'recurringCount': appStateController.state.recurringTransactions.length,
+              'recurringCount':
+                  appStateController.state.recurringTransactions.length,
             },
           ),
         );
@@ -923,6 +924,7 @@ class CloudBackupController extends ChangeNotifier
         isLegacy: false,
         sourceType: 'cloud_drive',
         transactionsCount: 0,
+        creditCardsCount: 0,
         savingsCount: 0,
         investmentsCount: 0,
         recurringTransactionsCount: 0,
@@ -936,7 +938,7 @@ class CloudBackupController extends ChangeNotifier
         rawJson: '',
         backupVersion: snapshot.databaseSchemaVersion,
         backupUserId: snapshot.deviceId,
-        backupProvider: 'google_drive',
+        backupProvider: _backupProviderId(),
         backupEmail: null,
       );
       _statusMessage = _tr('cloud_backup_found');
@@ -1002,10 +1004,7 @@ class CloudBackupController extends ChangeNotifier
     _latestSnapshot = snapshot;
     _statusMessage = _lastBackupStatus.isNotEmpty
         ? _lastBackupStatus
-        : _text(
-            english: 'Cloud Sync: Active',
-            arabic: 'مزامنة السحابة: نشطة',
-          );
+        : _text(english: 'Cloud Sync: Active', arabic: 'مزامنة السحابة: نشطة');
 
     if (snapshot == null) {
       _latestPreview = null;
@@ -1019,6 +1018,7 @@ class CloudBackupController extends ChangeNotifier
       isLegacy: false,
       sourceType: 'cloud_drive',
       transactionsCount: 0,
+      creditCardsCount: 0,
       savingsCount: 0,
       investmentsCount: 0,
       recurringTransactionsCount: 0,
@@ -1032,7 +1032,7 @@ class CloudBackupController extends ChangeNotifier
       rawJson: '',
       backupVersion: snapshot.databaseSchemaVersion,
       backupUserId: snapshot.deviceId,
-      backupProvider: 'google_drive',
+      backupProvider: _backupProviderId(),
       backupEmail: null,
     );
     notifyListeners();
@@ -1041,6 +1041,16 @@ class CloudBackupController extends ChangeNotifier
 
   @override
   Future<bool> restoreLatestBackup({bool allowOverwrite = true}) async {
+    // Stage 1: Auth Resolved
+    final String currentUserId = _currentUserId();
+    if (currentUserId.isEmpty || currentUserId == 'default') {
+      _setStatus(
+        'Authentication required for backup restore.',
+        error: 'no_auth',
+      );
+      return false;
+    }
+
     if (!appStateController.isHydrationReady &&
         !_startupRestoreDiscoveryActive &&
         !appStateController.isRestoringDatabase) {
@@ -1054,6 +1064,8 @@ class CloudBackupController extends ChangeNotifier
       );
       return false;
     }
+
+    // Stage 2: Key Recovered
     final String? passphrase = await _resolvePassphrase(createIfMissing: false);
     if (passphrase == null || passphrase.isEmpty) {
       _setStatus(
@@ -1069,6 +1081,7 @@ class CloudBackupController extends ChangeNotifier
       return false;
     }
 
+    // Stage 3: Provider Resolved
     final CloudSyncManager? manager = await _resolveSyncManager();
     if (manager == null) {
       _setStatus(
@@ -1085,6 +1098,52 @@ class CloudBackupController extends ChangeNotifier
         error: '',
       );
       return false;
+    }
+
+    // Stage 4: Manifest Read
+    final CloudManifest? manifestInfo = await provider.readManifest();
+
+    // Stage 5: Conflict Detection
+    final bool localHasData = BackupService.hasData(
+      appStateController.state.toJson(),
+    );
+
+    if (localHasData &&
+        manifestInfo != null &&
+        appStateController.database != null) {
+      final CloudSyncManifest cloudManifest = CloudSyncManifest.fromJson(
+        manifestInfo.content,
+      );
+      final SnapshotEntry? remoteSnapshot = await _latestAvailableSnapshot(
+        provider,
+        cloudManifest,
+      );
+
+      if (remoteSnapshot != null) {
+        final String localChecksum = await _snapshotManager
+            .calculateDatabaseChecksum(db: appStateController.database!);
+        final bool localUnsyncedChanges =
+            appStateController.state.hasUnsyncedAuthChanges == true ||
+            appStateController.state.pendingTransactions.isNotEmpty;
+        final bool remoteIsNewer =
+            _lastBackupAt == null ||
+            remoteSnapshot.createdAt.isAfter(_lastBackupAt!);
+        final bool checksumMismatch = localChecksum != remoteSnapshot.checksum;
+
+        final bool hasConflict =
+            localUnsyncedChanges || remoteIsNewer || checksumMismatch;
+
+        if (hasConflict && !allowOverwrite) {
+          _setStatus(
+            _text(
+              english: 'Restore conflict detected',
+              arabic: 'تم اكتشاف تعارض في الاستعادة',
+            ),
+            error: 'conflict_detected',
+          );
+          return false;
+        }
+      }
     }
 
     manager.setPassphrase(passphrase);
@@ -1105,6 +1164,7 @@ class CloudBackupController extends ChangeNotifier
       ),
     );
 
+    // Stage 6: Snapshot Restored & Hydrated
     final String targetPath =
         '${Directory.systemTemp.path}/cloud_restore_${DateTime.now().millisecondsSinceEpoch}.sqlite';
     try {
@@ -1127,10 +1187,7 @@ class CloudBackupController extends ChangeNotifier
       }
 
       _setStatus(
-        _text(
-          english: 'Restore completed',
-          arabic: 'اكتملت الاستعادة',
-        ),
+        _text(english: 'Restore completed', arabic: 'اكتملت الاستعادة'),
       );
       await _refreshRemoteState(provider: provider);
       completeStartupRestoreDiscovery();
@@ -1140,11 +1197,13 @@ class CloudBackupController extends ChangeNotifier
           metadata: <String, dynamic>{
             'phase': appStateController.hydrationPhase.name,
             'transactionCount': appStateController.state.transactions.length,
+            'creditCardCount': appStateController.state.creditCards.length,
             'savingCount': appStateController.state.savings.length,
             'investmentCount': appStateController.state.investments.length,
             'pendingCount': appStateController.state.pendingTransactions.length,
             'planCount': appStateController.state.financialPlans.length,
-            'recurringCount': appStateController.state.recurringTransactions.length,
+            'recurringCount':
+                appStateController.state.recurringTransactions.length,
           },
         ),
       );
@@ -1177,27 +1236,108 @@ class CloudBackupController extends ChangeNotifier
     }
   }
 
+  Future<void> selectBackupProvider(
+    String providerId, {
+    bool migrate = false,
+  }) async {
+    final String userId = _sessionUserId();
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+
+    final String? oldProviderId = _selectedProviderId;
+
+    if (migrate && oldProviderId != null) {
+      // Safely copy forward: push current local state to target provider
+      await backupNow();
+    }
+
+    _selectedProviderId = providerId;
+    await prefs.setString(
+      _prefsKey('selected_provider_id', userId),
+      providerId,
+    );
+    notifyListeners();
+    if (providerId == 'icloud' || providerId == 'google_drive') {
+      await connectGoogleDrive(interactive: providerId == 'google_drive');
+    } else {
+      await refreshCloudState(evaluatePrompt: false);
+    }
+  }
+
   Future<void> deleteCloudBackupData() async {
-    final CloudSyncManager? manager = await _resolveSyncManager();
-    if (manager == null) {
-      throw StateError('Google Drive is not connected');
-    }
-
-    final UserCloudStorageProvider provider = manager.provider;
-    if (!await provider.isConnected()) {
-      throw StateError('Google Drive is not connected');
-    }
-
-    final List<CloudFileInfo> files = await provider.listFiles('');
-    for (final CloudFileInfo file in files) {
-      final String path = file.path.trim();
-      if (path.isEmpty) continue;
-      try {
-        await provider.deleteFile(path);
-      } catch (_) {
-        // Best-effort cleanup continues so account deletion removes as much remote data as possible.
+    // 1. Delete all backups from iCloud if available
+    try {
+      final ICloudStorageProvider icloud = ICloudStorageProvider(
+        namespacePrefix: _currentUserId(),
+      );
+      if (await icloud.isConnected()) {
+        final List<CloudFileInfo> files = await icloud.listFiles('');
+        for (final CloudFileInfo file in files) {
+          final String path = file.path.trim();
+          if (path.isNotEmpty) {
+            try {
+              await icloud.deleteFile(path);
+            } catch (_) {}
+          }
+        }
       }
-    }
+    } catch (_) {}
+
+    // 2. Delete all backups from Google Drive if connected
+    try {
+      final GoogleDriveStorageProvider gdrive = GoogleDriveStorageProvider(
+        googleSignIn: _googleSignIn,
+        getAuthHeaders: () async {
+          final headers = await _googleSignIn.currentUser?.authHeaders;
+          return headers ?? <String, String>{};
+        },
+        checkConnected: () async {
+          try {
+            final bool signedIn = await _googleSignIn.isSignedIn();
+            if (!signedIn) {
+              await _googleSignIn.signInSilently();
+            }
+            return _googleSignIn.currentUser != null;
+          } catch (_) {
+            return false;
+          }
+        },
+        requestConnect: () async => false,
+        requestDisconnect: () async {},
+        hasGrantedDriveScope: _hasDrivePermissionGranted,
+        setGrantedDriveScope: _setDrivePermissionGranted,
+        namespacePrefix: _currentUserId(),
+        httpClient: Platform.environment.containsKey('FLUTTER_TEST')
+            ? _TestMockHttpClient()
+            : null,
+      );
+      if (await gdrive.isConnected()) {
+        final List<CloudFileInfo> files = await gdrive.listFiles('');
+        for (final CloudFileInfo file in files) {
+          final String path = file.path.trim();
+          if (path.isNotEmpty) {
+            try {
+              await gdrive.deleteFile(path);
+            } catch (_) {}
+          }
+        }
+      }
+    } catch (_) {}
+
+    // 3. Delete from active manager if builder was provided
+    try {
+      final CloudSyncManager? manager = await _resolveSyncManager();
+      if (manager != null && await manager.provider.isConnected()) {
+        final List<CloudFileInfo> files = await manager.provider.listFiles('');
+        for (final CloudFileInfo file in files) {
+          final String path = file.path.trim();
+          if (path.isNotEmpty) {
+            try {
+              await manager.provider.deleteFile(path);
+            } catch (_) {}
+          }
+        }
+      }
+    } catch (_) {}
   }
 
   void dismissRestorePrompt() {
@@ -1245,15 +1385,30 @@ class CloudBackupController extends ChangeNotifier
         appStateController.isRestoringDatabase) {
       return;
     }
-    final String currentStamp = _currentStateStamp();
-    if (currentStamp == _lastObservedStateStamp) {
+    final String currentStamp = _currentSourceStamp();
+    if (currentStamp == _lastObservedSourceStamp) {
       return;
     }
-    _lastObservedStateStamp = currentStamp;
+    _lastObservedSourceStamp = currentStamp;
     if (authController.currentUser == null) {
       _cancelTimers();
+      _isDriveConnected = false;
+      _icloudAvailability = ICloudAvailability.unavailable;
+      _latestSnapshot = null;
+      _latestPreview = null;
       _statusMessage = _tr('refreshing_backup_status');
+      unawaited(_googleSignIn.signOut());
     } else {
+      unawaited(
+        refreshCloudState(evaluatePrompt: false).then((_) async {
+          final String provider =
+              authController.currentUser?.provider ?? 'email';
+          if ((provider == 'apple' || provider == 'google') &&
+              !Platform.environment.containsKey('FLUTTER_TEST')) {
+            await connectGoogleDrive(interactive: false);
+          }
+        }),
+      );
       if (_autoBackupEnabled &&
           !isRestoring &&
           !_startupRestoreDiscoveryActive) {
@@ -1383,7 +1538,78 @@ class CloudBackupController extends ChangeNotifier
         ? 'iOS Device'
         : 'Desktop Device';
 
-    final UserCloudStorageProvider provider = GoogleDriveStorageProvider(
+    final UserCloudStorageProvider provider;
+    if (_selectedProviderId == 'icloud') {
+      provider = ICloudStorageProvider(namespacePrefix: _currentUserId());
+      // Asynchronously query and update current iCloud availability status
+      final ICloudStorageProvider icloud = provider as ICloudStorageProvider;
+      unawaited(
+        icloud.getAvailability().then((avail) {
+          if (_icloudAvailability != avail) {
+            _icloudAvailability = avail;
+            notifyListeners();
+          }
+        }),
+      );
+    } else {
+      provider = GoogleDriveStorageProvider(
+        googleSignIn: _googleSignIn,
+        getAuthHeaders: () async {
+          final headers = await _googleSignIn.currentUser?.authHeaders;
+          return headers ?? <String, String>{};
+        },
+        checkConnected: () async {
+          try {
+            final bool signedIn = await _googleSignIn.isSignedIn();
+            if (!signedIn) {
+              await _googleSignIn.signInSilently();
+            }
+            return _googleSignIn.currentUser != null;
+          } catch (_) {
+            return false;
+          }
+        },
+        requestConnect: () async => false,
+        requestDisconnect: () async {},
+        hasGrantedDriveScope: _hasDrivePermissionGranted,
+        setGrantedDriveScope: _setDrivePermissionGranted,
+        namespacePrefix: _currentUserId(),
+        httpClient: Platform.environment.containsKey('FLUTTER_TEST')
+            ? _TestMockHttpClient()
+            : null,
+      );
+    }
+
+    final CloudSyncManager manager = CloudSyncManager(
+      provider: provider,
+      snapshotManager: _snapshotManager,
+      deviceId: deviceId,
+      deviceName: deviceName,
+      platform: Platform.operatingSystem,
+    );
+    return manager;
+  }
+
+  Future<bool> _connectSelectedProvider({required bool interactive}) async {
+    final String userId = _currentUserId();
+    if (userId.isEmpty) return false;
+
+    if (_selectedProviderId == 'icloud') {
+      final CloudSyncManager? manager = await _resolveSyncManager();
+      if (manager == null) return false;
+      final ICloudStorageProvider icloud =
+          manager.provider as ICloudStorageProvider;
+      final bool connected = await icloud.connect();
+      _icloudAvailability = await icloud.getAvailability();
+      _isDriveConnected = false;
+      notifyListeners();
+      if (connected) {
+        await refreshCloudState(evaluatePrompt: false);
+      }
+      return connected;
+    }
+
+    final GoogleDriveStorageProvider provider = GoogleDriveStorageProvider(
       googleSignIn: _googleSignIn,
       getAuthHeaders: () async {
         final headers = await _googleSignIn.currentUser?.authHeaders;
@@ -1404,17 +1630,23 @@ class CloudBackupController extends ChangeNotifier
       requestDisconnect: () async {},
       hasGrantedDriveScope: _hasDrivePermissionGranted,
       setGrantedDriveScope: _setDrivePermissionGranted,
-      namespacePrefix: _currentUserId(),
+      namespacePrefix: userId,
+      httpClient: Platform.environment.containsKey('FLUTTER_TEST')
+          ? _TestMockHttpClient()
+          : null,
     );
 
-    final CloudSyncManager manager = CloudSyncManager(
-      provider: provider,
-      snapshotManager: _snapshotManager,
-      deviceId: deviceId,
-      deviceName: deviceName,
-      platform: Platform.operatingSystem,
+    final status = await provider.resolveConnection(
+      interactive: interactive,
+      phase: 'connect',
     );
-    return manager;
+
+    _isDriveConnected = status.connected;
+    notifyListeners();
+    if (status.connected) {
+      await refreshCloudState(evaluatePrompt: false);
+    }
+    return status.connected;
   }
 
   Future<GoogleDriveOperationSyncManager?>
@@ -1456,7 +1688,7 @@ class CloudBackupController extends ChangeNotifier
       controller: appStateController,
       deviceId: deviceId,
       deviceName: deviceName,
-      appVersion: String.fromEnvironment('APP_VERSION', defaultValue: '1.0.0'),
+      appVersion: String.fromEnvironment('APP_VERSION', defaultValue: '1.5.0'),
     );
   }
 
@@ -1472,10 +1704,10 @@ class CloudBackupController extends ChangeNotifier
 
   Future<void> _loadSettings() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
-    final String userId =
-        (appStateController.state.loadedUserId?.isNotEmpty ?? false)
-        ? appStateController.state.loadedUserId!
-        : 'default';
+    try {
+      await prefs.reload();
+    } catch (_) {}
+    final String userId = _sessionUserId();
     _autoBackupEnabled =
         prefs.getBool(_prefsKey('auto_enabled', userId)) ?? true;
     final int? savedMinutes = prefs.getInt(
@@ -1484,8 +1716,9 @@ class CloudBackupController extends ChangeNotifier
     if (savedMinutes != null && _allowedIntervals.contains(savedMinutes)) {
       _minimumIntervalMinutes = savedMinutes;
     } else {
-      final int? legacyHours =
-          prefs.getInt(_prefsKey('interval_hours', userId));
+      final int? legacyHours = prefs.getInt(
+        _prefsKey('interval_hours', userId),
+      );
       if (legacyHours != null) {
         final int legacyMinutes = legacyHours * 60;
         _minimumIntervalMinutes = _allowedIntervals.contains(legacyMinutes)
@@ -1529,19 +1762,44 @@ class CloudBackupController extends ChangeNotifier
                   arabic: 'مزامنة السحابة: نشطة',
                 )
               : _tr('refreshing_backup_status'));
+    final String currentAuthProvider =
+        authController.currentUser?.provider ?? 'email';
+    if (!Platform.environment.containsKey('FLUTTER_TEST')) {
+      if (currentAuthProvider == 'google') {
+        _selectedProviderId = 'google_drive';
+      } else if (currentAuthProvider == 'apple') {
+        _selectedProviderId = 'icloud';
+      } else {
+        _selectedProviderId = prefs.getString(
+          _prefsKey('selected_provider_id', userId),
+        );
+        if (_selectedProviderId == null) {
+          _selectedProviderId = 'google_drive';
+        }
+      }
+    } else {
+      _selectedProviderId = prefs.getString(
+        _prefsKey('selected_provider_id', userId),
+      );
+      if (_selectedProviderId == null) {
+        _selectedProviderId = 'google_drive';
+      }
+    }
+    await prefs.setString(
+      _prefsKey('selected_provider_id', userId),
+      _selectedProviderId!,
+    );
+
     if (_backupPassphraseUserId != null && _backupPassphraseUserId != userId) {
       _backupPassphrase = null;
       _backupPassphraseUserId = null;
     }
-    _lastObservedStateStamp = _currentStateStamp();
+    _lastObservedSourceStamp = _currentSourceStamp();
   }
 
   Future<void> _saveSettings() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
-    final String userId =
-        (appStateController.state.loadedUserId?.isNotEmpty ?? false)
-        ? appStateController.state.loadedUserId!
-        : 'default';
+    final String userId = _sessionUserId();
     await prefs.setBool(_prefsKey('auto_enabled', userId), _autoBackupEnabled);
     await prefs.setInt(
       _prefsKey('interval_minutes', userId),
@@ -1590,6 +1848,14 @@ class CloudBackupController extends ChangeNotifier
     } else {
       await prefs.remove(_prefsKey('last_integrity_summary', userId));
     }
+    if (_selectedProviderId != null) {
+      await prefs.setString(
+        _prefsKey('selected_provider_id', userId),
+        _selectedProviderId!,
+      );
+    } else {
+      await prefs.remove(_prefsKey('selected_provider_id', userId));
+    }
   }
 
   String _prefsKey(String suffix, String userId) {
@@ -1600,12 +1866,34 @@ class CloudBackupController extends ChangeNotifier
     return 'cloud_backup_drive_permission_granted_$userId';
   }
 
-  String _currentPermissionUserId() {
+  String _sessionUserId() {
+    final String authUserId = authController.currentUser?.id.trim() ?? '';
+    if (authUserId.isNotEmpty) {
+      if (_backupPassphraseUserId == null) {
+        _backupPassphraseUserId = authUserId;
+      }
+      return authUserId;
+    }
+    if (_backupPassphraseUserId != null &&
+        _backupPassphraseUserId!.isNotEmpty) {
+      return _backupPassphraseUserId!;
+    }
     final String loadedUserId =
         appStateController.state.loadedUserId?.trim() ?? '';
     if (loadedUserId.isNotEmpty) return loadedUserId;
+    final String stateUserId = appStateController.state.userId?.trim() ?? '';
+    if (stateUserId.isNotEmpty) return stateUserId;
+    return 'default';
+  }
+
+  String _currentPermissionUserId() {
     final String authUserId = authController.currentUser?.id.trim() ?? '';
     if (authUserId.isNotEmpty) return authUserId;
+    final String loadedUserId =
+        appStateController.state.loadedUserId?.trim() ?? '';
+    if (loadedUserId.isNotEmpty) return loadedUserId;
+    final String stateUserId = appStateController.state.userId?.trim() ?? '';
+    if (stateUserId.isNotEmpty) return stateUserId;
     return 'default';
   }
 
@@ -1672,11 +1960,13 @@ class CloudBackupController extends ChangeNotifier
   }
 
   String _currentUserId() {
+    final String authUserId = authController.currentUser?.id.trim() ?? '';
+    if (authUserId.isNotEmpty) return authUserId;
     final String loadedUserId =
         appStateController.state.loadedUserId?.trim() ?? '';
     if (loadedUserId.isNotEmpty) return loadedUserId;
-    final String authUserId = authController.currentUser?.id.trim() ?? '';
-    if (authUserId.isNotEmpty) return authUserId;
+    final String stateUserId = appStateController.state.userId?.trim() ?? '';
+    if (stateUserId.isNotEmpty) return stateUserId;
     return 'default';
   }
 
@@ -1696,7 +1986,8 @@ class CloudBackupController extends ChangeNotifier
     }
 
     final BackupIntegritySummary? baseline =
-        _lastKnownGoodIntegritySummary ?? await _loadIntegritySummaryFromPrefs();
+        _lastKnownGoodIntegritySummary ??
+        await _loadIntegritySummaryFromPrefs();
     if (baseline == null) {
       return BackupEligibilityAllowed(summary: candidate);
     }
@@ -1733,9 +2024,7 @@ class CloudBackupController extends ChangeNotifier
     }
   }
 
-  Future<void> _saveIntegritySummary(
-    BackupIntegritySummary summary,
-  ) async {
+  Future<void> _saveIntegritySummary(BackupIntegritySummary summary) async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String userId = _currentUserId();
     await prefs.setString(
@@ -1762,7 +2051,7 @@ class CloudBackupController extends ChangeNotifier
           : null;
       final UserCloudStorageProvider? activeProvider =
           provider ?? manager?.provider;
-    if (activeProvider == null || !await activeProvider.isConnected()) {
+      if (activeProvider == null || !await activeProvider.isConnected()) {
         _isDriveConnected = false;
         _latestSnapshot = null;
         _latestPreview = null;
@@ -1799,6 +2088,18 @@ class CloudBackupController extends ChangeNotifier
       );
 
       if (_latestSnapshot != null) {
+        final DateTime snapshotTime = _latestSnapshot!.createdAt;
+        if (_lastBackupAt == null || snapshotTime.isAfter(_lastBackupAt!)) {
+          _lastBackupAt = snapshotTime;
+          final SharedPreferences prefs = await SharedPreferences.getInstance();
+          final String userId = _currentUserId();
+          await prefs.setInt(
+            _prefsKey('last_backup_ms', userId),
+            _lastBackupAt!.millisecondsSinceEpoch,
+          );
+          _recalculateNextEligibleTime();
+        }
+
         _latestPreview = BackupPreview(
           exportedAt: _latestSnapshot!.createdAt.toIso8601String(),
           schemaOrVersion:
@@ -1806,6 +2107,7 @@ class CloudBackupController extends ChangeNotifier
           isLegacy: false,
           sourceType: 'cloud_drive',
           transactionsCount: 0,
+          creditCardsCount: 0,
           savingsCount: 0,
           investmentsCount: 0,
           recurringTransactionsCount: 0,
@@ -1819,7 +2121,7 @@ class CloudBackupController extends ChangeNotifier
           rawJson: '',
           backupVersion: _latestSnapshot!.databaseSchemaVersion,
           backupUserId: _latestSnapshot!.deviceId,
-          backupProvider: 'google_drive',
+          backupProvider: _backupProviderId(),
           backupEmail: null,
         );
       } else {
@@ -1905,5 +2207,22 @@ class CloudBackupController extends ChangeNotifier
     return lower.contains('secretboxauthenticationerror') ||
         lower.contains('mac check failed') ||
         lower.contains('wrong message authentication code');
+  }
+}
+
+class _TestMockHttpClient extends http.BaseClient {
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    final Uint8List bodyBytes = utf8.encode(
+      jsonEncode({'files': <Map<String, dynamic>>[]}),
+    );
+    return http.StreamedResponse(
+      Stream<List<int>>.value(bodyBytes),
+      200,
+      contentLength: bodyBytes.length,
+      headers: <String, String>{
+        'content-type': 'application/json; charset=utf-8',
+      },
+    );
   }
 }

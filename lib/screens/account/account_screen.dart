@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../../core/i18n/app_localizations.dart';
+import '../../core/errors/user_facing_error_mapper.dart';
 import '../../core/privacy/app_privacy.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/motion/app_motion.dart';
@@ -21,6 +22,10 @@ import 'merchant_rules_screen.dart';
 import 'recurring_transactions_screen.dart';
 import 'diagnostics_screen.dart';
 import 'cloud_backup_screen.dart';
+import 'zakat_calculation_explanation_screen.dart';
+import 'about_zakah_wealth_screen.dart';
+import 'shortcut_setup_guide_screen.dart';
+import 'policy_detail_screen.dart';
 import '../../core/services/zakat_engine.dart';
 import '../../models/user_profile.dart';
 import '../../services/app_state_controller.dart';
@@ -53,6 +58,17 @@ class _AccountScreenState extends State<AccountScreen> {
   bool _aiInitialized = false;
   int _selectedAiKeyIndex = 0;
   bool _isTestingConnection = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      try {
+        final backupController = context.read<CloudBackupController>();
+        backupController.refreshCloudState(evaluatePrompt: false);
+      } catch (_) {}
+    });
+  }
 
   @override
   void dispose() {
@@ -127,9 +143,8 @@ class _AccountScreenState extends State<AccountScreen> {
                   name: authController?.currentUser?.displayName,
                   email: authController?.currentUser?.email,
                   photoUrl: authController?.currentUser?.photoUrl,
-                  connected: authController?.isSignedIn == true,
-                  backupEnabled:
-                      backupController?.automaticBackupEnabled == true,
+                  connected: authController?.currentUser != null,
+                  backupEnabled: backupController?.isDriveConnected == true,
                   isLoading: authController?.isLoading == true,
                   onSignIn: authController == null
                       ? null
@@ -151,18 +166,14 @@ class _AccountScreenState extends State<AccountScreen> {
                                       .state
                                       .biometricExportEnabled) &&
                               await BiometricService.canAuthenticate()) {
-                            final bool
-                            auth = await BiometricService.authenticate(
-                              reason:
-                                  'Confirm identity to sign out and clear local data',
-                              isSensitiveAction: true,
-                            );
+                            final bool auth =
+                                await BiometricService.authenticate(
+                                  reason: 'Confirm identity to sign out',
+                                  isSensitiveAction: true,
+                                );
                             if (!auth) return;
                           }
 
-                          await appStateController.clearLocalDataForSignOut(
-                            userId: user.id,
-                          );
                           await authController.signOut();
                         },
                 ),
@@ -328,7 +339,7 @@ class _AccountScreenState extends State<AccountScreen> {
                         ).push(RecurringTransactionsScreen.route());
                       },
                     ),
-                    if (defaultTargetPlatform == TargetPlatform.android)
+                    if (defaultTargetPlatform == TargetPlatform.android) ...[
                       _ToggleSettingTile(
                         key: const Key('settingsSmsCaptureToggle'),
                         icon: Icons.sms_outlined,
@@ -364,6 +375,43 @@ class _AccountScreenState extends State<AccountScreen> {
                           await context
                               .read<AppStateController>()
                               .setAndroidSmsAutoCaptureEnabled(enabled);
+                        },
+                      ),
+                      _ActionSettingTile(
+                        key: const Key('settingsSmsCaptureGuide'),
+                        icon: Icons.assignment_outlined,
+                        title: isArabic
+                            ? 'دليل إعداد التقاط الرسائل'
+                            : 'SMS Capture Setup Guide',
+                        subtitle: isArabic
+                            ? 'إعداد وضبط أذونات التقاط الرسائل'
+                            : 'Configure SMS capture permissions',
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) =>
+                                  const AndroidSmartCaptureSetupScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                    if (defaultTargetPlatform == TargetPlatform.iOS)
+                      _ActionSettingTile(
+                        key: const Key('settingsShortcutGuide'),
+                        icon: Icons.shortcut_outlined,
+                        title: isArabic
+                            ? 'دليل تفعيل الاختصارات'
+                            : 'Shortcut Activation Guide',
+                        subtitle: isArabic
+                            ? 'ربط وتفعيل اختصارات Siri للرسائل البنكية'
+                            : 'Link and configure Siri Shortcuts for bank alerts',
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const ShortcutSetupGuideScreen(),
+                            ),
+                          );
                         },
                       ),
                   ],
@@ -487,26 +535,69 @@ class _AccountScreenState extends State<AccountScreen> {
                 }
               }
 
+              final bool isArabic =
+                  Localizations.localeOf(context).languageCode.toLowerCase() ==
+                  'ar';
               return AlertDialog(
-                title: Text(l10n.tr('delete_account')),
-                content: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                title: Row(
                   children: <Widget>[
-                    const Text('Type DELETE to confirm account deletion.'),
-                    const SizedBox(height: 12),
-                    TextField(
-                      key: const Key('deleteAccountConfirmField'),
-                      controller: confirmController,
-                      autofocus: true,
-                      textCapitalization: TextCapitalization.characters,
-                      decoration: const InputDecoration(
-                        labelText: 'DELETE',
-                        hintText: 'DELETE',
-                      ),
-                      onChanged: refreshConfirmState,
+                    const Icon(
+                      Icons.warning_amber_rounded,
+                      color: AppColors.redStrong,
                     ),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(l10n.tr('delete_account'))),
                   ],
+                ),
+                content: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Text(
+                        isArabic
+                            ? 'سيتم حذف كل ما يتعلق بهذا الحساب نهائياً، بما في ذلك:'
+                            : 'This action is permanent. The following will be completely deleted:',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        isArabic
+                            ? '• جميع النسخ الاحتياطية السحابية (Google Drive و iCloud و Firestore)\n• حسابك وبيانات تسجيل الدخول في Firebase\n• قاعدة البيانات المحلية وجميع النسخ الاحتياطية على هذا الجهاز\n• مفاتيح الأمان ومفاتيح الذكاء الاصطناعي والإعدادات'
+                            : '• All online cloud backups (Google Drive, iCloud, Firestore)\n• Your Firebase account & login credentials\n• Local SQLite database & local backup snapshots on this device\n• Security encryption keys, AI keys, & device settings',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Text(
+                        isArabic
+                            ? 'اكتب DELETE للتأكيد:'
+                            : 'Type DELETE to confirm account deletion:',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        key: const Key('deleteAccountConfirmField'),
+                        controller: confirmController,
+                        autofocus: true,
+                        textCapitalization: TextCapitalization.characters,
+                        decoration: const InputDecoration(
+                          labelText: 'DELETE',
+                          hintText: 'DELETE',
+                        ),
+                        onChanged: refreshConfirmState,
+                      ),
+                    ],
+                  ),
                 ),
                 actions: <Widget>[
                   TextButton(
@@ -538,17 +629,14 @@ class _AccountScreenState extends State<AccountScreen> {
           FirebaseAccountDeletionAuthBackend();
       final AccountDeletionService deletionService = AccountDeletionService(
         appStateController: appStateController,
-        authController: authController!,
+        authController: authController ?? context.read<AuthController>(),
         authBackend: authBackend,
         reauthenticationService: AccountReauthenticationService(
           authBackend: authBackend,
-          promptPassword: (UserProfile reauthUser) {
-            return _promptPasswordForReauthentication(context, reauthUser);
-          },
+          promptPassword: (UserProfile reauthUser) async => null,
           chooseMethod:
-              ({required List<AccountReauthMethod> availableMethods}) {
-                return _chooseReauthMethod(context, availableMethods);
-              },
+              ({required List<AccountReauthMethod> availableMethods}) async =>
+                  availableMethods.firstOrNull,
         ),
         deleteCloudBackupData: (UserProfile user) async {
           CloudBackupController? cloudBackupController;
@@ -562,114 +650,73 @@ class _AccountScreenState extends State<AccountScreen> {
           }
         },
       );
+
+      final bool isArabic =
+          Localizations.localeOf(context).languageCode.toLowerCase() == 'ar';
+
+      // Show deleting progress dialog
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext loadingContext) => PopScope(
+          canPop: false,
+          child: AlertDialog(
+            content: Row(
+              children: <Widget>[
+                const CircularProgressIndicator(),
+                const SizedBox(width: 20),
+                Expanded(
+                  child: Text(
+                    isArabic
+                        ? 'جاري حذف الحساب وجميع البيانات...'
+                        : 'Deleting account and all data...',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
       try {
-        await deletionService.deleteAccount();
+        await deletionService.deleteAccount(requireReauth: false);
+        if (authController != null && authController.isSignedIn) {
+          await authController.signOut();
+        }
+        if (!context.mounted) return;
+        Navigator.of(context, rootNavigator: true).pop(); // dismiss loading
+        showTopSnackBar(
+          context,
+          isArabic
+              ? 'تم حذف الحساب وجميع البيانات بنجاح.'
+              : 'Account and all data successfully deleted.',
+          kind: AppToastKind.success,
+        );
       } catch (error, stackTrace) {
         debugPrint('AccountScreen.deleteAccount failed: $error');
         debugPrintStack(stackTrace: stackTrace);
         if (!context.mounted) return;
+        Navigator.of(context, rootNavigator: true).pop(); // dismiss loading
         showTopSnackBar(
           context,
-          _presentDeleteAccountError(error),
+          _presentDeleteAccountError(context, error),
           kind: AppToastKind.error,
         );
       }
     }
   }
 
-  Future<String?> _promptPasswordForReauthentication(
-    BuildContext context,
-    UserProfile user,
-  ) async {
-    final TextEditingController passwordController = TextEditingController();
-    try {
-      final bool? confirmed = await showDialog<bool>(
-        context: context,
-        builder: (BuildContext dialogContext) => AlertDialog(
-          title: Text(context.l10n.tr('delete_account')),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Text(
-                user.email.isEmpty
-                    ? 'Re-enter your password to continue.'
-                    : 'Re-enter the password for ${user.email} to continue.',
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: passwordController,
-                obscureText: true,
-                autofocus: true,
-                decoration: InputDecoration(
-                  labelText: context.l10n.tr('password'),
-                ),
-              ),
-            ],
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: Text(context.l10n.tr('cancel')),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: Text(context.l10n.tr('continue')),
-            ),
-          ],
-        ),
-      );
-      if (confirmed != true) return null;
-      return passwordController.text;
-    } finally {
-      passwordController.dispose();
-    }
-  }
-
-  Future<AccountReauthMethod?> _chooseReauthMethod(
-    BuildContext context,
-    List<AccountReauthMethod> availableMethods,
-  ) async {
-    final bool hasGoogle = availableMethods.contains(
-      AccountReauthMethod.google,
-    );
-    final bool hasPassword = availableMethods.contains(
-      AccountReauthMethod.password,
-    );
-    if (!hasGoogle || !hasPassword) {
-      return availableMethods.isEmpty ? null : availableMethods.first;
-    }
-    final bool? google = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
-        title: Text(context.l10n.tr('delete_account')),
-        content: Text(
-          'Choose how to reauthenticate before deleting your account.',
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Continue with Password'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Continue with Google'),
-          ),
-        ],
-      ),
-    );
-    if (google == null) return null;
-    return google ? AccountReauthMethod.google : AccountReauthMethod.password;
-  }
-
-  String _presentDeleteAccountError(Object error) {
+  String _presentDeleteAccountError(BuildContext context, Object error) {
     if (error is StateError) {
       final String message = error.message.trim();
       if (message.isNotEmpty) return message;
     }
-    final String raw = error.toString().trim();
-    const String prefix = 'Bad state: ';
-    return raw.startsWith(prefix) ? raw.substring(prefix.length) : raw;
+    return UserFacingErrorMapper.message(
+      context.l10n,
+      error,
+      context: 'delete account',
+    );
   }
 
   Future<void> _refreshMarketData() async {
@@ -816,9 +863,7 @@ class _AccountScreenState extends State<AccountScreen> {
       if (mounted) {
         showTopSnackBar(
           context,
-          Localizations.localeOf(context).languageCode == 'ar'
-              ? 'فشل الاتصال: $e'
-              : 'Connection failed: $e',
+          UserFacingErrorMapper.message(context.l10n, e, context: 'network'),
         );
       }
     } finally {
@@ -1165,10 +1210,20 @@ class _BackupOverviewCard extends StatelessWidget {
     final ColorScheme colors = Theme.of(context).colorScheme;
     final bool compact = ResponsiveLayout.isCompact(context);
     final bool connected = controller?.isDriveConnected == true;
+    final String providerId =
+        controller?.selectedProviderId ??
+        context.read<AuthController?>()?.currentUser?.provider ??
+        'google';
+    final bool isICloud =
+        providerId.toLowerCase().trim() == 'icloud' ||
+        providerId.toLowerCase().trim() == 'apple';
+    final String providerLabel = isICloud
+        ? (isArabic ? 'iCloud' : 'iCloud')
+        : (isArabic ? 'Google Drive' : 'Google Drive');
     final String backupStatus = connected
         ? (isArabic ? 'متصل' : 'Connected')
         : (isArabic ? 'غير متصل' : 'Disconnected');
-    final DateTime? lastBackupAt = controller?.lastBackupAt;
+    final DateTime? lastBackupAt = _resolveLastBackupTime(controller);
     final DateTime? nextCheckAt = controller?.nextEligibleBackupAt;
     final Duration interval =
         controller?.minimumInterval ?? const Duration(hours: 3);
@@ -1191,7 +1246,7 @@ class _BackupOverviewCard extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    isArabic ? 'نسخ Google Drive' : 'Google Drive Backup',
+                    isArabic ? 'نسخ $providerLabel' : '$providerLabel Backup',
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
@@ -1251,7 +1306,7 @@ class _BackupOverviewCard extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    isArabic ? 'نسخ Google Drive' : 'Google Drive Backup',
+                    isArabic ? 'نسخ $providerLabel' : '$providerLabel Backup',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.w800,
                     ),
@@ -1319,8 +1374,8 @@ class _BackupOverviewCard extends StatelessWidget {
             const SizedBox(height: 12),
             Text(
               isArabic
-                  ? 'اربط Google Drive لتفعيل النسخ المشفر.'
-                  : 'Connect Google Drive to enable encrypted backups.',
+                  ? 'اربط $providerLabel لتفعيل النسخ المشفر.'
+                  : 'Connect $providerLabel to enable encrypted backups.',
               style: Theme.of(
                 context,
               ).textTheme.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
@@ -1330,7 +1385,9 @@ class _BackupOverviewCard extends StatelessWidget {
           const Divider(),
           const SizedBox(height: 12),
           Text(
-            isArabic ? 'النسخ الاحتياطي المحلي (JSON)' : 'Local JSON Backup',
+            isArabic
+                ? 'النسخ الاحتياطي وتصدير/استيراد Excel و JSON'
+                : 'Local Backup, Excel & CSV Import/Export',
             style: Theme.of(
               context,
             ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
@@ -1341,6 +1398,16 @@ class _BackupOverviewCard extends StatelessWidget {
       ),
     );
   }
+}
+
+DateTime? _resolveLastBackupTime(CloudBackupController? controller) {
+  final DateTime? controllerLastBackupAt = controller?.lastBackupAt;
+  final DateTime? latestSnapshotAt = controller?.latestSnapshotAt;
+  if (controllerLastBackupAt == null) return latestSnapshotAt;
+  if (latestSnapshotAt == null) return controllerLastBackupAt;
+  return latestSnapshotAt.isAfter(controllerLastBackupAt)
+      ? latestSnapshotAt
+      : controllerLastBackupAt;
 }
 
 class _InfoColumn extends StatelessWidget {
@@ -1562,6 +1629,17 @@ class _WealthZakatCard extends StatelessWidget {
                     : context.l10n.tr('nisab_gold_85'),
               );
               if (selected != null) onNisabBasisChanged(selected);
+            },
+          ),
+          _ActionSettingTile(
+            key: const Key('settingsZakatExplanationField'),
+            icon: Icons.info_outline,
+            title: context.l10n.tr('how_calculation_works'),
+            subtitle: context.l10n.tr('how_calculation_works_subtitle'),
+            onTap: () {
+              Navigator.of(
+                context,
+              ).push(ZakatCalculationExplanationScreen.route());
             },
           ),
           if (zakatMethod == 'annual') ...<Widget>[
@@ -2395,11 +2473,11 @@ class _AboutCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final String version = const String.fromEnvironment(
       'APP_VERSION',
-      defaultValue: '1.0.0',
+      defaultValue: '1.5.0',
     );
     final String buildNumber = const String.fromEnvironment(
       'APP_BUILD_NUMBER',
-      defaultValue: '1',
+      defaultValue: '36',
     );
 
     return _CompactSectionCard(
@@ -2412,20 +2490,16 @@ class _AboutCard extends StatelessWidget {
           subtitle: isArabic
               ? 'رفيق متميز للزكاة وإدارة الثروة'
               : 'A premium zakah and wealth companion',
-          onTap: () {},
+          onTap: () {
+            Navigator.of(context).push(
+              AboutZakahWealthScreen.route(
+                version: version,
+                buildNumber: buildNumber,
+              ),
+            );
+          },
         ),
-        _ActionSettingTile(
-          icon: Icons.info_outline,
-          title: isArabic ? 'الإصدار' : 'Version',
-          subtitle: version,
-          onTap: () {},
-        ),
-        _ActionSettingTile(
-          icon: Icons.build_outlined,
-          title: isArabic ? 'البناء' : 'Build',
-          subtitle: buildNumber,
-          onTap: () {},
-        ),
+
         _ActionSettingTile(
           icon: Icons.privacy_tip_outlined,
           title: isArabic ? 'سياسة الخصوصية' : 'Privacy Policy',
@@ -2433,14 +2507,9 @@ class _AboutCard extends StatelessWidget {
               ? 'اقرأ كيف تتم معالجة بياناتك'
               : 'Read how your data is handled',
           onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => _PolicyDetailScreen(
-                  title: isArabic ? 'سياسة الخصوصية' : 'Privacy Policy',
-                  content: isArabic ? _privacyPolicyAr : _privacyPolicyEn,
-                ),
-              ),
-            );
+            Navigator.of(
+              context,
+            ).push(PolicyDetailScreen.route(type: 'privacy'));
           },
         ),
         _ActionSettingTile(
@@ -2448,14 +2517,7 @@ class _AboutCard extends StatelessWidget {
           title: isArabic ? 'شروط الخدمة' : 'Terms of Service',
           subtitle: isArabic ? 'راجع شروط الاستخدام' : 'Review the usage terms',
           onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => _PolicyDetailScreen(
-                  title: isArabic ? 'شروط الخدمة' : 'Terms of Service',
-                  content: isArabic ? _termsOfServiceAr : _termsOfServiceEn,
-                ),
-              ),
-            );
+            Navigator.of(context).push(PolicyDetailScreen.route(type: 'terms'));
           },
         ),
         _ActionSettingTile(
@@ -2465,14 +2527,9 @@ class _AboutCard extends StatelessWidget {
               ? 'أرسل ملاحظاتك أو احصل على المساعدة'
               : 'Send feedback or get help',
           onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => _PolicyDetailScreen(
-                  title: isArabic ? 'الدعم والملاحظات' : 'Support & Feedback',
-                  content: isArabic ? _supportFeedbackAr : _supportFeedbackEn,
-                ),
-              ),
-            );
+            Navigator.of(
+              context,
+            ).push(PolicyDetailScreen.route(type: 'support'));
           },
         ),
         Padding(
@@ -2753,14 +2810,16 @@ class _SettingsProfileHeader extends StatelessWidget {
                           icon: connected
                               ? Icons.check_circle_outline
                               : Icons.link,
-                          label: isArabic ? 'Google متصل' : 'Google Connected',
+                          label: isArabic ? 'الحساب متصل' : 'Account Signed In',
                           active: connected,
                         ),
                         _ProfileChip(
                           icon: backupEnabled
                               ? Icons.cloud_done_outlined
                               : Icons.cloud_off_outlined,
-                          label: isArabic ? 'النسخ مفعّل' : 'Backup Enabled',
+                          label: isArabic
+                              ? 'النسخ السحابي متصل'
+                              : 'Drive Backup Connected',
                           active: backupEnabled,
                         ),
                       ],
@@ -2827,8 +2886,8 @@ class _SettingsProfileHeader extends StatelessWidget {
                                     ? Icons.check_circle_outline
                                     : Icons.link,
                                 label: isArabic
-                                    ? 'Google متصل'
-                                    : 'Google Connected',
+                                    ? 'الحساب متصل'
+                                    : 'Account Signed In',
                                 active: connected,
                               ),
                               _ProfileChip(
@@ -2836,8 +2895,8 @@ class _SettingsProfileHeader extends StatelessWidget {
                                     ? Icons.cloud_done_outlined
                                     : Icons.cloud_off_outlined,
                                 label: isArabic
-                                    ? 'النسخ مفعّل'
-                                    : 'Backup Enabled',
+                                    ? 'النسخ السحابي متصل'
+                                    : 'Drive Backup Connected',
                                 active: backupEnabled,
                               ),
                             ],
@@ -2906,124 +2965,3 @@ class _ProfileChip extends StatelessWidget {
     );
   }
 }
-
-class _PolicyDetailScreen extends StatelessWidget {
-  const _PolicyDetailScreen({required this.title, required this.content});
-
-  final String title;
-  final String content;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(title)),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: Text(
-            content,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(height: 1.5),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-const String _privacyPolicyEn = '''
-Privacy Policy for Zakah Wealth
-
-Zakah Wealth ("we", "us", "our") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, and safeguard your information.
-
-1. Information Collection and Use
-- SMS Data Capture: Zakah Wealth features an optional automatic SMS capture function. This is designed to read bank transaction SMS messages locally on your device to help you track your wealth and Zakat obligations.
-- On-Device Processing: All SMS parsing and data storage happen entirely locally on your device. We do not upload, transmit, or share your bank SMS messages or transactions with external servers or third parties.
-- Personal and OTP Messages: The app explicitly ignores any personal messages, OTPs, or non-financial codes.
-
-2. Permissions
-- RECEIVE_SMS: This permission is requested exclusively to monitor bank transaction alerts. You can disable this feature at any time in the app settings.
-
-3. Data Security
-- Your Zakat data is stored securely in a local database and can be optionally backed up to your personal Google Drive in an encrypted format.
-
-Contact Support: support@zakahwealth.com
-''';
-
-const String _privacyPolicyAr = '''
-سياسة الخصوصية لـ Zakah Wealth
-
-تلتزم Zakah Wealth ("نحن"، "نا") بحماية خصوصيتك. توضح سياسة الخصوصية هذه كيفية جمع معلوماتك واستخدامها وحمايتها.
-
-1. جمع المعلومات واستخدامها
-- التقاط بيانات الرسائل النصية القصيرة: تتميز Zakah Wealth بوظيفة اختيارية للالتقاط التلقائي للرسائل النصية. تم تصميم هذا لقراءة رسائل المعاملات البنكية محليًا على جهازك لمساعدتك في تتبع ثروتك والتزامات الزكاة.
-- المعالجة على الجهاز: تتم جميع عمليات معالجة الرسائل وتخزين البيانات محليًا بالكامل على جهازك. نحن لا نقوم برفع أو نقل أو مشاركة رسائل المعاملات البنكية الخاصة بك مع خوادم خارجية أو أطراف ثالثة.
-- الرسائل الشخصية ورسائل OTP: يتجاهل التطبيق تمامًا أي رسائل شخصية أو رموز التحقق (OTP) أو الرموز غير المالية.
-
-2. الأذونات
-- RECEIVE_SMS: يُطلب هذا الإذن حصريًا لمراقبة تنبيهات المعاملات البنكية. يمكنك تعطيل هذه الميزة في أي وقت من إعدادات التطبيق.
-
-3. أمن البيانات
-- يتم تخزين بيانات الزكاة الخاصة بك بشكل آمن في قاعدة بيانات محلية، ويمكن نسخها احتياطيًا اختياريًا إلى حساب Google Drive الشخصي الخاص بك بتنسيق مشفر.
-
-للتواصل مع الدعم: support@zakahwealth.com
-''';
-
-const String _termsOfServiceEn = '''
-Terms of Service for Zakah Wealth
-
-By using Zakah Wealth, you agree to these terms:
-
-1. Scope of Service
-Zakah Wealth provides local financial tracking and Zakat calculations. The calculations provided are for informational and planning purposes only and do not constitute formal religious or financial advice.
-
-2. Privacy and Data
-Your data is processed and stored locally. You are responsible for maintaining the security of your device and your personal Google Drive backups.
-
-3. Limitation of Liability
-Zakah Wealth is provided "as is" without warranties. We are not liable for any financial decisions or inaccuracies in calculations.
-''';
-
-const String _termsOfServiceAr = '''
-شروط الخدمة لـ Zakah Wealth
-
-باستخدام Zakah Wealth، فإنك توافق على هذه الشروط:
-
-1. نطاق الخدمة
-توفر Zakah Wealth تتبعًا ماليًا محليًا وحسابات الزكاة. الحسابات المقدمة هي لأغراض إعلامية وتخطيطية فقط ولا تشكل مشورة دينية أو مالية رسمية.
-
-2. الخصوصية والبيانات
-يتم معالجة بياناتك وتخزينها محليًا. أنت مسؤول عن الحفاظ على أمان جهازك ونسخك الاحتياطية الشخصية على Google Drive.
-
-3. حدود المسؤولية
-يتم تقديم Zakah Wealth "كما هي" دون أي ضمانات. نحن لسنا مسؤولين عن أي قرارات مالية أو عدم دقة في الحسابات.
-''';
-
-const String _supportFeedbackEn = '''
-Support & Feedback
-
-We are here to help you. If you have any questions, feedback, or need assistance, please feel free to reach out to us.
-
-Contact Email:
-support@zakahwealth.com
-
-Frequently Asked Questions:
-- All calculations and data stay secure on your device.
-- You can turn automatic SMS capturing on or off in the Account screen.
-- You can sync your data securely via Google Drive backups.
-''';
-
-const String _supportFeedbackAr = '''
-الدعم والملاحظات
-
-نحن هنا لمساعدتك. إذا كان لديك أي أسئلة أو ملاحظات أو تحتاج إلى مساعدة، فلا تتردد في التواصل معنا.
-
-البريد الإلكتروني للتواصل:
-support@zakahwealth.com
-
-الأسئلة الشائعة:
-- تظل جميع الحسابات والبيانات آمنة على جهازك.
-- يمكنك تشغيل أو إيقاف الالتقاط التلقائي للرسائل النصية في شاشة الحساب.
-- يمكنك مزامنة بياناتك بشكل آمن عبر النسخ الاحتياطي على Google Drive.
-''';

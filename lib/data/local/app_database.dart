@@ -68,6 +68,38 @@ class AppDatabase extends _$AppDatabase {
       final File file = File(p.join(directory.path, name));
       await _deleteFileArtifacts(file);
     }
+
+    try {
+      if (await directory.exists()) {
+        await for (final FileSystemEntity entity in directory.list(
+          followLinks: false,
+        )) {
+          if (entity is! File) continue;
+          final String name = p.basename(entity.path);
+          if (name.contains('.restore_backup_') ||
+              name.startsWith('restored_user_backup_')) {
+            await _deleteFileArtifacts(entity);
+          }
+        }
+      }
+    } catch (_) {}
+
+    try {
+      final Directory tempDir = await getTemporaryDirectory();
+      if (await tempDir.exists()) {
+        await for (final FileSystemEntity entity in tempDir.list(
+          followLinks: false,
+        )) {
+          if (entity is! File) continue;
+          final String name = p.basename(entity.path);
+          if (name.contains('.restore_backup_') ||
+              name.startsWith('restored_user_backup_') ||
+              name.startsWith('zakatapp-backup-')) {
+            await _deleteFileArtifacts(entity);
+          }
+        }
+      }
+    } catch (_) {}
   }
 
   static Future<void> deleteAllDatabaseFiles() async {
@@ -98,7 +130,7 @@ class AppDatabase extends _$AppDatabase {
   }
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 8;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -121,6 +153,17 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 6) {
         await migrator.addColumn(investments, investments.yearlyGrowthRateText);
+      }
+      if (from < 7) {
+        await migrator.addColumn(recurringTransactions, recurringTransactions.autoAdd);
+        await migrator.addColumn(recurringTransactions, recurringTransactions.reminderEnabled);
+        await migrator.addColumn(recurringTransactions, recurringTransactions.reminderDayOffset);
+        await migrator.addColumn(recurringTransactions, recurringTransactions.reminderTime);
+      }
+      if (from < 8) {
+        await migrator.addColumn(pendingTransactions, pendingTransactions.receivedAt);
+        await migrator.addColumn(pendingTransactions, pendingTransactions.cardLast4);
+        await migrator.addColumn(pendingTransactions, pendingTransactions.accountLast4);
       }
       await _createIndexes();
     },

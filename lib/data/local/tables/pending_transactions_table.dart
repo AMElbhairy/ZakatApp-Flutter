@@ -37,6 +37,9 @@ class PendingTransactions extends Table {
       text().named('linked_transaction_id').nullable()();
   TextColumn get updatedAt => text().named('updated_at')();
   TextColumn get deletedAt => text().named('deleted_at').nullable()();
+  TextColumn get receivedAt => text().named('received_at').nullable()();
+  TextColumn get cardLast4 => text().named('card_last4').nullable()();
+  TextColumn get accountLast4 => text().named('account_last4').nullable()();
 
   @override
   Set<Column<Object>> get primaryKey => <Column<Object>>{id};

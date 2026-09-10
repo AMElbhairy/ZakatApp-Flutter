@@ -58,7 +58,7 @@ import 'services/sync_controller.dart';
 import 'services/startup_restore_discovery.dart';
 import 'services/widget_data_service.dart';
 
-final bool _showLegacyAuthUi = kDebugMode && !ZakatApp.isTesting;
+final bool _showLegacyAuthUi = true;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -71,6 +71,11 @@ Future<void> main() async {
     ),
   );
   final GoogleSignIn googleSignIn = createAppGoogleSignIn();
+  final GoogleSignIn backupGoogleSignIn = createAppGoogleSignIn(
+    extraScopes: const <String>[
+      'https://www.googleapis.com/auth/drive.appdata',
+    ],
+  );
   final SharedPreferences prefs = await SharedPreferences.getInstance();
   unawaited(WidgetDataService.initialize());
 
@@ -171,7 +176,7 @@ Future<void> main() async {
             appStateController: ctx.read<AppStateController>(),
             authController: ctx.read<AuthController>(),
             backupKeyManager: ctx.read<BackupKeyManager>(),
-            googleSignIn: ctx.read<GoogleSignIn>(),
+            googleSignIn: backupGoogleSignIn,
           ),
         ),
         ChangeNotifierProvider<BootstrapCoordinator>(
@@ -607,11 +612,14 @@ class _ZakatAppContentState extends State<_ZakatAppContent> {
                 'ar'
         ? 'ar'
         : 'en';
-    final String preferredLanguage = hasPersistedLanguagePreference
-        ? persistedLanguageCode
-        : appStateController.state.languagePreference == 'ar'
-        ? 'ar'
-        : 'en';
+    final String preferredLanguage =
+        appStateController.hydrationPhase != AppHydrationPhase.ready
+            ? widget.startupLanguage
+            : hasPersistedLanguagePreference
+                ? persistedLanguageCode
+                : appStateController.state.languagePreference == 'ar'
+                    ? 'ar'
+                    : 'en';
     _scheduleLanguageRestart(
       preferredLanguage,
       appStateController.hydrationPhase == AppHydrationPhase.ready,
@@ -644,12 +652,23 @@ class _ZakatAppContentState extends State<_ZakatAppContent> {
         GlobalCupertinoLocalizations.delegate,
       ],
       builder: (BuildContext context, Widget? child) {
+        final double width = MediaQuery.sizeOf(context).width;
+        final bool isSmallScreen = width < 430;
+        final Widget builtChild = child ?? const SizedBox.shrink();
+
+        final Widget responsiveChild = MediaQuery(
+          data: MediaQuery.of(context).copyWith(
+            textScaler: TextScaler.linear(isSmallScreen ? 0.9 : 1.0),
+          ),
+          child: builtChild,
+        );
+
         return GestureDetector(
           behavior: HitTestBehavior.translucent,
           onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
           child: Stack(
             children: <Widget>[
-              if (child case final Widget builtChild) builtChild,
+              responsiveChild,
               const _OfflineStatusBannerOverlay(),
               Consumer<AppPrivacyOverlayController>(
                 builder:
@@ -1129,20 +1148,18 @@ class _AppBootstrapperState extends State<_AppBootstrapper>
         statusMessage: _loadingMessage,
       ),
       _BootstrapPhase.restoreGate =>
-        _maybeRead<CloudBackupController>() == null
-            ? const SizedBox.shrink()
-            : RestoreGateScreen(
-                cloudBackupController: _maybeRead<CloudBackupController>()!,
-                discovery:
-                    _restoreGateDiscovery ??
-                    StartupRestoreDiscoveryResult(
-                      status: StartupRestoreDiscoveryStatus.none,
-                      message: context.l10n.tr('no_cloud_backup_found'),
-                    ),
-                onRestore: _restoreBackup,
-                onStartFresh: _startFresh,
-                onOpenBackupSync: _openBackupSync,
+        RestoreGateScreen(
+          cloudBackupController: _maybeRead<CloudBackupController>(),
+          discovery:
+              _restoreGateDiscovery ??
+              StartupRestoreDiscoveryResult(
+                status: StartupRestoreDiscoveryStatus.none,
+                message: context.l10n.tr('no_cloud_backup_found'),
               ),
+          onRestore: _restoreBackup,
+          onStartFresh: _startFresh,
+          onOpenBackupSync: _openBackupSync,
+        ),
       _BootstrapPhase.locked => SecurityLockScreen(
         onUnlock: _handleUnlock,
         autoPrompt: _bootstrapCoordinator?.lockScreenAutoPrompt ?? false,

@@ -26,14 +26,16 @@ class AuthController extends ChangeNotifier {
   String _presentableError(Object error) {
     if (error is StateError) {
       final String message = error.message.toString().trim();
-      if (message.isNotEmpty) return message;
+      final String lower = message.toLowerCase();
+      final bool technical =
+          lower.contains('firebase') ||
+          lower.contains('platformexception') ||
+          lower.contains('socketexception') ||
+          lower.contains('exception:') ||
+          lower.contains('sql');
+      if (message.isNotEmpty && !technical) return message;
     }
-    final String raw = error.toString().trim();
-    const String statePrefix = 'Bad state: ';
-    if (raw.startsWith(statePrefix)) {
-      return raw.substring(statePrefix.length).trim();
-    }
-    return raw;
+    return 'We could not sign you in. Please try again.';
   }
 
   Future<bool> shouldPromptToSaveCredentials(String email) async {
@@ -67,26 +69,15 @@ class AuthController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final String? raw = await localStorage.loadString(
-        StorageKeys.userProfileKey,
+      final UserProfile? legacyPersistedUser = _decodeUserProfile(
+        await localStorage.loadString(StorageKeys.userProfileKey),
       );
-      if (raw != null && raw.trim().isNotEmpty) {
-        try {
-          final Map<String, dynamic> json =
-              jsonDecode(raw) as Map<String, dynamic>;
-          _currentUser = UserProfile.fromJson(json);
-        } catch (_) {
-          _currentUser = null;
-        }
-      }
-
-      final UserProfile? persistedUser = _currentUser;
       final UserProfile? restored = await authService.restoreSession();
       if (restored != null) {
-        _currentUser = restored;
+        _currentUser = await _loadPersistedCurrentUser(restored.id) ?? restored;
         await _persistCurrentUser();
-      } else if (persistedUser != null) {
-        _currentUser = persistedUser;
+      } else if (legacyPersistedUser != null) {
+        _currentUser = legacyPersistedUser;
       }
     } catch (error, stackTrace) {
       debugPrint('AuthController.load failed: $error');
@@ -255,12 +246,7 @@ class AuthController extends ChangeNotifier {
       _error = _presentableError(error);
     } finally {
       _currentUser = null;
-      final String? scopedKey = StorageKeys.appStateKeyForUser(userIdAtSignOut);
-      if (scopedKey != null) {
-        await localStorage.remove(scopedKey);
-      }
-      await localStorage.remove(StorageKeys.appStateAnonymousKey);
-      await localStorage.remove(StorageKeys.userProfileKey);
+      await _removePersistedCurrentUser(userIdAtSignOut);
       _isLoading = false;
       notifyListeners();
     }
@@ -284,14 +270,8 @@ class AuthController extends ChangeNotifier {
       rethrow;
     } finally {
       if (deleted) {
-        final String? scopedKey = StorageKeys.appStateKeyForUser(
-          userIdAtDelete,
-        );
-        if (scopedKey != null) {
-          await localStorage.remove(scopedKey);
-        }
+        await _removePersistedCurrentUser(userIdAtDelete);
         await localStorage.remove(StorageKeys.appStateAnonymousKey);
-        await localStorage.remove(StorageKeys.userProfileKey);
       }
       _isLoading = false;
       notifyListeners();
@@ -320,9 +300,43 @@ class AuthController extends ChangeNotifier {
   Future<void> _persistCurrentUser() async {
     final UserProfile? user = _currentUser;
     if (user == null) return;
-    await localStorage.saveString(
-      StorageKeys.userProfileKey,
-      jsonEncode(user.toJson()),
+    final String? scopedKey = StorageKeys.userProfileKeyForUser(user.id);
+    if (scopedKey != null) {
+      await localStorage.saveString(scopedKey, jsonEncode(user.toJson()));
+    }
+    await localStorage.remove(StorageKeys.userProfileKey);
+  }
+
+  Future<UserProfile?> _loadPersistedCurrentUser(String userId) async {
+    final String? scopedKey = StorageKeys.userProfileKeyForUser(userId);
+    if (scopedKey != null) {
+      final UserProfile? scoped = _decodeUserProfile(
+        await localStorage.loadString(scopedKey),
+      );
+      if (scoped != null) {
+        return scoped;
+      }
+    }
+    return _decodeUserProfile(
+      await localStorage.loadString(StorageKeys.userProfileKey),
     );
+  }
+
+  UserProfile? _decodeUserProfile(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return null;
+    try {
+      final Map<String, dynamic> json = jsonDecode(raw) as Map<String, dynamic>;
+      return UserProfile.fromJson(json);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _removePersistedCurrentUser(String? userId) async {
+    final String? scopedKey = StorageKeys.userProfileKeyForUser(userId);
+    if (scopedKey != null) {
+      await localStorage.remove(scopedKey);
+    }
+    await localStorage.remove(StorageKeys.userProfileKey);
   }
 }

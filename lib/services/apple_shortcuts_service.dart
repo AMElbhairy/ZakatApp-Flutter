@@ -1,11 +1,13 @@
 import 'dart:convert';
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'app_state_controller.dart';
 import '../models/pending_transaction.dart';
+import '../models/raw_capture_payload.dart';
 
 class AppleShortcutsService {
   AppleShortcutsService._();
@@ -268,7 +270,15 @@ class AppleShortcutsService {
       return false;
     }
 
-    final String messageText = originalMessageText;
+    final RawCapturePayload payload = RawCapturePayload.fromMap(
+      arguments,
+      fallbackSource: RawCapturePayload.parseSource(source),
+      fallbackPlatform: !kIsWeb && Platform.isIOS
+          ? 'ios'
+          : (!kIsWeb && Platform.isAndroid ? 'android' : null),
+    );
+
+    final String messageText = payload.rawText.isNotEmpty ? payload.rawText : originalMessageText;
     final String trimmed = messageText.trim();
     debugPrint('[$source] Processing started');
     debugPrint('[$source] Flutter received message length: ${trimmed.length}');
@@ -292,15 +302,16 @@ class AppleShortcutsService {
           _appStateController?.state.transactions.length ?? 0;
       final bool alreadyNotified = _extractNotificationAlreadyShown(arguments);
       final bool result =
-          await _appStateController
-              ?.createPendingTransactionFromMessageWithResult(
-                trimmed,
-                source,
-                sourceIdentifier: source == PendingTransactionSource.sms
-                    ? 'Android SMS'
-                    : 'Apple Automation',
-                sendNotification: !alreadyNotified,
-              ) ??
+          await _appStateController?.createPendingTransactionFromPayload(
+            payload.copyWith(
+              rawText: trimmed,
+              sourceIdentifier: payload.sourceIdentifier ??
+                  (payload.source == CaptureSource.sms
+                      ? 'Android SMS'
+                      : 'Apple Automation'),
+            ),
+            sendNotification: !alreadyNotified,
+          ) ??
           false;
       final String? launchToken = _extractNotificationLaunchToken(arguments);
       if (result &&

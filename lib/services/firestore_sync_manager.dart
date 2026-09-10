@@ -860,7 +860,14 @@ class FirestoreSyncManager {
       await _deleteCollection(uid, financialPlansCollection);
       await _deleteCollection(uid, correctionFeedbackCollection);
       await _deleteCollection(uid, merchantConfirmationsCollection);
-      await _userSettingsDocument(uid).delete();
+      await _deleteCollection(uid, 'security');
+      try {
+        await _userSettingsDocument(uid).delete();
+      } catch (_) {}
+      await _deleteCollection(uid, userSettingsCollection);
+      try {
+        await _firestore.collection('users').doc(uid).delete();
+      } catch (_) {}
     } on FirebaseException catch (error) {
       throw _mapFirebaseException(error);
     }
@@ -1234,7 +1241,7 @@ class FirestoreSyncManager {
 
   Exception _mapFirebaseException(FirebaseException error) {
     final String code = error.code.toLowerCase();
-    final String message = error.message ?? 'Cloud sync failed.';
+    final String message = 'Cloud sync could not be completed.';
     final bool isUnauth =
         code == 'unauthenticated' ||
         code == 'user-token-expired' ||
@@ -1301,7 +1308,7 @@ class FirestoreSyncManager {
       case 'requires-recent-login':
         return 'Your session expired. Please sign in again.';
       default:
-        return error.message ?? error.toString();
+        return 'We could not sign you in. Please try again.';
     }
   }
 }

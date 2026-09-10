@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/i18n/app_localizations.dart';
+import '../../core/errors/user_facing_error_mapper.dart';
 import '../../core/widgets/app_ui.dart';
 import '../../core/theme/app_theme_extensions.dart';
 import '../../core/theme/app_radii.dart';
 import '../../services/app_state_controller.dart';
-import '../../models/pending_transaction.dart';
+import '../../models/raw_capture_payload.dart';
 
 class AddSmartCaptureMessageScreen extends StatefulWidget {
   const AddSmartCaptureMessageScreen({super.key});
@@ -34,12 +35,25 @@ class _AddSmartCaptureMessageScreenState
     final String rawMessage = _messageController.text;
 
     try {
-      await controller.createPendingTransactionFromMessage(
-        rawMessage,
-        PendingTransactionSource.manual,
+      final payload = RawCapturePayload(
+        rawText: rawMessage,
+        source: CaptureSource.manual,
+        sourceIdentifier: 'Manual Entry',
+        receivedAt: DateTime.now().toUtc(),
+      );
+      final bool created = await controller.createPendingTransactionFromPayload(
+        payload,
       );
 
       if (mounted) {
+        if (!created) {
+          showTopSnackBar(
+            context,
+            context.l10n.tr('smart_capture_disabled'),
+            kind: AppToastKind.error,
+          );
+          return;
+        }
         showTopSnackBar(
           context,
           context.l10n.tr('message_parsed_successfully'),
@@ -51,7 +65,7 @@ class _AddSmartCaptureMessageScreenState
       if (mounted) {
         showTopSnackBar(
           context,
-          '${context.l10n.tr('error_prefix')}: ${e.toString()}',
+          UserFacingErrorMapper.message(context.l10n, e, context: 'parse'),
           kind: AppToastKind.error,
         );
       }

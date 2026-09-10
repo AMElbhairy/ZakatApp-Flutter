@@ -127,9 +127,33 @@ class InvestmentAsset {
     };
   }
 
+  static List<Map<String, dynamic>> sortInstallmentPlan(dynamic value) {
+    if (value is! List) return const <Map<String, dynamic>>[];
+    final List<Map<String, dynamic>> items = value
+        .map((dynamic e) {
+          return e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{};
+        })
+        .toList();
+
+    items.sort((Map<String, dynamic> a, Map<String, dynamic> b) {
+      final String dateA = installmentDueDate(a);
+      final String dateB = installmentDueDate(b);
+      final DateTime? dtA = DateTime.tryParse(normalizeDateText(dateA));
+      final DateTime? dtB = DateTime.tryParse(normalizeDateText(dateB));
+      if (dtA != null && dtB != null) {
+        return dtA.compareTo(dtB);
+      }
+      if (dtA != null) return -1;
+      if (dtB != null) return 1;
+      return dateA.compareTo(dateB);
+    });
+
+    return items;
+  }
+
   static List<Map<String, dynamic>> normalizeInstallmentPlan(dynamic value) {
     if (value is List) {
-      return value
+      final List<Map<String, dynamic>> items = value
           .map((dynamic e) {
             final Map<String, dynamic> item = e is Map
                 ? Map<String, dynamic>.from(e)
@@ -153,7 +177,8 @@ class InvestmentAsset {
             }
             return item;
           })
-          .toList(growable: false);
+          .toList();
+      return sortInstallmentPlan(items);
     }
     return const <Map<String, dynamic>>[];
   }

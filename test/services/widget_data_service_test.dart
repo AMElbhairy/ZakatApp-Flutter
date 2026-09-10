@@ -19,12 +19,14 @@ const MethodChannel _widgetRefreshChannel = MethodChannel(
 );
 
 Map<String, dynamic> _buildStateJson({
+  required String userId,
   required String mainCurrency,
   required double amountEgp,
 }) {
   final DateTime now = DateTime.now();
   final DateTime today = now.subtract(const Duration(hours: 1));
   final Map<String, dynamic> json = AppStateDefaults.create().toJson();
+  json['userId'] = userId;
   json['mainCurrency'] = mainCurrency;
   json['defaultEntryCurrency'] = mainCurrency;
   json['transactions'] = <Map<String, dynamic>>[
@@ -148,6 +150,7 @@ void main() {
   });
 
   Future<void> runScenario({
+    required String userId,
     required String mainCurrency,
     required double expectedPercent,
     required String expectedSymbol,
@@ -163,7 +166,7 @@ void main() {
     final String todayKey = _dayKey(today);
 
     await prefs.setString(
-      WidgetDataService.wealthHistoryKey,
+      WidgetDataService.wealthHistoryKeyForUser(userId),
       jsonEncode(<String, dynamic>{
         yesterdayKey: _buildHistoryEntry(
           amountEgp: 900,
@@ -173,13 +176,17 @@ void main() {
     );
 
     final AppStateModel state = AppStateModel.fromJson(
-      _buildStateJson(mainCurrency: mainCurrency, amountEgp: 1000),
+      _buildStateJson(
+        userId: userId,
+        mainCurrency: mainCurrency,
+        amountEgp: 1000,
+      ),
     );
 
     await WidgetDataService.syncFromState(state);
 
     final Map<String, dynamic> snapshot = _decodeJson(
-      savedWidgetData[WidgetDataService.widgetDataKey] as String,
+      savedWidgetData[WidgetDataService.widgetDataKeyForUser(userId)] as String,
     );
     expect(snapshot['mainCurrencyCode'], mainCurrency);
     expect(snapshot['currencySymbol'], expectedSymbol);
@@ -193,7 +200,7 @@ void main() {
     );
 
     final Map<String, dynamic> storedHistory = _decodeJson(
-      prefs.getString(WidgetDataService.wealthHistoryKey)!,
+      prefs.getString(WidgetDataService.wealthHistoryKeyForUser(userId))!,
     );
     final Map<String, dynamic> todayEntry = Map<String, dynamic>.from(
       storedHistory[todayKey] as Map,
@@ -210,6 +217,7 @@ void main() {
     'daily wealth percent is evaluated in EGP when EGP is the main currency',
     () async {
       await runScenario(
+        userId: 'user-egp',
         mainCurrency: 'EGP',
         expectedPercent: 11.1111,
         expectedSymbol: 'E£',
@@ -222,6 +230,7 @@ void main() {
     'daily wealth percent is evaluated in USD when USD is the main currency',
     () async {
       await runScenario(
+        userId: 'user-usd',
         mainCurrency: 'USD',
         expectedPercent: 0,
         expectedSymbol: r'$',
@@ -234,6 +243,7 @@ void main() {
     'daily wealth percent is evaluated in SAR with a compact currency symbol',
     () async {
       await runScenario(
+        userId: 'user-sar',
         mainCurrency: 'SAR',
         expectedPercent: 11.1111,
         expectedSymbol: '⃁',
@@ -248,13 +258,18 @@ void main() {
       final Map<String, dynamic> savedWidgetData = <String, dynamic>{};
       await _prepareChannels(savedWidgetData: savedWidgetData);
       final AppStateModel state = AppStateModel.fromJson(
-        _buildStateJson(mainCurrency: 'EGP', amountEgp: 1_500_000),
+        _buildStateJson(
+          userId: 'user-egp',
+          mainCurrency: 'EGP',
+          amountEgp: 1_500_000,
+        ),
       );
 
       await WidgetDataService.syncFromState(state);
 
       final Map<String, dynamic> snapshot = _decodeJson(
-        savedWidgetData[WidgetDataService.widgetDataKey] as String,
+        savedWidgetData[WidgetDataService.widgetDataKeyForUser('user-egp')]
+            as String,
       );
       expect(snapshot['currencySymbol'], 'E£');
       expect(snapshot['recentActivitySummary'] as String, contains('E£ 1.5M'));
@@ -271,7 +286,7 @@ void main() {
     );
 
     final AppStateModel state = AppStateModel.fromJson(
-      _buildStateJson(mainCurrency: 'EGP', amountEgp: 1000),
+      _buildStateJson(userId: 'user-egp', mainCurrency: 'EGP', amountEgp: 1000),
     );
 
     await WidgetDataService.syncFromState(state);
@@ -288,6 +303,43 @@ void main() {
         WidgetDataService.androidWidgetClass,
         WidgetDataService.androidMediumWidgetClass,
       ]),
+    );
+  });
+
+  test('signed out sync clears the active widget user id', () async {
+    final Map<String, dynamic> savedWidgetData = <String, dynamic>{};
+    await _prepareChannels(savedWidgetData: savedWidgetData);
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+
+    final AppStateModel signedInState = AppStateModel.fromJson(
+      _buildStateJson(userId: 'user-egp', mainCurrency: 'EGP', amountEgp: 1000),
+    );
+    await WidgetDataService.syncFromState(signedInState);
+
+    expect(
+      savedWidgetData[WidgetDataService.activeUserIdKey],
+      equals('user-egp'),
+    );
+    expect(
+      savedWidgetData[WidgetDataService.widgetDataKeyForUser('user-egp')],
+      isA<String>(),
+    );
+
+    await WidgetDataService.clearAll(userId: 'user-egp');
+
+    expect(savedWidgetData[WidgetDataService.activeUserIdKey], isNull);
+    expect(
+      savedWidgetData[WidgetDataService.widgetDataKeyForUser('user-egp')],
+      isNull,
+    );
+    expect(
+      prefs.getString(WidgetDataService.wealthHistoryKeyForUser('user-egp')),
+      isNull,
+    );
+    expect(
+      savedWidgetData[WidgetDataService.widgetDataKey],
+      isNull,
+      reason: 'legacy widget key should be cleared on sign out',
     );
   });
 }

@@ -558,7 +558,7 @@ void main() {
     },
   );
 
-  test('clearLocalDataForSignOut removes scoped and anonymous state', () async {
+  test('clearLocalDataForSignOut preserves scoped and anonymous state', () async {
     final String scopedKey = StorageKeys.appStateKeyForUser('u_1')!;
     SharedPreferences.setMockInitialValues(<String, Object>{
       scopedKey: '{"transactions":[]}',
@@ -569,25 +569,31 @@ void main() {
     final AppStateRepository scopedRepository = AppStateRepository(
       localStorage: localStorage,
     );
+    final AppStateController scopedController = AppStateController(
+      repository: scopedRepository,
+    );
 
-    await scopedRepository.clearLocalDataForSignOut(userId: 'u_1');
+    await scopedController.loadAuthenticated('u_1');
+    await scopedController.clearLocalDataForSignOut(userId: 'u_1');
 
     final String? scopedAfter = await localStorage.loadString(scopedKey);
     final String? anonymousAfter = await localStorage.loadString(
       StorageKeys.appStateAnonymousKey,
     );
-    expect(scopedAfter, isNull);
-    expect(anonymousAfter, isNull);
+    expect(scopedAfter, isNotNull);
+    expect(anonymousAfter, isNotNull);
+    expect(scopedController.state.transactions, isEmpty);
   });
 
   test('deleteLocalDataForUser preserves other accounts local state', () async {
     final String user1Key = StorageKeys.appStateKeyForUser('u_1')!;
     final String user2Key = StorageKeys.appStateKeyForUser('u_2')!;
+    final String? profileKey = StorageKeys.userProfileKeyForUser('u_1');
     SharedPreferences.setMockInitialValues(<String, Object>{
       user1Key: '{"transactions":[{"id":"a1"}]}',
       user2Key: '{"transactions":[{"id":"b1"}]}',
       StorageKeys.appStateAnonymousKey: '{"transactions":[{"id":"anon"}]}',
-      StorageKeys.userProfileKey: '{"id":"u_1"}',
+      if (profileKey != null) profileKey: '{"id":"u_1"}',
       StorageKeys.aiKeysAnonymousKey: '["legacy-anon-key"]',
     });
 
@@ -609,6 +615,9 @@ void main() {
     final String? profileAfter = await localStorage.loadString(
       StorageKeys.userProfileKey,
     );
+    final String? scopedProfileAfter = profileKey == null
+        ? null
+        : await localStorage.loadString(profileKey);
     final String? legacyAiAfter = await localStorage.loadString(
       StorageKeys.aiKeysAnonymousKey,
     );
@@ -617,6 +626,7 @@ void main() {
     expect(user2After, isNotNull);
     expect(anonymousAfter, isNull);
     expect(profileAfter, isNull);
+    expect(scopedProfileAfter, isNull);
     expect(legacyAiAfter, isNull);
   });
 }

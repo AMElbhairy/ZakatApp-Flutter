@@ -31,6 +31,7 @@ class FakeSmartCaptureAlertService extends SmartCaptureAlertService {
   int? lastBadgeCount;
   NotificationResponse? lastNotificationResponse;
   final List<PendingTransaction> notifications = <PendingTransaction>[];
+  final List<bool> replaceExistingFlags = <bool>[];
 
   @override
   void attachNavigatorKey(GlobalKey<NavigatorState> navigatorKey) {}
@@ -57,16 +58,22 @@ class FakeSmartCaptureAlertService extends SmartCaptureAlertService {
   @override
   Future<void> notifyCaptureState({
     required PendingTransaction pendingTransaction,
+    bool replaceExisting = false,
   }) async {
     notifications.add(pendingTransaction);
+    replaceExistingFlags.add(replaceExisting);
   }
 
   @override
   Future<void> notifyPendingReview({
     required PendingTransaction pendingTransaction,
     required int pendingReviewCount,
+    bool replaceExisting = false,
   }) async {
-    await notifyCaptureState(pendingTransaction: pendingTransaction);
+    await notifyCaptureState(
+      pendingTransaction: pendingTransaction,
+      replaceExisting: replaceExisting,
+    );
     lastBadgeCount = pendingReviewCount;
   }
 
@@ -637,6 +644,7 @@ void main() {
           alertService.notifications.single.status,
           CaptureStatus.pendingReview,
         );
+        expect(alertService.replaceExistingFlags.single, isFalse);
         expect(alertService.lastBadgeCount, 1);
 
         final PendingTransaction pending =
@@ -659,6 +667,47 @@ void main() {
         );
       },
     );
+
+    test(
+      'native notification already shown payload does not emit a second notification',
+      () async {
+        final alertService = FakeSmartCaptureAlertService();
+        final controller = await makeController(
+          smartCaptureAlertService: alertService,
+        );
+        AppleShortcutsService.initialize(controller);
+
+        final bool created =
+            await AppleShortcutsService.handleCapturePayload(<String, dynamic>{
+              'messageContent': 'Paid EGP 150 at Supermarket',
+              'source': PendingTransactionSource.sms,
+              'notificationAlreadyShown': 'true',
+            }, source: PendingTransactionSource.sms);
+
+        expect(created, isTrue);
+        expect(alertService.notifications, isEmpty);
+        expect(alertService.replaceExistingFlags, isEmpty);
+      },
+    );
+
+    test('notification ids are stable across platforms', () {
+      final int smsId = smartCaptureNotificationId(
+        source: PendingTransactionSource.sms,
+        rawMessage: 'Paid EGP 150 at Supermarket',
+      );
+      final int sameSmsId = smartCaptureNotificationId(
+        source: PendingTransactionSource.sms,
+        rawMessage: '  Paid   EGP 150 at Supermarket  ',
+      );
+      final int shortcutId = smartCaptureNotificationId(
+        source: PendingTransactionSource.shortcut,
+        rawMessage: 'Paid EGP 150 at Supermarket',
+      );
+
+      expect(smsId, sameSmsId);
+      expect(smsId, isNot(shortcutId));
+      expect(smsId, greaterThan(0));
+    });
 
     testWidgets('notification payload routes to the smart capture inbox', (
       WidgetTester tester,
@@ -873,12 +922,12 @@ void main() {
         },
         {
           'text': 'Transfer SAR 5000',
-          'type': 'transfer',
+          'type': 'unknown',
           'amount': 5000.0,
           'currency': 'SAR',
           'confidence': 0.60,
           'merchant': null,
-          'desc': 'Bank Transfer',
+          'desc': 'Transfer Review Required',
         },
 
         // Arabic
@@ -902,12 +951,12 @@ void main() {
         },
         {
           'text': 'تم تحويل 5000 ريال',
-          'type': 'transfer',
+          'type': 'unknown',
           'amount': 5000.0,
           'currency': 'SAR',
           'confidence': 0.60,
           'merchant': null,
-          'desc': 'Bank Transfer',
+          'desc': 'Transfer Review Required',
         },
 
         // Phase 3.1 Hardening cases
@@ -932,12 +981,12 @@ void main() {
         },
         {
           'text': 'Transfer SAR 5000\nRemaining Balance SAR 10000',
-          'type': 'transfer',
+          'type': 'unknown',
           'amount': 5000.0,
           'currency': 'SAR',
           'confidence': 0.60,
           'merchant': null,
-          'desc': 'Bank Transfer',
+          'desc': 'Transfer Review Required',
         },
 
         // Phase 3.2 Production Hardening cases
@@ -971,12 +1020,12 @@ void main() {
         {
           'text':
               'تم سداد البطاقة\nمبلغ: SAR 428.78\nحد الصرف المتبقي: 20,000 SAR',
-          'type': 'transfer',
+          'type': 'expense',
           'amount': 428.78,
           'currency': 'SAR',
           'confidence': 0.60,
           'merchant': null,
-          'desc': 'Bank Transfer',
+          'desc': 'Expense Capture',
         },
         {
           'text':
@@ -990,7 +1039,7 @@ void main() {
         },
         {
           'text': 'تم إضافة مبلغ 200.00 EGP إلى حسابك',
-          'type': 'transfer',
+          'type': 'income',
           'amount': 200.0,
           'currency': 'EGP',
           'confidence': 0.60,
@@ -999,7 +1048,7 @@ void main() {
         },
         {
           'text': 'Debit Internal Transfer\nTransfer SAR 5000',
-          'type': 'transfer',
+          'type': 'expense',
           'amount': 5000.0,
           'currency': 'SAR',
           'confidence': 0.60,
@@ -1222,15 +1271,34 @@ void main() {
     );
 
     test(
-      'bank account deposit to account is classified as transfer with no merchant',
+      'bank account deposit to account is classified as expense with no merchant',
       () {
         final parsed = SmartCaptureParser.parse(
           'تم إضافة مبلغ 1294.25 EGP من xxx7127 إلى حساب رقم xxx7443 في 07-JUN-2026',
         );
 
-        expect(parsed.type, 'transfer');
+        expect(parsed.type, 'expense');
         expect(parsed.amount, 1294.25);
         expect(parsed.currency, 'EGP');
+        expect(parsed.merchantName, isNull);
+        expect(parsed.description, 'Account Deposit');
+      },
+    );
+
+    test(
+      'investment account deposit suppresses merchant extraction and stays expense',
+      () {
+        final parsed = SmartCaptureParser.parse(
+          'إيداع إلى حساب استثماري\n'
+          'رقم: 4454\n'
+          'SAR المبلغ: 10000\n'
+          'في: 2026-08-03 12:36:05\n'
+          'أويس المالية',
+        );
+
+        expect(parsed.type, 'expense');
+        expect(parsed.amount, 10000.0);
+        expect(parsed.currency, 'SAR');
         expect(parsed.merchantName, isNull);
         expect(parsed.description, 'Account Deposit');
       },
@@ -1243,7 +1311,7 @@ void main() {
           'تم تحويل مبلغ 2500EGP      من حساب رقم xxx7127      الى حساب رقم xxx0304      فى 25-JUN-2026',
         );
 
-        expect(parsed.type, 'transfer');
+        expect(parsed.type, 'unknown');
         expect(parsed.amount, 2500.0);
         expect(parsed.currency, 'EGP');
         expect(parsed.merchantName, isNull);
@@ -1357,6 +1425,35 @@ void main() {
       expect(parsed.amount, isNull);
       expect(parsed.currency, isNull);
       expect(parsed.merchantName, isNull);
+
+      final purchaseCodeParsed = SmartCaptureParser.parse(
+        'رمز شراء أونلاين 6528\n'
+        'للبطاقة *0973\n'
+        'بـ 25 SAR\n'
+        'من Amazon SA\n'
+        'في 11:32 26-08-21',
+      );
+
+      expect(purchaseCodeParsed.isValid, isFalse);
+      expect(purchaseCodeParsed.ignoreReason, 'Verification Code Message');
+    });
+
+    test('subscription activation messages are excluded from smart capture', () {
+      final parsed = SmartCaptureParser.parse(
+        'مرحبا احمد البحيرى،\n'
+        'تم تفعيل اشتراكك في Mobily Welcome Prepaid بنجاح.\n'
+        'سعر الباقة: 0 ريال (تم احتساب الضريبة عند شحن الرصيد).\n'
+        'Dear Ahmed,\n'
+        'You have successfully subscribed to Mobily Welcome Prepaid.\n'
+        'Bundle price: SAR 0 (VAT has already been paid upon recharging).',
+      );
+
+      expect(parsed.isValid, isFalse);
+      expect(parsed.ignoreReason, 'Subscription Activation Message');
+      expect(parsed.description, 'Subscription Activation Message');
+      expect(parsed.amount, isNull);
+      expect(parsed.currency, isNull);
+      expect(parsed.merchantName, isNull);
     });
 
     test('bank purchase alerts with balance and URL still parse correctly', () {
@@ -1372,6 +1469,40 @@ void main() {
       expect(parsed.currency, 'EGP');
       expect(parsed.merchantName, 'E-Finance');
       expect(parsed.description, 'Purchase at E-Finance');
+    });
+
+    test('Arabic instant transfer messages are parsed correctly', () {
+      final msg = "تم إضافة تحويل لحظي لحسابكم رقم 0019 بمبلغ 35000.00 جم من احمد مصطفي الباز محمد البحيرى رقم مرجعي 341896635223 يوم 08-25 الساعة 17:33 للمزيد اتصل بـ 19623";
+      // 1. Inbound instant transfer
+      final inbound1 = SmartCaptureParser.parse(msg);
+      expect(inbound1.isValid, isTrue);
+      expect(inbound1.type, 'income');
+      expect(inbound1.direction, 'in');
+      expect(inbound1.amount, 35000.00);
+      expect(inbound1.currency, 'EGP');
+      expect(inbound1.merchantName, 'احمد مصطفي الباز محمد البحيرى');
+
+      // 2. Inbound instant transfer 2
+      final inbound2 = SmartCaptureParser.parse(
+        "تم إضافة تحويل لحظي لحسابكم رقم 0019 بمبلغ 2500.00 جم من احمد مصطفي الباز محمد البحيرى رقم مرجعي 255560970814 يوم 08-25 الساعة 17:33 للمزيد اتصل بـ 19623"
+      );
+      expect(inbound2.isValid, isTrue);
+      expect(inbound2.type, 'income');
+      expect(inbound2.direction, 'in');
+      expect(inbound2.amount, 2500.00);
+      expect(inbound2.currency, 'EGP');
+      expect(inbound2.merchantName, 'احمد مصطفي الباز محمد البحيرى');
+
+      // 3. Outbound instant transfer
+      final outbound = SmartCaptureParser.parse(
+        "تم تنفيذ تحويل لحظي من حسابكم رقم 0190 بمبلغ 70000.00 جم إلى احمد ع*** ا***** ا**** رقم مرجعي 545351432177 يوم 08-25 الساعة 10:26 للمزيد اتصل بـ 19623"
+      );
+      expect(outbound.isValid, isTrue);
+      expect(outbound.type, 'expense');
+      expect(outbound.direction, 'out');
+      expect(outbound.amount, 70000.00);
+      expect(outbound.currency, 'EGP');
+      expect(outbound.merchantName, 'احمد ع*** ا***** ا****');
     });
 
     test(
@@ -1502,6 +1633,44 @@ void main() {
 
       expect(fakeAlerts.lastBadgeCount, 0);
     });
+
+    test(
+      'approving an expense pending capture without available currency balance is blocked',
+      () async {
+        final controller = await makeController();
+
+        await controller.createPendingTransaction(
+          source: PendingTransactionSource.sms,
+          rawMessage: 'Purchase at Supermarket EGP 150',
+          suggestedType: 'expense',
+          confidence: 0.9,
+          suggestedAmount: 150.0,
+          suggestedCurrency: 'EGP',
+          suggestedDescription: 'Supermarket Expense',
+        );
+
+        final pt = controller.state.pendingTransactions.first;
+
+        expect(
+          () => controller.approvePendingTransaction(
+            pt.id,
+            type: 'expense',
+            amount: 150.0,
+            currency: 'EGP',
+            category: 'Groceries',
+            description: 'Approved Supermarket Expense',
+            date: '2026-06-14',
+          ),
+          throwsStateError,
+        );
+
+        expect(controller.state.transactions, isEmpty);
+        expect(
+          controller.state.pendingTransactions.first.status,
+          CaptureStatus.pendingReview,
+        );
+      },
+    );
 
     test('Confirmation learning promo milestone on 3 confirmations', () async {
       final controller = await makeController();

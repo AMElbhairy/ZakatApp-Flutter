@@ -91,18 +91,38 @@ class SmartCaptureParser {
     final String text = rawMessage.toLowerCase();
 
     // 0. Stage 0 — Transaction Status & Exclusions Detection
+    final bool isSubscriptionActivationMessage =
+        _isSubscriptionActivationMessage(text);
+    if (isSubscriptionActivationMessage) {
+      return const SmartCaptureParseResult(
+        type: 'unknown',
+        amount: null,
+        currency: null,
+        confidence: 0.0,
+        merchantName: null,
+        description: 'Subscription Activation Message',
+        ignoreReason: 'Subscription Activation Message',
+        isValid: false,
+      );
+    }
+
     final bool isOtpOrVerificationMessage = _hasMatch(text, [
       'otp',
       'one time password',
       'one-time password',
       'verification code',
       'confirmation code',
+      'purchase code',
+      'security code',
+      'authentication code',
       'رمز التحقق',
       'كود التحقق',
       'رمز لمرة واحدة',
       'الرمز لمرة واحدة',
       'كلمة مرور لمرة واحدة',
       'رمز الاستخدام لمرة واحدة',
+      'رمز شراء',
+      'رمز شراء أونلاين',
     ]);
     if (isOtpOrVerificationMessage) {
       return const SmartCaptureParseResult(
@@ -210,6 +230,7 @@ class SmartCaptureParser {
       'مستردة',
     ]);
 
+    final bool isAccountDepositMessage = _isAccountDepositMessage(text);
     final bool isWalletTopUp =
         _isWalletTopUpMessage(text) &&
         _hasMatch(text, ['apple pay', 'applepay']);
@@ -224,6 +245,7 @@ class SmartCaptureParser {
           'pos',
           'point of sale',
           'apple pay',
+          'applepay',
           'mada',
           'visa purchase',
           'mastercard purchase',
@@ -279,7 +301,8 @@ class SmartCaptureParser {
 
     // Income (including local inbound transfers and refunds)
     final bool isIncome =
-        isIncomingTransfer ||
+        !isAccountDepositMessage &&
+        (isIncomingTransfer ||
         (isRefund ||
             _hasMatch(text, [
               'credit transfer',
@@ -294,20 +317,24 @@ class SmartCaptureParser {
               'cashback',
               'repayment',
               'تم الإيداع',
+              'تم الايداع',
               'تم إضافة مبلغ',
+              'تم اضافة مبلغ',
               'حوالة واردة',
               'تحويل وارد',
               'راتب',
               'تم استلام',
               'تم تحويل إليك',
+              'تم تحويل اليك',
               'تم إضافة',
+              'تم اضافة',
               'added',
               'ايداع',
               'إيداع',
               'إيداع نقدي',
               'ايداع نقدي',
               'كاش باك',
-            ]));
+            ])));
 
     final bool isExpense =
         !isInternalTransfer &&
@@ -342,9 +369,11 @@ class SmartCaptureParser {
 
     String type = 'unknown';
     if (isInternalTransfer) {
-      type = 'transfer';
+      type = 'expense';
+    } else if (isAccountDepositMessage) {
+      type = 'expense';
     } else if (isWalletTopUp) {
-      type = 'transfer';
+      type = 'expense';
     } else if (isOutgoingTransfer) {
       type = 'expense';
     } else if (isIncomingTransfer) {
@@ -374,7 +403,7 @@ class SmartCaptureParser {
     );
     // Remove Account numbers e.g. account:1234, رقم الحساب:5000, account 123456
     scrubbed = scrubbed.replaceAll(
-      RegExp(r'(?:account|رقم الحساب|حساب)[\s:\-*]*\d+', caseSensitive: false),
+      RegExp(r'(?:account|رقم\s*الحساب|لحسابكم|حسابكم|حساب)(?:\s*رقم)?[\s:\-*]*\d+', caseSensitive: false),
       ' ',
     );
     // Remove Masked identifiers e.g. ****1234, xxxx1234
@@ -587,7 +616,7 @@ class SmartCaptureParser {
         String? localCurrency;
         final String fullContext = '$contextBefore $contextAfter';
         final RegExp curFinder = RegExp(
-          r'(sar|sr|s\.r|egp|usd|\$|aed|درهم|ريال|جنيه|ر\.س|ج\.م)',
+          r'(sar|sr|s\.r|egp|usd|\$|aed|درهم|ريال|جنيه|ر\.س|ج\.م|جم)',
           caseSensitive: false,
         );
         final Match? curMatch = curFinder.firstMatch(fullContext);
@@ -617,7 +646,7 @@ class SmartCaptureParser {
     // Fallback general currency finder in the entire message if not found near the best amount
     if (currency == null) {
       final RegExp currencyFinder = RegExp(
-        r'(sar|sr|s\.r|egp|usd|\$|aed|درهم|ريال|جنيه|ر\.س|ج\.م)',
+        r'(sar|sr|s\.r|egp|usd|\$|aed|درهم|ريال|جنيه|ر\.س|ج\.م|جم)',
         caseSensitive: false,
       );
       final Match? curMatch = currencyFinder.firstMatch(scrubbed);
@@ -637,6 +666,7 @@ class SmartCaptureParser {
       'pos',
       'point of sale',
       'apple pay',
+      'applepay',
       'mada',
       'visa purchase',
       'mastercard purchase',
@@ -669,7 +699,9 @@ class SmartCaptureParser {
         merchantName = transferDetails.senderName == null
             ? null
             : _resolveAlias(transferDetails.senderName!, effectiveAliases);
-      } else if (!transferDetails.isTransferMessage && !isWalletTopUp) {
+      } else if (!transferDetails.isTransferMessage &&
+          !isWalletTopUp &&
+          !isAccountDepositMessage) {
         merchantName ??= _merchantFromTransactionField(
           rawMessage,
           effectiveAliases,
@@ -733,6 +765,7 @@ class SmartCaptureParser {
                 ]) ||
                 _hasMatch(lineLower, [
                   'apple pay',
+                  'applepay',
                   'mada',
                   'مدى',
                   'card',
@@ -786,6 +819,17 @@ class SmartCaptureParser {
       }
     }
 
+    if (isAccountDepositMessage) {
+      merchantName = null;
+    }
+
+    final bool isTransferMessage =
+        type == 'transfer' ||
+        isInternalTransfer;
+    if (isTransferMessage && !isWalletTopUp) {
+      merchantName = null;
+    }
+
     final DateTime? capturedAt = _extractCapturedAt(rawMessage);
     final String? paymentMethod = _extractPaymentMethod(rawMessage);
     final String? cardReference = _extractCardReference(rawMessage);
@@ -806,7 +850,7 @@ class SmartCaptureParser {
     ]);
     final double? balance = _extractLabeledAmount(rawMessage, <RegExp>[
       RegExp(
-        r'^\s*(?:current balance|wallet balance|available balance|balance|الرصيد)\s*[:\-]?\s*(.+)$',
+        r'^\s*(?:current balance|wallet balance|available balance|balance|الرصيد|رصيد)\s*[:\-]?\s*(.+)$',
         caseSensitive: false,
         multiLine: true,
       ),
@@ -869,7 +913,28 @@ class SmartCaptureParser {
 
     // 6. Stage 7 — Description Generation
     String description = 'Captured message';
-    if (type == 'expense') {
+    if (isAccountDepositMessage) {
+      description = 'Account Deposit';
+    } else if (isWalletTopUp ||
+        isInternalTransfer ||
+        type == 'transfer' ||
+        transferDetails.isTransferMessage) {
+      if (isWalletTopUp) {
+        description = 'Wallet Top Up';
+      } else if (_hasMatch(text, [
+        'تم إضافة مبلغ',
+        'تم الإيداع',
+        'deposit',
+        'credited',
+        'received',
+        'incoming transfer',
+        'تم تحويل إليك',
+      ])) {
+        description = 'Account Deposit';
+      } else {
+        description = 'Bank Transfer';
+      }
+    } else if (type == 'expense') {
       if (direction == 'out') {
         description = merchantName != null
             ? 'Transfer to $merchantName'
@@ -901,24 +966,6 @@ class SmartCaptureParser {
       } else {
         description = 'Account Deposit';
       }
-    } else if (type == 'transfer') {
-      if (isWalletTopUp) {
-        description = 'Wallet Top Up';
-      } else if (_hasMatch(text, [
-        'تم إضافة مبلغ',
-        'تم الإيداع',
-        'deposit',
-        'credited',
-        'received',
-        'incoming transfer',
-        'تم تحويل إليك',
-      ])) {
-        description = 'Account Deposit';
-      } else {
-        description = 'Bank Transfer';
-      }
-    } else if (transferDetails.isTransferMessage) {
-      description = 'Transfer Review Required';
     }
 
     return SmartCaptureParseResult(
@@ -1122,9 +1169,9 @@ class SmartCaptureParser {
   ) {
     final String key = merchantName.toLowerCase().trim();
     final MerchantRule? direct = merchantRules[key];
-    if (direct != null && direct.enabled) return direct;
+    if (direct != null) return direct;
     for (final MerchantRule rule in merchantRules.values) {
-      if (rule.enabled && rule.merchantName.toLowerCase().trim() == key) {
+      if (rule.merchantName.toLowerCase().trim() == key) {
         return rule;
       }
     }
@@ -1244,7 +1291,7 @@ class SmartCaptureParser {
   ) {
     final List<RegExp> patterns = <RegExp>[
       RegExp(
-        r'(?:(?<![A-Za-z0-9])(?:at|merchant|store)(?![A-Za-z0-9])|لدى|عند|في)\s*[:\-]?\s*([A-Za-z\u0600-\u06FF0-9][A-Za-z0-9\u0600-\u06FF&*.,\- ]{1,80})',
+        r'(?:(?<![A-Za-z0-9])(?:at|merchant|store)(?![A-Za-z0-9])|(?<![\u0621-\u064A\u0671-\u06D5])(?:لدى|عند|في)(?![\u0621-\u064A\u0671-\u06D5]))\s*[:\-]?\s*([A-Za-z\u0600-\u06FF0-9][A-Za-z0-9\u0600-\u06FF&*.,\- ]{1,80})',
         caseSensitive: false,
       ),
     ];
@@ -1268,15 +1315,16 @@ class SmartCaptureParser {
         .map((String line) => line.trim())
         .where((String line) => line.isNotEmpty)
         .toList();
-    final String? senderName = _extractTransferParty(lines, <String>[
+    String? senderName = _extractTransferParty(lines, <String>[
       'sender',
       'from account',
       'from',
       'المرسل',
+      'مرسل',
       'من حساب',
       'من',
     ]);
-    final String? recipientName = _extractTransferParty(lines, <String>[
+    String? recipientName = _extractTransferParty(lines, <String>[
       'to account',
       'to',
       'recipient',
@@ -1286,6 +1334,34 @@ class SmartCaptureParser {
       'إلى',
       'الى',
     ]);
+
+    if (senderName == null) {
+      final Match? match = RegExp(
+        r'(?:\bfrom\b|من)\s+([A-Za-z\u0600-\u06FF\*\s]{2,80})',
+        caseSensitive: false,
+      ).firstMatch(rawMessage);
+      if (match != null) {
+        final String candidate = match.group(1)?.trim() ?? '';
+        if (candidate.isNotEmpty && !_isTransferPartyNoise(candidate)) {
+          senderName = _trimMerchantCandidate(candidate);
+          if (senderName.isEmpty) senderName = null;
+        }
+      }
+    }
+    if (recipientName == null) {
+      final Match? match = RegExp(
+        r'(?:\bto\b|إلى|الى)\s+([A-Za-z\u0600-\u06FF\*\s]{2,80})',
+        caseSensitive: false,
+      ).firstMatch(rawMessage);
+      if (match != null) {
+        final String candidate = match.group(1)?.trim() ?? '';
+        if (candidate.isNotEmpty && !_isTransferPartyNoise(candidate)) {
+          recipientName = _trimMerchantCandidate(candidate);
+          if (recipientName.isEmpty) recipientName = null;
+        }
+      }
+    }
+
     final bool hasExplicitTransferPartyLabels =
         _hasMatch(rawMessage.toLowerCase(), <String>[
           'sender:',
@@ -1294,13 +1370,14 @@ class SmartCaptureParser {
           'from account',
           'to account',
           'المرسل',
+          'مرسل',
           'المستفيد',
           'من حساب',
           'إلى حساب',
         ]);
     final bool hasTransferKeywords = _hasMatch(
       rawMessage.toLowerCase(),
-      <String>['transfer', 'remittance', 'bank transfer', 'تحويل', 'حوالة'],
+      <String>['transfer', 'remittance', 'bank transfer', 'تحويل', 'حوالة', 'واردة', 'وارد', 'صادرة', 'صادر'],
     );
     final bool isInternalTransfer =
         _hasMatch(rawMessage.toLowerCase(), <String>[
@@ -1391,6 +1468,7 @@ class SmartCaptureParser {
           'visa',
           'mastercard',
           'apple pay',
+          'applepay',
           'mada',
           'stc pay',
           'stcpay',
@@ -1447,7 +1525,14 @@ class SmartCaptureParser {
       'سحب',
       'دفع',
       'تحويل صادر',
+      'حوالة صادرة',
+      'حوالة صادر',
+      'صادرة',
+      'صادر',
       'تم التحويل إلى',
+      'تم تنفيذ تحويل',
+      'من حسابكم',
+      'تحويل لحظي من',
     ])) {
       return 'out';
     }
@@ -1456,14 +1541,25 @@ class SmartCaptureParser {
       'credit transfer',
       'transfer received',
       'received from',
+      'transfer from',
       'incoming transfer',
       'إيداع',
       'تحويل وارد',
+      'حوالة واردة',
+      'حوالة وارد',
+      'واردة',
+      'وارد',
       'تم استلام تحويل من',
       'تم الإيداع',
       'تم استلام',
       'credited',
       'received',
+      'تم إضافة تحويل',
+      'تم اضافة تحويل',
+      'تحويل لحظي لحسابكم',
+      'تحويل لحسابكم',
+      'تم إضافة',
+      'تم اضافة',
     ])) {
       return 'in';
     }
@@ -1583,8 +1679,15 @@ class SmartCaptureParser {
   }
 
   static String? _extractPaymentMethod(String rawMessage) {
+    if (RegExp(
+      r'(?:\bpos\s*[-–—]?\s*)?(?:\bapple\s*pay\b|\bapplepay\b)',
+      caseSensitive: false,
+    ).hasMatch(rawMessage)) {
+      return 'Apple Pay';
+    }
+
     final Match? found = RegExp(
-      r'\b(apple pay|mada|visa|mastercard|stc pay|stcpay)\b',
+      r'\b(mada|visa|mastercard|stc pay|stcpay)\b',
       caseSensitive: false,
     ).firstMatch(rawMessage);
     if (found == null) return null;
@@ -1672,6 +1775,61 @@ class SmartCaptureParser {
         .map((String line) => line.trim())
         .where((String line) => line.isNotEmpty)
         .toList();
+
+    // 1. Explicit key-value labeled lines (e.g. "Card: *6011 - mada", "From Card:1897*MADA", "بطاقة: ...")
+    final List<RegExp> labeledLinePatterns = <RegExp>[
+      RegExp(
+        r'(?:^|\s)(?:البطاقة\s+الائتمانية|بطاقة\s+ائتمانية)\s*[:\-]\s*(.+)$',
+        caseSensitive: false,
+      ),
+      RegExp(r'(?:^|\s)بطاقة\s*[:\-]\s*(.+)$', caseSensitive: false),
+      RegExp(
+        r'(?:^|\s)(?:from\s+card|credit\s+card|card|visa|mastercard)\s*[:\-]\s*(.+)$',
+        caseSensitive: false,
+      ),
+    ];
+    for (final String line in lines) {
+      final String lower = line.toLowerCase();
+      if (_hasMatch(lower, <String>[
+        'credit card:payment',
+        'debit: loan instalment',
+      ])) {
+        continue;
+      }
+      for (final RegExp pattern in labeledLinePatterns) {
+        final Match? match = pattern.firstMatch(line);
+        if (match == null) continue;
+        final String candidate = match.group(1)?.trim() ?? '';
+        if (candidate.isNotEmpty) {
+          return candidate;
+        }
+      }
+    }
+
+    // 2. High-precision patterns for sentences / inline text
+    // e.g. "بطاقتك الائتمانية المنتهية بـ 1234", "بطاقتك ****1234", "إلى بطاقة 1234", "card ending in 1234", "card ****1234"
+    final List<RegExp> targetedPatterns = <RegExp>[
+      RegExp(
+        r'(?:(?:تم\s+(?:رد|إيداع|اضافة|إضافة|استرداد|استرجاع)\s+المبلغ\s+إلى\s+)?(?:إلى\s+|في\s+)?(?:بطاقتك|البطاقة|بطاقة)(?:\s+الائتمانية)?(?:\s+المنتهية(?:\s+بـ|\s+برقم|\s+ب)?)?)\s*[:\-]?\s*([*xX•\d]{4,}|(?:visa|mastercard|mada)\s*[*xX•\d]{4,})',
+        caseSensitive: false,
+      ),
+      RegExp(
+        r'(?:(?:refund\s+to|credited\s+to(?:\s+your)?|deposit\s+to)\s+)?(?:credit\s+card|card|visa|mastercard)\s*(?:ending(?:\s+in)?)?\s*[:\-]?\s*([*xX•\d]{4,}|(?:visa|mastercard|mada)\s*[*xX•\d]{4,})',
+        caseSensitive: false,
+      ),
+    ];
+
+    for (final RegExp pattern in targetedPatterns) {
+      final Match? match = pattern.firstMatch(rawMessage);
+      if (match != null) {
+        final String candidate = match.group(1)?.trim() ?? '';
+        if (candidate.isNotEmpty) {
+          return candidate;
+        }
+      }
+    }
+
+    // 3. Fallback to line patterns without required colon
     final List<RegExp> patterns = <RegExp>[
       RegExp(
         r'(?:^|\s)(?:البطاقة\s+الائتمانية|بطاقة\s+ائتمانية)\s*[:\-]?\s*(.+)$',
@@ -1918,16 +2076,21 @@ class SmartCaptureParser {
       required bool currencyAfterAmount,
     }) {
       for (final Match match in regex.allMatches(scrubbed)) {
+        final bool hasTwoGroups = match.groupCount >= 2;
         final String rawAmount = currencyAfterAmount
             ? match.group(1) ?? ''
-            : match.group(2) ?? '';
+            : hasTwoGroups
+            ? match.group(2) ?? ''
+            : match.group(1) ?? '';
         final double? parsedAmount = double.tryParse(
           rawAmount.replaceAll(',', ''),
         );
         if (parsedAmount == null || parsedAmount == 0.0) continue;
         final String? rawCurrency = currencyAfterAmount
             ? match.group(2)
-            : match.group(1);
+            : hasTwoGroups
+            ? match.group(1)
+            : null;
 
         final int start = match.start;
         final int end = match.end;
@@ -2035,14 +2198,28 @@ class SmartCaptureParser {
 
     addCandidates(
       regex: RegExp(
-        r'(?<!\d)(\d+(?:[,\s]\d{3})*(?:\.\d+)?)\s*(sar|sr|s\.r|egp|usd|\$|aed|درهم|ريال|جنيه|ر\.س|ج\.م)\b',
+        r'(?<!\d)((?:sar|sr|s\.r|egp|usd|\$|aed|درهم|ريال|جنيه|ر\.س|ج\.م|جم))\s*(?:amount|المبلغ|مبلغ)\s*[:\-]?\s*(\d+(?:[,\s]\d{3})*(?:\.\d+)?)',
+        caseSensitive: false,
+      ),
+      currencyAfterAmount: false,
+    );
+    addCandidates(
+      regex: RegExp(
+        r'(?<!\d)(?:sar|sr|s\.r|egp|usd|\$|aed|درهم|ريال|جنيه|ر\.س|ج\.م|جم)\s*(?:amount|المبلغ|مبلغ)\s*[:\-]?\s*(\d+(?:[,\s]\d{3})*(?:\.\d+)?)',
+        caseSensitive: false,
+      ),
+      currencyAfterAmount: false,
+    );
+    addCandidates(
+      regex: RegExp(
+        r'(?<!\d)(\d+(?:[,\s]\d{3})*(?:\.\d+)?)\s*(sar|sr|s\.r|egp|usd|\$|aed|درهم|ريال|جنيه|ر\.س|ج\.م|جم)\b',
         caseSensitive: false,
       ),
       currencyAfterAmount: true,
     );
     addCandidates(
       regex: RegExp(
-        r'(?:\b(sar|sr|s\.r|egp|usd|\$|aed|درهم|ريال|جنيه|ر\.س|ج\.م)\b\s*)(\d+(?:[,\s]\d{3})*(?:\.\d+)?)',
+        r'(?:\b(sar|sr|s\.r|egp|usd|\$|aed|درهم|ريال|جنيه|ر\.س|ج\.م|جم)\b\s*)(\d+(?:[,\s]\d{3})*(?:\.\d+)?)',
         caseSensitive: false,
       ),
       currencyAfterAmount: false,
@@ -2206,6 +2383,7 @@ class SmartCaptureParser {
               'mastercard',
               'mada',
               'apple pay',
+              'applepay',
               'stc pay',
               'stcpay',
             ]) &&
@@ -2231,6 +2409,95 @@ class SmartCaptureParser {
       }
     }
     return false;
+  }
+
+  static bool _isSubscriptionActivationMessage(String text) {
+    return _hasMatch(text, [
+      'subscribe',
+      'subscription',
+      'subscribed',
+      'welcome prepaid',
+      'welcome package',
+      'new activation',
+      'activation successful',
+      'activated successfully',
+      'package details',
+      'bundle price',
+      'service number',
+      'econtract',
+      'contract',
+      'mobily welcome prepaid',
+      'اشتراك',
+      'تم تفعيل اشتراكك',
+      'تم الاشتراك',
+      'تفعيل الاشتراك',
+      'الباقة',
+      'الباقة الترحيبية',
+      'الباقة مسبقة الدفع',
+      'تفاصيل الباقة',
+      'سعر الباقة',
+      'رقم الخدمة',
+      'العقد الإلكتروني',
+      'العقد الالكتروني',
+      'تطبيق موبايلي',
+      'حمّل تطبيق',
+      'حمل تطبيق',
+    ]);
+  }
+
+  static bool _isAccountDepositMessage(String text) {
+    if (_hasMatch(text, [
+      'salary',
+      'راتب',
+      'payroll',
+      'cashback',
+      'كاش باك',
+      'transfer',
+      'تحويل',
+      'حوالة',
+      'instant transfer',
+      'التحويل اللحظي',
+      'التحويل الفوري',
+    ])) {
+      return false;
+    }
+    final bool hasDepositIntent = _hasMatch(text, [
+      'deposit to account',
+      'deposit into account',
+      'account deposit',
+      'wallet deposit',
+      'deposit to wallet',
+      'fund account',
+      'funding account',
+      'top up account',
+      'cash in account',
+      'deposit',
+      'إيداع إلى حساب',
+      'إيداع الى حساب',
+      'إيداع في حساب',
+      'إيداع إلى المحفظة',
+      'إيداع في المحفظة',
+      'إيداع',
+      'تم الإيداع',
+      'تم الايداع',
+      'تم إضافة مبلغ',
+      'تم اضافة مبلغ',
+      'إضافة مبلغ',
+      'اضافة مبلغ',
+      'إضافة رصيد',
+      'اضافة رصيد',
+      'تم تمويل الحساب',
+      'تم تمويل المحفظة',
+    ]);
+    final bool hasTargetAccount = _hasMatch(text, [
+      'account',
+      'حساب',
+      'investment',
+      'استثماري',
+      'wallet',
+      'محفظة',
+    ]);
+    return hasDepositIntent && hasTargetAccount;
   }
 
   static String? _normalizeCurrency(String? raw) {

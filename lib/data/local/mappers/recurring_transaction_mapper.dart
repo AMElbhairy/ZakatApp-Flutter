@@ -31,6 +31,10 @@ class RecurringTransactionMapper {
       createdAt: Value<String>(_timestampOrFallback(recurring.createdAt)),
       updatedAt: Value<String>(resolvedUpdatedAt),
       deletedAt: Value<String?>(deletedAt),
+      autoAdd: Value<bool>(recurring.autoAdd),
+      reminderEnabled: Value<bool>(recurring.reminderEnabled),
+      reminderDayOffset: Value<int>(recurring.reminderDayOffset),
+      reminderTime: Value<String>(recurring.reminderTime),
     );
   }
 
@@ -49,6 +53,10 @@ class RecurringTransactionMapper {
       enabled: row.enabled,
       skipMonth: row.skipMonth,
       createdAt: row.createdAt,
+      autoAdd: row.autoAdd,
+      reminderEnabled: row.reminderEnabled,
+      reminderDayOffset: row.reminderDayOffset,
+      reminderTime: row.reminderTime,
     );
   }
 

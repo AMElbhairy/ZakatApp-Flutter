@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:cryptography/cryptography.dart' as crypto;
+import 'backup_error_presenter.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -14,15 +16,18 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/i18n/app_localizations.dart';
+import '../../core/errors/user_facing_error_mapper.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/app_ui.dart';
 import '../../core/widgets/compact_dropdown.dart';
 import '../../services/backup_key_manager.dart';
 import '../../services/app_state_controller.dart';
+import '../../services/auth_controller.dart';
 import '../../services/cloud_backup_controller.dart';
 import '../../services/google_sign_in_factory.dart';
 import '../../services/sync/cloud_sync_manager.dart';
 import '../../services/sync/cloud_sync_manifest.dart';
+import '../../services/sync/icloud_storage_provider.dart';
 import '../../services/sync/google_drive_storage_provider.dart';
 import '../../services/sync/snapshot_manager.dart';
 import '../../services/sync/sync_encryption_service.dart';
@@ -49,10 +54,13 @@ class CloudBackupScreen extends StatefulWidget {
 class _CloudBackupScreenState extends State<CloudBackupScreen> {
   static const String _localAppVersion = String.fromEnvironment(
     'APP_VERSION',
-    defaultValue: '1.0.0',
+    defaultValue: '1.5.0',
   );
 
   late final GoogleSignIn _googleSignIn;
+  AuthController? _authController;
+  String? _lastObservedAuthStamp;
+  bool _pendingAuthRefresh = false;
 
   bool _isConnected = false;
   String? _userEmail;
@@ -60,6 +68,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
   bool _loadingBackups = false;
   bool _isInitializing = true;
   String _statusMessage = 'Refreshing backup status...';
+  int _statusRefreshToken = 0;
 
   List<SnapshotEntry> _backups = [];
   Map<String, DeviceMetadata> _knownDevices = {};
@@ -84,45 +93,110 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     _initStatus();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final AuthController? authController = _resolveAuthController();
+    if (!identical(authController, _authController)) {
+      _authController?.removeListener(_handleAuthChanged);
+      _authController = authController;
+      _lastObservedAuthStamp = _authStamp(authController);
+      _authController?.addListener(_handleAuthChanged);
+    }
+  }
+
+  AuthController? _resolveAuthController() {
+    try {
+      return context.read<AuthController>();
+    } catch (_) {
+      return null;
+    }
+  }
+
   GoogleSignIn _resolveSharedGoogleSignIn() {
+    try {
+      return context.read<CloudBackupController>().googleSignIn;
+    } catch (_) {}
     try {
       return context.read<GoogleSignIn>();
     } catch (_) {
-      return createAppGoogleSignIn();
+      return createAppGoogleSignIn(
+        extraScopes: const <String>[
+          'https://www.googleapis.com/auth/drive.appdata',
+        ],
+      );
     }
   }
 
   @override
   void dispose() {
+    _authController?.removeListener(_handleAuthChanged);
     _passphraseController.dispose();
     _confirmPassphraseController.dispose();
     super.dispose();
   }
 
+  String _authStamp(AuthController? controller) {
+    final user = controller?.currentUser;
+    if (user == null) return 'signed_out';
+    return '${user.id}|${user.provider}|${user.email}';
+  }
+
+  String _activeProviderId() {
+    final CloudBackupController? backupController = _maybeBackupController();
+    final String provider =
+        backupController?.selectedProviderId ??
+        (_authController?.currentUser?.provider ?? 'google');
+    if (provider == 'apple' || provider == 'icloud') {
+      return 'icloud';
+    }
+    return 'google_drive';
+  }
+
+  void _handleAuthChanged() {
+    if (_busy) {
+      _pendingAuthRefresh = true;
+      return;
+    }
+    final String currentStamp = _authStamp(_authController);
+    if (currentStamp == _lastObservedAuthStamp) {
+      return;
+    }
+    _lastObservedAuthStamp = currentStamp;
+    if (!mounted) return;
+    unawaited(_initStatus());
+  }
+
   Future<void> _initStatus() async {
+    final int refreshToken = ++_statusRefreshToken;
     setState(() {
       _busy = true;
       _isInitializing = true;
       _statusMessage = 'Refreshing backup status...';
     });
     try {
-      final bool connected = await _tryAuthorizeDrive(
-        interactive: false,
-        phase: 'init',
-      );
-      if (connected) {
-        await _loadLocalChecksum();
-        await _loadBackupPassphrase();
-        await _fetchBackups();
-        return;
-      }
-      setState(() {
-        _isConnected = false;
-        _userEmail = null;
-        _statusMessage = 'Refreshing backup status...';
-      });
       await _loadLocalChecksum();
       await _loadBackupPassphrase();
+
+      // Check cloud connection in the background
+      unawaited(
+        _tryAuthorizeDrive(interactive: false, phase: 'init').then((
+          connected,
+        ) async {
+          if (!mounted || refreshToken != _statusRefreshToken) {
+            return;
+          }
+          if (connected) {
+            await _fetchBackups(refreshToken: refreshToken);
+          } else {
+            setState(() {
+              _isConnected = false;
+              _userEmail = null;
+              _statusMessage = 'Google Drive / iCloud permission required.';
+            });
+          }
+        }),
+      );
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -130,11 +204,15 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
         });
       }
     } finally {
-      if (mounted) {
+      if (mounted && refreshToken == _statusRefreshToken) {
         setState(() {
           _busy = false;
           _isInitializing = false;
         });
+        if (_pendingAuthRefresh) {
+          _pendingAuthRefresh = false;
+          unawaited(_initStatus());
+        }
       }
     }
   }
@@ -146,6 +224,33 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     required bool interactive,
     required String phase,
   }) async {
+    final CloudBackupController? backupController = _maybeBackupController();
+    if (backupController != null) {
+      if (interactive) {
+        final bool connected = await backupController.connectGoogleDrive(
+          interactive: true,
+        );
+        if (mounted) {
+          setState(() {
+            _isConnected = connected;
+            _userEmail = null;
+            _statusMessage = backupController.statusMessage;
+          });
+        }
+        return connected;
+      }
+
+      await backupController.refreshCloudState(evaluatePrompt: false);
+      if (mounted) {
+        setState(() {
+          _isConnected = backupController.isDriveConnected;
+          _userEmail = null;
+          _statusMessage = backupController.statusMessage;
+        });
+      }
+      return backupController.isDriveConnected;
+    }
+
     final String namespace = _cloudNamespace();
     final provider = GoogleDriveStorageProvider(
       googleSignIn: _googleSignIn,
@@ -209,13 +314,35 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
         );
   }
 
+  String _activeUserId() {
+    try {
+      final String controllerUserId = context
+          .read<CloudBackupController>()
+          .debugSessionUserId
+          .trim();
+      if (controllerUserId.isNotEmpty) {
+        return controllerUserId;
+      }
+    } catch (_) {}
+    final AuthController? authController = _resolveAuthController();
+    final String authUserId = authController?.currentUser?.id.trim() ?? '';
+    if (authUserId.isNotEmpty) {
+      return authUserId;
+    }
+    final AppStateController controller = context.read<AppStateController>();
+    final String loadedUserId = controller.state.loadedUserId?.trim() ?? '';
+    if (loadedUserId.isNotEmpty) {
+      return loadedUserId;
+    }
+    final String stateUserId = controller.state.userId?.trim() ?? '';
+    if (stateUserId.isNotEmpty) {
+      return stateUserId;
+    }
+    return 'default';
+  }
+
   String _drivePermissionPrefsKey() {
-    final controller = context.read<AppStateController>();
-    final String userId =
-        (controller.state.loadedUserId?.trim().isNotEmpty ?? false)
-        ? controller.state.loadedUserId!.trim()
-        : 'default';
-    return 'cloud_backup_drive_permission_granted_$userId';
+    return 'cloud_backup_drive_permission_granted_${_activeUserId()}';
   }
 
   Future<bool> _hasDrivePermissionGranted() async {
@@ -373,9 +500,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     }
   }
 
-  CloudBackupController? _maybeBackupController() {
+  CloudBackupController? _maybeBackupController({bool listen = false}) {
     try {
-      return context.read<CloudBackupController>();
+      return Provider.of<CloudBackupController>(context, listen: listen);
     } catch (_) {
       return null;
     }
@@ -383,12 +510,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
 
   Future<void> _saveBackupPassphrase(String passphrase) async {
     final controller = context.read<AppStateController>();
-    final String userId =
-        (controller.state.loadedUserId?.trim().isNotEmpty ?? false)
-        ? controller.state.loadedUserId!.trim()
-        : (controller.state.userId?.trim().isNotEmpty ?? false)
-        ? controller.state.userId!.trim()
-        : 'default';
+    final String userId = _activeUserId();
     await controller.secureStorageService.saveBackupPassphrase(
       passphrase,
       userId: userId,
@@ -397,12 +519,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
 
   Future<void> _deleteBackupPassphrase() async {
     final controller = context.read<AppStateController>();
-    final String userId =
-        (controller.state.loadedUserId?.trim().isNotEmpty ?? false)
-        ? controller.state.loadedUserId!.trim()
-        : (controller.state.userId?.trim().isNotEmpty ?? false)
-        ? controller.state.userId!.trim()
-        : 'default';
+    final String userId = _activeUserId();
     await controller.secureStorageService.deleteBackupPassphrase(
       userId: userId,
     );
@@ -450,23 +567,21 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
   }
 
   String _mapErrorToMessage(Object e) {
-    if (_isWrongPassphraseError(e)) {
-      return 'Wrong passphrase';
-    }
-    if (_isPermissionRevokedError(e)) {
-      return 'Google Drive permission was revoked. Please reconnect.';
-    }
-    if (_isNetworkError(e)) {
-      return 'Network error';
-    }
-    if (_isConflictError(e)) {
-      return 'Conflict / try again';
-    }
-    return 'Error: $e';
+    if (_isWrongPassphraseError(e))
+      return context.l10n.tr('error_restore_invalid_backup');
+    if (_isPermissionRevokedError(e))
+      return context.l10n.tr('error_authorization_failed');
+    if (_isNetworkError(e)) return context.l10n.tr('error_network_offline');
+    if (_isConflictError(e)) return context.l10n.tr('error_sync_conflict');
+    return UserFacingErrorMapper.message(context.l10n, e, context: 'backup');
   }
 
   UserCloudStorageProvider _getProvider() {
     final String namespace = _cloudNamespace();
+    final String providerId = _activeProviderId();
+    if (providerId == 'icloud') {
+      return ICloudStorageProvider(namespacePrefix: namespace);
+    }
     return GoogleDriveStorageProvider(
       googleSignIn: _googleSignIn,
       getAuthHeaders: () async {
@@ -487,21 +602,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
   }
 
   String _cloudNamespace() {
-    final controller = context.read<AppStateController>();
-    final String loadedUserId =
-        controller.state.loadedUserId?.trim().isNotEmpty == true
-        ? controller.state.loadedUserId!.trim()
-        : '';
-    if (loadedUserId.isNotEmpty) {
-      return loadedUserId;
-    }
-    final String authUserId = controller.state.userId?.trim().isNotEmpty == true
-        ? controller.state.userId!.trim()
-        : '';
-    if (authUserId.isNotEmpty) {
-      return authUserId;
-    }
-    return 'default';
+    return _activeUserId();
   }
 
   Future<String> _getOrCreateDeviceId() async {
@@ -550,6 +651,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
   }
 
   Future<void> _connect() async {
+    final int refreshToken = ++_statusRefreshToken;
     setState(() {
       _busy = true;
       _statusMessage = 'Connecting...';
@@ -559,8 +661,11 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
         interactive: true,
         phase: 'connect',
       );
+      if (!mounted || refreshToken != _statusRefreshToken) {
+        return;
+      }
       if (connected) {
-        await _fetchBackups();
+        await _fetchBackups(refreshToken: refreshToken);
       } else if (mounted && _statusMessage == 'Connecting...') {
         setState(() {
           _isConnected = false;
@@ -568,6 +673,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
         });
       }
     } catch (e) {
+      if (!mounted || refreshToken != _statusRefreshToken) {
+        return;
+      }
       setState(() {
         if (_isPermissionRevokedError(e)) {
           _isConnected = false;
@@ -576,6 +684,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
         _isConnected = false;
         _statusMessage = _mapErrorToMessage(e);
       });
+      unawaited(
+        _maybeBackupController()?.refreshCloudState(evaluatePrompt: false),
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -605,6 +716,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
         _passphraseController.clear();
         _confirmPassphraseController.clear();
       });
+      await _maybeBackupController()?.refreshCloudState(evaluatePrompt: false);
     } catch (e) {
       setState(() {
         _statusMessage = _mapErrorToMessage(e);
@@ -619,7 +731,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     }
   }
 
-  Future<void> _fetchBackups() async {
+  Future<void> _fetchBackups({int? refreshToken}) async {
     if (!mounted) return;
     setState(() {
       _loadingBackups = true;
@@ -633,7 +745,8 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
       );
 
       if (checkResult.status == CloudSyncStatus.error) {
-        if (mounted) {
+        if (mounted &&
+            (refreshToken == null || refreshToken == _statusRefreshToken)) {
           setState(() {
             if (_isPermissionRevokedError(checkResult.message)) {
               _isConnected = false;
@@ -651,7 +764,10 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
         final availableSnapshotPaths = <String>{
           for (final CloudFileInfo file in remoteFiles) file.path,
         };
-        if (!mounted) return;
+        if (!mounted ||
+            (refreshToken != null && refreshToken != _statusRefreshToken)) {
+          return;
+        }
         setState(() {
           _backups = List<SnapshotEntry>.from(manifest.snapshots);
           _availableSnapshotPaths = availableSnapshotPaths;
@@ -686,7 +802,8 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
             }
           }
         });
-      } else if (mounted) {
+      } else if (mounted &&
+          (refreshToken == null || refreshToken == _statusRefreshToken)) {
         setState(() {
           _backups = [];
           _availableSnapshotPaths = <String>{};
@@ -699,7 +816,8 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
         });
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted &&
+          (refreshToken == null || refreshToken == _statusRefreshToken)) {
         setState(() {
           if (_isPermissionRevokedError(e)) {
             _isConnected = false;
@@ -709,7 +827,8 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
         });
       }
     } finally {
-      if (mounted) {
+      if (mounted &&
+          (refreshToken == null || refreshToken == _statusRefreshToken)) {
         setState(() {
           _loadingBackups = false;
         });
@@ -771,7 +890,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
         }
         await _loadLocalChecksum();
         if (!mounted) return;
-        await _fetchBackups();
+        await _fetchBackups(refreshToken: _statusRefreshToken);
       } else {
         setState(() {
           if (_isPermissionRevokedError(result.message)) {
@@ -781,7 +900,11 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
           _statusMessage = _mapErrorToMessage(result.message);
         });
         _showToast(
-          'Backup failed: ${result.message}',
+          UserFacingErrorMapper.message(
+            context.l10n,
+            result.message,
+            context: 'backup',
+          ),
           kind: AppToastKind.error,
         );
       }
@@ -794,7 +917,10 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
         }
         _statusMessage = _mapErrorToMessage(e);
       });
-      _showToast('Backup failed: $e', kind: AppToastKind.error);
+      _showToast(
+        UserFacingErrorMapper.message(context.l10n, e, context: 'backup'),
+        kind: AppToastKind.error,
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -895,7 +1021,10 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
       setState(() {
         _statusMessage = _mapErrorToMessage(e);
       });
-      _showToast('Failed to delete backups: $e', kind: AppToastKind.error);
+      _showToast(
+        UserFacingErrorMapper.message(context.l10n, e, context: 'backup'),
+        kind: AppToastKind.error,
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -926,28 +1055,6 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    const Icon(Icons.schedule, size: 18),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        isArabic
-                            ? 'النسخ السحابي التلقائي'
-                            : 'Automatic Cloud Backup',
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                    if (controller.isBackingUp)
-                      const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 12),
                 SwitchListTile.adaptive(
                   contentPadding: EdgeInsets.zero,
                   value: controller.automaticBackupEnabled,
@@ -962,107 +1069,84 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                           }
                         },
                   title: Text(
-                    isArabic
-                        ? 'تفعيل النسخ التلقائي'
-                        : 'Enable automatic backups',
+                    isArabic ? 'النسخ السحابي التلقائي' : 'Automatic Backup',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                   subtitle: Text(
                     isArabic
-                        ? 'تعمل النسخ في الخلفية عندما يكون التطبيق خاملاً أو عند استئنافه أو عند تغيّر بيانات مهمة.'
-                        : 'Backups run in the background when the app is idle, resumes, or important data changes.',
+                        ? 'ابق بياناتك مدعومة تلقائياً.'
+                        : 'Keep your data backed up automatically.',
                   ),
                 ),
-                const SizedBox(height: 8),
-                ExpansionTile(
-                  key: const Key('advancedBackupSettingsTile'),
-                  tilePadding: EdgeInsets.zero,
-                  childrenPadding: const EdgeInsets.only(bottom: 8),
-                  title: Text(
-                    isArabic ? 'متقدم' : 'Advanced',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  subtitle: Text(
-                    isArabic
-                        ? 'عدّل توقيت النسخ وخيارات متقدمة أخرى.'
-                        : 'Adjust backup timing and other power-user options.',
-                  ),
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          isArabic ? 'الحد الأدنى للفاصل' : 'Minimum interval',
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                        const Spacer(),
-                        CompactDropdownButton<int>(
-                          value: controller.minimumInterval.inMinutes,
-                          labelText: isArabic
-                              ? 'الحد الأدنى للفاصل'
-                              : 'Minimum interval',
-                          items: const <int>[30, 60, 180, 360, 720],
-                          itemLabel: (int value) =>
-                              _minimumIntervalLabel(value, isArabic: isArabic),
-                          onChanged: (int value) {
-                            if (_busy) return;
-                            controller.setMinimumIntervalMinutes(value);
-                          },
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                OutlinedButton.icon(
-                  onPressed: _busy ? null : _deleteAllCloudBackups,
-                  icon: const Icon(
-                    Icons.delete_outline,
-                    color: AppColors.redStrong,
-                  ),
-                  label: Text(
-                    isArabic
-                        ? 'حذف جميع النسخ السحابية'
-                        : 'Delete All Cloud Backups',
-                    style: const TextStyle(color: AppColors.redStrong),
-                  ),
-                ),
-                const Divider(height: 24),
-                _detailRow(
-                  context,
-                  icon: Icons.history,
-                  label: isArabic ? 'آخر وقت للنسخ' : 'Last backup time',
-                  value: _formatMaybeDate(controller.lastBackupAt),
-                ),
-                const SizedBox(height: 8),
-                _detailRow(
-                  context,
-                  icon: Icons.event_available,
-                  label: isArabic
-                      ? 'النسخة التالية المتاحة'
-                      : 'Next eligible backup',
-                  value: _formatMaybeDate(controller.nextEligibleBackupAt),
-                ),
-                const SizedBox(height: 8),
-                _detailRow(
-                  context,
-                  icon: Icons.info_outline,
-                  label: isArabic ? 'الحالة' : 'Status',
-                  value: controller.statusMessage,
-                ),
-                if (controller.lastBackupError.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    controller.lastBackupError,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
               ],
             ),
           ),
         );
       },
+    );
+  }
+
+  Widget _buildAdvancedSettingsPanel(
+    BuildContext context,
+    CloudBackupController controller,
+  ) {
+    final bool isArabic = _isArabic(context);
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+      ),
+      child: ExpansionTile(
+        key: const Key('advancedBackupSettingsTile'),
+        title: Text(
+          isArabic ? 'إعدادات متقدمة' : 'Advanced Settings',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        childrenPadding: const EdgeInsets.all(16),
+        children: [
+          Row(
+            children: [
+              Text(
+                isArabic ? 'الحد الأدنى للفاصل' : 'Minimum interval',
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const Spacer(),
+              CompactDropdownButton<int>(
+                value: controller.minimumInterval.inMinutes,
+                labelText: isArabic ? 'الحد الأدنى للفاصل' : 'Minimum interval',
+                items: const <int>[30, 60, 180, 360, 720],
+                itemLabel: (int value) =>
+                    _minimumIntervalLabel(value, isArabic: isArabic),
+                onChanged: (int value) {
+                  if (_busy) return;
+                  controller.setMinimumIntervalMinutes(value);
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: AppColors.redStrong),
+              ),
+              onPressed: _busy ? null : _deleteAllCloudBackups,
+              icon: const Icon(
+                Icons.delete_outline,
+                color: AppColors.redStrong,
+              ),
+              label: Text(
+                isArabic
+                    ? 'حذف جميع النسخ السحابية'
+                    : 'Delete All Cloud Backups',
+                style: const TextStyle(color: AppColors.redStrong),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1704,6 +1788,81 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     );
   }
 
+  void _showBackupDetailsDialog(BuildContext context, SnapshotEntry backup) {
+    final bool isArabic = _isArabic(context);
+    final platform = _platformForBackup(backup);
+    final dateLabel = _formatBackupDate(backup.createdAt);
+
+    showDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: Text(isArabic ? 'تفاصيل النسخة الاحتياطية' : 'Backup Details'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _detailRow(
+                  context,
+                  icon: _platformIcon(platform),
+                  label: isArabic ? 'الجهاز' : 'Device',
+                  value: backup.deviceName.isEmpty
+                      ? (isArabic ? 'جهاز غير معروف' : 'Unknown device')
+                      : backup.deviceName,
+                ),
+                const SizedBox(height: 8),
+                _detailRow(
+                  context,
+                  icon: Icons.history,
+                  label: isArabic ? 'التاريخ والوقت' : 'Date & Time',
+                  value: dateLabel,
+                ),
+                const SizedBox(height: 8),
+                _detailRow(
+                  context,
+                  icon: Icons.data_object,
+                  label: isArabic ? 'مخطط قاعدة البيانات' : 'DB Schema',
+                  value: backup.databaseSchemaVersion.toString(),
+                ),
+                const SizedBox(height: 8),
+                _detailRow(
+                  context,
+                  icon: Icons.apps,
+                  label: isArabic ? 'نسخة التطبيق' : 'App Version',
+                  value: backup.appVersion.isEmpty
+                      ? (isArabic ? 'غير معروف' : 'Unknown')
+                      : backup.appVersion,
+                ),
+                const SizedBox(height: 8),
+                _detailRow(
+                  context,
+                  icon: Icons.tag,
+                  label: isArabic ? 'التسلسل' : 'Sequence',
+                  value:
+                      '#${backup.sequence} (Global #${backup.globalSequence})',
+                ),
+                const SizedBox(height: 8),
+                _detailRow(
+                  context,
+                  icon: Icons.fingerprint,
+                  label: isArabic ? 'رمز التحقق' : 'Checksum',
+                  value: backup.checksum,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text(isArabic ? 'إغلاق' : 'Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _buildBackupCard(
     BuildContext context,
     SnapshotEntry backup, {
@@ -1773,153 +1932,86 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
           width: isCurrent || isNewest ? 2 : 1,
         ),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: borderColor.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _showBackupDetailsDialog(context, backup),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: borderColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(_platformIcon(platform), color: borderColor),
                   ),
-                  child: Icon(_platformIcon(platform), color: borderColor),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        isLatestCard
-                            ? (isArabic ? 'أحدث نسخة' : 'Latest Backup')
-                            : (isArabic
-                                  ? 'النسخة #${backup.sequence}'
-                                  : 'Backup #${backup.sequence}'),
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          backup.deviceName.isEmpty
+                              ? (isArabic ? 'جهاز غير معروف' : 'Unknown device')
+                              : backup.deviceName,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        backup.deviceName.isEmpty
-                            ? (isArabic ? 'جهاز غير معروف' : 'Unknown device')
-                            : backup.deviceName,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          fontSize: 13,
-                        ),
-                      ),
-                      if (!isAvailable) ...[
                         const SizedBox(height: 4),
                         Text(
-                          isArabic
-                              ? 'ملف النسخة غير موجود في Drive'
-                              : 'Snapshot file missing from Drive',
+                          dateLabel,
                           style: TextStyle(
-                            color: Theme.of(context).colorScheme.error,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                            fontSize: 13,
                           ),
                         ),
                       ],
-                      const SizedBox(height: 2),
-                      Text(
-                        '${_formatPlatformLabel(platform)} | $dateLabel',
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (badges.isNotEmpty)
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    alignment: WrapAlignment.end,
-                    children: badges,
-                  ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _detailChip(
-                  context,
-                  icon: _platformIcon(platform),
-                  label: backup.deviceName.isEmpty
-                      ? (isArabic ? 'جهاز غير معروف' : 'Unknown device')
-                      : backup.deviceName,
-                ),
-                _detailChip(
-                  context,
-                  icon: Icons.data_object,
-                  label: isArabic
-                      ? 'مخطط قاعدة البيانات ${backup.databaseSchemaVersion}'
-                      : 'DB schema ${backup.databaseSchemaVersion}',
-                ),
-                _detailChip(
-                  context,
-                  icon: Icons.apps,
-                  label: isArabic
-                      ? 'التطبيق ${backup.appVersion.isEmpty ? 'غير معروف' : backup.appVersion}'
-                      : 'App ${backup.appVersion.isEmpty ? 'unknown' : backup.appVersion}',
-                ),
-                _detailChip(
-                  context,
-                  icon: Icons.tag,
-                  label: isArabic
-                      ? 'تسلسل ${backup.sequence} / عام ${backup.globalSequence}'
-                      : 'Seq ${backup.sequence} / G${backup.globalSequence}',
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              isArabic
-                  ? 'التحقق: ${_shortChecksum(backup.checksum)}'
-                  : 'Checksum: ${_shortChecksum(backup.checksum)}',
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                fontSize: 12,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerRight,
-              child: isAvailable
-                  ? (isLatestCard
-                        ? ElevatedButton.icon(
-                            onPressed: _busy
-                                ? null
-                                : () => _confirmAndRestore(backup),
-                            icon: const Icon(Icons.restore),
-                            label: Text(isArabic ? 'استعادة' : 'Restore'),
-                          )
-                        : OutlinedButton.icon(
-                            onPressed: _busy
-                                ? null
-                                : () => _confirmAndRestore(backup),
-                            icon: const Icon(Icons.restore),
-                            label: Text(isArabic ? 'استعادة' : 'Restore'),
-                          ))
-                  : OutlinedButton.icon(
-                      onPressed: null,
-                      icon: const Icon(Icons.restore),
-                      label: Text(isArabic ? 'غير متاحة' : 'Unavailable'),
                     ),
-            ),
-          ],
+                  ),
+                ],
+              ),
+              if (badges.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Wrap(spacing: 6, runSpacing: 6, children: badges),
+              ],
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: isAvailable
+                    ? (isLatestCard
+                          ? ElevatedButton.icon(
+                              onPressed: _busy
+                                  ? null
+                                  : () => _confirmAndRestore(backup),
+                              icon: const Icon(Icons.restore),
+                              label: Text(isArabic ? 'استعادة' : 'Restore'),
+                            )
+                          : OutlinedButton.icon(
+                              onPressed: _busy
+                                  ? null
+                                  : () => _confirmAndRestore(backup),
+                              icon: const Icon(Icons.restore),
+                              label: Text(isArabic ? 'استعادة' : 'Restore'),
+                            ))
+                    : OutlinedButton.icon(
+                        onPressed: null,
+                        icon: const Icon(Icons.restore),
+                        label: Text(isArabic ? 'غير متاحة' : 'Unavailable'),
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1965,14 +2057,24 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
   @override
   Widget build(BuildContext context) {
     final bool isArabic = _isArabic(context);
-    final backupController = _maybeBackupController();
+    final backupController = _maybeBackupController(listen: true);
+    final bool isConnected = backupController?.isDriveConnected ?? _isConnected;
+    final String statusMessage =
+        backupController?.statusMessage ?? _statusMessage;
+    final bool isICloud = backupController?.selectedProviderId == 'icloud';
     final sortedBackups = _sortedBackups;
     final latestBackup = sortedBackups.isNotEmpty ? sortedBackups.first : null;
     final previousBackups = sortedBackups.length > 1
         ? sortedBackups.skip(1).toList()
         : <SnapshotEntry>[];
     final lastBackupTime =
-        backupController?.lastBackupAt ?? latestBackup?.createdAt;
+        (latestBackup != null &&
+            (backupController?.lastBackupAt == null ||
+                latestBackup.createdAt.isAfter(
+                  backupController!.lastBackupAt!,
+                )))
+        ? latestBackup.createdAt
+        : backupController?.lastBackupAt;
     final nextEligibleTime = backupController?.nextEligibleBackupAt;
     final autoBackupSummary = backupController == null
         ? (isArabic ? 'غير متاح' : 'Not available')
@@ -1988,10 +2090,14 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          isArabic ? 'النسخ السحابي والمزامنة' : 'Cloud Backup & Sync',
+          isICloud
+              ? (isArabic ? 'نسخ ومزامنة iCloud' : 'iCloud Backup & Sync')
+              : (isArabic
+                    ? 'النسخ السحابي والمزامنة'
+                    : 'Google Drive Backup & Sync'),
         ),
         actions: [
-          if (_isConnected)
+          if (isConnected)
             PopupMenuButton<String>(
               onSelected: (value) {
                 if (value == 'disconnect') {
@@ -2002,383 +2108,451 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                 PopupMenuItem(
                   value: 'disconnect',
                   child: Text(
-                    isArabic
-                        ? 'قطع اتصال Google Drive'
-                        : 'Disconnect Google Drive',
+                    isICloud
+                        ? (isArabic ? 'قطع اتصال iCloud' : 'Disconnect iCloud')
+                        : (isArabic
+                              ? 'قطع اتصال Google Drive'
+                              : 'Disconnect Google Drive'),
                   ),
                 ),
               ],
             ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Card(
-              elevation: 0,
-              color: Theme.of(
-                context,
-              ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: BorderSide(
-                  color: Theme.of(context).colorScheme.outlineVariant,
-                ),
-              ),
+      body: _isInitializing
+          ? Center(
               child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
+                padding: const EdgeInsets.all(32.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(
-                      _isConnected ? Icons.cloud_done : Icons.cloud_off,
-                      color: _isConnected
-                          ? AppColors.emeraldSuccess
-                          : AppColors.gray,
-                      size: 28,
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            isArabic
-                                ? 'الحالة: $_statusMessage'
-                                : 'Status: $_statusMessage',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                              color: _isConnected
-                                  ? AppColors.emeraldSuccess
-                                  : AppColors.neutral600,
-                            ),
-                          ),
-                          if (_isConnected && _userEmail != null) ...[
-                            const SizedBox(height: 4),
-                            Text(
-                              isArabic
-                                  ? 'الحساب: $_userEmail'
-                                  : 'Account: $_userEmail',
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ],
-                          const SizedBox(height: 12),
-                          _detailRow(
-                            context,
-                            icon: Icons.history,
-                            label: isArabic ? 'آخر نسخة' : 'Last backup',
-                            value: _formatMaybeDate(lastBackupTime),
-                          ),
-                          const SizedBox(height: 8),
-                          _detailRow(
-                            context,
-                            icon: Icons.schedule,
-                            label: isArabic ? 'النسخ التلقائي' : 'Auto backup',
-                            value: isArabic
-                                ? (backupController == null
-                                      ? 'غير متاح'
-                                      : (backupController.automaticBackupEnabled
-                                            ? 'مفعّل'
-                                            : 'معطل'))
-                                : autoBackupSummary,
-                          ),
-                          const SizedBox(height: 8),
-                          _detailRow(
-                            context,
-                            icon: Icons.event,
-                            label: isArabic
-                                ? 'النسخة التالية المتاحة'
-                                : 'Next eligible backup',
-                            value: _formatMaybeDate(nextEligibleTime),
-                          ),
-                          const SizedBox(height: 8),
-                          _detailRow(
-                            context,
-                            icon: Icons.error_outline,
-                            label: isArabic ? 'آخر خطأ' : 'Last error',
-                            value: isArabic && lastError == 'None'
-                                ? 'لا يوجد'
-                                : lastError,
-                          ),
-                          if (kDebugMode) ...[
-                            const SizedBox(height: 8),
-                            _detailRow(
-                              context,
-                              icon: Icons.inventory_2_outlined,
-                              label: isArabic ? 'عدد النسخ' : 'Backup count',
-                              value: '${_backups.length}',
-                            ),
-                          ],
-                          if (_isConnected &&
-                              _statusMessage == 'Network error') ...[
-                            const SizedBox(height: 12),
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: OutlinedButton.icon(
-                                onPressed: _busy ? null : _fetchBackups,
-                                icon: const Icon(Icons.refresh),
-                                label: Text(
-                                  isArabic ? 'إعادة المحاولة' : 'Retry',
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: 16),
+                    Text(
+                      isArabic
+                          ? 'جاري التحقق من الاتصال بالنسخ الاحتياطي...'
+                          : 'Checking backup connection...',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                      textAlign: TextAlign.center,
                     ),
                   ],
                 ),
               ),
-            ),
-            const SizedBox(height: 20),
-            if (_isInitializing)
-              Card(
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(
-                    color: Theme.of(context).colorScheme.outlineVariant,
-                  ),
-                ),
-                child: Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (backupController != null &&
+                      backupController.authController.currentUser?.provider ==
+                          'email')
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 16.0),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            isArabic
+                                ? 'مزود الخدمة السحابية:'
+                                : 'Cloud Provider:',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          DropdownButton<String>(
+                            value:
+                                backupController.selectedProviderId ?? 'icloud',
+                            items: [
+                              DropdownMenuItem(
+                                value: 'icloud',
+                                child: Text(
+                                  isArabic ? 'iCloud (أبل)' : 'iCloud (Apple)',
+                                ),
+                              ),
+                              DropdownMenuItem(
+                                value: 'google_drive',
+                                child: Text(
+                                  isArabic ? 'Google Drive' : 'Google Drive',
+                                ),
+                              ),
+                            ],
+                            onChanged: (val) {
+                              if (val != null) {
+                                backupController.selectBackupProvider(val);
+                              }
+                            },
+                          ),
+                        ],
                       ),
-                      SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          isArabic
-                              ? 'جارٍ فحص اتصال Google Drive...'
-                              : 'Checking Google Drive connection...',
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              )
-            else if (!_isConnected)
-              Card(
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(
-                    color: Theme.of(context).colorScheme.outlineVariant,
-                  ),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        isArabic
-                            ? 'اربط Google Drive لتفعيل النسخ السحابي'
-                            : 'Connect Google Drive to enable cloud backups',
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        isArabic
-                            ? 'مجلد appDataFolder في Google Drive خاص بالتطبيق، ولا تظهر النسخ في قائمة الملفات.'
-                            : 'Google Drive appDataFolder is app-private. Backup files are not visible in your Drive files list.',
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        isArabic
-                            ? 'تُشفَّر النسخ تلقائياً على هذا الجهاز قبل الرفع.'
-                            : 'Backups are encrypted automatically on this device before upload.',
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        isArabic
-                            ? 'يُستعاد مفتاح النسخ بأمان عند تسجيل الدخول.'
-                            : 'Your backup key is recovered securely when you sign in.',
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        isArabic
-                            ? 'تسجيل الدخول للتطبيق منفصل عن صلاحية Google Drive. ربط Drive لا يغيّر جلسة الدخول.'
-                            : 'Firebase app login is separate from Google Drive access. Connecting Drive does not change your app login session.',
-                      ),
-                      const SizedBox(height: 16),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: TextButton(
-                          onPressed: _busy
-                              ? null
-                              : () {
-                                  Navigator.of(context).maybePop();
-                                },
-                          child: Text(isArabic ? 'تخطي' : 'Skip'),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      AppPrimaryButton(
-                        onPressed: _busy ? null : _connect,
-                        label: isArabic
-                            ? 'ربط Google Drive'
-                            : 'Connect Google Drive',
-                        icon: Icons.login,
-                      ),
-                    ],
-                  ),
-                ),
-              )
-            else ...[
-              if (backupController != null) ...[
-                _buildAutomaticBackupPanel(context, backupController),
-                const SizedBox(height: 24),
-                if (backupController.isOperationSyncEnabled) ...[
-                  _buildOperationSyncPanel(context, backupController),
-                  const SizedBox(height: 24),
-                ],
-              ],
-              const SizedBox(height: 24),
-              Text(
-                isArabic ? 'النسخ السحابي' : 'Cloud Backup',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              Card(
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(
-                    color: Theme.of(context).colorScheme.outlineVariant,
-                  ),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .surfaceContainerHighest
-                              .withValues(alpha: 0.5),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
+                    ),
+                  Builder(
+                    builder: (context) {
+                      final bool isUpToDate =
+                          _localChecksum != null &&
+                          _localChecksum == _latestSnapshotChecksum;
+
+                      // Status text mapping
+                      String statusTitleText = '';
+                      Color statusTitleColor = AppColors.neutral600;
+                      IconData statusIcon = Icons.cloud_off;
+                      Color statusIconColor = AppColors.gray;
+
+                      if (isConnected) {
+                        statusIcon = Icons.cloud_done;
+                        statusIconColor = AppColors.emeraldSuccess;
+                        statusTitleColor = AppColors.emeraldSuccess;
+
+                        if (lastError != 'None' && lastError.isNotEmpty) {
+                          statusIcon = Icons.error_outline;
+                          statusIconColor = Theme.of(context).colorScheme.error;
+                          statusTitleColor = Theme.of(
+                            context,
+                          ).colorScheme.error;
+                          statusTitleText =
+                              BackupErrorPresenter.getFriendlyMessage(
+                                lastError,
+                                context,
+                              );
+                        } else {
+                          final String msgLower = statusMessage.toLowerCase();
+                          if (msgLower.contains('backup completed') ||
+                              msgLower.contains('مكتمل')) {
+                            statusTitleText = isArabic
+                                ? 'تم النسخ الاحتياطي'
+                                : 'Backup completed';
+                          } else if (msgLower.contains('backing up') ||
+                              msgLower.contains('جاري')) {
+                            statusTitleText = isArabic
+                                ? 'جارٍ النسخ الاحتياطي...'
+                                : 'Backing up...';
+                            statusIcon = Icons.sync;
+                            statusIconColor = Theme.of(
+                              context,
+                            ).colorScheme.primary;
+                            statusTitleColor = Theme.of(
+                              context,
+                            ).colorScheme.primary;
+                          } else if (latestBackup != null) {
+                            statusTitleText = isArabic
+                                ? 'النسخ الاحتياطي محدث'
+                                : 'Backup is up to date';
+                          } else if (msgLower.contains(
+                                'no cloud backup found',
+                              ) ||
+                              _backups.isEmpty) {
+                            statusTitleText = isArabic
+                                ? 'لم يتم العثور على نسخ احتياطية'
+                                : 'No cloud backup found';
+                            statusIcon = Icons.warning_amber_rounded;
+                            statusIconColor = Colors.orange;
+                            statusTitleColor = Colors.orange;
+                          } else {
+                            statusTitleText = isArabic
+                                ? 'النسخ الاحتياطي محدث'
+                                : 'Backup is up to date';
+                          }
+                        }
+                      } else {
+                        final String msgLower = statusMessage.toLowerCase();
+                        if (msgLower.contains('permission was revoked') ||
+                            msgLower.contains('wrong passphrase') ||
+                            msgLower.contains('network error') ||
+                            msgLower.contains('conflict')) {
+                          statusIcon = Icons.error_outline;
+                          statusIconColor = Theme.of(context).colorScheme.error;
+                          statusTitleColor = Theme.of(
+                            context,
+                          ).colorScheme.error;
+                          statusTitleText = statusMessage;
+                        } else {
+                          final String msgLower = statusMessage.toLowerCase();
+                          if (msgLower.contains('refresh') ||
+                              msgLower.contains('checking')) {
+                            statusTitleText = statusMessage;
+                          } else {
+                            statusTitleText = isArabic
+                                ? 'غير متصل'
+                                : 'Not connected';
+                          }
+                        }
+                      }
+
+                      return Card(
+                        elevation: 0,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest
+                            .withValues(alpha: 0.5),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: BorderSide(
                             color: Theme.of(context).colorScheme.outlineVariant,
                           ),
                         ),
-                        child: Text(
-                          isArabic
-                              ? 'تُشفَّر النسخ تلقائياً على هذا الجهاز قبل رفعها إلى Google Drive. ويُستعاد مفتاح النسخ بأمان عند تسجيل الدخول.'
-                              : 'Backups are encrypted automatically on this device before upload to Google Drive. Your backup key is recovered securely upon sign in.',
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Row(
+                            children: [
+                              Icon(
+                                statusIcon,
+                                color: statusIconColor,
+                                size: 28,
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      statusTitleText,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                        color: statusTitleColor,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      isArabic
+                                          ? 'آخر نسخة احتياطية: ${_formatMaybeDate(lastBackupTime)}'
+                                          : 'Last backup: ${_formatMaybeDate(lastBackupTime)}',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      isConnected
+                                          ? (isICloud
+                                                ? (isArabic
+                                                      ? 'iCloud • متصل'
+                                                      : 'iCloud • Connected')
+                                                : (isArabic
+                                                      ? 'جوجل درايف • متصل${_userEmail != null ? ' ($_userEmail)' : ''}'
+                                                      : 'Google Drive • Connected${_userEmail != null ? ' ($_userEmail)' : ''}'))
+                                          : (isICloud
+                                                ? (isArabic
+                                                      ? 'iCloud • غير متصل'
+                                                      : 'iCloud • Disconnected')
+                                                : (isArabic
+                                                      ? 'جوجل درايف • غير متصل'
+                                                      : 'Google Drive • Disconnected')),
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 20),
+                  if (!isConnected)
+                    Card(
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(
+                          color: Theme.of(context).colorScheme.outlineVariant,
                         ),
                       ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              isICloud
+                                  ? (isArabic
+                                        ? 'اربط iCloud لتفعيل النسخ السحابي'
+                                        : 'Connect iCloud to enable cloud backups')
+                                  : (isArabic
+                                        ? 'اربط Google Drive لتفعيل النسخ السحابي'
+                                        : 'Connect Google Drive to enable cloud backups'),
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              isICloud
+                                  ? (isArabic
+                                        ? 'يستخدم التطبيق حاوية iCloud ubiquity container لحفظ النسخ المشفرة ومزامنتها تلقائياً عبر أجهزة Apple الخاصة بك.'
+                                        : 'The app uses your iCloud ubiquity container to store encrypted backups and sync them automatically across your Apple devices.')
+                                  : (isArabic
+                                        ? 'مجلد appDataFolder في Google Drive خاص بالتطبيق، ولا تظهر النسخ في قائمة الملفات.'
+                                        : 'Google Drive appDataFolder is app-private. Backup files are not visible in your Drive files list.'),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              isArabic
+                                  ? 'تُشفَّر النسخ تلقائياً على هذا الجهاز قبل الرفع.'
+                                  : 'Backups are encrypted automatically on this device before upload.',
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              isArabic
+                                  ? 'يُستعاد مفتاح النسخ بأمان عند تسجيل الدخول.'
+                                  : 'Your backup key is recovered securely when you sign in.',
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              isICloud
+                                  ? (isArabic
+                                        ? 'ربط iCloud يتطلب تسجيل الدخول بحساب Apple على هذا الجهاز وتفعيل iCloud Drive.'
+                                        : 'Connecting iCloud requires an active Apple ID signed into this device with iCloud Drive enabled.')
+                                  : (isArabic
+                                        ? 'تسجيل الدخول للتطبيق منفصل عن صلاحية Google Drive. ربط Drive لا يغيّر جلسة الدخول.'
+                                        : 'Firebase app login is separate from Google Drive access. Connecting Drive does not change your app login session.'),
+                            ),
+                            const SizedBox(height: 16),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: TextButton(
+                                onPressed: _busy
+                                    ? null
+                                    : () {
+                                        Navigator.of(context).maybePop();
+                                      },
+                                child: Text(isArabic ? 'تخطي' : 'Skip'),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            AppPrimaryButton(
+                              onPressed: _busy ? null : _connect,
+                              label: isICloud
+                                  ? (isArabic ? 'ربط iCloud' : 'Connect iCloud')
+                                  : (isArabic
+                                        ? 'ربط Google Drive'
+                                        : 'Connect Google Drive'),
+                              icon: Icons.login,
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  else ...[
+                    if (backupController != null) ...[
+                      _buildAutomaticBackupPanel(context, backupController),
                       const SizedBox(height: 16),
+                      if (backupController.isOperationSyncEnabled) ...[
+                        _buildOperationSyncPanel(context, backupController),
+                        const SizedBox(height: 16),
+                      ],
+                    ],
+                    if (backupController != null) ...[
                       ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
                           minimumSize: const Size.fromHeight(48),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
                         onPressed: _busy ? null : _createBackup,
                         icon: const Icon(Icons.backup),
                         label: Text(
-                          isArabic ? 'إنشاء نسخة الآن' : 'Create Backup Now',
+                          isArabic ? 'النسخ الاحتياطي الآن' : 'Back Up Now',
                         ),
                       ),
+                      const SizedBox(height: 24),
                     ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    isArabic ? 'سجل النسخ' : 'Backup History',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  if (_loadingBackups)
-                    const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  else
-                    TextButton.icon(
-                      onPressed: _busy ? null : _fetchBackups,
-                      icon: const Icon(Icons.refresh, size: 18),
-                      label: Text(isArabic ? 'تحديث النسخ' : 'Refresh backups'),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              if (_backups.isEmpty)
-                Card(
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(
-                      color: Theme.of(context).colorScheme.outlineVariant,
-                    ),
-                  ),
-                  child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Center(
-                      child: Text(
-                        isArabic
-                            ? 'لا توجد نسخ سحابية.'
-                            : 'No cloud backups found.',
-                        style: const TextStyle(color: AppColors.gray),
+                    if (latestBackup != null) ...[
+                      Text(
+                        isArabic ? 'أحدث نسخة احتياطية' : 'Latest Backup',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      _buildBackupCard(
+                        context,
+                        latestBackup,
+                        isLatestCard: true,
+                      ),
+                      const SizedBox(height: 24),
+                    ],
+                    Card(
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(
+                          color: Theme.of(context).colorScheme.outlineVariant,
+                        ),
+                      ),
+                      child: ExpansionTile(
+                        title: Text(
+                          isArabic ? 'سجل النسخ' : 'Backup History',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        trailing: _loadingBackups
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : null,
+                        children: [
+                          if (_backups.isEmpty)
+                            Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Center(
+                                child: Text(
+                                  isArabic
+                                      ? 'لا توجد نسخ سحابية.'
+                                      : 'No cloud backups found.',
+                                  style: const TextStyle(color: AppColors.gray),
+                                ),
+                              ),
+                            )
+                          else ...[
+                            if (previousBackups.isEmpty)
+                              Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Center(
+                                  child: Text(
+                                    isArabic
+                                        ? 'لا توجد نسخ سابقة.'
+                                        : 'No previous backups.',
+                                    style: const TextStyle(
+                                      color: AppColors.gray,
+                                    ),
+                                  ),
+                                ),
+                              )
+                            else
+                              ListView.builder(
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                itemCount: previousBackups.length,
+                                itemBuilder: (context, index) {
+                                  return _buildBackupCard(
+                                    context,
+                                    previousBackups[index],
+                                    isLatestCard: false,
+                                  );
+                                },
+                              ),
+                          ],
+                        ],
                       ),
                     ),
-                  ),
-                )
-              else ...[
-                if (latestBackup != null) ...[
-                  _buildBackupCard(context, latestBackup, isLatestCard: true),
+                    const SizedBox(height: 16),
+                  ],
+                  if (backupController != null) ...[
+                    _buildAdvancedSettingsPanel(context, backupController),
+                  ],
                 ],
-                if (previousBackups.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    isArabic ? 'النسخ السابقة' : 'Previous Backups',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: previousBackups.length,
-                    itemBuilder: (context, index) {
-                      return _buildBackupCard(
-                        context,
-                        previousBackups[index],
-                        isLatestCard: false,
-                      );
-                    },
-                  ),
-                ],
-              ],
-            ],
-          ],
-        ),
-      ),
+              ),
+            ),
     );
   }
 }

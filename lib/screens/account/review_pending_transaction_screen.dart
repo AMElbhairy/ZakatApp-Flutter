@@ -9,12 +9,14 @@ import '../../core/theme/app_theme_extensions.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/utils/currency_presentation.dart';
 import '../../models/app_state.dart';
+import '../../models/credit_card.dart';
 import '../../models/merchant_rule.dart';
 import '../../models/pending_transaction.dart';
 import '../../models/transaction.dart';
 import '../../services/app_state_controller.dart';
 import '../../services/smart_capture_parser.dart';
 import '../../core/i18n/app_localizations.dart';
+import '../../features/smart_capture/smart_capture_display_messages.dart';
 import '../../core/utils/amount_parser.dart';
 
 class ReviewPendingTransactionScreen extends StatefulWidget {
@@ -40,9 +42,10 @@ class _ReviewPendingTransactionScreenState
   late TextEditingController _descriptionController;
   late DateTime _selectedDate;
   String? _selectedCategory;
+  String _deductFrom = 'cash';
 
   // Type definitions.
-  final List<String> _types = const <String>['expense', 'income', 'transfer'];
+  final List<String> _types = const <String>['expense', 'income'];
 
   @override
   void initState() {
@@ -72,6 +75,38 @@ class _ReviewPendingTransactionScreenState
       parsedDate = DateTime.now();
     }
     _selectedDate = parsedDate;
+
+    String? suggestedCardId = p.suggestedPaymentSourceId;
+    if (suggestedCardId == null) {
+      final String digits =
+          SmartCaptureParser.parse(
+            p.rawMessage,
+          ).cardReference?.replaceAll(RegExp(r'\D'), '') ??
+          '';
+      if (digits.length >= 4) {
+        final String last4 = digits.substring(digits.length - 4);
+        final List<CreditCard> matches = context
+            .read<AppStateController>()
+            .state
+            .creditCards
+            .where(
+              (CreditCard card) =>
+                  !card.isArchived && card.last4Digits.trim() == last4,
+            )
+            .toList(growable: false);
+        if (matches.length == 1) suggestedCardId = matches.single.id;
+      }
+    }
+    if (suggestedCardId != null) {
+      final String cardId = suggestedCardId;
+      final List<CreditCard> matches = context
+          .read<AppStateController>()
+          .state
+          .creditCards
+          .where((CreditCard card) => !card.isArchived && card.id == cardId)
+          .toList(growable: false);
+      if (matches.length == 1) _deductFrom = cardId;
+    }
 
     // Initialize category
     _initCategory();
@@ -194,6 +229,11 @@ class _ReviewPendingTransactionScreenState
           category: _selectedCategory ?? '',
           description: _descriptionController.text.trim(),
           date: dateStr,
+          paymentSourceId:
+              (_selectedType == 'expense' || _selectedType == 'income') &&
+                      _deductFrom != 'cash'
+                  ? _deductFrom
+                  : null,
         );
       } else {
         await controller.approvePendingTransaction(
@@ -204,6 +244,11 @@ class _ReviewPendingTransactionScreenState
           category: _selectedCategory ?? '',
           description: _descriptionController.text.trim(),
           date: dateStr,
+          paymentSourceId:
+              (_selectedType == 'expense' || _selectedType == 'income') &&
+                      _deductFrom != 'cash'
+                  ? _deductFrom
+                  : null,
         );
       }
 
@@ -482,6 +527,24 @@ class _ReviewPendingTransactionScreenState
     final tokens = context.premiumTokens;
     final state = context.watch<AppStateController>().state;
     final availableCategories = _getAvailableCategories(state.categories);
+    final List<CreditCard> activeCreditCards = state.creditCards
+        .where((CreditCard card) => !card.isArchived)
+        .toList(growable: false);
+    final String? historicalSourceId =
+        widget.pendingTransaction.suggestedPaymentSourceId;
+    final List<CreditCard> creditCards = <CreditCard>[
+      ...activeCreditCards,
+      if (historicalSourceId != null)
+        ...state.creditCards.where(
+          (CreditCard card) =>
+              card.isArchived && card.id == historicalSourceId,
+        ),
+    ];
+    final List<String> paymentSources = <String>[
+      'cash',
+      ...creditCards.map((CreditCard card) => card.id),
+    ];
+    if (!paymentSources.contains(_deductFrom)) _deductFrom = 'cash';
     final bool isApprovedCapture =
         widget.pendingTransaction.status == CaptureStatus.autoApproved ||
         widget.pendingTransaction.status == CaptureStatus.manuallyApproved;
@@ -513,6 +576,62 @@ class _ReviewPendingTransactionScreenState
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (widget.pendingTransaction.ignoreReason != null &&
+                    SmartCaptureDisplayMessages.isPossibleDuplicate(
+                      widget.pendingTransaction.ignoreReason,
+                    )) ...[
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 16.0),
+                    padding: const EdgeInsets.all(12.0),
+                    decoration: BoxDecoration(
+                      color: tokens.colors.warning.withOpacity(0.12),
+                      borderRadius: AppRadii.card,
+                      border: Border.all(
+                        color: tokens.colors.warning.withOpacity(0.4),
+                      ),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.warning_amber_rounded,
+                          color: tokens.colors.warning,
+                          size: 22,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _isArabic(context)
+                                    ? 'تنبيه: تكرار محتمل'
+                                    : 'Warning: Possible Duplicate',
+                                style: Theme.of(context).textTheme.titleSmall
+                                    ?.copyWith(
+                                      color: tokens.colors.warning,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                _isArabic(context)
+                                    ? 'تم التقاط هذه المعاملة لأنها تشبه معاملة سابقة قريبة جداً في التوقيت والتفاصيل. تم إيقاف الموافقة التلقائية حرصاً على الدقة.'
+                                    : 'This transaction resembles a recent capture in amount, merchant, and timing. Auto-approval was suppressed. Please review carefully before approving.',
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      color: tokens.colors.textSecondary,
+                                      height: 1.3,
+                                    ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 // Read-only Details Section
                 Card(
                   color: tokens.colors.hero,
@@ -636,6 +755,7 @@ class _ReviewPendingTransactionScreenState
                       ? _currencyController.text.trim().toUpperCase()
                       : 'EGP',
                   labelText: context.l10n.tr('merchant_rules_currency'),
+                  floatingLabelBehavior: FloatingLabelBehavior.never,
                   currencies: CurrencyPresentation.marketCurrencyCodes,
                   onChanged: (String value) {
                     setState(() => _currencyController.text = value);
@@ -655,6 +775,31 @@ class _ReviewPendingTransactionScreenState
                       setState(() {
                         _selectedCategory = val;
                       });
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                ],
+
+                if (_selectedType == 'expense' ||
+                    _selectedType == 'income') ...[
+                  _buildDropdownField<String>(
+                    label: context.l10n.tr(
+                      _selectedType == 'expense' ? 'deduct_from' : 'deposit_to',
+                    ),
+                    value: _deductFrom,
+                    items: paymentSources,
+                    itemLabel: (String source) {
+                      if (source == 'cash') return context.l10n.tr('cash');
+                      final CreditCard? card = creditCards
+                          .where((CreditCard item) => item.id == source)
+                          .firstOrNull;
+                      if (card == null) return source;
+                      final String archivedSuffix =
+                          card.isArchived ? ' (Archived)' : '';
+                      return '${card.bankName} ${card.cardNickname} **** ${card.last4Digits}$archivedSuffix';
+                    },
+                    onChanged: (String source) {
+                      setState(() => _deductFrom = source);
                     },
                   ),
                   const SizedBox(height: 16),
@@ -919,5 +1064,9 @@ class _ReviewPendingTransactionScreenState
         borderSide: BorderSide(color: tokens.colors.gold),
       ),
     );
+  }
+
+  bool _isArabic(BuildContext context) {
+    return Localizations.localeOf(context).languageCode == 'ar';
   }
 }

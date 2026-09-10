@@ -61,6 +61,57 @@ class _FakeAuthService implements AuthService {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+class _MutableAuthService implements AuthService {
+  _MutableAuthService({required this.user});
+
+  UserProfile? user;
+
+  @override
+  Future<bool> ensureSession() async => true;
+
+  @override
+  Future<UserProfile?> restoreSession() async => user;
+
+  @override
+  Future<UserProfile?> signIn({
+    AuthProvider provider = AuthProvider.google,
+  }) async => user;
+
+  @override
+  Future<UserProfile?> signInWithEmail({
+    required String email,
+    required String password,
+  }) async => user;
+
+  @override
+  Future<UserProfile?> createAccountWithEmail({
+    required String email,
+    required String password,
+    required String displayName,
+  }) async => user;
+
+  @override
+  Future<void> sendPasswordResetEmail({required String email}) async {}
+
+  @override
+  Future<void> sendEmailVerification() async {}
+
+  @override
+  Future<UserProfile?> reloadCurrentUser() async => user;
+
+  @override
+  Future<bool> isCurrentUserEmailVerified() async =>
+      user?.emailVerified ?? false;
+
+  @override
+  Future<void> signOut() async {
+    user = null;
+  }
+
+  @override
+  Future<void> deleteAccount() async {}
+}
+
 class _FakeGoogleSignIn implements GoogleSignIn {
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -105,8 +156,9 @@ class _FixedAppStateController extends AppStateController {
   AppStateModel get state => fixedState;
 
   @override
-  AppHydrationPhase get hydrationPhase =>
-      fixedHydrationReady ? AppHydrationPhase.ready : AppHydrationPhase.notStarted;
+  AppHydrationPhase get hydrationPhase => fixedHydrationReady
+      ? AppHydrationPhase.ready
+      : AppHydrationPhase.notStarted;
 
   @override
   bool get isHydrationReady => fixedHydrationReady;
@@ -175,6 +227,36 @@ class _SlowMockCloudStorageProvider extends MockCloudStorageProvider {
       manifestData,
       expectedRevision: expectedRevision,
     );
+  }
+}
+
+class _TrackingCloudBackupController extends CloudBackupController {
+  _TrackingCloudBackupController({
+    required super.appStateController,
+    required super.authController,
+    required super.snapshotManager,
+    required super.debounceDuration,
+    required super.nowProvider,
+    super.backupKeyManager,
+  });
+
+  int refreshCalls = 0;
+  bool? lastEvaluatePrompt;
+  int connectCalls = 0;
+  bool? lastInteractiveConnect;
+
+  @override
+  Future<void> refreshCloudState({bool evaluatePrompt = true}) async {
+    refreshCalls += 1;
+    lastEvaluatePrompt = evaluatePrompt;
+  }
+
+  @override
+  Future<bool> connectGoogleDrive({required bool interactive}) async {
+    connectCalls += 1;
+    lastInteractiveConnect = interactive;
+    await refreshCloudState(evaluatePrompt: false);
+    return true;
   }
 }
 
@@ -488,6 +570,386 @@ void main() {
     cloud.dispose();
   });
 
+  test(
+    'cloud backup prefers active auth user over stale loaded user',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      const LocalStorageService localStorage = LocalStorageService();
+      final AppDatabase database = AppDatabase(
+        userId: 'stale-user',
+        executor: NativeDatabase.memory(),
+      );
+      final AppStateController appState = AppStateController(
+        repository: AppStateRepository(localStorage: localStorage),
+        database: database,
+        ownsDatabase: false,
+        secureStorageService: _MemorySecureStorageService(),
+        marketDataApiService: _NoopMarketDataApiService(),
+        enableBackgroundSync: false,
+        enableMarketAutoRefresh: false,
+      );
+      await appState.load();
+      await appState.loadAuthenticated('stale-user');
+      await appState.addTransaction(_transaction('tx-auth-user'));
+
+      final UserProfile authUser = const UserProfile(
+        id: 'auth-user',
+        email: 'auth@example.com',
+        displayName: 'Auth User',
+        provider: 'email',
+        accessToken: 'token',
+      );
+      final _MutableAuthService authService = _MutableAuthService(
+        user: authUser,
+      );
+      final AuthController auth = AuthController(
+        authService: authService,
+        localStorage: localStorage,
+      );
+      await auth.signInWithEmail(email: authUser.email, password: 'secret');
+      final CloudBackupController cloud = CloudBackupController(
+        appStateController: appState,
+        authController: auth,
+        backupKeyManager: BackupKeyManager(
+          auth: MockFirebaseAuth(
+            signedIn: true,
+            mockUser: MockUser(uid: authUser.id, email: authUser.email),
+          ),
+          firestore: FakeFirebaseFirestore(),
+          secureStorageService: _MemorySecureStorageService(),
+        ),
+      );
+
+      expect(cloud.debugSessionUserId, 'auth-user');
+      expect(cloud.debugSessionUserId, isNot('stale-user'));
+
+      cloud.dispose();
+      await database.close();
+    },
+  );
+
+  test(
+    'cloud backup keeps the last drive session user after app sign out',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final AppDatabase database = AppDatabase(
+        userId: 'app-user',
+        executor: NativeDatabase.memory(),
+      );
+      final _FixedAppStateController appState = _FixedAppStateController(
+        repository: AppStateRepository(
+          localStorage: const LocalStorageService(),
+        ),
+        database: database,
+        ownsDatabase: false,
+        secureStorageService: _MemorySecureStorageService(),
+        useSqliteLocalStoreProvider: null,
+        marketDataApiService: _NoopMarketDataApiService(),
+        enableBackgroundSync: false,
+        enableMarketAutoRefresh: false,
+        fixedState: AppStateDefaults.create().copyWith(
+          userId: '',
+          loadedUserId: '',
+          lastModifiedAt: 'rev-1',
+        ),
+        fixedHydrationReady: true,
+        fixedRestoring: false,
+      );
+      final _MutableAuthService authService = _MutableAuthService(
+        user: const UserProfile(
+          id: 'google-user',
+          email: 'google@example.com',
+          displayName: 'Google User',
+          provider: 'google',
+          accessToken: 'token-a',
+        ),
+      );
+      final AuthController auth = AuthController(
+        authService: authService,
+        localStorage: const LocalStorageService(),
+      );
+      await auth.signIn();
+
+      final MockCloudStorageProvider provider = MockCloudStorageProvider(
+        connected: true,
+      );
+      final CloudBackupController cloud = CloudBackupController(
+        appStateController: appState,
+        authController: auth,
+        backupKeyManager: BackupKeyManager(
+          auth: MockFirebaseAuth(
+            signedIn: true,
+            mockUser: MockUser(uid: 'google-user', email: 'google@example.com'),
+          ),
+          firestore: FakeFirebaseFirestore(),
+          secureStorageService: _MemorySecureStorageService(),
+        ),
+        cloudSyncManagerBuilder: () async => CloudSyncManager(
+          provider: provider,
+          snapshotManager: SnapshotManager(
+            encryptionService: SyncEncryptionService(),
+          ),
+          deviceId: 'device-1',
+          deviceName: 'Test Device',
+          platform: 'ios',
+        ),
+      );
+
+      await cloud.refreshCloudState(evaluatePrompt: false);
+      expect(cloud.debugSessionUserId, 'google-user');
+
+      await auth.signOut();
+      await cloud.refreshCloudState(evaluatePrompt: false);
+
+      expect(cloud.debugSessionUserId, 'google-user');
+      expect(cloud.debugSessionUserId, isNot('default'));
+
+      cloud.dispose();
+      await database.close();
+    },
+  );
+
+  test(
+    'cloud backup refreshes when auth changes even if app state stamp is unchanged',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final AppDatabase database = AppDatabase(
+        userId: 'app-user',
+        executor: NativeDatabase.memory(),
+      );
+      final AppStateRepository repository = AppStateRepository(
+        localStorage: const LocalStorageService(),
+      );
+      final _FixedAppStateController appState = _FixedAppStateController(
+        repository: repository,
+        database: database,
+        ownsDatabase: false,
+        secureStorageService: const SecureStorageService(),
+        useSqliteLocalStoreProvider: null,
+        marketDataApiService: _NoopMarketDataApiService(),
+        enableBackgroundSync: false,
+        enableMarketAutoRefresh: false,
+        fixedState: AppStateDefaults.create().copyWith(
+          userId: 'app-user',
+          loadedUserId: 'app-user',
+          lastModifiedAt: 'rev-1',
+        ),
+        fixedHydrationReady: true,
+        fixedRestoring: false,
+      );
+      final _MutableAuthService authService = _MutableAuthService(
+        user: const UserProfile(
+          id: 'google-user',
+          email: 'google@example.com',
+          displayName: 'Google User',
+          provider: 'google',
+          accessToken: 'token-a',
+        ),
+      );
+      final AuthController auth = AuthController(
+        authService: authService,
+        localStorage: const LocalStorageService(),
+      );
+      await auth.signIn();
+
+      final _TrackingCloudBackupController cloud =
+          _TrackingCloudBackupController(
+            appStateController: appState,
+            authController: auth,
+            backupKeyManager: BackupKeyManager(
+              auth: MockFirebaseAuth(
+                signedIn: true,
+                mockUser: MockUser(uid: 'app-user', email: 'app@example.com'),
+              ),
+              firestore: FakeFirebaseFirestore(),
+              secureStorageService: _MemorySecureStorageService(),
+            ),
+            snapshotManager: SnapshotManager(
+              encryptionService: SyncEncryptionService(),
+            ),
+            debounceDuration: Duration.zero,
+            nowProvider: DateTime.now,
+          );
+
+      await Future<void>.delayed(Duration.zero);
+      await cloud.setAutomaticBackupEnabled(false);
+      cloud.refreshCalls = 0;
+
+      await auth.signOut();
+      await Future<void>.delayed(Duration.zero);
+      expect(cloud.refreshCalls, 0);
+
+      authService.user = const UserProfile(
+        id: 'email-user',
+        email: 'email@example.com',
+        displayName: 'Email User',
+        provider: 'email',
+        accessToken: null,
+      );
+      await auth.signInWithEmail(
+        email: 'email@example.com',
+        password: 'secret',
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(cloud.refreshCalls, greaterThan(0));
+
+      cloud.dispose();
+      await database.close();
+    },
+  );
+
+  test(
+    'cloud backup auto-connects when switching to Google Drive provider',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final AppDatabase database = AppDatabase(
+        userId: 'app-user',
+        executor: NativeDatabase.memory(),
+      );
+      final AppStateRepository repository = AppStateRepository(
+        localStorage: const LocalStorageService(),
+      );
+      final _FixedAppStateController appState = _FixedAppStateController(
+        repository: repository,
+        database: database,
+        ownsDatabase: false,
+        secureStorageService: _MemorySecureStorageService(),
+        useSqliteLocalStoreProvider: null,
+        marketDataApiService: _NoopMarketDataApiService(),
+        enableBackgroundSync: false,
+        enableMarketAutoRefresh: false,
+        fixedState: AppStateDefaults.create().copyWith(
+          userId: 'app-user',
+          loadedUserId: 'app-user',
+          lastModifiedAt: 'rev-1',
+        ),
+        fixedHydrationReady: true,
+        fixedRestoring: false,
+      );
+      final _MutableAuthService authService = _MutableAuthService(
+        user: const UserProfile(
+          id: 'google-user',
+          email: 'google@example.com',
+          displayName: 'Google User',
+          provider: 'google',
+          accessToken: 'token-a',
+        ),
+      );
+      final AuthController auth = AuthController(
+        authService: authService,
+        localStorage: const LocalStorageService(),
+      );
+      await auth.signIn();
+
+      final _TrackingCloudBackupController cloud =
+          _TrackingCloudBackupController(
+            appStateController: appState,
+            authController: auth,
+            backupKeyManager: BackupKeyManager(
+              auth: MockFirebaseAuth(
+                signedIn: true,
+                mockUser: MockUser(
+                  uid: 'google-user',
+                  email: 'google@example.com',
+                ),
+              ),
+              firestore: FakeFirebaseFirestore(),
+              secureStorageService: _MemorySecureStorageService(),
+            ),
+            snapshotManager: SnapshotManager(
+              encryptionService: SyncEncryptionService(),
+            ),
+            debounceDuration: Duration.zero,
+            nowProvider: DateTime.now,
+          );
+
+      await cloud.selectBackupProvider('google_drive');
+
+      expect(cloud.connectCalls, 1);
+      expect(cloud.lastInteractiveConnect, isTrue);
+      expect(cloud.refreshCalls, 1);
+
+      cloud.dispose();
+      await database.close();
+    },
+  );
+
+  test(
+    'cloud backup auto-connects when switching to iCloud provider',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final AppDatabase database = AppDatabase(
+        userId: 'app-user',
+        executor: NativeDatabase.memory(),
+      );
+      final AppStateRepository repository = AppStateRepository(
+        localStorage: const LocalStorageService(),
+      );
+      final _FixedAppStateController appState = _FixedAppStateController(
+        repository: repository,
+        database: database,
+        ownsDatabase: false,
+        secureStorageService: _MemorySecureStorageService(),
+        useSqliteLocalStoreProvider: null,
+        marketDataApiService: _NoopMarketDataApiService(),
+        enableBackgroundSync: false,
+        enableMarketAutoRefresh: false,
+        fixedState: AppStateDefaults.create().copyWith(
+          userId: 'app-user',
+          loadedUserId: 'app-user',
+          lastModifiedAt: 'rev-1',
+        ),
+        fixedHydrationReady: true,
+        fixedRestoring: false,
+      );
+      final _MutableAuthService authService = _MutableAuthService(
+        user: const UserProfile(
+          id: 'apple-user',
+          email: 'apple@example.com',
+          displayName: 'Apple User',
+          provider: 'apple',
+          accessToken: 'token-b',
+        ),
+      );
+      final AuthController auth = AuthController(
+        authService: authService,
+        localStorage: const LocalStorageService(),
+      );
+
+      final _TrackingCloudBackupController cloud =
+          _TrackingCloudBackupController(
+            appStateController: appState,
+            authController: auth,
+            backupKeyManager: BackupKeyManager(
+              auth: MockFirebaseAuth(
+                signedIn: true,
+                mockUser: MockUser(
+                  uid: 'apple-user',
+                  email: 'apple@example.com',
+                ),
+              ),
+              firestore: FakeFirebaseFirestore(),
+              secureStorageService: _MemorySecureStorageService(),
+            ),
+            snapshotManager: SnapshotManager(
+              encryptionService: SyncEncryptionService(),
+            ),
+            debounceDuration: Duration.zero,
+            nowProvider: DateTime.now,
+          );
+
+      await cloud.selectBackupProvider('icloud');
+
+      expect(cloud.connectCalls, 1);
+      expect(cloud.lastInteractiveConnect, isFalse);
+      expect(cloud.refreshCalls, 1);
+
+      cloud.dispose();
+      await database.close();
+    },
+  );
+
   test('automatic empty backup is blocked when cloud history exists', () async {
     SharedPreferences.setMockInitialValues(<String, Object>{
       'cloud_backup_last_backup_ms_test-user': 1,
@@ -496,7 +958,9 @@ void main() {
     final AppDatabase database = AppDatabase(
       userId: 'test-user',
       executor: NativeDatabase(
-        File(p.join(Directory.systemTemp.path, 'cloud_backup_restore_test.sqlite')),
+        File(
+          p.join(Directory.systemTemp.path, 'cloud_backup_restore_test.sqlite'),
+        ),
       ),
     );
     final _FixedAppStateController appState = _FixedAppStateController(
@@ -515,7 +979,8 @@ void main() {
       fixedHydrationReady: true,
       fixedRestoring: false,
     );
-    final _SlowMockCloudStorageProvider provider = _SlowMockCloudStorageProvider();
+    final _SlowMockCloudStorageProvider provider =
+        _SlowMockCloudStorageProvider();
 
     final UserProfile user = const UserProfile(
       id: 'test-user',
@@ -562,225 +1027,239 @@ void main() {
     await database.close();
   });
 
-  test('automatic backup blocks a partial non-empty startup candidate', () async {
-    SharedPreferences.setMockInitialValues(<String, Object>{});
-    const LocalStorageService localStorage = LocalStorageService();
-    final AppStateRepository repository = AppStateRepository(
-      localStorage: localStorage,
-    );
-    final Directory tempDir = await Directory.systemTemp.createTemp(
-      'cloud_backup_integrity_test_',
-    );
-    final File dbFile = File(p.join(tempDir.path, 'app.sqlite'));
-    final AppDatabase database = AppDatabase(
-      userId: 'test-user',
-      executor: NativeDatabase(dbFile),
-    );
+  test(
+    'automatic backup blocks a partial non-empty startup candidate',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      const LocalStorageService localStorage = LocalStorageService();
+      final AppStateRepository repository = AppStateRepository(
+        localStorage: localStorage,
+      );
+      final Directory tempDir = await Directory.systemTemp.createTemp(
+        'cloud_backup_integrity_test_',
+      );
+      final File dbFile = File(p.join(tempDir.path, 'app.sqlite'));
+      final AppDatabase database = AppDatabase(
+        userId: 'test-user',
+        executor: NativeDatabase(dbFile),
+      );
 
-    final _MutableIntegrityAppStateController appState =
-        _MutableIntegrityAppStateController(
-          repository: repository,
-          database: database,
-          ownsDatabase: false,
-          secureStorageService: _MemorySecureStorageService(),
-          useSqliteLocalStoreProvider: null,
-          marketDataApiService: _NoopMarketDataApiService(),
-          enableBackgroundSync: false,
-          enableMarketAutoRefresh: false,
-          state: _baselineState(
-            includeSavings: true,
-            revision: '2026-06-23T08:00:00Z',
+      final _MutableIntegrityAppStateController appState =
+          _MutableIntegrityAppStateController(
+            repository: repository,
+            database: database,
+            ownsDatabase: false,
+            secureStorageService: _MemorySecureStorageService(),
+            useSqliteLocalStoreProvider: null,
+            marketDataApiService: _NoopMarketDataApiService(),
+            enableBackgroundSync: false,
+            enableMarketAutoRefresh: false,
+            state: _baselineState(
+              includeSavings: true,
+              revision: '2026-06-23T08:00:00Z',
+            ),
+            collectionSources: <String, String>{
+              'transactions': 'SQLite',
+              'savings': 'SQLite',
+              'pending_transactions': 'SQLite',
+              'financial_plans': 'SQLite',
+              'investments': 'SQLite',
+              'recurring_transactions': 'SQLite',
+              'merchant_rules': 'SQLite',
+              'merchant_confirmations': 'SQLite',
+              'correction_feedback': 'SQLite',
+              'app_settings': 'SQLite',
+            },
+            hydrationReady: true,
+            restoring: false,
+          );
+      final UserProfile user = const UserProfile(
+        id: 'test-user',
+        email: 'test@example.com',
+        displayName: 'Test User',
+        provider: 'google',
+        accessToken: 'token',
+      );
+      final AuthController auth = AuthController(
+        authService: _FakeAuthService(user: user),
+        localStorage: localStorage,
+      );
+      await auth.signIn();
+
+      final _SlowMockCloudStorageProvider provider =
+          _SlowMockCloudStorageProvider();
+      final CloudBackupController cloud = CloudBackupController(
+        appStateController: appState,
+        authController: auth,
+        backupKeyManager: BackupKeyManager(
+          auth: MockFirebaseAuth(
+            signedIn: true,
+            mockUser: MockUser(uid: 'test-user', email: 'test@example.com'),
           ),
-          collectionSources: <String, String>{
-            'transactions': 'SQLite',
-            'savings': 'SQLite',
-            'pending_transactions': 'SQLite',
-            'financial_plans': 'SQLite',
-            'investments': 'SQLite',
-            'recurring_transactions': 'SQLite',
-            'merchant_rules': 'SQLite',
-            'merchant_confirmations': 'SQLite',
-            'correction_feedback': 'SQLite',
-            'app_settings': 'SQLite',
-          },
-          hydrationReady: true,
-          restoring: false,
-        );
-    final UserProfile user = const UserProfile(
-      id: 'test-user',
-      email: 'test@example.com',
-      displayName: 'Test User',
-      provider: 'google',
-      accessToken: 'token',
-    );
-    final AuthController auth = AuthController(
-      authService: _FakeAuthService(user: user),
-      localStorage: localStorage,
-    );
-    await auth.signIn();
-
-    final _SlowMockCloudStorageProvider provider = _SlowMockCloudStorageProvider();
-    final CloudBackupController cloud = CloudBackupController(
-      appStateController: appState,
-      authController: auth,
-      backupKeyManager: BackupKeyManager(
-        auth: MockFirebaseAuth(
-          signedIn: true,
-          mockUser: MockUser(uid: 'test-user', email: 'test@example.com'),
+          firestore: FakeFirebaseFirestore(),
         ),
-        firestore: FakeFirebaseFirestore(),
-      ),
-      googleSignIn: _FakeGoogleSignIn(),
-      cloudSyncManagerBuilder: () async => CloudSyncManager(
-        provider: provider,
-        snapshotManager: SnapshotManager(
-          encryptionService: SyncEncryptionService(),
-        ),
-        deviceId: 'device-a',
-        deviceName: 'device-a',
-        platform: 'ios',
-      ),
-    );
-    cloud.setBackupPassphrase('secret-passphrase');
-
-    expect(await cloud.backupNow(automatic: true), isTrue);
-    expect(cloud.lastKnownGoodIntegritySummary, isA<BackupIntegritySummary>());
-    expect(
-      cloud.lastKnownGoodIntegritySummary!.collectionCounts['savings'],
-      1,
-    );
-    final manifestBefore = await provider.readManifest();
-    expect(manifestBefore, isNotNull);
-
-    appState.stateValue = _baselineState(
-      includeSavings: false,
-      revision: '2026-06-23T08:05:00Z',
-    );
-    appState.collectionSourcesValue = <String, String>{
-      'transactions': 'SQLite',
-      'savings': 'empty default',
-      'pending_transactions': 'SQLite',
-      'financial_plans': 'SQLite',
-      'investments': 'SQLite',
-      'recurring_transactions': 'SQLite',
-      'merchant_rules': 'SQLite',
-      'merchant_confirmations': 'SQLite',
-      'correction_feedback': 'SQLite',
-      'app_settings': 'SQLite',
-    };
-
-    expect(await cloud.backupNow(automatic: true), isFalse);
-    expect(cloud.lastBackupError, 'partial_candidate_missing_savings');
-
-    final manifestAfter = await provider.readManifest();
-    final manifest = CloudSyncManifest.fromJson(manifestAfter!.content);
-    expect(manifest.snapshots, hasLength(1));
-
-    cloud.dispose();
-    await database.close();
-    await tempDir.delete(recursive: true);
-  });
-
-  test('automatic backup allows a legitimate emptying of a collection', () async {
-    SharedPreferences.setMockInitialValues(<String, Object>{});
-    const LocalStorageService localStorage = LocalStorageService();
-    final AppStateRepository repository = AppStateRepository(
-      localStorage: localStorage,
-    );
-    final AppDatabase database = AppDatabase(executor: NativeDatabase.memory());
-    final _MutableIntegrityAppStateController appState =
-        _MutableIntegrityAppStateController(
-          repository: repository,
-          database: database,
-          ownsDatabase: false,
-          secureStorageService: _MemorySecureStorageService(),
-          useSqliteLocalStoreProvider: null,
-          marketDataApiService: _NoopMarketDataApiService(),
-          enableBackgroundSync: false,
-          enableMarketAutoRefresh: false,
-          state: _baselineState(
-            includeSavings: true,
-            revision: '2026-06-23T08:00:00Z',
+        googleSignIn: _FakeGoogleSignIn(),
+        cloudSyncManagerBuilder: () async => CloudSyncManager(
+          provider: provider,
+          snapshotManager: SnapshotManager(
+            encryptionService: SyncEncryptionService(),
           ),
-          collectionSources: <String, String>{
-            'transactions': 'SQLite',
-            'savings': 'SQLite',
-            'pending_transactions': 'SQLite',
-            'financial_plans': 'SQLite',
-            'investments': 'SQLite',
-            'recurring_transactions': 'SQLite',
-            'merchant_rules': 'SQLite',
-            'merchant_confirmations': 'SQLite',
-            'correction_feedback': 'SQLite',
-            'app_settings': 'SQLite',
-          },
-          hydrationReady: true,
-          restoring: false,
-        );
-    final UserProfile user = const UserProfile(
-      id: 'test-user',
-      email: 'test@example.com',
-      displayName: 'Test User',
-      provider: 'google',
-      accessToken: 'token',
-    );
-    final AuthController auth = AuthController(
-      authService: _FakeAuthService(user: user),
-      localStorage: localStorage,
-    );
-    await auth.signIn();
-
-    final _SlowMockCloudStorageProvider provider = _SlowMockCloudStorageProvider();
-    final CloudBackupController cloud = CloudBackupController(
-      appStateController: appState,
-      authController: auth,
-      backupKeyManager: BackupKeyManager(
-        auth: MockFirebaseAuth(
-          signedIn: true,
-          mockUser: MockUser(uid: 'test-user', email: 'test@example.com'),
+          deviceId: 'device-a',
+          deviceName: 'device-a',
+          platform: 'ios',
         ),
-        firestore: FakeFirebaseFirestore(),
-      ),
-      googleSignIn: _FakeGoogleSignIn(),
-      cloudSyncManagerBuilder: () async => CloudSyncManager(
-        provider: provider,
-        snapshotManager: SnapshotManager(
-          encryptionService: SyncEncryptionService(),
+      );
+      cloud.setBackupPassphrase('secret-passphrase');
+
+      expect(await cloud.backupNow(automatic: true), isTrue);
+      expect(
+        cloud.lastKnownGoodIntegritySummary,
+        isA<BackupIntegritySummary>(),
+      );
+      expect(
+        cloud.lastKnownGoodIntegritySummary!.collectionCounts['savings'],
+        1,
+      );
+      final manifestBefore = await provider.readManifest();
+      expect(manifestBefore, isNotNull);
+
+      appState.stateValue = _baselineState(
+        includeSavings: false,
+        revision: '2026-06-23T08:05:00Z',
+      );
+      appState.collectionSourcesValue = <String, String>{
+        'transactions': 'SQLite',
+        'savings': 'empty default',
+        'pending_transactions': 'SQLite',
+        'financial_plans': 'SQLite',
+        'investments': 'SQLite',
+        'recurring_transactions': 'SQLite',
+        'merchant_rules': 'SQLite',
+        'merchant_confirmations': 'SQLite',
+        'correction_feedback': 'SQLite',
+        'app_settings': 'SQLite',
+      };
+
+      expect(await cloud.backupNow(automatic: true), isFalse);
+      expect(cloud.lastBackupError, 'partial_candidate_missing_savings');
+
+      final manifestAfter = await provider.readManifest();
+      final manifest = CloudSyncManifest.fromJson(manifestAfter!.content);
+      expect(manifest.snapshots, hasLength(1));
+
+      cloud.dispose();
+      await database.close();
+      await tempDir.delete(recursive: true);
+    },
+  );
+
+  test(
+    'automatic backup allows a legitimate emptying of a collection',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      const LocalStorageService localStorage = LocalStorageService();
+      final AppStateRepository repository = AppStateRepository(
+        localStorage: localStorage,
+      );
+      final AppDatabase database = AppDatabase(
+        executor: NativeDatabase.memory(),
+      );
+      final _MutableIntegrityAppStateController appState =
+          _MutableIntegrityAppStateController(
+            repository: repository,
+            database: database,
+            ownsDatabase: false,
+            secureStorageService: _MemorySecureStorageService(),
+            useSqliteLocalStoreProvider: null,
+            marketDataApiService: _NoopMarketDataApiService(),
+            enableBackgroundSync: false,
+            enableMarketAutoRefresh: false,
+            state: _baselineState(
+              includeSavings: true,
+              revision: '2026-06-23T08:00:00Z',
+            ),
+            collectionSources: <String, String>{
+              'transactions': 'SQLite',
+              'savings': 'SQLite',
+              'pending_transactions': 'SQLite',
+              'financial_plans': 'SQLite',
+              'investments': 'SQLite',
+              'recurring_transactions': 'SQLite',
+              'merchant_rules': 'SQLite',
+              'merchant_confirmations': 'SQLite',
+              'correction_feedback': 'SQLite',
+              'app_settings': 'SQLite',
+            },
+            hydrationReady: true,
+            restoring: false,
+          );
+      final UserProfile user = const UserProfile(
+        id: 'test-user',
+        email: 'test@example.com',
+        displayName: 'Test User',
+        provider: 'google',
+        accessToken: 'token',
+      );
+      final AuthController auth = AuthController(
+        authService: _FakeAuthService(user: user),
+        localStorage: localStorage,
+      );
+      await auth.signIn();
+
+      final _SlowMockCloudStorageProvider provider =
+          _SlowMockCloudStorageProvider();
+      final CloudBackupController cloud = CloudBackupController(
+        appStateController: appState,
+        authController: auth,
+        backupKeyManager: BackupKeyManager(
+          auth: MockFirebaseAuth(
+            signedIn: true,
+            mockUser: MockUser(uid: 'test-user', email: 'test@example.com'),
+          ),
+          firestore: FakeFirebaseFirestore(),
         ),
-        deviceId: 'device-b',
-        deviceName: 'device-b',
-        platform: 'ios',
-      ),
-    );
-    cloud.setBackupPassphrase('secret-passphrase');
+        googleSignIn: _FakeGoogleSignIn(),
+        cloudSyncManagerBuilder: () async => CloudSyncManager(
+          provider: provider,
+          snapshotManager: SnapshotManager(
+            encryptionService: SyncEncryptionService(),
+          ),
+          deviceId: 'device-b',
+          deviceName: 'device-b',
+          platform: 'ios',
+        ),
+      );
+      cloud.setBackupPassphrase('secret-passphrase');
 
-    expect(await cloud.backupNow(automatic: true), isTrue);
+      expect(await cloud.backupNow(automatic: true), isTrue);
 
-    appState.stateValue = _baselineState(
-      includeSavings: false,
-      revision: '2026-06-23T08:05:00Z',
-    ).copyWith(
-      transactions: <model.Transaction>[_transaction('tx-1')],
-      savings: <Saving>[],
-    );
-    appState.collectionSourcesValue = <String, String>{
-      'transactions': 'SQLite',
-      'savings': 'SQLite',
-      'pending_transactions': 'SQLite',
-      'financial_plans': 'SQLite',
-      'investments': 'SQLite',
-      'recurring_transactions': 'SQLite',
-      'merchant_rules': 'SQLite',
-      'merchant_confirmations': 'SQLite',
-      'correction_feedback': 'SQLite',
-      'app_settings': 'SQLite',
-    };
+      appState.stateValue =
+          _baselineState(
+            includeSavings: false,
+            revision: '2026-06-23T08:05:00Z',
+          ).copyWith(
+            transactions: <model.Transaction>[_transaction('tx-1')],
+            savings: <Saving>[],
+          );
+      appState.collectionSourcesValue = <String, String>{
+        'transactions': 'SQLite',
+        'savings': 'SQLite',
+        'pending_transactions': 'SQLite',
+        'financial_plans': 'SQLite',
+        'investments': 'SQLite',
+        'recurring_transactions': 'SQLite',
+        'merchant_rules': 'SQLite',
+        'merchant_confirmations': 'SQLite',
+        'correction_feedback': 'SQLite',
+        'app_settings': 'SQLite',
+      };
 
-    expect(await cloud.backupNow(automatic: true), isTrue);
+      expect(await cloud.backupNow(automatic: true), isTrue);
 
-    cloud.dispose();
-    await database.close();
-  });
+      cloud.dispose();
+      await database.close();
+    },
+  );
 
   test('auto backup does not run when disabled', () async {
     final harness = await _buildHarness(
@@ -799,13 +1278,13 @@ void main() {
     await _disposeHarness(harness);
   });
 
-  test('auto backup defaults to on with a 3-hour interval', () async {
+  test('auto backup defaults to on with a 30-minute interval', () async {
     final harness = await _buildHarness(
       provider: _SlowMockCloudStorageProvider(),
     );
 
     expect(harness.cloud.automaticBackupEnabled, isTrue);
-    expect(harness.cloud.minimumIntervalHours, 3);
+    expect(harness.cloud.minimumInterval, const Duration(minutes: 30));
 
     await _disposeHarness(harness);
   });

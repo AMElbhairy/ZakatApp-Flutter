@@ -10,12 +10,14 @@ class CurrencyDropdownFormField extends StatelessWidget {
     required this.labelText,
     required this.currencies,
     required this.onChanged,
+    this.floatingLabelBehavior = FloatingLabelBehavior.always,
   });
 
   final String value;
   final String labelText;
   final List<String> currencies;
   final ValueChanged<String> onChanged;
+  final FloatingLabelBehavior floatingLabelBehavior;
 
   @override
   Widget build(BuildContext context) {
@@ -27,14 +29,13 @@ class CurrencyDropdownFormField extends StatelessWidget {
     }
 
     return FormField<String>(
-      key: ValueKey<String>('currencyDropdown_${labelText}_$value'),
       initialValue: value,
       builder: (FormFieldState<String> field) {
         final String currentValue = field.value ?? value;
         return InputDecorator(
           decoration: InputDecoration(
             labelText: labelText,
-            floatingLabelBehavior: FloatingLabelBehavior.always,
+            floatingLabelBehavior: floatingLabelBehavior,
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 12,
               vertical: 16,
@@ -44,13 +45,14 @@ class CurrencyDropdownFormField extends StatelessWidget {
           child: InkWell(
             borderRadius: BorderRadius.circular(12),
             onTap: () async {
-              final String? selected = await showCompactSelectionDialog<String>(
-                context: context,
-                title: labelText,
-                options: currencies,
-                optionLabel: currencyLabel,
-                selectedValueLabel: currencyLabel(currentValue),
-              );
+              final String? selected =
+                  await showCompactSelectionDialogAfterFocus<String>(
+                    context: context,
+                    title: labelText,
+                    options: currencies,
+                    optionLabel: currencyLabel,
+                    selectedValueLabel: currencyLabel(currentValue),
+                  );
               if (selected != null) {
                 field.didChange(selected);
                 onChanged(selected);

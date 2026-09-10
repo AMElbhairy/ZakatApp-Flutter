@@ -4,6 +4,7 @@ import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/i18n/app_localizations.dart';
+import '../../features/smart_capture/smart_capture_display_messages.dart';
 import '../../core/privacy/app_privacy.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
@@ -52,6 +53,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   _CaptureDateFilter _selectedDateFilter = _CaptureDateFilter.allTime;
   DateTimeRange? _customRange;
   final bool _isEditMode = false;
+  int _lastPendingCount = 0;
 
   @override
   void initState() {
@@ -65,10 +67,21 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             (PendingTransaction t) => t.status == CaptureStatus.pendingReview,
           )
           .length;
+      _lastPendingCount = pendingCount;
       if (pendingCount > 0) {
         _selectedStatus = CaptureInboxStatusFilter.pending;
       }
     }
+
+    final AppStateController controller = context.read<AppStateController>();
+    if (_lastPendingCount == 0) {
+      _lastPendingCount = controller.state.pendingTransactions
+          .where(
+            (PendingTransaction t) => t.status == CaptureStatus.pendingReview,
+          )
+          .length;
+    }
+    controller.addListener(_handlePendingStateChanged);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -84,6 +97,32 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         }
       });
     });
+  }
+
+  @override
+  void dispose() {
+    context.read<AppStateController>().removeListener(
+      _handlePendingStateChanged,
+    );
+    super.dispose();
+  }
+
+  void _handlePendingStateChanged() {
+    if (!mounted) return;
+    final int pendingCount = context
+        .read<AppStateController>()
+        .state
+        .pendingTransactions
+        .where(
+          (PendingTransaction t) => t.status == CaptureStatus.pendingReview,
+        )
+        .length;
+    if (_lastPendingCount == 0 &&
+        pendingCount > 0 &&
+        _selectedStatus == CaptureInboxStatusFilter.approved) {
+      setState(() => _selectedStatus = CaptureInboxStatusFilter.pending);
+    }
+    _lastPendingCount = pendingCount;
   }
 
   String _formatRelativeDate(String dateStr) {
@@ -912,6 +951,18 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                           runSpacing: 6,
                           children: <Widget>[
                             _badge(context, statusLabel, statusColor),
+                            if (item.status == CaptureStatus.pendingReview &&
+                                item.ignoreReason != null &&
+                                item.ignoreReason!.startsWith(
+                                  'Possible duplicate',
+                                ))
+                              _badge(
+                                context,
+                                _isArabic(context)
+                                    ? 'تكرار محتمل'
+                                    : 'Possible Duplicate',
+                                tokens.colors.warning,
+                              ),
                             _badge(
                               context,
                               _isArabic(context)
@@ -936,6 +987,22 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                 ?.copyWith(
                                   color: subtitleColor,
                                   fontStyle: FontStyle.italic,
+                                  height: 1.25,
+                                ),
+                          ),
+                        ],
+                        if (item.status == CaptureStatus.ignored &&
+                            (item.ignoreReason?.trim().isNotEmpty ??
+                                false)) ...<Widget>[
+                          const SizedBox(height: 6),
+                          Text(
+                            '${context.l10n.tr('error_prefix')}: ${SmartCaptureDisplayMessages.reason(context.l10n, item.ignoreReason)}',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: tokens.colors.danger,
+                                  fontWeight: FontWeight.w700,
                                   height: 1.25,
                                 ),
                           ),
