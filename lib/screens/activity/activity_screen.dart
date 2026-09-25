@@ -1683,18 +1683,24 @@ class ActivityScreenState extends State<ActivityScreen> {
           );
         }
       } else if (entry.transaction != null) {
+        final Transaction editableTransaction = context
+            .read<AppStateController>()
+            .transactionForActivityEdit(entry.transaction!);
         Navigator.of(context).push(
           MaterialPageRoute<void>(
             builder: (_) =>
-                AddTransactionScreen(initialTransaction: entry.transaction),
+                AddTransactionScreen(initialTransaction: editableTransaction),
           ),
         );
       }
     } else if (entry.transaction != null) {
+      final Transaction editableTransaction = context
+          .read<AppStateController>()
+          .transactionForActivityEdit(entry.transaction!);
       Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) =>
-              AddTransactionScreen(initialTransaction: entry.transaction),
+              AddTransactionScreen(initialTransaction: editableTransaction),
         ),
       );
     } else if (entry.saving != null) {

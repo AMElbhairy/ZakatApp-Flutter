@@ -54,7 +54,7 @@ class CloudBackupScreen extends StatefulWidget {
 class _CloudBackupScreenState extends State<CloudBackupScreen> {
   static const String _localAppVersion = String.fromEnvironment(
     'APP_VERSION',
-    defaultValue: '1.5.0',
+    defaultValue: '1.5.1',
   );
 
   late final GoogleSignIn _googleSignIn;

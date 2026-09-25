@@ -16,6 +16,7 @@ import '../../core/theme/app_theme_extensions.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/widgets/app_ui.dart';
 import '../../models/app_state.dart';
+import '../../models/credit_card.dart';
 import '../../models/investment_asset.dart';
 import '../../models/market_snapshot.dart';
 import '../../models/saving.dart';
@@ -704,6 +705,72 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  static String _formatHeroNetWorthDisplay(
+    BuildContext context,
+    double value,
+    String currencyCode, {
+    required double availableWidth,
+    required TextStyle style,
+  }) {
+    final bool isAr = _isArabic(context);
+    final TextDirection direction = Directionality.of(context);
+
+    // 1. First preference: full amount with thousands separators,
+    // .00 removed, preserving up to 2 decimal places when meaningful.
+    final String fullText = ZakatEngineService.formatCurrency(
+      value,
+      currencyCode,
+      isArabic: isAr,
+      trimZeroCents: true,
+    );
+
+    if (!availableWidth.isFinite || availableWidth <= 0) {
+      return fullText;
+    }
+
+    final TextPainter fullPainter = TextPainter(
+      text: TextSpan(text: fullText, style: style),
+      textDirection: direction,
+      maxLines: 1,
+    )..layout();
+
+    // Check if full amount comfortably fits without aggressive scaling.
+    // 0.78 scale factor preserves hero prominence (~23.5pt from 30pt base).
+    if (fullPainter.width <= availableWidth ||
+        (availableWidth / fullPainter.width) >= 0.78) {
+      return fullText;
+    }
+
+    // 2. Fallback: compact notation with up to 2 decimal places.
+    final String compact2Text = ZakatEngineService.formatCurrency(
+      value,
+      currencyCode,
+      isArabic: isAr,
+      compact: true,
+      maxFractionDigits: 2,
+    );
+
+    final TextPainter compact2Painter = TextPainter(
+      text: TextSpan(text: compact2Text, style: style),
+      textDirection: direction,
+      maxLines: 1,
+    )..layout();
+
+    if (compact2Painter.width <= availableWidth ||
+        (availableWidth / compact2Painter.width) >= 0.75) {
+      return compact2Text;
+    }
+
+    // 3. Fallback for extreme values: gracefully reduce to 1 decimal place.
+    return ZakatEngineService.formatCurrency(
+      value,
+      currencyCode,
+      isArabic: isAr,
+      compact: true,
+      maxFractionDigits: 1,
+    );
+  }
+
   static String _formatOrMissing(
     BuildContext context,
     double valueEgp,
@@ -782,6 +849,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required List<Map<String, dynamic>> marketHistory,
     required double netWorthEgp,
     required bool hasMarketData,
+    List<CreditCard> creditCards = const <CreditCard>[],
     String? lastRollover,
   }) {
     final DateTime now = DateTime.now();
@@ -797,6 +865,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           savings: savings,
           investments: investments,
           marketData: marketData,
+          creditCards: creditCards,
           lastRollover: lastRollover,
         );
     if (startOfYearNetWorth <= 0 || !startOfYearNetWorth.isFinite) return null;
@@ -842,6 +911,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             savings: savings,
             investments: investments,
             marketData: marketData,
+            creditCards: creditCards,
             lastRollover: lastRollover,
           );
 
@@ -855,6 +925,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required List<Saving> savings,
     required List<InvestmentAsset> investments,
     required MarketData marketData,
+    List<CreditCard> creditCards = const <CreditCard>[],
     String? lastRollover,
   }) {
     final List<double> points = <double>[];
@@ -868,6 +939,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         savings: savings,
         investments: investments,
         marketData: marketData,
+        creditCards: creditCards,
         lastRollover: lastRollover,
       );
       if (value.isFinite && value > 0) {
@@ -1430,29 +1502,45 @@ class _AnimatedAmountText extends StatelessWidget {
         ).textTheme.titleLarge?.copyWith(color: Colors.white),
       );
     }
-    return AnimatedValue(
-      value: displayValue,
-      animateFromZero: true,
-      duration: const Duration(milliseconds: 560),
-      builder: (BuildContext context, double value, Widget? child) {
-        return FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: AlignmentDirectional.centerStart,
-          child: Text(
-            hidden
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final TextStyle baseStyle =
+            Theme.of(context).textTheme.displayLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                  letterSpacing: hidden ? 0 : -0.5,
+                ) ??
+            const TextStyle(
+              fontSize: 30,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            );
+
+        return AnimatedValue(
+          value: displayValue,
+          animateFromZero: true,
+          duration: const Duration(milliseconds: 560),
+          builder: (BuildContext context, double value, Widget? child) {
+            final String text = hidden
                 ? '••••••'
-                : _DashboardScreenState._formatCompactDisplay(
+                : _DashboardScreenState._formatHeroNetWorthDisplay(
                     context,
                     value,
                     currency,
-                  ),
-            maxLines: 1,
-            style: Theme.of(context).textTheme.displayLarge?.copyWith(
-              fontWeight: FontWeight.w700,
-              color: Colors.white,
-              letterSpacing: hidden ? 0 : -0.5,
-            ),
-          ),
+                    availableWidth: constraints.maxWidth,
+                    style: baseStyle,
+                  );
+
+            return FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: AlignmentDirectional.centerStart,
+              child: Text(
+                text,
+                maxLines: 1,
+                style: baseStyle,
+              ),
+            );
+          },
         );
       },
     );
@@ -3732,6 +3820,7 @@ class _DashboardDerivedData {
         savings: savings,
         investments: investments,
         marketData: market,
+        creditCards: state.creditCards,
         lastRollover: state.lastRollover,
       );
       netPositionEgp = totalWealthEgp - totalLiabilitiesEgp;
@@ -3814,6 +3903,7 @@ class _DashboardDerivedData {
           marketHistory: state.marketHistory,
           netWorthEgp: netPositionEgp,
           hasMarketData: hasMarketData,
+          creditCards: state.creditCards,
           lastRollover: state.lastRollover,
         );
     if (stageWatch != null) {
@@ -4442,3 +4532,23 @@ String _latinDigits(String value) {
   };
   return value.split('').map((String c) => map[c] ?? c).join();
 }
+
+@visibleForTesting
+abstract class DashboardScreenTestExport {
+  static String formatHeroNetWorthDisplay(
+    BuildContext context,
+    double value,
+    String currencyCode, {
+    required double availableWidth,
+    required TextStyle style,
+  }) {
+    return _DashboardScreenState._formatHeroNetWorthDisplay(
+      context,
+      value,
+      currencyCode,
+      availableWidth: availableWidth,
+      style: style,
+    );
+  }
+}
+

@@ -71,6 +71,7 @@ class CreditCard {
     required this.creditLimit,
     required this.currency,
     required this.openingBalance,
+    this.initialBalance,
     this.statementDay,
     this.paymentDueDay,
     this.expiryMonth,
@@ -96,6 +97,10 @@ class CreditCard {
   final double creditLimit;
   final String currency;
   final double openingBalance;
+
+  /// The balance before ledger transactions were applied. Kept separately so
+  /// the live owed amount can always be rebuilt from the transaction ledger.
+  final double? initialBalance;
   final int? statementDay;
   final int? paymentDueDay;
   final int? expiryMonth;
@@ -131,6 +136,7 @@ class CreditCard {
     'creditLimit': creditLimit,
     'currency': currency,
     'openingBalance': openingBalance,
+    if (initialBalance != null) 'initialBalance': initialBalance,
     'statementDay': statementDay,
     'paymentDueDay': paymentDueDay,
     'expiryMonth': expiryMonth,
@@ -163,6 +169,9 @@ class CreditCard {
       currency: (json['currency'] ?? '').toString(),
       openingBalance:
           double.tryParse((json['openingBalance'] ?? 0).toString()) ?? 0,
+      initialBalance: json['initialBalance'] == null
+          ? null
+          : double.tryParse(json['initialBalance'].toString()),
       statementDay: optionalInt(json['statementDay']),
       paymentDueDay: optionalInt(json['paymentDueDay']),
       expiryMonth: optionalInt(json['expiryMonth']),
@@ -191,6 +200,7 @@ class CreditCard {
     double? creditLimit,
     String? currency,
     double? openingBalance,
+    double? initialBalance,
     int? statementDay,
     int? paymentDueDay,
     int? expiryMonth,
@@ -206,6 +216,7 @@ class CreditCard {
     String? updatedAt,
     String? parentCardId,
     bool clearParentCardId = false,
+    bool clearInitialBalance = false,
   }) {
     return CreditCard(
       id: id,
@@ -216,6 +227,9 @@ class CreditCard {
       creditLimit: creditLimit ?? this.creditLimit,
       currency: currency ?? this.currency,
       openingBalance: openingBalance ?? this.openingBalance,
+      initialBalance: clearInitialBalance
+          ? null
+          : initialBalance ?? this.initialBalance,
       statementDay: statementDay ?? this.statementDay,
       paymentDueDay: paymentDueDay ?? this.paymentDueDay,
       expiryMonth: expiryMonth ?? this.expiryMonth,
@@ -249,6 +263,7 @@ class CreditCard {
         other.creditLimit == creditLimit &&
         other.currency == currency &&
         other.openingBalance == openingBalance &&
+        other.initialBalance == initialBalance &&
         other.statementDay == statementDay &&
         other.paymentDueDay == paymentDueDay &&
         other.expiryMonth == expiryMonth &&
@@ -276,6 +291,7 @@ class CreditCard {
     creditLimit,
     currency,
     openingBalance,
+    initialBalance,
     statementDay,
     paymentDueDay,
     expiryMonth,

@@ -132,15 +132,13 @@ class WidgetDataService {
       _lastSnapshotJson = encoded;
 
       try {
-        await HomeWidget.saveWidgetData<String>(
-          activeUserIdKey,
-          userId,
-          appGroupId: appGroupId,
+        await _safeSaveWidgetData(
+          id: activeUserIdKey,
+          data: userId,
         );
-        await HomeWidget.saveWidgetData<String>(
-          widgetDataKeyForUser(userId),
-          encoded,
-          appGroupId: appGroupId,
+        await _safeSaveWidgetData(
+          id: widgetDataKeyForUser(userId),
+          data: encoded,
         );
         if (snapshot.hasData) {
           final Map<String, dynamic> portfolioSnapshot =
@@ -153,26 +151,22 @@ class WidgetDataService {
                 upcomingObligationsCount: snapshot.upcomingObligationsCount,
               );
           final String portfolioEncoded = jsonEncode(portfolioSnapshot);
-          await HomeWidget.saveWidgetData<String>(
-            portfolioSnapshotKeyForUser(userId),
-            portfolioEncoded,
-            appGroupId: appGroupId,
+          await _safeSaveWidgetData(
+            id: portfolioSnapshotKeyForUser(userId),
+            data: portfolioEncoded,
           );
-          await HomeWidget.saveWidgetData<String>(
-            smartCaptureStateKeyForUser(userId),
-            smartCaptureEncoded,
-            appGroupId: appGroupId,
+          await _safeSaveWidgetData(
+            id: smartCaptureStateKeyForUser(userId),
+            data: smartCaptureEncoded,
           );
         } else {
-          await HomeWidget.saveWidgetData<String>(
-            portfolioSnapshotKeyForUser(userId),
-            null,
-            appGroupId: appGroupId,
+          await _safeSaveWidgetData(
+            id: portfolioSnapshotKeyForUser(userId),
+            data: '',
           );
-          await HomeWidget.saveWidgetData<String>(
-            smartCaptureStateKeyForUser(userId),
-            null,
-            appGroupId: appGroupId,
+          await _safeSaveWidgetData(
+            id: smartCaptureStateKeyForUser(userId),
+            data: '',
           );
         }
         await _removeLegacyWidgetPayloads();
@@ -205,26 +199,22 @@ class WidgetDataService {
       _lastSnapshotJson = null;
       final String cleanedUserId = (userId ?? '').trim();
       await Future.wait(<Future<void>>[
-        HomeWidget.saveWidgetData<String>(
-          activeUserIdKey,
-          null,
-          appGroupId: appGroupId,
-        ).then((_) {}),
-        HomeWidget.saveWidgetData<String>(
-          legacyWidgetDataKey,
-          null,
-          appGroupId: appGroupId,
-        ).then((_) {}),
-        HomeWidget.saveWidgetData<String>(
-          legacyPortfolioSnapshotKey,
-          null,
-          appGroupId: appGroupId,
-        ).then((_) {}),
-        HomeWidget.saveWidgetData<String>(
-          legacySmartCaptureStateKey,
-          null,
-          appGroupId: appGroupId,
-        ).then((_) {}),
+        _safeSaveWidgetData(
+          id: activeUserIdKey,
+          data: '',
+        ),
+        _safeSaveWidgetData(
+          id: legacyWidgetDataKey,
+          data: '',
+        ),
+        _safeSaveWidgetData(
+          id: legacyPortfolioSnapshotKey,
+          data: '',
+        ),
+        _safeSaveWidgetData(
+          id: legacySmartCaptureStateKey,
+          data: '',
+        ),
       ]);
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       await prefs.remove(legacyWealthHistoryKey);
@@ -233,21 +223,18 @@ class WidgetDataService {
       }
       if (cleanedUserId.isNotEmpty) {
         await Future.wait(<Future<void>>[
-          HomeWidget.saveWidgetData<String>(
-            widgetDataKeyForUser(cleanedUserId),
-            null,
-            appGroupId: appGroupId,
-          ).then((_) {}),
-          HomeWidget.saveWidgetData<String>(
-            portfolioSnapshotKeyForUser(cleanedUserId),
-            null,
-            appGroupId: appGroupId,
-          ).then((_) {}),
-          HomeWidget.saveWidgetData<String>(
-            smartCaptureStateKeyForUser(cleanedUserId),
-            null,
-            appGroupId: appGroupId,
-          ).then((_) {}),
+          _safeSaveWidgetData(
+            id: widgetDataKeyForUser(cleanedUserId),
+            data: '',
+          ),
+          _safeSaveWidgetData(
+            id: portfolioSnapshotKeyForUser(cleanedUserId),
+            data: '',
+          ),
+          _safeSaveWidgetData(
+            id: smartCaptureStateKeyForUser(cleanedUserId),
+            data: '',
+          ),
         ]);
       }
       await _reloadAllTimelines();
@@ -360,19 +347,7 @@ class WidgetDataService {
     final DateTime monthStart = _financialMonthStart(state, today);
 
     final bool hasMarketData = marketSnapshot.hasRequiredData;
-    final MarketData marketData = _toMarketData(marketSnapshot);
-    final double currentWealthEgp = hasMarketData
-        ? _finiteOrZero(
-            ZakatEngineService.calculateTotalWealthEgp(
-              transactions: state.transactions,
-              savings: state.savings,
-              investments: state.investments,
-              marketData: marketData,
-              lastRollover: state.lastRollover,
-            ),
-            'currentWealthEgp',
-          )
-        : 0;
+    final MarketData marketData = MarketData.fromJson(state.marketData);
     final double currentNetWorthEgp = hasMarketData
         ? _finiteOrZero(
             ZakatEngineService.calculateNetWorthEgp(
@@ -380,15 +355,16 @@ class WidgetDataService {
               savings: state.savings,
               investments: state.investments,
               marketData: marketData,
+              creditCards: state.creditCards,
               lastRollover: state.lastRollover,
             ),
             'currentNetWorthEgp',
           )
         : 0;
-    final double currentNetWorthMain = _convertEgpToMain(
-      amountEgp: currentNetWorthEgp,
-      currency: mainCurrency,
-      marketSnapshot: marketSnapshot,
+    final double currentNetWorthMain = ZakatEngineService.convertFromEgp(
+      currentNetWorthEgp,
+      mainCurrency,
+      marketData,
     );
     final double mainCurrencyRateToEgp = _mainCurrencyRateToEgp(
       mainCurrency,
@@ -631,6 +607,7 @@ class WidgetDataService {
       savings: state.savings,
       investments: state.investments,
       marketData: marketData,
+      creditCards: state.creditCards,
       lastRollover: state.lastRollover,
     );
     final double mainCurrencyRateToEgp = _mainCurrencyRateToEgp(
@@ -955,23 +932,26 @@ class WidgetDataService {
     return 'zakah_wealth_smart_capture_state_v1_$userId';
   }
 
+  static Future<void> _safeSaveWidgetData({
+    required String id,
+    required String? data,
+  }) async {
+    try {
+      await HomeWidget.saveWidgetData<String>(
+        id,
+        data ?? '',
+        appGroupId: appGroupId,
+      );
+    } catch (error) {
+      debugPrint('WidgetDataService._safeSaveWidgetData failed for id=$id: $error');
+    }
+  }
+
   static Future<void> _removeLegacyWidgetPayloads() async {
     await Future.wait(<Future<void>>[
-      HomeWidget.saveWidgetData<String>(
-        legacyWidgetDataKey,
-        null,
-        appGroupId: appGroupId,
-      ).then((_) {}),
-      HomeWidget.saveWidgetData<String>(
-        legacyPortfolioSnapshotKey,
-        null,
-        appGroupId: appGroupId,
-      ).then((_) {}),
-      HomeWidget.saveWidgetData<String>(
-        legacySmartCaptureStateKey,
-        null,
-        appGroupId: appGroupId,
-      ).then((_) {}),
+      _safeSaveWidgetData(id: legacyWidgetDataKey, data: ''),
+      _safeSaveWidgetData(id: legacyPortfolioSnapshotKey, data: ''),
+      _safeSaveWidgetData(id: legacySmartCaptureStateKey, data: ''),
     ]);
   }
 
@@ -1120,21 +1100,13 @@ class WidgetDataService {
 
     final bool hasMarketData = marketSnapshot.hasRequiredData;
     final MarketData marketData = _toMarketData(marketSnapshot);
-    final double currentWealthEgp = hasMarketData
-        ? ZakatEngineService.calculateTotalWealthEgp(
-            transactions: state.transactions,
-            savings: state.savings,
-            investments: state.investments,
-            marketData: marketData,
-            lastRollover: state.lastRollover,
-          )
-        : 0;
     final double currentNetWorthEgp = hasMarketData
         ? ZakatEngineService.calculateNetWorthEgp(
             transactions: state.transactions,
             savings: state.savings,
             investments: state.investments,
             marketData: marketData,
+            creditCards: state.creditCards,
             lastRollover: state.lastRollover,
           )
         : 0;
@@ -1145,6 +1117,7 @@ class WidgetDataService {
             savings: state.savings,
             investments: state.investments,
             marketData: marketData,
+            creditCards: state.creditCards,
             lastRollover: state.lastRollover,
           )
         : 0;

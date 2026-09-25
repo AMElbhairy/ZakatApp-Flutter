@@ -130,7 +130,7 @@ class AppDatabase extends _$AppDatabase {
   }
 
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 9;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -164,6 +164,18 @@ class AppDatabase extends _$AppDatabase {
         await migrator.addColumn(pendingTransactions, pendingTransactions.receivedAt);
         await migrator.addColumn(pendingTransactions, pendingTransactions.cardLast4);
         await migrator.addColumn(pendingTransactions, pendingTransactions.accountLast4);
+      }
+      if (from < 9) {
+        await migrator.addColumn(transactions, transactions.paymentSourceId);
+        await migrator.addColumn(
+          transactions,
+          transactions.creditCardPaymentId,
+        );
+        await migrator.addColumn(transactions, transactions.transferSourceId);
+        await migrator.addColumn(
+          transactions,
+          transactions.transferDestinationId,
+        );
       }
       await _createIndexes();
     },

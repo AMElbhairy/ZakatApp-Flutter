@@ -50,7 +50,7 @@ class NotificationsScreen extends StatefulWidget {
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
   CaptureInboxStatusFilter _selectedStatus = CaptureInboxStatusFilter.approved;
-  _CaptureDateFilter _selectedDateFilter = _CaptureDateFilter.allTime;
+  _CaptureDateFilter _selectedDateFilter = _CaptureDateFilter.thisWeek;
   DateTimeRange? _customRange;
   final bool _isEditMode = false;
   int _lastPendingCount = 0;
@@ -744,6 +744,50 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     });
   }
 
+  Future<void> _confirmDeleteApprovedCapture(
+    BuildContext context,
+    AppStateController controller,
+    PendingTransaction item,
+  ) async {
+    final bool arabic = _isArabic(context);
+    final bool hasLinkedTransaction =
+        item.linkedTransactionId?.trim().isNotEmpty ?? false;
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: Text(
+          arabic ? 'حذف العملية المعتمدة؟' : 'Delete approved capture?',
+        ),
+        content: Text(
+          hasLinkedTransaction
+              ? (arabic
+                  ? 'سيؤدي هذا إلى حذف عنصر صندوق الالتقاط والعملية المرتبطة به من سجل النشاط أيضاً.'
+                  : 'This will delete the Capture Inbox item and its linked transaction from Activity too.')
+              : (arabic
+                  ? 'لا توجد عملية مرتبطة بهذا العنصر. سيتم حذف عنصر صندوق الالتقاط فقط.'
+                  : 'No linked transaction was found. Only the Capture Inbox item will be deleted.'),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(arabic ? 'إلغاء' : 'Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(
+              hasLinkedTransaction
+                  ? (arabic ? 'حذف الكل' : 'Delete both')
+                  : (arabic ? 'حذف' : 'Delete'),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && context.mounted) {
+      await controller.deleteApprovedPendingTransaction(item.id);
+    }
+  }
+
   Widget _buildCaptureRow(
     BuildContext context,
     PendingTransaction item,
@@ -846,9 +890,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             icon: Icons.delete_outline_rounded,
             label: _isArabic(context) ? 'حذف' : 'Delete',
             color: tokens.colors.danger,
-            onTap: () {
-              controller.deletePendingTransactionsBulk(<String>[item.id]);
-            },
+            onTap: () =>
+                _confirmDeleteApprovedCapture(context, controller, item),
           ),
         ],
       ),
@@ -996,7 +1039,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                 false)) ...<Widget>[
                           const SizedBox(height: 6),
                           Text(
-                            '${context.l10n.tr('error_prefix')}: ${SmartCaptureDisplayMessages.reason(context.l10n, item.ignoreReason)}',
+                            '${context.l10n.tr('smart_capture_reason_label')}: ${SmartCaptureDisplayMessages.reason(context.l10n, item.ignoreReason)}',
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: Theme.of(context).textTheme.bodySmall

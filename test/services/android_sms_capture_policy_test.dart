@@ -76,4 +76,22 @@ void main() {
       isFalse,
     );
   });
+
+  test(
+    'transfer from a contracting company is not filtered as a subscription sms',
+    () {
+      expect(
+        AndroidSmsCapturePolicy.isLikelyFinancialMessage(
+          'Credit Transfer Local\n'
+          'Via:NATIONAL COMMERCIAL BANK, THE\n'
+          'Amount:SR 600\n'
+          'To:3366\n'
+          'From:Coastal Contracting Company\n'
+          'From:1004\n'
+          '26/9/16 09:01',
+        ),
+        isTrue,
+      );
+    },
+  );
 }

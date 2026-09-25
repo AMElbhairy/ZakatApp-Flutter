@@ -201,23 +201,9 @@ class _AssetsScreenState extends State<AssetsScreen> {
           savings: savings,
           investments: investments,
           marketData: market,
+          creditCards: controller.state.creditCards,
           lastRollover: controller.state.lastRollover,
-        ) +
-        controller.state.creditCards
-            .where(
-              (CreditCard card) =>
-                  !card.isArchived && card.parentCardId == null,
-            )
-            .fold<double>(
-              0,
-              (double sum, CreditCard card) =>
-                  sum +
-                  ZakatEngineService.convertToEgp(
-                    card.openingBalance,
-                    card.currency,
-                    market,
-                  ),
-            );
+        );
 
     final double totalWealthMain = ZakatEngineService.convertFromEgp(
       totalWealthEgp,

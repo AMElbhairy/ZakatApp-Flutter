@@ -1324,7 +1324,6 @@ class ReconciliationService {
     Map<String, dynamic> asset,
     MarketData marketData,
   ) {
-    if ((asset['ownershipType'] ?? '') != 'installment') return;
     final List<Map<String, dynamic>> plan = _asMapList(
       asset['installmentPlan'],
     );

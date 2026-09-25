@@ -133,9 +133,7 @@ class AndroidSmsCapturePolicy {
       final String normalizedMarker = marker.toLowerCase();
       if (normalizedMarker.length == 2) {
         final RegExp codePattern = RegExp(
-          r'(^|[^a-z0-9])' +
-              RegExp.escape(normalizedMarker) +
-              r'([^a-z0-9]|$)',
+          r'(^|[^a-z0-9])' + RegExp.escape(normalizedMarker) + r'([^a-z0-9]|$)',
         );
         if (codePattern.hasMatch(lower)) return true;
       } else if (lower.contains(normalizedMarker)) {
@@ -154,7 +152,7 @@ class AndroidSmsCapturePolicy {
   }
 
   static bool _containsSubscriptionActivationIndicators(String message) {
-    return <String>[
+    const List<String> englishKeywords = <String>[
       'subscribe',
       'subscription',
       'subscribed',
@@ -169,6 +167,16 @@ class AndroidSmsCapturePolicy {
       'econtract',
       'contract',
       'mobily welcome prepaid',
+    ];
+    if (englishKeywords.any(
+      (String keyword) => RegExp(
+        r'(?<![a-z0-9])' + RegExp.escape(keyword) + r'(?![a-z0-9])',
+        caseSensitive: false,
+      ).hasMatch(message),
+    )) {
+      return true;
+    }
+    return <String>[
       'اشتراك',
       'تم تفعيل اشتراكك',
       'تم الاشتراك',

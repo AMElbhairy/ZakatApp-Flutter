@@ -39,6 +39,29 @@ void main() {
     expect(companion.amountText.value, '1234.5');
   });
 
+  test(
+    'mapper preserves account identity fields for card transactions',
+    () async {
+      const transaction = model.Transaction(
+        id: 'card-tx',
+        type: 'expense',
+        date: '2026-06-19',
+        amount: 25,
+        currency: 'SAR',
+        category: 'Food',
+        description: 'Card purchase',
+        createdAt: '2026-06-19T12:00:00.000Z',
+        rolledOver: false,
+        paymentSourceId: 'card-1',
+      );
+
+      await dao.upsertTransactionRow(transaction);
+      final model.Transaction roundTrip =
+          (await dao.getActiveTransactions()).single;
+      expect(roundTrip.paymentSourceId, 'card-1');
+    },
+  );
+
   test('active transaction query excludes deleted_at rows', () async {
     const active = model.Transaction(
       id: 'active-tx',

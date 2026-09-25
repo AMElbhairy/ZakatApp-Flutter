@@ -543,7 +543,7 @@ object AndroidSmsCaptureBridge {
     }
 
     private fun nativeContainsSubscriptionActivationIndicators(text: String): Boolean {
-        return nativeContainsAny(text, listOf(
+        val englishKeywords = listOf(
             "subscribe",
             "subscription",
             "subscribed",
@@ -558,6 +558,16 @@ object AndroidSmsCaptureBridge {
             "econtract",
             "contract",
             "mobily welcome prepaid",
+        )
+        if (englishKeywords.any { candidate ->
+                Regex(
+                    "(?<![a-z0-9])${Regex.escape(candidate)}(?![a-z0-9])",
+                    RegexOption.IGNORE_CASE,
+                ).containsMatchIn(text)
+            }) {
+            return true
+        }
+        return nativeContainsAny(text, listOf(
             "اشتراك",
             "تم تفعيل اشتراكك",
             "تم الاشتراك",

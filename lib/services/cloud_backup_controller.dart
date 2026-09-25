@@ -1688,7 +1688,7 @@ class CloudBackupController extends ChangeNotifier
       controller: appStateController,
       deviceId: deviceId,
       deviceName: deviceName,
-      appVersion: String.fromEnvironment('APP_VERSION', defaultValue: '1.5.0'),
+      appVersion: String.fromEnvironment('APP_VERSION', defaultValue: '1.5.1'),
     );
   }
 

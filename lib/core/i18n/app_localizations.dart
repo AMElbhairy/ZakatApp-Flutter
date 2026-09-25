@@ -386,6 +386,11 @@ class AppLocalizations {
           "We couldn't identify a valid transaction in this message.",
       'smart_capture_reason_unknown':
           'This message could not be added as a transaction.',
+      'smart_capture_reason_label': 'Reason',
+      'smart_capture_reason_deleted_by_user':
+          'Deleted by the user from Activity.',
+      'smart_capture_reason_manually_rejected':
+          'Manually rejected by the user.',
       'dashboard': 'Dashboard',
       'assets': 'Assets',
       'credit_cards': 'Credit Cards',
@@ -609,7 +614,7 @@ class AppLocalizations {
           'Theme mode (System / Light / Dark) will be wired in a later phase.',
       'backup_placeholder':
           'Backup and sync options will be available in a later phase.',
-      'about_version': 'Version: 1.5.0',
+      'about_version': 'Version: 1.5.1',
       'about_build': 'Build: 26',
       'totals': 'Totals',
       'total_cash': 'Total Cash',
@@ -1230,6 +1235,9 @@ class AppLocalizations {
       'smart_capture_reason_invalid':
           'تعذر التعرف على عملية مالية صالحة في هذه الرسالة.',
       'smart_capture_reason_unknown': 'تعذر إضافة هذه الرسالة كعملية مالية.',
+      'smart_capture_reason_label': 'السبب',
+      'smart_capture_reason_deleted_by_user': 'حذفها المستخدم من سجل العمليات.',
+      'smart_capture_reason_manually_rejected': 'رفضها المستخدم يدويًا.',
       'dashboard': 'الرئيسية',
       'assets': 'الأصول',
       'credit_cards': 'البطاقات الائتمانية',
@@ -1450,7 +1458,7 @@ class AppLocalizations {
           'سيتم ربط وضع المظهر (تلقائي / فاتح / داكن) في مرحلة لاحقة.',
       'backup_placeholder':
           'ستتوفر خيارات النسخ الاحتياطي والمزامنة في مرحلة لاحقة.',
-      'about_version': 'الإصدار: 1.5.0',
+      'about_version': 'الإصدار: 1.5.1',
       'about_build': 'رقم البناء: 26',
       'totals': 'الإجماليات',
       'total_cash': 'إجمالي النقد',

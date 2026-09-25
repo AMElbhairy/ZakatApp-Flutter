@@ -99,22 +99,75 @@ struct WidgetSummary: Codable {
         (languageCode ?? "en").lowercased().hasPrefix("ar")
     }
 
-    static func formatCurrency(_ value: Double, currency: String, compact: Bool = false) -> String {
+    static func formatCompactNumber(_ value: Double, maxFractionDigits: Int = 2) -> String {
+        let absValue = abs(value)
+        if absValue < 10_000 {
+            let formatter = NumberFormatter()
+            formatter.numberStyle = .decimal
+            formatter.locale = Locale(identifier: "en_US")
+            formatter.usesGroupingSeparator = true
+            let cents = (absValue * 100).rounded().truncatingRemainder(dividingBy: 100)
+            formatter.minimumFractionDigits = 0
+            formatter.maximumFractionDigits = cents == 0 ? 0 : min(maxFractionDigits, 2)
+            return formatter.string(from: NSNumber(value: absValue)) ?? String(format: "%.0f", absValue)
+        }
+
+        var scaled: Double
+        var suffix: String
+        if absValue >= 999_999_999_995 {
+            scaled = absValue / 1_000_000_000_000
+            suffix = "T"
+        } else if absValue >= 999_999_995 {
+            scaled = absValue / 1_000_000_000
+            suffix = "B"
+        } else if absValue >= 999_995 {
+            scaled = absValue / 1_000_000
+            suffix = "M"
+        } else {
+            scaled = absValue / 1_000
+            suffix = "K"
+        }
+
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.locale = Locale(identifier: "en_US")
+        formatter.usesGroupingSeparator = false
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = maxFractionDigits
+        var numStr = formatter.string(from: NSNumber(value: scaled)) ?? String(format: "%.0f", scaled)
+        if numStr == "1000" || numStr == "1,000" {
+            numStr = "1"
+            if suffix == "K" { suffix = "M" }
+            else if suffix == "M" { suffix = "B" }
+            else if suffix == "B" { suffix = "T" }
+        }
+        return "\(numStr)\(suffix)"
+    }
+
+    static func formatFullNumber(_ value: Double) -> String {
+        let absValue = abs(value)
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.locale = Locale(identifier: "en_US")
+        formatter.usesGroupingSeparator = true
+        let cents = (absValue * 100).rounded().truncatingRemainder(dividingBy: 100)
+        if cents == 0 {
+            formatter.minimumFractionDigits = 0
+            formatter.maximumFractionDigits = 0
+        } else {
+            formatter.minimumFractionDigits = 2
+            formatter.maximumFractionDigits = 2
+        }
+        return formatter.string(from: NSNumber(value: absValue)) ?? String(format: "%.2f", absValue)
+    }
+
+    static func formatCurrency(_ value: Double, currency: String, compact: Bool = false, maxFractionDigits: Int = 2) -> String {
         let absValue = abs(value)
         let number: String
         if compact {
-            switch absValue {
-            case 1_000_000_000...:
-                number = String(format: "%.1fB", absValue / 1_000_000_000)
-            case 1_000_000...:
-                number = String(format: "%.1fM", absValue / 1_000_000)
-            case 1_000...:
-                number = String(format: "%.1fK", absValue / 1_000)
-            default:
-                number = String(format: "%.1f", absValue)
-            }
+            number = formatCompactNumber(absValue, maxFractionDigits: maxFractionDigits)
         } else {
-            number = String(format: "%.2f", absValue)
+            number = formatFullNumber(absValue)
         }
 
         let code = currency.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
@@ -124,7 +177,7 @@ struct WidgetSummary: Codable {
         case "USD": symbol = "$"
         case "EUR": symbol = "€"
         case "GBP": symbol = "£"
-        case "EGP": symbol = "E£"
+        case "E£", "EGP": symbol = "E£"
         case "AED": symbol = "د.إ"
         case "QAR": symbol = "ر.ق"
         case "KWD": symbol = "د.ك"
@@ -208,45 +261,8 @@ struct WidgetSnapshot: Codable {
         Self.formatPercent(value)
     }
 
-    static func formatCurrency(_ value: Double, currency: String, compact: Bool = false) -> String {
-        let absValue = abs(value)
-        let number: String
-        if compact {
-            switch absValue {
-            case 1_000_000_000...:
-                number = String(format: "%.1fB", absValue / 1_000_000_000)
-            case 1_000_000...:
-                number = String(format: "%.1fM", absValue / 1_000_000)
-            case 1_000...:
-                number = String(format: "%.1fK", absValue / 1_000)
-            default:
-                number = String(format: "%.1f", absValue)
-            }
-        } else {
-            number = String(format: "%.2f", absValue)
-        }
-
-        let code = currency.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        let symbol: String
-        switch code {
-        case "SAR": symbol = "⃁"
-        case "USD": symbol = "$"
-        case "EUR": symbol = "€"
-        case "GBP": symbol = "£"
-        case "EGP": symbol = "E£"
-        case "AED": symbol = "د.إ"
-        case "QAR": symbol = "ر.ق"
-        case "KWD": symbol = "د.ك"
-        case "BHD": symbol = "د.ب"
-        case "OMR": symbol = "ر.ع"
-        case "JOD": symbol = "د.ا"
-        case "TRY": symbol = "₺"
-        case "MYR": symbol = "RM"
-        case "PKR": symbol = "Rs"
-        case "IDR": symbol = "Rp"
-        default: symbol = code
-        }
-        return "\(symbol) \(number)"
+    static func formatCurrency(_ value: Double, currency: String, compact: Bool = false, maxFractionDigits: Int = 2) -> String {
+        WidgetSummary.formatCurrency(value, currency: currency, compact: compact, maxFractionDigits: maxFractionDigits)
     }
 
     static func formatPercent(_ value: Double) -> String {
@@ -342,8 +358,13 @@ struct WidgetDataStore {
         }
 
         if let string = defaults.string(forKey: key) {
-            NSLog("[WidgetKit][loadSummary] raw payload type=String length=%d key=%@", string.utf8.count, key)
-            return string.data(using: .utf8)
+            let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                NSLog("[WidgetKit][loadSummary] empty payload for key=%@", key)
+                return nil
+            }
+            NSLog("[WidgetKit][loadSummary] raw payload type=String length=%d key=%@", trimmed.utf8.count, key)
+            return trimmed.data(using: .utf8)
         }
 
         if let any = defaults.object(forKey: key) {

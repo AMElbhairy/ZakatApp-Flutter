@@ -17,6 +17,7 @@ class Transaction {
     this.exchangeSourceIncomeId,
     this.remainingAmount,
     this.paymentSourceId,
+    this.displaySourceId,
     this.creditCardPaymentId,
     this.transferSourceId,
     this.transferDestinationId,
@@ -42,6 +43,10 @@ class Transaction {
   final String? exchangePairId;
   final String? exchangeSourceIncomeId;
   final double? remainingAmount;
+
+  /// Non-financial source metadata used to show the capture/inbox account.
+  /// Balance calculations must use paymentSourceId instead.
+  final String? displaySourceId;
   final String? paymentSourceId;
   final String? creditCardPaymentId;
   final String? transferSourceId;
@@ -94,6 +99,7 @@ class Transaction {
           ? null
           : _asDouble(json['remainingAmount']),
       paymentSourceId: json['paymentSourceId']?.toString(),
+      displaySourceId: json['displaySourceId']?.toString(),
       creditCardPaymentId: json['creditCardPaymentId']?.toString(),
       transferSourceId: json['transferSourceId']?.toString(),
       transferDestinationId: json['transferDestinationId']?.toString(),
@@ -132,6 +138,7 @@ class Transaction {
         'exchangeSourceIncomeId': exchangeSourceIncomeId,
       if (remainingAmount != null) 'remainingAmount': remainingAmount,
       if (paymentSourceId != null) 'paymentSourceId': paymentSourceId,
+      if (displaySourceId != null) 'displaySourceId': displaySourceId,
       if (creditCardPaymentId != null)
         'creditCardPaymentId': creditCardPaymentId,
       if (transferSourceId != null) 'transferSourceId': transferSourceId,

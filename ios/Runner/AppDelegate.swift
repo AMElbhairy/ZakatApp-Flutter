@@ -2323,12 +2323,9 @@ protocol FlutterImplicitEngineDelegate {}
       return
     }
     icloudRegistrationAttempts += 1
-    DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(200)) { [weak self] in
+    DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(250)) { [weak self] in
       guard let self = self else { return }
       self.configureICloudChannel()
-      if self.icloudChannel == nil {
-        self.scheduleICloudRegistrationRetry()
-      }
     }
   }
 

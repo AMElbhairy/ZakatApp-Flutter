@@ -388,6 +388,36 @@ class AppStateController extends ChangeNotifier {
   final Duration _pushDebounceDuration;
 
   AppStateModel get state => _activeState;
+
+  String? _captureCardId(PendingTransaction pending) {
+    final String suggested = (pending.suggestedPaymentSourceId ?? '').trim();
+    if (suggested.isNotEmpty) return suggested;
+    final String rawMessage = pending.rawMessage.trim();
+    if (rawMessage.isEmpty) return null;
+    return _resolveCreditCardIdFromMessage(rawMessage);
+  }
+
+  /// Supplies capture source metadata for editing without changing the
+  /// transaction's financial paymentSourceId.
+  Transaction transactionForActivityEdit(Transaction transaction) {
+    if (transaction.paymentSourceId != null &&
+        transaction.paymentSourceId!.trim().isNotEmpty) {
+      return transaction;
+    }
+    final PendingTransaction? capture = _activeState.pendingTransactions
+        .where(
+          (PendingTransaction item) =>
+              item.linkedTransactionId?.trim() == transaction.id,
+        )
+        .firstOrNull;
+    final String? cardId = capture == null ? null : _captureCardId(capture);
+    if (cardId == null || cardId.isEmpty) return transaction;
+    return Transaction.fromJson(<String, dynamic>{
+      ...transaction.toJson(),
+      'displaySourceId': cardId,
+    });
+  }
+
   MarketSnapshot get currentMarketSnapshot =>
       MarketSnapshot.fromAppStateJson(_state.marketData);
 
@@ -506,6 +536,11 @@ class AppStateController extends ChangeNotifier {
         await _hydratePendingTransactionsFromPreferredLocalStore(
           userId: userId,
         );
+        // Do not rewrite historical transactions from capture-inbox metadata.
+        // Older rows may intentionally have cash/null account identity, and
+        // repairing them during hydration can replay their card side effects
+        // and change users' existing owed balances. New approvals persist the
+        // selected paymentSourceId at creation time.
         await _hydrateFinancialPlansFromPreferredLocalStore(userId: userId);
         await _hydrateInvestmentsFromPreferredLocalStore(userId: userId);
         await _hydrateMerchantRulesFromPreferredLocalStore(userId: userId);
@@ -520,7 +555,11 @@ class AppStateController extends ChangeNotifier {
         // Supplementary cards mirror their parent even when restored from an
         // older snapshot that contains stale inherited values.
         ref.value = ref.value.copyWith(
-          creditCards: _inheritParentValues(ref.value.creditCards),
+          creditCards: _rebuildCreditCardBalances(
+            cards: ref.value.creditCards,
+            transactions: ref.value.transactions,
+            marketData: ref.value.marketData,
+          ),
         );
 
         if (Platform.isIOS && !ref.value.smartCaptureEnabled) {
@@ -563,7 +602,13 @@ class AppStateController extends ChangeNotifier {
 
       final ReconciliationResult reconciled = reconciliationService
           .reconcileExpensesWithSavings(_state);
-      _activeState = reconciled.state;
+      _activeState = reconciled.state.copyWith(
+        creditCards: _rebuildCreditCardBalances(
+          cards: reconciled.state.creditCards,
+          transactions: reconciled.state.transactions,
+          marketData: reconciled.state.marketData,
+        ),
+      );
       if (reconciled.modified) {
         await save();
       }
@@ -1384,7 +1429,11 @@ class AppStateController extends ChangeNotifier {
     _isApplyingRemoteSync = true;
     try {
       _state = platformState.copyWith(
-        creditCards: _inheritParentValues(platformState.creditCards),
+        creditCards: _rebuildCreditCardBalances(
+          cards: platformState.creditCards,
+          transactions: platformState.transactions,
+          marketData: platformState.marketData,
+        ),
         lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
       );
       await save();
@@ -2143,8 +2192,46 @@ class AppStateController extends ChangeNotifier {
       final List<Transaction> sqliteTransactions = await localStore
           .getActiveTransactions();
       if (sqliteTransactions.isNotEmpty) {
+        final Map<String, Transaction> jsonById = <String, Transaction>{
+          for (final Transaction transaction in _state.transactions)
+            transaction.id: transaction,
+        };
+        bool repaired = false;
+        final List<Transaction> repairedTransactions = sqliteTransactions
+            .map((Transaction sqliteTransaction) {
+              final Transaction? jsonTransaction =
+                  jsonById[sqliteTransaction.id];
+              final bool missingAccountIdentity =
+                  sqliteTransaction.paymentSourceId == null &&
+                  sqliteTransaction.creditCardPaymentId == null &&
+                  sqliteTransaction.transferSourceId == null &&
+                  sqliteTransaction.transferDestinationId == null;
+              final bool hasJsonAccountIdentity =
+                  jsonTransaction != null &&
+                  (jsonTransaction.displaySourceId != null ||
+                      jsonTransaction.paymentSourceId != null ||
+                      jsonTransaction.creditCardPaymentId != null ||
+                      jsonTransaction.transferSourceId != null ||
+                      jsonTransaction.transferDestinationId != null);
+              if (!missingAccountIdentity || !hasJsonAccountIdentity) {
+                return sqliteTransaction;
+              }
+              repaired = true;
+              return Transaction.fromJson(<String, dynamic>{
+                ...sqliteTransaction.toJson(),
+                'displaySourceId': jsonTransaction.displaySourceId,
+                'paymentSourceId': jsonTransaction.paymentSourceId,
+                'creditCardPaymentId': jsonTransaction.creditCardPaymentId,
+                'transferSourceId': jsonTransaction.transferSourceId,
+                'transferDestinationId': jsonTransaction.transferDestinationId,
+              });
+            })
+            .toList(growable: false);
+        if (repaired) {
+          await localStore.replaceAllForLocalMirror(repairedTransactions);
+        }
         _markCollectionSource('transactions', 'SQLite');
-        _state = _state.copyWith(transactions: sqliteTransactions);
+        _state = _state.copyWith(transactions: repairedTransactions);
         return;
       }
 
@@ -2629,13 +2716,22 @@ class AppStateController extends ChangeNotifier {
         : transactionOrSavingsInputChanged
         ? reconciliationService.reconcileExpensesWithSavings(newState).state
         : newState;
+    final AppStateModel consistentState = creditCardsOnly
+        ? stateToSave
+        : stateToSave.copyWith(
+            creditCards: _rebuildCreditCardBalances(
+              cards: stateToSave.creditCards,
+              transactions: stateToSave.transactions,
+              marketData: stateToSave.marketData,
+            ),
+          );
     if (reconciliationWatch != null) {
       debugPrint(
         'AppState update reconciliation: ${reconciliationWatch.elapsedMilliseconds}ms, '
         'tx=${newState.transactions.length}, savings=${newState.savings.length}',
       );
     }
-    _state = stateToSave.copyWith(
+    _state = consistentState.copyWith(
       lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
     );
     // Publish the reconciled local state before compatibility mirrors and
@@ -2969,8 +3065,126 @@ class AppStateController extends ChangeNotifier {
         debugPrintStack(stackTrace: stackTrace);
       }
     }
+    if (!_isApplyingRemoteSync &&
+        _useSqliteLocalStore &&
+        localInvestmentsRepository != null &&
+        !_listJsonEqual(
+          previousState.investments,
+          _state.investments,
+          (InvestmentAsset item) => item.toJson(),
+        )) {
+      try {
+        final Map<String, InvestmentAsset> previousById =
+            <String, InvestmentAsset>{
+              for (final InvestmentAsset item in previousState.investments)
+                item.id: item,
+            };
+        final Map<String, InvestmentAsset> nextById =
+            <String, InvestmentAsset>{
+              for (final InvestmentAsset item in _state.investments)
+                item.id: item,
+            };
+        final Set<String> previousIds = previousById.keys.toSet();
+        final Set<String> nextIds = nextById.keys.toSet();
+        for (final String id in previousIds.difference(nextIds)) {
+          await localInvestmentsRepository!.deleteInvestment(id);
+          await _verifySqliteWrite(
+            label: 'Investment delete',
+            id: id,
+            existsCheck: () async =>
+                (await localInvestmentsRepository!.getActiveInvestments())
+                    .every((InvestmentAsset item) => item.id != id),
+          );
+        }
+        for (final MapEntry<String, InvestmentAsset> entry in nextById.entries) {
+          final InvestmentAsset? previous = previousById[entry.key];
+          if (previous == null ||
+              jsonEncode(previous.toJson()) !=
+                  jsonEncode(entry.value.toJson())) {
+            await localInvestmentsRepository!.saveInvestment(entry.value);
+            await _verifySqliteWrite(
+              label: 'Investment write',
+              id: entry.key,
+              existsCheck: () async =>
+                  (await localInvestmentsRepository!.getActiveInvestments())
+                      .any((InvestmentAsset item) => item.id == entry.key),
+            );
+          }
+        }
+      } catch (error, stackTrace) {
+        debugPrint(
+          'AppStateController.updateState: failed to mirror investments to SQLite queue. '
+          'Continuing with JSON compatibility only. Error: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+      }
+    }
+    if (!_isApplyingRemoteSync &&
+        _useSqliteLocalStore &&
+        localRecurringTransactionsRepository != null &&
+        !_listJsonEqual(
+          previousState.recurringTransactions,
+          _state.recurringTransactions,
+          (RecurringTransaction item) => item.toJson(),
+        )) {
+      try {
+        final Map<String, RecurringTransaction> previousById =
+            <String, RecurringTransaction>{
+              for (final RecurringTransaction item
+                  in previousState.recurringTransactions)
+                item.id: item,
+            };
+        final Map<String, RecurringTransaction> nextById =
+            <String, RecurringTransaction>{
+              for (final RecurringTransaction item
+                  in _state.recurringTransactions)
+                item.id: item,
+            };
+        final Set<String> previousIds = previousById.keys.toSet();
+        final Set<String> nextIds = nextById.keys.toSet();
+        for (final String id in previousIds.difference(nextIds)) {
+          await localRecurringTransactionsRepository!
+              .deleteRecurringTransaction(id);
+          await _verifySqliteWrite(
+            label: 'Recurring transaction delete',
+            id: id,
+            existsCheck: () async =>
+                (await localRecurringTransactionsRepository!
+                        .getActiveRecurringTransactions())
+                    .every((RecurringTransaction item) => item.id != id),
+          );
+        }
+        for (final MapEntry<String, RecurringTransaction> entry
+            in nextById.entries) {
+          final RecurringTransaction? previous = previousById[entry.key];
+          if (previous == null ||
+              jsonEncode(previous.toJson()) !=
+                  jsonEncode(entry.value.toJson())) {
+            await localRecurringTransactionsRepository!
+                .saveRecurringTransaction(entry.value);
+            await _verifySqliteWrite(
+              label: 'Recurring transaction write',
+              id: entry.key,
+              existsCheck: () async =>
+                  (await localRecurringTransactionsRepository!
+                          .getActiveRecurringTransactions())
+                      .any(
+                        (RecurringTransaction item) => item.id == entry.key,
+                      ),
+            );
+          }
+        }
+      } catch (error, stackTrace) {
+        debugPrint(
+          'AppStateController.updateState: failed to mirror recurring transactions to SQLite queue. '
+          'Continuing with JSON compatibility only. Error: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+      }
+    }
     if (!_isApplyingRemoteSync) {
       _syncSensitiveCollectionsInBackground(previousState, _state);
+      unawaited(triggerSyncPipeline(reason: 'local_write'));
     }
   }
 
@@ -3460,6 +3674,7 @@ class AppStateController extends ChangeNotifier {
       mirrorSavings: mirrorSavings,
       mirrorOtherCollections: false,
     );
+    unawaited(_captureLocalBackup());
     unawaited(_syncWidgetDataWithProfile(_state));
     if (stopwatch != null) {
       debugPrint(
@@ -3869,8 +4084,10 @@ class AppStateController extends ChangeNotifier {
   }
 
   Future<void> addAccountTransfer(Transaction transaction) async {
-    final String source = transaction.transferSourceId?.trim() ?? '';
-    final String destination = transaction.transferDestinationId?.trim() ?? '';
+    final String source = _normalizeAccountId(transaction.transferSourceId);
+    final String destination = _normalizeAccountId(
+      transaction.transferDestinationId,
+    );
     if (source.isEmpty || destination.isEmpty || source == destination) {
       throw StateError('Choose different source and destination accounts.');
     }
@@ -3920,11 +4137,65 @@ class AppStateController extends ChangeNotifier {
 
   Future<void> addTransactions(List<Transaction> transactions) async {
     if (transactions.isEmpty) return;
+    List<CreditCard> nextCards = _state.creditCards;
+    for (final Transaction transaction in transactions) {
+      nextCards = _applyTransactionCardSideEffects(nextCards, transaction);
+    }
     await updateState(
       _state.copyWith(
         transactions: <Transaction>[..._state.transactions, ...transactions],
+        creditCards: nextCards,
       ),
     );
+  }
+
+  bool _hasLinkedCapture(String transactionId) {
+    return _state.pendingTransactions.any(
+      (PendingTransaction pending) =>
+          pending.linkedTransactionId?.trim() == transactionId,
+    );
+  }
+
+  List<PendingTransaction> _syncCaptureFromActivityTransaction(
+    List<PendingTransaction> pendingTransactions,
+    Transaction transaction,
+  ) {
+    final String? sourceId =
+        transaction.displaySourceId ?? transaction.paymentSourceId;
+    return pendingTransactions
+        .map((PendingTransaction pending) {
+          if (pending.linkedTransactionId?.trim() != transaction.id) {
+            return pending;
+          }
+          return pending.copyWith(
+            suggestedType: transaction.type,
+            suggestedAmount: transaction.amount,
+            suggestedCurrency: transaction.currency,
+            suggestedDescription: transaction.description,
+            suggestedCategory: transaction.category,
+            suggestedPaymentSourceId: sourceId,
+            clearSuggestedPaymentSourceId: sourceId == null,
+          );
+        })
+        .toList(growable: false);
+  }
+
+  List<PendingTransaction> _markCaptureDeletedFromActivity(
+    List<PendingTransaction> pendingTransactions,
+    String transactionId,
+  ) {
+    return pendingTransactions
+        .map((PendingTransaction pending) {
+          if (pending.linkedTransactionId?.trim() != transactionId) {
+            return pending;
+          }
+          return pending.copyWith(
+            status: CaptureStatus.ignored,
+            reviewedAt: DateTime.now().toUtc().toIso8601String(),
+            ignoreReason: 'Deleted from Activity',
+          );
+        })
+        .toList(growable: false);
   }
 
   Future<void> updateTransaction(Transaction transaction) async {
@@ -3938,7 +4209,8 @@ class AppStateController extends ChangeNotifier {
         : _state.creditCards;
 
     if (transaction.type == 'expense' && transaction.paymentSourceId == null) {
-      final double originalAmount = (originalTx != null &&
+      final double originalAmount =
+          (originalTx != null &&
               originalTx.type == 'expense' &&
               originalTx.paymentSourceId == null &&
               originalTx.currency.trim().toUpperCase() ==
@@ -3976,8 +4248,14 @@ class AppStateController extends ChangeNotifier {
     final List<Transaction> next = _state.transactions
         .map((Transaction tx) => tx.id == transaction.id ? transaction : tx)
         .toList(growable: false);
+    final List<PendingTransaction> nextPending =
+        _syncCaptureFromActivityTransaction(
+          _state.pendingTransactions,
+          transaction,
+        );
     if (_useSqliteLocalStore &&
         localTransactionsRepository != null &&
+        !_hasLinkedCapture(transaction.id) &&
         originalTx?.paymentSourceId == null &&
         transaction.paymentSourceId == null &&
         originalTx?.creditCardPaymentId == null &&
@@ -3986,7 +4264,10 @@ class AppStateController extends ChangeNotifier {
         transaction.type != 'transfer') {
       await _saveTransactionViaLocalRepository(
         transaction,
-        fallbackState: _state.copyWith(transactions: next),
+        fallbackState: _state.copyWith(
+          transactions: next,
+          pendingTransactions: nextPending,
+        ),
       );
       return;
     }
@@ -3996,7 +4277,11 @@ class AppStateController extends ChangeNotifier {
       transaction,
     );
     await updateState(
-      _state.copyWith(transactions: next, creditCards: nextCards),
+      _state.copyWith(
+        transactions: next,
+        pendingTransactions: nextPending,
+        creditCards: nextCards,
+      ),
     );
   }
 
@@ -4013,9 +4298,15 @@ class AppStateController extends ChangeNotifier {
     }
     if (target == null) return;
     final Transaction txTarget = target;
+    final List<PendingTransaction> nextPending =
+        _markCaptureDeletedFromActivity(
+          _state.pendingTransactions,
+          txTarget.id,
+        );
 
     if (_useSqliteLocalStore &&
         localTransactionsRepository != null &&
+        !_hasLinkedCapture(txTarget.id) &&
         _canUseRepositoryDeleteForTransaction(txTarget)) {
       await _deleteTransactionViaLocalRepository(
         txTarget,
@@ -4023,6 +4314,7 @@ class AppStateController extends ChangeNotifier {
           transactions: _state.transactions
               .where((Transaction tx) => tx.id != transactionId)
               .toList(growable: false),
+          pendingTransactions: nextPending,
         ),
       );
       return;
@@ -4095,13 +4387,16 @@ class AppStateController extends ChangeNotifier {
         })
         .toList(growable: false);
 
-    final List<CreditCard> nextCreditCards =
-        _reverseTransactionCardSideEffects(_state.creditCards, txTarget);
+    final List<CreditCard> nextCreditCards = _reverseTransactionCardSideEffects(
+      _state.creditCards,
+      txTarget,
+    );
 
     await updateState(
       _state.copyWith(
         savings: nextSavings,
         transactions: nextTransactions,
+        pendingTransactions: nextPending,
         creditCards: nextCreditCards,
       ),
     );
@@ -4219,6 +4514,16 @@ class AppStateController extends ChangeNotifier {
     throw StateError('Credit card parent relationship is circular.');
   }
 
+  String _normalizeAccountId(String? accountId) {
+    final String normalized = (accountId ?? '').trim();
+    return normalized.toLowerCase() == 'cash' ? 'cash' : normalized;
+  }
+
+  bool _isCreditCardAccount(String? accountId) {
+    final String normalized = _normalizeAccountId(accountId);
+    return normalized.isNotEmpty && normalized != 'cash';
+  }
+
   CreditCard _normalizeCreditCard(CreditCard card) {
     final String? parentId = card.parentCardId?.trim();
     if (parentId == null || parentId.isEmpty) {
@@ -4280,14 +4585,20 @@ class AppStateController extends ChangeNotifier {
     final List<CreditCard> adjusted = cards
         .map((CreditCard card) {
           if (card.id != ownerId) return card;
-          final double convertedAmount = sourceCurrency == card.currency.trim().toUpperCase()
+          final double convertedAmount =
+              sourceCurrency == card.currency.trim().toUpperCase()
               ? amount
               : ZakatEngineService.convertFromEgp(
-                  ZakatEngineService.convertToEgp(amount, sourceCurrency, market),
+                  ZakatEngineService.convertToEgp(
+                    amount,
+                    sourceCurrency,
+                    market,
+                  ),
                   card.currency,
                   market,
                 );
-          final double cardAmount = (convertedAmount.isFinite && !convertedAmount.isNaN)
+          final double cardAmount =
+              (convertedAmount.isFinite && !convertedAmount.isNaN)
               ? convertedAmount
               : amount;
           final double nextBalance =
@@ -4301,6 +4612,113 @@ class AppStateController extends ChangeNotifier {
         })
         .toList(growable: false);
     return _inheritParentValues(adjusted);
+  }
+
+  List<CreditCard> _rebuildCreditCardBalances({
+    required List<CreditCard> cards,
+    required List<Transaction> transactions,
+    required Map<String, dynamic> marketData,
+  }) {
+    if (cards.isEmpty) return cards;
+    final Map<String, CreditCard> byId = <String, CreditCard>{
+      for (final CreditCard card in cards) card.id: card,
+    };
+
+    String ownerId(String id) {
+      String current = id.trim();
+      final Set<String> visited = <String>{};
+      while (visited.add(current)) {
+        final String? parent = byId[current]?.parentCardId?.trim();
+        if (parent == null || parent.isEmpty || !byId.containsKey(parent)) {
+          return current;
+        }
+        current = parent;
+      }
+      return id.trim();
+    }
+
+    double convert(double amount, String from, String to) {
+      final String source = from.trim().toUpperCase();
+      final String target = to.trim().toUpperCase();
+      if (source == target) return amount;
+      final MarketData market = MarketData.fromJson(marketData);
+      return ZakatEngineService.convertFromEgp(
+        ZakatEngineService.convertToEgp(amount, source, market),
+        target,
+        market,
+      );
+    }
+
+    final Map<String, double> netByOwner = <String, double>{};
+    void addEffect(
+      String? cardId,
+      double amount,
+      String currency,
+      double sign,
+    ) {
+      final String id = (cardId ?? '').trim();
+      if (id.isEmpty || id.toLowerCase() == 'cash' || amount == 0) return;
+      final String owner = ownerId(id);
+      final CreditCard? card = byId[owner];
+      if (card == null) return;
+      final double converted = convert(amount, currency, card.currency);
+      if (converted.isFinite && !converted.isNaN) {
+        netByOwner[owner] = (netByOwner[owner] ?? 0) + converted * sign;
+      }
+    }
+
+    for (final Transaction tx in transactions) {
+      if (tx.paymentSourceId != null) {
+        addEffect(
+          tx.paymentSourceId,
+          tx.amount,
+          tx.currency,
+          tx.type == 'income' ? -1 : 1,
+        );
+      }
+      addEffect(tx.creditCardPaymentId, tx.amount, tx.currency, -1);
+      if (tx.type == 'transfer' || tx.activityType == 'transfer') {
+        addEffect(tx.transferSourceId, tx.amount, tx.currency, 1);
+        addEffect(tx.transferDestinationId, tx.amount, tx.currency, -1);
+      }
+    }
+
+    final Map<String, double> baselineByOwner = <String, double>{};
+    for (final CreditCard card in cards) {
+      if (ownerId(card.id) != card.id) continue;
+      // Older cards only stored the live balance. Infer their baseline once
+      // from the existing ledger, then persist it for future recalculations.
+      final double baseline =
+          card.initialBalance ??
+          (card.openingBalance - (netByOwner[card.id] ?? 0));
+      baselineByOwner[card.id] = baseline.clamp(0, double.infinity).toDouble();
+    }
+
+    return cards
+        .map((CreditCard card) {
+          final String owner = ownerId(card.id);
+          final CreditCard root = byId[owner] ?? card;
+          final double baseline =
+              baselineByOwner[owner] ??
+              (root.initialBalance ?? root.openingBalance);
+          final double current = (baseline + (netByOwner[owner] ?? 0))
+              .clamp(0, double.infinity)
+              .toDouble();
+          return card.copyWith(
+            openingBalance: current,
+            initialBalance: baseline,
+            creditLimit: card.parentCardId == null
+                ? card.creditLimit
+                : root.creditLimit,
+            currency: card.parentCardId == null ? card.currency : root.currency,
+            updatedAt:
+                card.openingBalance == current &&
+                    card.initialBalance == baseline
+                ? card.updatedAt
+                : DateTime.now().toUtc().toIso8601String(),
+          );
+        })
+        .toList(growable: false);
   }
 
   List<CreditCard> _applyTransactionCardSideEffects(
@@ -4329,7 +4747,7 @@ class AppStateController extends ChangeNotifier {
       );
     }
     if (tx.type == 'transfer' || tx.activityType == 'transfer') {
-      if (tx.transferSourceId != null && tx.transferSourceId != 'cash') {
+      if (_isCreditCardAccount(tx.transferSourceId)) {
         result = _adjustCreditCardBalance(
           cards: result,
           sourceId: tx.transferSourceId,
@@ -4338,8 +4756,7 @@ class AppStateController extends ChangeNotifier {
           multiplier: 1,
         );
       }
-      if (tx.transferDestinationId != null &&
-          tx.transferDestinationId != 'cash') {
+      if (_isCreditCardAccount(tx.transferDestinationId)) {
         result = _adjustCreditCardBalance(
           cards: result,
           sourceId: tx.transferDestinationId,
@@ -4378,7 +4795,7 @@ class AppStateController extends ChangeNotifier {
       );
     }
     if (tx.type == 'transfer' || tx.activityType == 'transfer') {
-      if (tx.transferSourceId != null && tx.transferSourceId != 'cash') {
+      if (_isCreditCardAccount(tx.transferSourceId)) {
         result = _adjustCreditCardBalance(
           cards: result,
           sourceId: tx.transferSourceId,
@@ -4387,8 +4804,7 @@ class AppStateController extends ChangeNotifier {
           multiplier: -1,
         );
       }
-      if (tx.transferDestinationId != null &&
-          tx.transferDestinationId != 'cash') {
+      if (_isCreditCardAccount(tx.transferDestinationId)) {
         result = _adjustCreditCardBalance(
           cards: result,
           sourceId: tx.transferDestinationId,
@@ -4430,6 +4846,11 @@ class AppStateController extends ChangeNotifier {
       final ReconciliationResult reconciled = reconciliationService
           .reconcileExpensesWithSavings(reconciledInput);
       _state = reconciled.state.copyWith(
+        creditCards: _rebuildCreditCardBalances(
+          cards: reconciled.state.creditCards,
+          transactions: reconciled.state.transactions,
+          marketData: reconciled.state.marketData,
+        ),
         lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
       );
       await _finalizeLocalWrite(
@@ -4504,6 +4925,11 @@ class AppStateController extends ChangeNotifier {
       final ReconciliationResult reconciled = reconciliationService
           .reconcileExpensesWithSavings(reconciledInput);
       _state = reconciled.state.copyWith(
+        creditCards: _rebuildCreditCardBalances(
+          cards: reconciled.state.creditCards,
+          transactions: reconciled.state.transactions,
+          marketData: reconciled.state.marketData,
+        ),
         lastModifiedAt: DateTime.now().toUtc().toIso8601String(),
       );
       await _finalizeLocalWrite(
@@ -5346,18 +5772,31 @@ class AppStateController extends ChangeNotifier {
       throw StateError('Credit card already exists.');
     }
     await updateState(
-      _state.copyWith(creditCards: <CreditCard>[..._state.creditCards, card]),
+      _state.copyWith(
+        creditCards: <CreditCard>[
+          ..._state.creditCards,
+          card.copyWith(initialBalance: card.openingBalance),
+        ],
+      ),
       creditCardsOnly: true,
     );
   }
 
   Future<void> updateCreditCard(CreditCard card) async {
-    final CreditCard normalized = _normalizeCreditCard(card);
+    final CreditCard normalized = _normalizeCreditCard(
+      card.copyWith(clearInitialBalance: true),
+    );
     final List<CreditCard> next = _state.creditCards
         .map((CreditCard item) => item.id == normalized.id ? normalized : item)
         .toList(growable: false);
     await updateState(
-      _state.copyWith(creditCards: _inheritParentValues(next)),
+      _state.copyWith(
+        creditCards: _rebuildCreditCardBalances(
+          cards: _inheritParentValues(next),
+          transactions: _state.transactions,
+          marketData: _state.marketData,
+        ),
+      ),
       creditCardsOnly: true,
     );
   }
@@ -6237,6 +6676,9 @@ class AppStateController extends ChangeNotifier {
     AppStateModel nextState = _state;
 
     if (linkedId != null && linkedId.isNotEmpty) {
+      final Transaction? linkedTransaction = nextState.transactions
+          .where((t) => t.id == linkedId)
+          .firstOrNull;
       final List<Transaction> nextTx = nextState.transactions
           .where((t) => t.id != linkedId)
           .toList();
@@ -6251,6 +6693,16 @@ class AppStateController extends ChangeNotifier {
         savings: nextSav,
         investments: nextInv,
       );
+      // Undoing an approved capture is also a ledger deletion. Reverse any
+      // card-side effects before removing the capture link.
+      if (linkedTransaction != null) {
+        nextState = nextState.copyWith(
+          creditCards: _reverseTransactionCardSideEffects(
+            nextState.creditCards,
+            linkedTransaction,
+          ),
+        );
+      }
     }
 
     final List<PendingTransaction> updatedPending = nextState
@@ -6365,8 +6817,12 @@ class AppStateController extends ChangeNotifier {
             exchangePairId: t.exchangePairId,
             exchangeSourceIncomeId: t.exchangeSourceIncomeId,
             remainingAmount: t.remainingAmount,
-            paymentSourceId:
-                (type == 'expense' || type == 'income') ? paymentSourceId : null,
+            displaySourceId: (type == 'expense' || type == 'income')
+                ? paymentSourceId
+                : t.displaySourceId,
+            paymentSourceId: (type == 'expense' || type == 'income')
+                ? paymentSourceId
+                : null,
             creditCardPaymentId: t.creditCardPaymentId,
             activityType: type == 'transfer' ? 'transfer' : t.activityType,
             costBasis: t.costBasis,
@@ -6381,7 +6837,10 @@ class AppStateController extends ChangeNotifier {
       final Transaction updatedTx = nextTx.firstWhere((t) => t.id == linkedId);
 
       List<CreditCard> nextCards = originalTx != null
-          ? _reverseTransactionCardSideEffects(nextState.creditCards, originalTx)
+          ? _reverseTransactionCardSideEffects(
+              nextState.creditCards,
+              originalTx,
+            )
           : nextState.creditCards;
       nextCards = _applyTransactionCardSideEffects(nextCards, updatedTx);
       nextState = nextState.copyWith(creditCards: nextCards);
@@ -6601,8 +7060,12 @@ class AppStateController extends ChangeNotifier {
         description: description,
         createdAt: timestampStr,
         rolledOver: false,
-        paymentSourceId:
-            (type == 'expense' || type == 'income') ? paymentSourceId : null,
+        displaySourceId: (type == 'expense' || type == 'income')
+            ? paymentSourceId
+            : null,
+        paymentSourceId: (type == 'expense' || type == 'income')
+            ? paymentSourceId
+            : null,
         activityType: type == 'transfer' ? 'transfer' : null,
       );
       final List<CreditCard> nextCards = _applyTransactionCardSideEffects(
@@ -6871,9 +7334,7 @@ class AppStateController extends ChangeNotifier {
     if (digits.length >= 4) {
       final String last4 = digits.substring(digits.length - 4);
       final List<CreditCard> matches = activeCards
-          .where(
-            (CreditCard card) => card.last4Digits.trim() == last4,
-          )
+          .where((CreditCard card) => card.last4Digits.trim() == last4)
           .toList(growable: false);
       if (matches.length == 1) return matches.single.id;
       // If ambiguous (multiple active cards share the last 4 digits), do not auto-select
@@ -6930,6 +7391,46 @@ class AppStateController extends ChangeNotifier {
         .where((t) => !ids.contains(t.id))
         .toList();
     await updateState(_state.copyWith(pendingTransactions: next));
+  }
+
+  /// Permanently deletes an approved capture and its linked ledger record.
+  /// Card-side effects are reversed before the transaction is removed.
+  Future<void> deleteApprovedPendingTransaction(String pendingId) async {
+    final PendingTransaction? pending = _state.pendingTransactions
+        .where((PendingTransaction item) => item.id == pendingId)
+        .firstOrNull;
+    if (pending == null) {
+      throw ArgumentError('Pending transaction with ID $pendingId not found.');
+    }
+
+    AppStateModel nextState = _state;
+    final String? linkedId = pending.linkedTransactionId;
+    if (linkedId != null && linkedId.isNotEmpty) {
+      final Transaction? linked = nextState.transactions
+          .where((Transaction item) => item.id == linkedId)
+          .firstOrNull;
+      nextState = nextState.copyWith(
+        transactions: nextState.transactions
+            .where((Transaction item) => item.id != linkedId)
+            .toList(),
+        savings: nextState.savings
+            .where((Saving item) => item.id != linkedId)
+            .toList(),
+        investments: nextState.investments
+            .where((InvestmentAsset item) => item.id != linkedId)
+            .toList(),
+        creditCards: linked == null
+            ? nextState.creditCards
+            : _reverseTransactionCardSideEffects(nextState.creditCards, linked),
+      );
+    }
+
+    nextState = nextState.copyWith(
+      pendingTransactions: nextState.pendingTransactions
+          .where((PendingTransaction item) => item.id != pendingId)
+          .toList(),
+    );
+    await updateState(nextState);
   }
 
   Future<void> restorePendingTransactionsBulk(List<String> ids) async {
@@ -7339,8 +7840,8 @@ class AppStateController extends ChangeNotifier {
     final String merchantKey = normMerchant.toLowerCase();
     final String? suggestedPaymentSourceId =
         (parsed.type == 'expense' || parsed.type == 'income')
-            ? _resolveCreditCardIdFromMessage(normalizedMessage)
-            : null;
+        ? _resolveCreditCardIdFromMessage(normalizedMessage)
+        : null;
 
     CaptureAnalytics nextAnalytics = _state.captureAnalytics.copyWith(
       parsedMessages: _state.captureAnalytics.parsedMessages + 1,
@@ -7564,8 +8065,8 @@ class AppStateController extends ChangeNotifier {
 
       final String? paymentSourceId =
           (finalType == 'expense' || finalType == 'income')
-              ? suggestedPaymentSourceId
-              : null;
+          ? suggestedPaymentSourceId
+          : null;
       if (paymentSourceId == null && finalType == 'expense') {
         _ensureExpenseHasAvailableBalance(
           transactionId: generatedId,
@@ -7590,6 +8091,7 @@ class AppStateController extends ChangeNotifier {
         description: parsed.description,
         createdAt: timestampStr,
         rolledOver: false,
+        displaySourceId: paymentSourceId,
         paymentSourceId: paymentSourceId,
       );
 
@@ -7626,8 +8128,10 @@ class AppStateController extends ChangeNotifier {
         transaction,
       ];
 
-      final List<CreditCard> nextCards =
-          _applyTransactionCardSideEffects(nextState.creditCards, newTx);
+      final List<CreditCard> nextCards = _applyTransactionCardSideEffects(
+        nextState.creditCards,
+        newTx,
+      );
 
       await updateState(
         nextState.copyWith(
@@ -8381,11 +8885,11 @@ class AppStateController extends ChangeNotifier {
       app: DebugDiagnosticsAppInfo(
         version: const String.fromEnvironment(
           'APP_VERSION',
-          defaultValue: '1.5.0',
+          defaultValue: '1.5.1',
         ),
         buildNumber: const String.fromEnvironment(
           'APP_BUILD_NUMBER',
-          defaultValue: '36',
+          defaultValue: '38',
         ),
         platform: kIsWeb ? 'web' : defaultTargetPlatform.name,
         device: kIsWeb ? 'web' : defaultTargetPlatform.name,

@@ -80,6 +80,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   String? _category;
   String _deductFrom = 'cash';
   String _transferTo = 'cash';
+  bool _displayOnlySource = false;
   late DateTime _selectedDate;
   bool _saving = false;
   bool _scanningReceipt = false;
@@ -101,7 +102,13 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
         tx?.currency ??
         (defaultEntryCurrency.trim().isEmpty ? 'EGP' : defaultEntryCurrency);
     _category = tx?.category;
-    _deductFrom = tx?.transferSourceId ?? tx?.paymentSourceId ?? 'cash';
+    _displayOnlySource =
+        tx?.displaySourceId != null && tx?.paymentSourceId == null;
+    _deductFrom =
+        tx?.transferSourceId ??
+        tx?.displaySourceId ??
+        tx?.paymentSourceId ??
+        'cash';
     _transferTo = tx?.transferDestinationId ?? 'cash';
     _selectedDate = _tryParseDate(tx?.date) ?? DateTime.now();
     if (tx != null) {
@@ -142,6 +149,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
           (CreditCard card) =>
               card.isArchived &&
               (card.id == widget.initialTransaction?.paymentSourceId ||
+                  card.id == widget.initialTransaction?.displaySourceId ||
                   card.id == widget.initialTransaction?.transferSourceId ||
                   card.id == widget.initialTransaction?.transferDestinationId),
         ),
@@ -307,12 +315,16 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                         final String name = card.cardNickname.trim().isEmpty
                             ? card.bankName
                             : '${card.bankName} - ${card.cardNickname}';
-                        final String archivedSuffix =
-                            card.isArchived ? ' (Archived)' : '';
+                        final String archivedSuffix = card.isArchived
+                            ? ' (Archived)'
+                            : '';
                         return '$name **** ${card.last4Digits}$archivedSuffix';
                       },
                       onChanged: (String value) {
-                        setState(() => _deductFrom = value);
+                        setState(() {
+                          _deductFrom = value;
+                          _displayOnlySource = false;
+                        });
                       },
                     ),
                   ],
@@ -326,7 +338,10 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                       itemLabel: (String source) =>
                           _accountLabel(source, creditCards, context),
                       onChanged: (String value) {
-                        setState(() => _deductFrom = value);
+                        setState(() {
+                          _deductFrom = value;
+                          _displayOnlySource = false;
+                        });
                       },
                     ),
                     const SizedBox(height: 16),
@@ -446,9 +461,17 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                                 remainingAmount: original?.remainingAmount,
                                 paymentSourceId:
                                     (_type == 'expense' || _type == 'income') &&
-                                            _deductFrom != 'cash'
-                                        ? _deductFrom
-                                        : null,
+                                        _deductFrom != 'cash' &&
+                                        !_displayOnlySource
+                                    ? _deductFrom
+                                    : null,
+                                displaySourceId: _displayOnlySource
+                                    ? original?.displaySourceId
+                                    : ((_type == 'expense' ||
+                                                  _type == 'income') &&
+                                              _deductFrom != 'cash'
+                                          ? _deductFrom
+                                          : null),
                                 creditCardPaymentId: _type == 'expense'
                                     ? original?.creditCardPaymentId
                                     : null,

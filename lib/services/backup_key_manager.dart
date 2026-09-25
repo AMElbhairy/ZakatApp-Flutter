@@ -37,7 +37,7 @@ class BackupKeyManager {
         _encryptionService = encryptionService ?? SyncEncryptionService(),
         _nowProvider = nowProvider ?? DateTime.now,
         _appVersion = appVersion ??
-            const String.fromEnvironment('APP_VERSION', defaultValue: '1.5.0');
+            const String.fromEnvironment('APP_VERSION', defaultValue: '1.5.1');
 
   static const int currentVersion = 1;
   static const String _wrappingContext = 'zakatapp_backup_key_recovery_v1';

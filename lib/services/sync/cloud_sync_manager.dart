@@ -46,7 +46,7 @@ class CloudSyncManager {
     String? appVersion,
   }) : appVersion =
            appVersion ??
-           const String.fromEnvironment('APP_VERSION', defaultValue: '1.5.0');
+           const String.fromEnvironment('APP_VERSION', defaultValue: '1.5.1');
 
   /// Configures the sync encryption passphrase.
   void setPassphrase(String passphrase) {
@@ -174,7 +174,9 @@ class CloudSyncManager {
     } catch (e) {
       return CloudSyncResult(
         status: CloudSyncStatus.error,
-        message: 'Cloud backup could not be restored.',
+        message: e is BackupCorruptedException
+            ? e.message
+            : 'Cloud backup could not be restored.',
       );
     }
   }

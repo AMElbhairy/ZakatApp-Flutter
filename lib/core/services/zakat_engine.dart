@@ -3,6 +3,7 @@ import 'dart:io' show Platform;
 import 'package:intl/intl.dart';
 
 import '../utils/amount_parser.dart';
+import '../../models/credit_card.dart';
 import '../../models/investment_asset.dart';
 import '../../models/saving.dart';
 import '../../models/transaction.dart';
@@ -210,17 +211,22 @@ class ZakatEngineService {
     bool isArabic = false,
     bool compact = false,
     bool showSign = false,
+    bool trimZeroCents = false,
+    int maxFractionDigits = 2,
   }) {
     final String symbol = getCurrencySymbol(currencyCode, isArabic: isArabic);
     final double absAmount = amount.abs();
     final String formattedNumber;
     if (compact) {
-      final NumberFormat compactFormatter = NumberFormat.compact(
-        locale: 'en_US',
+      formattedNumber = formatCompactNumber(
+        absAmount,
+        maxFractionDigits: maxFractionDigits,
       );
-      formattedNumber = absAmount >= 10000
-          ? compactFormatter.format(absAmount)
-          : NumberFormat('#,##0.##', 'en_US').format(absAmount);
+    } else if (trimZeroCents) {
+      final double cents = (absAmount * 100).roundToDouble() % 100;
+      formattedNumber = cents == 0
+          ? NumberFormat('#,##0', 'en_US').format(absAmount)
+          : NumberFormat('#,##0.00', 'en_US').format(absAmount);
     } else {
       formattedNumber = NumberFormat('#,##0.00', 'en_US').format(absAmount);
     }
@@ -232,6 +238,49 @@ class ZakatEngineService {
       return '\u200E$symbol +$formattedNumber';
     }
     return '\u200E$symbol $formattedNumber';
+  }
+
+  static String formatCompactNumber(
+    double absAmount, {
+    int maxFractionDigits = 2,
+  }) {
+    if (absAmount < 10000) {
+      return NumberFormat('#,##0.##', 'en_US').format(absAmount);
+    }
+    double scaled;
+    String suffix;
+    if (absAmount >= 999999999995) {
+      scaled = absAmount / 1e12;
+      suffix = 'T';
+    } else if (absAmount >= 999999995) {
+      scaled = absAmount / 1e9;
+      suffix = 'B';
+    } else if (absAmount >= 999995) {
+      scaled = absAmount / 1e6;
+      suffix = 'M';
+    } else if (absAmount >= 1e3) {
+      scaled = absAmount / 1e3;
+      suffix = 'K';
+    } else {
+      scaled = absAmount;
+      suffix = '';
+    }
+
+    final String pattern = maxFractionDigits == 1 ? '#,##0.#' : '#,##0.##';
+    String formatted = NumberFormat(pattern, 'en_US').format(scaled);
+    if (formatted == '1,000' || formatted == '1000') {
+      if (suffix == 'K') {
+        formatted = '1';
+        suffix = 'M';
+      } else if (suffix == 'M') {
+        formatted = '1';
+        suffix = 'B';
+      } else if (suffix == 'B') {
+        formatted = '1';
+        suffix = 'T';
+      }
+    }
+    return '$formatted$suffix';
   }
 
   static const List<String> supportedCurrencies = <String>[
@@ -1000,11 +1049,33 @@ class ZakatEngineService {
     });
   }
 
+  static double calculateTotalCreditCardBalancesEgp({
+    required List<CreditCard> creditCards,
+    required MarketData marketData,
+  }) {
+    return creditCards
+        .where(
+          (CreditCard card) =>
+              !card.isArchived && card.parentCardId == null,
+        )
+        .fold<double>(
+          0,
+          (double sum, CreditCard card) =>
+              sum +
+              convertToEgp(
+                card.openingBalance,
+                card.currency,
+                marketData,
+              ),
+        );
+  }
+
   static double calculateTotalLiabilitiesEgp({
     required List<Transaction> transactions,
     required List<Saving> savings,
     required List<InvestmentAsset> investments,
     required MarketData marketData,
+    List<CreditCard> creditCards = const <CreditCard>[],
     String? lastRollover,
   }) {
     final double investmentDebt = calculateTotalInvestmentLoanBalancesEgp(
@@ -1031,7 +1102,11 @@ class ZakatEngineService {
           );
           return sum + (converted ?? 0);
         });
-    return investmentDebt + walletOverdraft;
+    final double creditCardDebt = calculateTotalCreditCardBalancesEgp(
+      creditCards: creditCards,
+      marketData: marketData,
+    );
+    return investmentDebt + walletOverdraft + creditCardDebt;
   }
 
   static double calculateTotalAssetsEgp({
@@ -1055,6 +1130,7 @@ class ZakatEngineService {
     required List<Saving> savings,
     required List<InvestmentAsset> investments,
     required MarketData marketData,
+    List<CreditCard> creditCards = const <CreditCard>[],
     String? lastRollover,
   }) {
     return calculateTotalAssetsEgp(
@@ -1069,6 +1145,7 @@ class ZakatEngineService {
           savings: savings,
           investments: investments,
           marketData: marketData,
+          creditCards: creditCards,
           lastRollover: lastRollover,
         );
   }
@@ -1079,6 +1156,7 @@ class ZakatEngineService {
     required List<Saving> savings,
     required List<InvestmentAsset> investments,
     required MarketData marketData,
+    List<CreditCard> creditCards = const <CreditCard>[],
     String? lastRollover,
   }) {
     final DateTime asOfDate = _dateOnlyDateTime(asOf);
@@ -1098,6 +1176,13 @@ class ZakatEngineService {
           final DateTime? valuationDate = _tryDate(asset.valuationDate);
           return valuationDate != null &&
               valuationDate.compareTo(asOfDate) <= 0;
+        })
+        .toList(growable: false);
+    final List<CreditCard> creditCardsAtDate = creditCards
+        .where((CreditCard card) {
+          if (card.createdAt.isEmpty) return true;
+          final DateTime? createdDate = _tryDate(card.createdAt);
+          return createdDate == null || createdDate.compareTo(asOfDate) <= 0;
         })
         .toList(growable: false);
 
@@ -1125,8 +1210,12 @@ class ZakatEngineService {
           );
           return sum + (converted ?? 0);
         });
+    final double creditCardDebt = calculateTotalCreditCardBalancesEgp(
+      creditCards: creditCardsAtDate,
+      marketData: ratesAtDate,
+    );
 
-    return investmentDebt + walletOverdraft;
+    return investmentDebt + walletOverdraft + creditCardDebt;
   }
 
   static double calculateNetWorthEgpAt({
@@ -1135,6 +1224,7 @@ class ZakatEngineService {
     required List<Saving> savings,
     required List<InvestmentAsset> investments,
     required MarketData marketData,
+    List<CreditCard> creditCards = const <CreditCard>[],
     MarketData? ratesOverride,
     String? lastRollover,
   }) {
@@ -1153,6 +1243,7 @@ class ZakatEngineService {
           savings: savings,
           investments: investments,
           marketData: marketData,
+          creditCards: creditCards,
           lastRollover: lastRollover,
         );
   }

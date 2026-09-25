@@ -172,6 +172,50 @@ class $TransactionsTable extends Transactions
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _paymentSourceIdMeta = const VerificationMeta(
+    'paymentSourceId',
+  );
+  @override
+  late final GeneratedColumn<String> paymentSourceId = GeneratedColumn<String>(
+    'payment_source_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _creditCardPaymentIdMeta =
+      const VerificationMeta('creditCardPaymentId');
+  @override
+  late final GeneratedColumn<String> creditCardPaymentId =
+      GeneratedColumn<String>(
+        'credit_card_payment_id',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _transferSourceIdMeta = const VerificationMeta(
+    'transferSourceId',
+  );
+  @override
+  late final GeneratedColumn<String> transferSourceId = GeneratedColumn<String>(
+    'transfer_source_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _transferDestinationIdMeta =
+      const VerificationMeta('transferDestinationId');
+  @override
+  late final GeneratedColumn<String> transferDestinationId =
+      GeneratedColumn<String>(
+        'transfer_destination_id',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
   static const VerificationMeta _costBasisTextMeta = const VerificationMeta(
     'costBasisText',
   );
@@ -267,6 +311,10 @@ class $TransactionsTable extends Transactions
     exchangeSourceIncomeId,
     remainingAmountText,
     activityType,
+    paymentSourceId,
+    creditCardPaymentId,
+    transferSourceId,
+    transferDestinationId,
     costBasisText,
     saleValueText,
     realizedGainText,
@@ -411,6 +459,42 @@ class $TransactionsTable extends Transactions
         ),
       );
     }
+    if (data.containsKey('payment_source_id')) {
+      context.handle(
+        _paymentSourceIdMeta,
+        paymentSourceId.isAcceptableOrUnknown(
+          data['payment_source_id']!,
+          _paymentSourceIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('credit_card_payment_id')) {
+      context.handle(
+        _creditCardPaymentIdMeta,
+        creditCardPaymentId.isAcceptableOrUnknown(
+          data['credit_card_payment_id']!,
+          _creditCardPaymentIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('transfer_source_id')) {
+      context.handle(
+        _transferSourceIdMeta,
+        transferSourceId.isAcceptableOrUnknown(
+          data['transfer_source_id']!,
+          _transferSourceIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('transfer_destination_id')) {
+      context.handle(
+        _transferDestinationIdMeta,
+        transferDestinationId.isAcceptableOrUnknown(
+          data['transfer_destination_id']!,
+          _transferDestinationIdMeta,
+        ),
+      );
+    }
     if (data.containsKey('cost_basis_text')) {
       context.handle(
         _costBasisTextMeta,
@@ -539,6 +623,22 @@ class $TransactionsTable extends Transactions
         DriftSqlType.string,
         data['${effectivePrefix}activity_type'],
       ),
+      paymentSourceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}payment_source_id'],
+      ),
+      creditCardPaymentId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}credit_card_payment_id'],
+      ),
+      transferSourceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}transfer_source_id'],
+      ),
+      transferDestinationId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}transfer_destination_id'],
+      ),
       costBasisText: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}cost_basis_text'],
@@ -592,6 +692,10 @@ class Transaction extends DataClass implements Insertable<Transaction> {
   final String? exchangeSourceIncomeId;
   final String? remainingAmountText;
   final String? activityType;
+  final String? paymentSourceId;
+  final String? creditCardPaymentId;
+  final String? transferSourceId;
+  final String? transferDestinationId;
   final String? costBasisText;
   final String? saleValueText;
   final String? realizedGainText;
@@ -615,6 +719,10 @@ class Transaction extends DataClass implements Insertable<Transaction> {
     this.exchangeSourceIncomeId,
     this.remainingAmountText,
     this.activityType,
+    this.paymentSourceId,
+    this.creditCardPaymentId,
+    this.transferSourceId,
+    this.transferDestinationId,
     this.costBasisText,
     this.saleValueText,
     this.realizedGainText,
@@ -654,6 +762,18 @@ class Transaction extends DataClass implements Insertable<Transaction> {
     }
     if (!nullToAbsent || activityType != null) {
       map['activity_type'] = Variable<String>(activityType);
+    }
+    if (!nullToAbsent || paymentSourceId != null) {
+      map['payment_source_id'] = Variable<String>(paymentSourceId);
+    }
+    if (!nullToAbsent || creditCardPaymentId != null) {
+      map['credit_card_payment_id'] = Variable<String>(creditCardPaymentId);
+    }
+    if (!nullToAbsent || transferSourceId != null) {
+      map['transfer_source_id'] = Variable<String>(transferSourceId);
+    }
+    if (!nullToAbsent || transferDestinationId != null) {
+      map['transfer_destination_id'] = Variable<String>(transferDestinationId);
     }
     if (!nullToAbsent || costBasisText != null) {
       map['cost_basis_text'] = Variable<String>(costBasisText);
@@ -708,6 +828,18 @@ class Transaction extends DataClass implements Insertable<Transaction> {
       activityType: activityType == null && nullToAbsent
           ? const Value.absent()
           : Value(activityType),
+      paymentSourceId: paymentSourceId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(paymentSourceId),
+      creditCardPaymentId: creditCardPaymentId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(creditCardPaymentId),
+      transferSourceId: transferSourceId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(transferSourceId),
+      transferDestinationId: transferDestinationId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(transferDestinationId),
       costBasisText: costBasisText == null && nullToAbsent
           ? const Value.absent()
           : Value(costBasisText),
@@ -755,6 +887,14 @@ class Transaction extends DataClass implements Insertable<Transaction> {
         json['remainingAmountText'],
       ),
       activityType: serializer.fromJson<String?>(json['activityType']),
+      paymentSourceId: serializer.fromJson<String?>(json['paymentSourceId']),
+      creditCardPaymentId: serializer.fromJson<String?>(
+        json['creditCardPaymentId'],
+      ),
+      transferSourceId: serializer.fromJson<String?>(json['transferSourceId']),
+      transferDestinationId: serializer.fromJson<String?>(
+        json['transferDestinationId'],
+      ),
       costBasisText: serializer.fromJson<String?>(json['costBasisText']),
       saleValueText: serializer.fromJson<String?>(json['saleValueText']),
       realizedGainText: serializer.fromJson<String?>(json['realizedGainText']),
@@ -789,6 +929,12 @@ class Transaction extends DataClass implements Insertable<Transaction> {
       ),
       'remainingAmountText': serializer.toJson<String?>(remainingAmountText),
       'activityType': serializer.toJson<String?>(activityType),
+      'paymentSourceId': serializer.toJson<String?>(paymentSourceId),
+      'creditCardPaymentId': serializer.toJson<String?>(creditCardPaymentId),
+      'transferSourceId': serializer.toJson<String?>(transferSourceId),
+      'transferDestinationId': serializer.toJson<String?>(
+        transferDestinationId,
+      ),
       'costBasisText': serializer.toJson<String?>(costBasisText),
       'saleValueText': serializer.toJson<String?>(saleValueText),
       'realizedGainText': serializer.toJson<String?>(realizedGainText),
@@ -817,6 +963,10 @@ class Transaction extends DataClass implements Insertable<Transaction> {
     Value<String?> exchangeSourceIncomeId = const Value.absent(),
     Value<String?> remainingAmountText = const Value.absent(),
     Value<String?> activityType = const Value.absent(),
+    Value<String?> paymentSourceId = const Value.absent(),
+    Value<String?> creditCardPaymentId = const Value.absent(),
+    Value<String?> transferSourceId = const Value.absent(),
+    Value<String?> transferDestinationId = const Value.absent(),
     Value<String?> costBasisText = const Value.absent(),
     Value<String?> saleValueText = const Value.absent(),
     Value<String?> realizedGainText = const Value.absent(),
@@ -850,6 +1000,18 @@ class Transaction extends DataClass implements Insertable<Transaction> {
         ? remainingAmountText.value
         : this.remainingAmountText,
     activityType: activityType.present ? activityType.value : this.activityType,
+    paymentSourceId: paymentSourceId.present
+        ? paymentSourceId.value
+        : this.paymentSourceId,
+    creditCardPaymentId: creditCardPaymentId.present
+        ? creditCardPaymentId.value
+        : this.creditCardPaymentId,
+    transferSourceId: transferSourceId.present
+        ? transferSourceId.value
+        : this.transferSourceId,
+    transferDestinationId: transferDestinationId.present
+        ? transferDestinationId.value
+        : this.transferDestinationId,
     costBasisText: costBasisText.present
         ? costBasisText.value
         : this.costBasisText,
@@ -903,6 +1065,18 @@ class Transaction extends DataClass implements Insertable<Transaction> {
       activityType: data.activityType.present
           ? data.activityType.value
           : this.activityType,
+      paymentSourceId: data.paymentSourceId.present
+          ? data.paymentSourceId.value
+          : this.paymentSourceId,
+      creditCardPaymentId: data.creditCardPaymentId.present
+          ? data.creditCardPaymentId.value
+          : this.creditCardPaymentId,
+      transferSourceId: data.transferSourceId.present
+          ? data.transferSourceId.value
+          : this.transferSourceId,
+      transferDestinationId: data.transferDestinationId.present
+          ? data.transferDestinationId.value
+          : this.transferDestinationId,
       costBasisText: data.costBasisText.present
           ? data.costBasisText.value
           : this.costBasisText,
@@ -941,6 +1115,10 @@ class Transaction extends DataClass implements Insertable<Transaction> {
           ..write('exchangeSourceIncomeId: $exchangeSourceIncomeId, ')
           ..write('remainingAmountText: $remainingAmountText, ')
           ..write('activityType: $activityType, ')
+          ..write('paymentSourceId: $paymentSourceId, ')
+          ..write('creditCardPaymentId: $creditCardPaymentId, ')
+          ..write('transferSourceId: $transferSourceId, ')
+          ..write('transferDestinationId: $transferDestinationId, ')
           ..write('costBasisText: $costBasisText, ')
           ..write('saleValueText: $saleValueText, ')
           ..write('realizedGainText: $realizedGainText, ')
@@ -969,6 +1147,10 @@ class Transaction extends DataClass implements Insertable<Transaction> {
     exchangeSourceIncomeId,
     remainingAmountText,
     activityType,
+    paymentSourceId,
+    creditCardPaymentId,
+    transferSourceId,
+    transferDestinationId,
     costBasisText,
     saleValueText,
     realizedGainText,
@@ -996,6 +1178,10 @@ class Transaction extends DataClass implements Insertable<Transaction> {
           other.exchangeSourceIncomeId == this.exchangeSourceIncomeId &&
           other.remainingAmountText == this.remainingAmountText &&
           other.activityType == this.activityType &&
+          other.paymentSourceId == this.paymentSourceId &&
+          other.creditCardPaymentId == this.creditCardPaymentId &&
+          other.transferSourceId == this.transferSourceId &&
+          other.transferDestinationId == this.transferDestinationId &&
           other.costBasisText == this.costBasisText &&
           other.saleValueText == this.saleValueText &&
           other.realizedGainText == this.realizedGainText &&
@@ -1021,6 +1207,10 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
   final Value<String?> exchangeSourceIncomeId;
   final Value<String?> remainingAmountText;
   final Value<String?> activityType;
+  final Value<String?> paymentSourceId;
+  final Value<String?> creditCardPaymentId;
+  final Value<String?> transferSourceId;
+  final Value<String?> transferDestinationId;
   final Value<String?> costBasisText;
   final Value<String?> saleValueText;
   final Value<String?> realizedGainText;
@@ -1045,6 +1235,10 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
     this.exchangeSourceIncomeId = const Value.absent(),
     this.remainingAmountText = const Value.absent(),
     this.activityType = const Value.absent(),
+    this.paymentSourceId = const Value.absent(),
+    this.creditCardPaymentId = const Value.absent(),
+    this.transferSourceId = const Value.absent(),
+    this.transferDestinationId = const Value.absent(),
     this.costBasisText = const Value.absent(),
     this.saleValueText = const Value.absent(),
     this.realizedGainText = const Value.absent(),
@@ -1070,6 +1264,10 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
     this.exchangeSourceIncomeId = const Value.absent(),
     this.remainingAmountText = const Value.absent(),
     this.activityType = const Value.absent(),
+    this.paymentSourceId = const Value.absent(),
+    this.creditCardPaymentId = const Value.absent(),
+    this.transferSourceId = const Value.absent(),
+    this.transferDestinationId = const Value.absent(),
     this.costBasisText = const Value.absent(),
     this.saleValueText = const Value.absent(),
     this.realizedGainText = const Value.absent(),
@@ -1103,6 +1301,10 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
     Expression<String>? exchangeSourceIncomeId,
     Expression<String>? remainingAmountText,
     Expression<String>? activityType,
+    Expression<String>? paymentSourceId,
+    Expression<String>? creditCardPaymentId,
+    Expression<String>? transferSourceId,
+    Expression<String>? transferDestinationId,
     Expression<String>? costBasisText,
     Expression<String>? saleValueText,
     Expression<String>? realizedGainText,
@@ -1130,6 +1332,12 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
       if (remainingAmountText != null)
         'remaining_amount_text': remainingAmountText,
       if (activityType != null) 'activity_type': activityType,
+      if (paymentSourceId != null) 'payment_source_id': paymentSourceId,
+      if (creditCardPaymentId != null)
+        'credit_card_payment_id': creditCardPaymentId,
+      if (transferSourceId != null) 'transfer_source_id': transferSourceId,
+      if (transferDestinationId != null)
+        'transfer_destination_id': transferDestinationId,
       if (costBasisText != null) 'cost_basis_text': costBasisText,
       if (saleValueText != null) 'sale_value_text': saleValueText,
       if (realizedGainText != null) 'realized_gain_text': realizedGainText,
@@ -1158,6 +1366,10 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
     Value<String?>? exchangeSourceIncomeId,
     Value<String?>? remainingAmountText,
     Value<String?>? activityType,
+    Value<String?>? paymentSourceId,
+    Value<String?>? creditCardPaymentId,
+    Value<String?>? transferSourceId,
+    Value<String?>? transferDestinationId,
     Value<String?>? costBasisText,
     Value<String?>? saleValueText,
     Value<String?>? realizedGainText,
@@ -1184,6 +1396,11 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
           exchangeSourceIncomeId ?? this.exchangeSourceIncomeId,
       remainingAmountText: remainingAmountText ?? this.remainingAmountText,
       activityType: activityType ?? this.activityType,
+      paymentSourceId: paymentSourceId ?? this.paymentSourceId,
+      creditCardPaymentId: creditCardPaymentId ?? this.creditCardPaymentId,
+      transferSourceId: transferSourceId ?? this.transferSourceId,
+      transferDestinationId:
+          transferDestinationId ?? this.transferDestinationId,
       costBasisText: costBasisText ?? this.costBasisText,
       saleValueText: saleValueText ?? this.saleValueText,
       realizedGainText: realizedGainText ?? this.realizedGainText,
@@ -1248,6 +1465,22 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
     if (activityType.present) {
       map['activity_type'] = Variable<String>(activityType.value);
     }
+    if (paymentSourceId.present) {
+      map['payment_source_id'] = Variable<String>(paymentSourceId.value);
+    }
+    if (creditCardPaymentId.present) {
+      map['credit_card_payment_id'] = Variable<String>(
+        creditCardPaymentId.value,
+      );
+    }
+    if (transferSourceId.present) {
+      map['transfer_source_id'] = Variable<String>(transferSourceId.value);
+    }
+    if (transferDestinationId.present) {
+      map['transfer_destination_id'] = Variable<String>(
+        transferDestinationId.value,
+      );
+    }
     if (costBasisText.present) {
       map['cost_basis_text'] = Variable<String>(costBasisText.value);
     }
@@ -1295,6 +1528,10 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
           ..write('exchangeSourceIncomeId: $exchangeSourceIncomeId, ')
           ..write('remainingAmountText: $remainingAmountText, ')
           ..write('activityType: $activityType, ')
+          ..write('paymentSourceId: $paymentSourceId, ')
+          ..write('creditCardPaymentId: $creditCardPaymentId, ')
+          ..write('transferSourceId: $transferSourceId, ')
+          ..write('transferDestinationId: $transferDestinationId, ')
           ..write('costBasisText: $costBasisText, ')
           ..write('saleValueText: $saleValueText, ')
           ..write('realizedGainText: $realizedGainText, ')
@@ -11734,6 +11971,10 @@ typedef $$TransactionsTableCreateCompanionBuilder =
       Value<String?> exchangeSourceIncomeId,
       Value<String?> remainingAmountText,
       Value<String?> activityType,
+      Value<String?> paymentSourceId,
+      Value<String?> creditCardPaymentId,
+      Value<String?> transferSourceId,
+      Value<String?> transferDestinationId,
       Value<String?> costBasisText,
       Value<String?> saleValueText,
       Value<String?> realizedGainText,
@@ -11760,6 +12001,10 @@ typedef $$TransactionsTableUpdateCompanionBuilder =
       Value<String?> exchangeSourceIncomeId,
       Value<String?> remainingAmountText,
       Value<String?> activityType,
+      Value<String?> paymentSourceId,
+      Value<String?> creditCardPaymentId,
+      Value<String?> transferSourceId,
+      Value<String?> transferDestinationId,
       Value<String?> costBasisText,
       Value<String?> saleValueText,
       Value<String?> realizedGainText,
@@ -11851,6 +12096,26 @@ class $$TransactionsTableFilterComposer
 
   ColumnFilters<String> get activityType => $composableBuilder(
     column: $table.activityType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get paymentSourceId => $composableBuilder(
+    column: $table.paymentSourceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get creditCardPaymentId => $composableBuilder(
+    column: $table.creditCardPaymentId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get transferSourceId => $composableBuilder(
+    column: $table.transferSourceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get transferDestinationId => $composableBuilder(
+    column: $table.transferDestinationId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -11974,6 +12239,26 @@ class $$TransactionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get paymentSourceId => $composableBuilder(
+    column: $table.paymentSourceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get creditCardPaymentId => $composableBuilder(
+    column: $table.creditCardPaymentId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get transferSourceId => $composableBuilder(
+    column: $table.transferSourceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get transferDestinationId => $composableBuilder(
+    column: $table.transferDestinationId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get costBasisText => $composableBuilder(
     column: $table.costBasisText,
     builder: (column) => ColumnOrderings(column),
@@ -12082,6 +12367,26 @@ class $$TransactionsTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get paymentSourceId => $composableBuilder(
+    column: $table.paymentSourceId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get creditCardPaymentId => $composableBuilder(
+    column: $table.creditCardPaymentId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get transferSourceId => $composableBuilder(
+    column: $table.transferSourceId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get transferDestinationId => $composableBuilder(
+    column: $table.transferDestinationId,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<String> get costBasisText => $composableBuilder(
     column: $table.costBasisText,
     builder: (column) => column,
@@ -12160,6 +12465,10 @@ class $$TransactionsTableTableManager
                 Value<String?> exchangeSourceIncomeId = const Value.absent(),
                 Value<String?> remainingAmountText = const Value.absent(),
                 Value<String?> activityType = const Value.absent(),
+                Value<String?> paymentSourceId = const Value.absent(),
+                Value<String?> creditCardPaymentId = const Value.absent(),
+                Value<String?> transferSourceId = const Value.absent(),
+                Value<String?> transferDestinationId = const Value.absent(),
                 Value<String?> costBasisText = const Value.absent(),
                 Value<String?> saleValueText = const Value.absent(),
                 Value<String?> realizedGainText = const Value.absent(),
@@ -12184,6 +12493,10 @@ class $$TransactionsTableTableManager
                 exchangeSourceIncomeId: exchangeSourceIncomeId,
                 remainingAmountText: remainingAmountText,
                 activityType: activityType,
+                paymentSourceId: paymentSourceId,
+                creditCardPaymentId: creditCardPaymentId,
+                transferSourceId: transferSourceId,
+                transferDestinationId: transferDestinationId,
                 costBasisText: costBasisText,
                 saleValueText: saleValueText,
                 realizedGainText: realizedGainText,
@@ -12210,6 +12523,10 @@ class $$TransactionsTableTableManager
                 Value<String?> exchangeSourceIncomeId = const Value.absent(),
                 Value<String?> remainingAmountText = const Value.absent(),
                 Value<String?> activityType = const Value.absent(),
+                Value<String?> paymentSourceId = const Value.absent(),
+                Value<String?> creditCardPaymentId = const Value.absent(),
+                Value<String?> transferSourceId = const Value.absent(),
+                Value<String?> transferDestinationId = const Value.absent(),
                 Value<String?> costBasisText = const Value.absent(),
                 Value<String?> saleValueText = const Value.absent(),
                 Value<String?> realizedGainText = const Value.absent(),
@@ -12234,6 +12551,10 @@ class $$TransactionsTableTableManager
                 exchangeSourceIncomeId: exchangeSourceIncomeId,
                 remainingAmountText: remainingAmountText,
                 activityType: activityType,
+                paymentSourceId: paymentSourceId,
+                creditCardPaymentId: creditCardPaymentId,
+                transferSourceId: transferSourceId,
+                transferDestinationId: transferDestinationId,
                 costBasisText: costBasisText,
                 saleValueText: saleValueText,
                 realizedGainText: realizedGainText,

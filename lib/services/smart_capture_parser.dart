@@ -303,38 +303,38 @@ class SmartCaptureParser {
     final bool isIncome =
         !isAccountDepositMessage &&
         (isIncomingTransfer ||
-        (isRefund ||
-            _hasMatch(text, [
-              'credit transfer',
-              'incoming transfer',
-              'deposit',
-              'salary',
-              'credited',
-              'received',
-              'transfer received',
-              'payment received',
-              'inward transfer',
-              'cashback',
-              'repayment',
-              'تم الإيداع',
-              'تم الايداع',
-              'تم إضافة مبلغ',
-              'تم اضافة مبلغ',
-              'حوالة واردة',
-              'تحويل وارد',
-              'راتب',
-              'تم استلام',
-              'تم تحويل إليك',
-              'تم تحويل اليك',
-              'تم إضافة',
-              'تم اضافة',
-              'added',
-              'ايداع',
-              'إيداع',
-              'إيداع نقدي',
-              'ايداع نقدي',
-              'كاش باك',
-            ])));
+            (isRefund ||
+                _hasMatch(text, [
+                  'credit transfer',
+                  'incoming transfer',
+                  'deposit',
+                  'salary',
+                  'credited',
+                  'received',
+                  'transfer received',
+                  'payment received',
+                  'inward transfer',
+                  'cashback',
+                  'repayment',
+                  'تم الإيداع',
+                  'تم الايداع',
+                  'تم إضافة مبلغ',
+                  'تم اضافة مبلغ',
+                  'حوالة واردة',
+                  'تحويل وارد',
+                  'راتب',
+                  'تم استلام',
+                  'تم تحويل إليك',
+                  'تم تحويل اليك',
+                  'تم إضافة',
+                  'تم اضافة',
+                  'added',
+                  'ايداع',
+                  'إيداع',
+                  'إيداع نقدي',
+                  'ايداع نقدي',
+                  'كاش باك',
+                ])));
 
     final bool isExpense =
         !isInternalTransfer &&
@@ -403,7 +403,10 @@ class SmartCaptureParser {
     );
     // Remove Account numbers e.g. account:1234, رقم الحساب:5000, account 123456
     scrubbed = scrubbed.replaceAll(
-      RegExp(r'(?:account|رقم\s*الحساب|لحسابكم|حسابكم|حساب)(?:\s*رقم)?[\s:\-*]*\d+', caseSensitive: false),
+      RegExp(
+        r'(?:account|رقم\s*الحساب|لحسابكم|حسابكم|حساب)(?:\s*رقم)?[\s:\-*]*\d+',
+        caseSensitive: false,
+      ),
       ' ',
     );
     // Remove Masked identifiers e.g. ****1234, xxxx1234
@@ -823,9 +826,7 @@ class SmartCaptureParser {
       merchantName = null;
     }
 
-    final bool isTransferMessage =
-        type == 'transfer' ||
-        isInternalTransfer;
+    final bool isTransferMessage = type == 'transfer' || isInternalTransfer;
     if (isTransferMessage && !isWalletTopUp) {
       merchantName = null;
     }
@@ -1375,10 +1376,18 @@ class SmartCaptureParser {
           'من حساب',
           'إلى حساب',
         ]);
-    final bool hasTransferKeywords = _hasMatch(
-      rawMessage.toLowerCase(),
-      <String>['transfer', 'remittance', 'bank transfer', 'تحويل', 'حوالة', 'واردة', 'وارد', 'صادرة', 'صادر'],
-    );
+    final bool hasTransferKeywords =
+        _hasMatch(rawMessage.toLowerCase(), <String>[
+          'transfer',
+          'remittance',
+          'bank transfer',
+          'تحويل',
+          'حوالة',
+          'واردة',
+          'وارد',
+          'صادرة',
+          'صادر',
+        ]);
     final bool isInternalTransfer =
         _hasMatch(rawMessage.toLowerCase(), <String>[
           'internal transfer',
@@ -2412,7 +2421,10 @@ class SmartCaptureParser {
   }
 
   static bool _isSubscriptionActivationMessage(String text) {
-    return _hasMatch(text, [
+    // Use word boundaries for English keywords. A legitimate transfer sender
+    // such as "Coastal Contracting Company" must not be rejected merely
+    // because "contract" is a substring of "contracting".
+    const List<String> englishKeywords = <String>[
       'subscribe',
       'subscription',
       'subscribed',
@@ -2424,9 +2436,18 @@ class SmartCaptureParser {
       'package details',
       'bundle price',
       'service number',
-      'econtract',
       'contract',
       'mobily welcome prepaid',
+    ];
+    if (englishKeywords.any(
+      (String keyword) => RegExp(
+        r'(?<![a-z0-9])' + RegExp.escape(keyword) + r'(?![a-z0-9])',
+        caseSensitive: false,
+      ).hasMatch(text),
+    )) {
+      return true;
+    }
+    return _hasMatch(text, [
       'اشتراك',
       'تم تفعيل اشتراكك',
       'تم الاشتراك',

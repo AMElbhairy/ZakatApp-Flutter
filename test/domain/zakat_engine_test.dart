@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zakatapp_flutter/core/services/zakat_engine.dart';
 import 'package:zakatapp_flutter/models/app_state.dart';
+import 'package:zakatapp_flutter/models/credit_card.dart';
 import 'package:zakatapp_flutter/models/investment_asset.dart';
 import 'package:zakatapp_flutter/models/saving.dart';
 import 'package:zakatapp_flutter/models/transaction.dart';
@@ -576,5 +577,84 @@ void main() {
 
     expect(ZakatEngineService.hijriMonthLength(1), 30);
     expect(ZakatEngineService.hijriMonthLength(2), 29);
+  });
+
+  test('credit cards liabilities are included in total liabilities and net worth', () {
+    const List<CreditCard> cards = <CreditCard>[
+      CreditCard(
+        id: 'card-1',
+        bankName: 'CIB',
+        cardNickname: 'Black Card',
+        network: CreditCardNetwork.mastercard,
+        last4Digits: '1234',
+        creditLimit: 50000,
+        currency: 'EGP',
+        openingBalance: 15000,
+      ),
+      CreditCard(
+        id: 'card-2',
+        bankName: 'Chase',
+        cardNickname: 'Sapphire',
+        network: CreditCardNetwork.visa,
+        last4Digits: '5678',
+        creditLimit: 10000,
+        currency: 'USD',
+        openingBalance: 100, // 100 USD * 50 = 5000 EGP (with marketData usdToEgp = 50)
+      ),
+      CreditCard(
+        id: 'card-archived',
+        bankName: 'NBE',
+        cardNickname: 'Old Card',
+        network: CreditCardNetwork.visa,
+        last4Digits: '9999',
+        creditLimit: 20000,
+        currency: 'EGP',
+        openingBalance: 8000,
+        isArchived: true, // Should be excluded
+      ),
+    ];
+
+    final double ccLiabilities =
+        ZakatEngineService.calculateTotalCreditCardBalancesEgp(
+          creditCards: cards,
+          marketData: marketData,
+        );
+    // 15000 EGP + (100 USD * 50) = 20,000 EGP
+    expect(ccLiabilities, 20000);
+
+    final double totalLiabilities =
+        ZakatEngineService.calculateTotalLiabilitiesEgp(
+          transactions: const [],
+          savings: const [],
+          investments: const [],
+          marketData: marketData,
+          creditCards: cards,
+        );
+    expect(totalLiabilities, 20000);
+
+    const List<Saving> cashSavings = <Saving>[
+      Saving(
+        id: 'cash-1',
+        assetType: 'cash',
+        amount: 50000,
+        remainingAmount: 50000,
+        unit: 'EGP',
+        description: 'Bank Cash',
+        purchaseCurrency: 'EGP',
+        purchaseAmount: 50000,
+        dateAcquired: '2026-01-01',
+        createdAt: '2026-01-01',
+      ),
+    ];
+
+    final double netWorth = ZakatEngineService.calculateNetWorthEgp(
+      transactions: const [],
+      savings: cashSavings,
+      investments: const [],
+      marketData: marketData,
+      creditCards: cards,
+    );
+    // 50,000 assets - 20,000 credit card liabilities = 30,000
+    expect(netWorth, 30000);
   });
 }

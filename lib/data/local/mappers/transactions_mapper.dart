@@ -39,6 +39,12 @@ class TransactionsMapper {
             : _decimalText(transaction.remainingAmount!),
       ),
       activityType: Value<String?>(transaction.activityType),
+      paymentSourceId: Value<String?>(transaction.paymentSourceId),
+      creditCardPaymentId: Value<String?>(transaction.creditCardPaymentId),
+      transferSourceId: Value<String?>(transaction.transferSourceId),
+      transferDestinationId: Value<String?>(
+        transaction.transferDestinationId,
+      ),
       costBasisText: Value<String?>(
         transaction.costBasis == null ? null : _decimalText(transaction.costBasis!),
       ),
@@ -80,6 +86,10 @@ class TransactionsMapper {
       exchangeSourceIncomeId: row.exchangeSourceIncomeId,
       remainingAmount: _nullableDouble(row.remainingAmountText),
       activityType: row.activityType,
+      paymentSourceId: row.paymentSourceId,
+      creditCardPaymentId: row.creditCardPaymentId,
+      transferSourceId: row.transferSourceId,
+      transferDestinationId: row.transferDestinationId,
       costBasis: _nullableDouble(row.costBasisText),
       saleValue: _nullableDouble(row.saleValueText),
       realizedGain: _nullableDouble(row.realizedGainText),

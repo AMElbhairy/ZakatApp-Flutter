@@ -172,9 +172,7 @@ class InvestmentAsset {
             if (item['amount'] != null) {
               item['amount'] = _asDouble(item['amount']);
             }
-            if (item['isPaid'] != null) {
-              item['isPaid'] = _asBool(item['isPaid']);
-            }
+            item['isPaid'] = _asBool(item['isPaid']);
             return item;
           })
           .toList();
