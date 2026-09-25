@@ -22,6 +22,14 @@ class Transactions extends Table {
   TextColumn get remainingAmountText =>
       text().named('remaining_amount_text').nullable()();
   TextColumn get activityType => text().named('activity_type').nullable()();
+  TextColumn get paymentSourceId =>
+      text().named('payment_source_id').nullable()();
+  TextColumn get creditCardPaymentId =>
+      text().named('credit_card_payment_id').nullable()();
+  TextColumn get transferSourceId =>
+      text().named('transfer_source_id').nullable()();
+  TextColumn get transferDestinationId =>
+      text().named('transfer_destination_id').nullable()();
   TextColumn get costBasisText => text().named('cost_basis_text').nullable()();
   TextColumn get saleValueText => text().named('sale_value_text').nullable()();
   TextColumn get realizedGainText =>

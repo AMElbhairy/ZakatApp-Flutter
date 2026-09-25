@@ -172,6 +172,50 @@ class $TransactionsTable extends Transactions
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _paymentSourceIdMeta = const VerificationMeta(
+    'paymentSourceId',
+  );
+  @override
+  late final GeneratedColumn<String> paymentSourceId = GeneratedColumn<String>(
+    'payment_source_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _creditCardPaymentIdMeta =
+      const VerificationMeta('creditCardPaymentId');
+  @override
+  late final GeneratedColumn<String> creditCardPaymentId =
+      GeneratedColumn<String>(
+        'credit_card_payment_id',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _transferSourceIdMeta = const VerificationMeta(
+    'transferSourceId',
+  );
+  @override
+  late final GeneratedColumn<String> transferSourceId = GeneratedColumn<String>(
+    'transfer_source_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _transferDestinationIdMeta =
+      const VerificationMeta('transferDestinationId');
+  @override
+  late final GeneratedColumn<String> transferDestinationId =
+      GeneratedColumn<String>(
+        'transfer_destination_id',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
   static const VerificationMeta _costBasisTextMeta = const VerificationMeta(
     'costBasisText',
   );
@@ -267,6 +311,10 @@ class $TransactionsTable extends Transactions
     exchangeSourceIncomeId,
     remainingAmountText,
     activityType,
+    paymentSourceId,
+    creditCardPaymentId,
+    transferSourceId,
+    transferDestinationId,
     costBasisText,
     saleValueText,
     realizedGainText,
@@ -411,6 +459,42 @@ class $TransactionsTable extends Transactions
         ),
       );
     }
+    if (data.containsKey('payment_source_id')) {
+      context.handle(
+        _paymentSourceIdMeta,
+        paymentSourceId.isAcceptableOrUnknown(
+          data['payment_source_id']!,
+          _paymentSourceIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('credit_card_payment_id')) {
+      context.handle(
+        _creditCardPaymentIdMeta,
+        creditCardPaymentId.isAcceptableOrUnknown(
+          data['credit_card_payment_id']!,
+          _creditCardPaymentIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('transfer_source_id')) {
+      context.handle(
+        _transferSourceIdMeta,
+        transferSourceId.isAcceptableOrUnknown(
+          data['transfer_source_id']!,
+          _transferSourceIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('transfer_destination_id')) {
+      context.handle(
+        _transferDestinationIdMeta,
+        transferDestinationId.isAcceptableOrUnknown(
+          data['transfer_destination_id']!,
+          _transferDestinationIdMeta,
+        ),
+      );
+    }
     if (data.containsKey('cost_basis_text')) {
       context.handle(
         _costBasisTextMeta,
@@ -539,6 +623,22 @@ class $TransactionsTable extends Transactions
         DriftSqlType.string,
         data['${effectivePrefix}activity_type'],
       ),
+      paymentSourceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}payment_source_id'],
+      ),
+      creditCardPaymentId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}credit_card_payment_id'],
+      ),
+      transferSourceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}transfer_source_id'],
+      ),
+      transferDestinationId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}transfer_destination_id'],
+      ),
       costBasisText: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}cost_basis_text'],
@@ -592,6 +692,10 @@ class Transaction extends DataClass implements Insertable<Transaction> {
   final String? exchangeSourceIncomeId;
   final String? remainingAmountText;
   final String? activityType;
+  final String? paymentSourceId;
+  final String? creditCardPaymentId;
+  final String? transferSourceId;
+  final String? transferDestinationId;
   final String? costBasisText;
   final String? saleValueText;
   final String? realizedGainText;
@@ -615,6 +719,10 @@ class Transaction extends DataClass implements Insertable<Transaction> {
     this.exchangeSourceIncomeId,
     this.remainingAmountText,
     this.activityType,
+    this.paymentSourceId,
+    this.creditCardPaymentId,
+    this.transferSourceId,
+    this.transferDestinationId,
     this.costBasisText,
     this.saleValueText,
     this.realizedGainText,
@@ -654,6 +762,18 @@ class Transaction extends DataClass implements Insertable<Transaction> {
     }
     if (!nullToAbsent || activityType != null) {
       map['activity_type'] = Variable<String>(activityType);
+    }
+    if (!nullToAbsent || paymentSourceId != null) {
+      map['payment_source_id'] = Variable<String>(paymentSourceId);
+    }
+    if (!nullToAbsent || creditCardPaymentId != null) {
+      map['credit_card_payment_id'] = Variable<String>(creditCardPaymentId);
+    }
+    if (!nullToAbsent || transferSourceId != null) {
+      map['transfer_source_id'] = Variable<String>(transferSourceId);
+    }
+    if (!nullToAbsent || transferDestinationId != null) {
+      map['transfer_destination_id'] = Variable<String>(transferDestinationId);
     }
     if (!nullToAbsent || costBasisText != null) {
       map['cost_basis_text'] = Variable<String>(costBasisText);
@@ -708,6 +828,18 @@ class Transaction extends DataClass implements Insertable<Transaction> {
       activityType: activityType == null && nullToAbsent
           ? const Value.absent()
           : Value(activityType),
+      paymentSourceId: paymentSourceId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(paymentSourceId),
+      creditCardPaymentId: creditCardPaymentId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(creditCardPaymentId),
+      transferSourceId: transferSourceId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(transferSourceId),
+      transferDestinationId: transferDestinationId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(transferDestinationId),
       costBasisText: costBasisText == null && nullToAbsent
           ? const Value.absent()
           : Value(costBasisText),
@@ -755,6 +887,14 @@ class Transaction extends DataClass implements Insertable<Transaction> {
         json['remainingAmountText'],
       ),
       activityType: serializer.fromJson<String?>(json['activityType']),
+      paymentSourceId: serializer.fromJson<String?>(json['paymentSourceId']),
+      creditCardPaymentId: serializer.fromJson<String?>(
+        json['creditCardPaymentId'],
+      ),
+      transferSourceId: serializer.fromJson<String?>(json['transferSourceId']),
+      transferDestinationId: serializer.fromJson<String?>(
+        json['transferDestinationId'],
+      ),
       costBasisText: serializer.fromJson<String?>(json['costBasisText']),
       saleValueText: serializer.fromJson<String?>(json['saleValueText']),
       realizedGainText: serializer.fromJson<String?>(json['realizedGainText']),
@@ -789,6 +929,12 @@ class Transaction extends DataClass implements Insertable<Transaction> {
       ),
       'remainingAmountText': serializer.toJson<String?>(remainingAmountText),
       'activityType': serializer.toJson<String?>(activityType),
+      'paymentSourceId': serializer.toJson<String?>(paymentSourceId),
+      'creditCardPaymentId': serializer.toJson<String?>(creditCardPaymentId),
+      'transferSourceId': serializer.toJson<String?>(transferSourceId),
+      'transferDestinationId': serializer.toJson<String?>(
+        transferDestinationId,
+      ),
       'costBasisText': serializer.toJson<String?>(costBasisText),
       'saleValueText': serializer.toJson<String?>(saleValueText),
       'realizedGainText': serializer.toJson<String?>(realizedGainText),
@@ -817,6 +963,10 @@ class Transaction extends DataClass implements Insertable<Transaction> {
     Value<String?> exchangeSourceIncomeId = const Value.absent(),
     Value<String?> remainingAmountText = const Value.absent(),
     Value<String?> activityType = const Value.absent(),
+    Value<String?> paymentSourceId = const Value.absent(),
+    Value<String?> creditCardPaymentId = const Value.absent(),
+    Value<String?> transferSourceId = const Value.absent(),
+    Value<String?> transferDestinationId = const Value.absent(),
     Value<String?> costBasisText = const Value.absent(),
     Value<String?> saleValueText = const Value.absent(),
     Value<String?> realizedGainText = const Value.absent(),
@@ -850,6 +1000,18 @@ class Transaction extends DataClass implements Insertable<Transaction> {
         ? remainingAmountText.value
         : this.remainingAmountText,
     activityType: activityType.present ? activityType.value : this.activityType,
+    paymentSourceId: paymentSourceId.present
+        ? paymentSourceId.value
+        : this.paymentSourceId,
+    creditCardPaymentId: creditCardPaymentId.present
+        ? creditCardPaymentId.value
+        : this.creditCardPaymentId,
+    transferSourceId: transferSourceId.present
+        ? transferSourceId.value
+        : this.transferSourceId,
+    transferDestinationId: transferDestinationId.present
+        ? transferDestinationId.value
+        : this.transferDestinationId,
     costBasisText: costBasisText.present
         ? costBasisText.value
         : this.costBasisText,
@@ -903,6 +1065,18 @@ class Transaction extends DataClass implements Insertable<Transaction> {
       activityType: data.activityType.present
           ? data.activityType.value
           : this.activityType,
+      paymentSourceId: data.paymentSourceId.present
+          ? data.paymentSourceId.value
+          : this.paymentSourceId,
+      creditCardPaymentId: data.creditCardPaymentId.present
+          ? data.creditCardPaymentId.value
+          : this.creditCardPaymentId,
+      transferSourceId: data.transferSourceId.present
+          ? data.transferSourceId.value
+          : this.transferSourceId,
+      transferDestinationId: data.transferDestinationId.present
+          ? data.transferDestinationId.value
+          : this.transferDestinationId,
       costBasisText: data.costBasisText.present
           ? data.costBasisText.value
           : this.costBasisText,
@@ -941,6 +1115,10 @@ class Transaction extends DataClass implements Insertable<Transaction> {
           ..write('exchangeSourceIncomeId: $exchangeSourceIncomeId, ')
           ..write('remainingAmountText: $remainingAmountText, ')
           ..write('activityType: $activityType, ')
+          ..write('paymentSourceId: $paymentSourceId, ')
+          ..write('creditCardPaymentId: $creditCardPaymentId, ')
+          ..write('transferSourceId: $transferSourceId, ')
+          ..write('transferDestinationId: $transferDestinationId, ')
           ..write('costBasisText: $costBasisText, ')
           ..write('saleValueText: $saleValueText, ')
           ..write('realizedGainText: $realizedGainText, ')
@@ -969,6 +1147,10 @@ class Transaction extends DataClass implements Insertable<Transaction> {
     exchangeSourceIncomeId,
     remainingAmountText,
     activityType,
+    paymentSourceId,
+    creditCardPaymentId,
+    transferSourceId,
+    transferDestinationId,
     costBasisText,
     saleValueText,
     realizedGainText,
@@ -996,6 +1178,10 @@ class Transaction extends DataClass implements Insertable<Transaction> {
           other.exchangeSourceIncomeId == this.exchangeSourceIncomeId &&
           other.remainingAmountText == this.remainingAmountText &&
           other.activityType == this.activityType &&
+          other.paymentSourceId == this.paymentSourceId &&
+          other.creditCardPaymentId == this.creditCardPaymentId &&
+          other.transferSourceId == this.transferSourceId &&
+          other.transferDestinationId == this.transferDestinationId &&
           other.costBasisText == this.costBasisText &&
           other.saleValueText == this.saleValueText &&
           other.realizedGainText == this.realizedGainText &&
@@ -1021,6 +1207,10 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
   final Value<String?> exchangeSourceIncomeId;
   final Value<String?> remainingAmountText;
   final Value<String?> activityType;
+  final Value<String?> paymentSourceId;
+  final Value<String?> creditCardPaymentId;
+  final Value<String?> transferSourceId;
+  final Value<String?> transferDestinationId;
   final Value<String?> costBasisText;
   final Value<String?> saleValueText;
   final Value<String?> realizedGainText;
@@ -1045,6 +1235,10 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
     this.exchangeSourceIncomeId = const Value.absent(),
     this.remainingAmountText = const Value.absent(),
     this.activityType = const Value.absent(),
+    this.paymentSourceId = const Value.absent(),
+    this.creditCardPaymentId = const Value.absent(),
+    this.transferSourceId = const Value.absent(),
+    this.transferDestinationId = const Value.absent(),
     this.costBasisText = const Value.absent(),
     this.saleValueText = const Value.absent(),
     this.realizedGainText = const Value.absent(),
@@ -1070,6 +1264,10 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
     this.exchangeSourceIncomeId = const Value.absent(),
     this.remainingAmountText = const Value.absent(),
     this.activityType = const Value.absent(),
+    this.paymentSourceId = const Value.absent(),
+    this.creditCardPaymentId = const Value.absent(),
+    this.transferSourceId = const Value.absent(),
+    this.transferDestinationId = const Value.absent(),
     this.costBasisText = const Value.absent(),
     this.saleValueText = const Value.absent(),
     this.realizedGainText = const Value.absent(),
@@ -1103,6 +1301,10 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
     Expression<String>? exchangeSourceIncomeId,
     Expression<String>? remainingAmountText,
     Expression<String>? activityType,
+    Expression<String>? paymentSourceId,
+    Expression<String>? creditCardPaymentId,
+    Expression<String>? transferSourceId,
+    Expression<String>? transferDestinationId,
     Expression<String>? costBasisText,
     Expression<String>? saleValueText,
     Expression<String>? realizedGainText,
@@ -1130,6 +1332,12 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
       if (remainingAmountText != null)
         'remaining_amount_text': remainingAmountText,
       if (activityType != null) 'activity_type': activityType,
+      if (paymentSourceId != null) 'payment_source_id': paymentSourceId,
+      if (creditCardPaymentId != null)
+        'credit_card_payment_id': creditCardPaymentId,
+      if (transferSourceId != null) 'transfer_source_id': transferSourceId,
+      if (transferDestinationId != null)
+        'transfer_destination_id': transferDestinationId,
       if (costBasisText != null) 'cost_basis_text': costBasisText,
       if (saleValueText != null) 'sale_value_text': saleValueText,
       if (realizedGainText != null) 'realized_gain_text': realizedGainText,
@@ -1158,6 +1366,10 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
     Value<String?>? exchangeSourceIncomeId,
     Value<String?>? remainingAmountText,
     Value<String?>? activityType,
+    Value<String?>? paymentSourceId,
+    Value<String?>? creditCardPaymentId,
+    Value<String?>? transferSourceId,
+    Value<String?>? transferDestinationId,
     Value<String?>? costBasisText,
     Value<String?>? saleValueText,
     Value<String?>? realizedGainText,
@@ -1184,6 +1396,11 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
           exchangeSourceIncomeId ?? this.exchangeSourceIncomeId,
       remainingAmountText: remainingAmountText ?? this.remainingAmountText,
       activityType: activityType ?? this.activityType,
+      paymentSourceId: paymentSourceId ?? this.paymentSourceId,
+      creditCardPaymentId: creditCardPaymentId ?? this.creditCardPaymentId,
+      transferSourceId: transferSourceId ?? this.transferSourceId,
+      transferDestinationId:
+          transferDestinationId ?? this.transferDestinationId,
       costBasisText: costBasisText ?? this.costBasisText,
       saleValueText: saleValueText ?? this.saleValueText,
       realizedGainText: realizedGainText ?? this.realizedGainText,
@@ -1248,6 +1465,22 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
     if (activityType.present) {
       map['activity_type'] = Variable<String>(activityType.value);
     }
+    if (paymentSourceId.present) {
+      map['payment_source_id'] = Variable<String>(paymentSourceId.value);
+    }
+    if (creditCardPaymentId.present) {
+      map['credit_card_payment_id'] = Variable<String>(
+        creditCardPaymentId.value,
+      );
+    }
+    if (transferSourceId.present) {
+      map['transfer_source_id'] = Variable<String>(transferSourceId.value);
+    }
+    if (transferDestinationId.present) {
+      map['transfer_destination_id'] = Variable<String>(
+        transferDestinationId.value,
+      );
+    }
     if (costBasisText.present) {
       map['cost_basis_text'] = Variable<String>(costBasisText.value);
     }
@@ -1295,6 +1528,10 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
           ..write('exchangeSourceIncomeId: $exchangeSourceIncomeId, ')
           ..write('remainingAmountText: $remainingAmountText, ')
           ..write('activityType: $activityType, ')
+          ..write('paymentSourceId: $paymentSourceId, ')
+          ..write('creditCardPaymentId: $creditCardPaymentId, ')
+          ..write('transferSourceId: $transferSourceId, ')
+          ..write('transferDestinationId: $transferDestinationId, ')
           ..write('costBasisText: $costBasisText, ')
           ..write('saleValueText: $saleValueText, ')
           ..write('realizedGainText: $realizedGainText, ')
@@ -4539,6 +4776,39 @@ class $PendingTransactionsTable extends PendingTransactions
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _receivedAtMeta = const VerificationMeta(
+    'receivedAt',
+  );
+  @override
+  late final GeneratedColumn<String> receivedAt = GeneratedColumn<String>(
+    'received_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _cardLast4Meta = const VerificationMeta(
+    'cardLast4',
+  );
+  @override
+  late final GeneratedColumn<String> cardLast4 = GeneratedColumn<String>(
+    'card_last4',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _accountLast4Meta = const VerificationMeta(
+    'accountLast4',
+  );
+  @override
+  late final GeneratedColumn<String> accountLast4 = GeneratedColumn<String>(
+    'account_last4',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -4566,6 +4836,9 @@ class $PendingTransactionsTable extends PendingTransactions
     linkedTransactionId,
     updatedAt,
     deletedAt,
+    receivedAt,
+    cardLast4,
+    accountLast4,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -4790,6 +5063,27 @@ class $PendingTransactionsTable extends PendingTransactions
         deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
       );
     }
+    if (data.containsKey('received_at')) {
+      context.handle(
+        _receivedAtMeta,
+        receivedAt.isAcceptableOrUnknown(data['received_at']!, _receivedAtMeta),
+      );
+    }
+    if (data.containsKey('card_last4')) {
+      context.handle(
+        _cardLast4Meta,
+        cardLast4.isAcceptableOrUnknown(data['card_last4']!, _cardLast4Meta),
+      );
+    }
+    if (data.containsKey('account_last4')) {
+      context.handle(
+        _accountLast4Meta,
+        accountLast4.isAcceptableOrUnknown(
+          data['account_last4']!,
+          _accountLast4Meta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -4899,6 +5193,18 @@ class $PendingTransactionsTable extends PendingTransactions
         DriftSqlType.string,
         data['${effectivePrefix}deleted_at'],
       ),
+      receivedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}received_at'],
+      ),
+      cardLast4: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}card_last4'],
+      ),
+      accountLast4: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}account_last4'],
+      ),
     );
   }
 
@@ -4935,6 +5241,9 @@ class PendingTransaction extends DataClass
   final String? linkedTransactionId;
   final String updatedAt;
   final String? deletedAt;
+  final String? receivedAt;
+  final String? cardLast4;
+  final String? accountLast4;
   const PendingTransaction({
     required this.id,
     required this.source,
@@ -4961,6 +5270,9 @@ class PendingTransaction extends DataClass
     this.linkedTransactionId,
     required this.updatedAt,
     this.deletedAt,
+    this.receivedAt,
+    this.cardLast4,
+    this.accountLast4,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -5019,6 +5331,15 @@ class PendingTransaction extends DataClass
     map['updated_at'] = Variable<String>(updatedAt);
     if (!nullToAbsent || deletedAt != null) {
       map['deleted_at'] = Variable<String>(deletedAt);
+    }
+    if (!nullToAbsent || receivedAt != null) {
+      map['received_at'] = Variable<String>(receivedAt);
+    }
+    if (!nullToAbsent || cardLast4 != null) {
+      map['card_last4'] = Variable<String>(cardLast4);
+    }
+    if (!nullToAbsent || accountLast4 != null) {
+      map['account_last4'] = Variable<String>(accountLast4);
     }
     return map;
   }
@@ -5080,6 +5401,15 @@ class PendingTransaction extends DataClass
       deletedAt: deletedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(deletedAt),
+      receivedAt: receivedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(receivedAt),
+      cardLast4: cardLast4 == null && nullToAbsent
+          ? const Value.absent()
+          : Value(cardLast4),
+      accountLast4: accountLast4 == null && nullToAbsent
+          ? const Value.absent()
+          : Value(accountLast4),
     );
   }
 
@@ -5126,6 +5456,9 @@ class PendingTransaction extends DataClass
       ),
       updatedAt: serializer.fromJson<String>(json['updatedAt']),
       deletedAt: serializer.fromJson<String?>(json['deletedAt']),
+      receivedAt: serializer.fromJson<String?>(json['receivedAt']),
+      cardLast4: serializer.fromJson<String?>(json['cardLast4']),
+      accountLast4: serializer.fromJson<String?>(json['accountLast4']),
     );
   }
   @override
@@ -5157,6 +5490,9 @@ class PendingTransaction extends DataClass
       'linkedTransactionId': serializer.toJson<String?>(linkedTransactionId),
       'updatedAt': serializer.toJson<String>(updatedAt),
       'deletedAt': serializer.toJson<String?>(deletedAt),
+      'receivedAt': serializer.toJson<String?>(receivedAt),
+      'cardLast4': serializer.toJson<String?>(cardLast4),
+      'accountLast4': serializer.toJson<String?>(accountLast4),
     };
   }
 
@@ -5186,6 +5522,9 @@ class PendingTransaction extends DataClass
     Value<String?> linkedTransactionId = const Value.absent(),
     String? updatedAt,
     Value<String?> deletedAt = const Value.absent(),
+    Value<String?> receivedAt = const Value.absent(),
+    Value<String?> cardLast4 = const Value.absent(),
+    Value<String?> accountLast4 = const Value.absent(),
   }) => PendingTransaction(
     id: id ?? this.id,
     source: source ?? this.source,
@@ -5232,6 +5571,9 @@ class PendingTransaction extends DataClass
         : this.linkedTransactionId,
     updatedAt: updatedAt ?? this.updatedAt,
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+    receivedAt: receivedAt.present ? receivedAt.value : this.receivedAt,
+    cardLast4: cardLast4.present ? cardLast4.value : this.cardLast4,
+    accountLast4: accountLast4.present ? accountLast4.value : this.accountLast4,
   );
   PendingTransaction copyWithCompanion(PendingTransactionsCompanion data) {
     return PendingTransaction(
@@ -5296,6 +5638,13 @@ class PendingTransaction extends DataClass
           : this.linkedTransactionId,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+      receivedAt: data.receivedAt.present
+          ? data.receivedAt.value
+          : this.receivedAt,
+      cardLast4: data.cardLast4.present ? data.cardLast4.value : this.cardLast4,
+      accountLast4: data.accountLast4.present
+          ? data.accountLast4.value
+          : this.accountLast4,
     );
   }
 
@@ -5326,7 +5675,10 @@ class PendingTransaction extends DataClass
           ..write('isRead: $isRead, ')
           ..write('linkedTransactionId: $linkedTransactionId, ')
           ..write('updatedAt: $updatedAt, ')
-          ..write('deletedAt: $deletedAt')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('receivedAt: $receivedAt, ')
+          ..write('cardLast4: $cardLast4, ')
+          ..write('accountLast4: $accountLast4')
           ..write(')'))
         .toString();
   }
@@ -5358,6 +5710,9 @@ class PendingTransaction extends DataClass
     linkedTransactionId,
     updatedAt,
     deletedAt,
+    receivedAt,
+    cardLast4,
+    accountLast4,
   ]);
   @override
   bool operator ==(Object other) =>
@@ -5387,7 +5742,10 @@ class PendingTransaction extends DataClass
           other.isRead == this.isRead &&
           other.linkedTransactionId == this.linkedTransactionId &&
           other.updatedAt == this.updatedAt &&
-          other.deletedAt == this.deletedAt);
+          other.deletedAt == this.deletedAt &&
+          other.receivedAt == this.receivedAt &&
+          other.cardLast4 == this.cardLast4 &&
+          other.accountLast4 == this.accountLast4);
 }
 
 class PendingTransactionsCompanion extends UpdateCompanion<PendingTransaction> {
@@ -5416,6 +5774,9 @@ class PendingTransactionsCompanion extends UpdateCompanion<PendingTransaction> {
   final Value<String?> linkedTransactionId;
   final Value<String> updatedAt;
   final Value<String?> deletedAt;
+  final Value<String?> receivedAt;
+  final Value<String?> cardLast4;
+  final Value<String?> accountLast4;
   final Value<int> rowid;
   const PendingTransactionsCompanion({
     this.id = const Value.absent(),
@@ -5443,6 +5804,9 @@ class PendingTransactionsCompanion extends UpdateCompanion<PendingTransaction> {
     this.linkedTransactionId = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.deletedAt = const Value.absent(),
+    this.receivedAt = const Value.absent(),
+    this.cardLast4 = const Value.absent(),
+    this.accountLast4 = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   PendingTransactionsCompanion.insert({
@@ -5471,6 +5835,9 @@ class PendingTransactionsCompanion extends UpdateCompanion<PendingTransaction> {
     this.linkedTransactionId = const Value.absent(),
     required String updatedAt,
     this.deletedAt = const Value.absent(),
+    this.receivedAt = const Value.absent(),
+    this.cardLast4 = const Value.absent(),
+    this.accountLast4 = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        source = Value(source),
@@ -5506,6 +5873,9 @@ class PendingTransactionsCompanion extends UpdateCompanion<PendingTransaction> {
     Expression<String>? linkedTransactionId,
     Expression<String>? updatedAt,
     Expression<String>? deletedAt,
+    Expression<String>? receivedAt,
+    Expression<String>? cardLast4,
+    Expression<String>? accountLast4,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -5538,6 +5908,9 @@ class PendingTransactionsCompanion extends UpdateCompanion<PendingTransaction> {
         'linked_transaction_id': linkedTransactionId,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (deletedAt != null) 'deleted_at': deletedAt,
+      if (receivedAt != null) 'received_at': receivedAt,
+      if (cardLast4 != null) 'card_last4': cardLast4,
+      if (accountLast4 != null) 'account_last4': accountLast4,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -5568,6 +5941,9 @@ class PendingTransactionsCompanion extends UpdateCompanion<PendingTransaction> {
     Value<String?>? linkedTransactionId,
     Value<String>? updatedAt,
     Value<String?>? deletedAt,
+    Value<String?>? receivedAt,
+    Value<String?>? cardLast4,
+    Value<String?>? accountLast4,
     Value<int>? rowid,
   }) {
     return PendingTransactionsCompanion(
@@ -5596,6 +5972,9 @@ class PendingTransactionsCompanion extends UpdateCompanion<PendingTransaction> {
       linkedTransactionId: linkedTransactionId ?? this.linkedTransactionId,
       updatedAt: updatedAt ?? this.updatedAt,
       deletedAt: deletedAt ?? this.deletedAt,
+      receivedAt: receivedAt ?? this.receivedAt,
+      cardLast4: cardLast4 ?? this.cardLast4,
+      accountLast4: accountLast4 ?? this.accountLast4,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -5684,6 +6063,15 @@ class PendingTransactionsCompanion extends UpdateCompanion<PendingTransaction> {
     if (deletedAt.present) {
       map['deleted_at'] = Variable<String>(deletedAt.value);
     }
+    if (receivedAt.present) {
+      map['received_at'] = Variable<String>(receivedAt.value);
+    }
+    if (cardLast4.present) {
+      map['card_last4'] = Variable<String>(cardLast4.value);
+    }
+    if (accountLast4.present) {
+      map['account_last4'] = Variable<String>(accountLast4.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -5718,6 +6106,9 @@ class PendingTransactionsCompanion extends UpdateCompanion<PendingTransaction> {
           ..write('linkedTransactionId: $linkedTransactionId, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
+          ..write('receivedAt: $receivedAt, ')
+          ..write('cardLast4: $cardLast4, ')
+          ..write('accountLast4: $accountLast4, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -5892,6 +6283,60 @@ class $RecurringTransactionsTable extends RecurringTransactions
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _autoAddMeta = const VerificationMeta(
+    'autoAdd',
+  );
+  @override
+  late final GeneratedColumn<bool> autoAdd = GeneratedColumn<bool>(
+    'auto_add',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("auto_add" IN (0, 1))',
+    ),
+    defaultValue: const Constant(true),
+  );
+  static const VerificationMeta _reminderEnabledMeta = const VerificationMeta(
+    'reminderEnabled',
+  );
+  @override
+  late final GeneratedColumn<bool> reminderEnabled = GeneratedColumn<bool>(
+    'reminder_enabled',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("reminder_enabled" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _reminderDayOffsetMeta = const VerificationMeta(
+    'reminderDayOffset',
+  );
+  @override
+  late final GeneratedColumn<int> reminderDayOffset = GeneratedColumn<int>(
+    'reminder_day_offset',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _reminderTimeMeta = const VerificationMeta(
+    'reminderTime',
+  );
+  @override
+  late final GeneratedColumn<String> reminderTime = GeneratedColumn<String>(
+    'reminder_time',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('09:00'),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -5909,6 +6354,10 @@ class $RecurringTransactionsTable extends RecurringTransactions
     createdAt,
     updatedAt,
     deletedAt,
+    autoAdd,
+    reminderEnabled,
+    reminderDayOffset,
+    reminderTime,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -6044,6 +6493,39 @@ class $RecurringTransactionsTable extends RecurringTransactions
         deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
       );
     }
+    if (data.containsKey('auto_add')) {
+      context.handle(
+        _autoAddMeta,
+        autoAdd.isAcceptableOrUnknown(data['auto_add']!, _autoAddMeta),
+      );
+    }
+    if (data.containsKey('reminder_enabled')) {
+      context.handle(
+        _reminderEnabledMeta,
+        reminderEnabled.isAcceptableOrUnknown(
+          data['reminder_enabled']!,
+          _reminderEnabledMeta,
+        ),
+      );
+    }
+    if (data.containsKey('reminder_day_offset')) {
+      context.handle(
+        _reminderDayOffsetMeta,
+        reminderDayOffset.isAcceptableOrUnknown(
+          data['reminder_day_offset']!,
+          _reminderDayOffsetMeta,
+        ),
+      );
+    }
+    if (data.containsKey('reminder_time')) {
+      context.handle(
+        _reminderTimeMeta,
+        reminderTime.isAcceptableOrUnknown(
+          data['reminder_time']!,
+          _reminderTimeMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -6113,6 +6595,22 @@ class $RecurringTransactionsTable extends RecurringTransactions
         DriftSqlType.string,
         data['${effectivePrefix}deleted_at'],
       ),
+      autoAdd: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}auto_add'],
+      )!,
+      reminderEnabled: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}reminder_enabled'],
+      )!,
+      reminderDayOffset: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}reminder_day_offset'],
+      )!,
+      reminderTime: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}reminder_time'],
+      )!,
     );
   }
 
@@ -6139,6 +6637,10 @@ class RecurringTransaction extends DataClass
   final String createdAt;
   final String updatedAt;
   final String? deletedAt;
+  final bool autoAdd;
+  final bool reminderEnabled;
+  final int reminderDayOffset;
+  final String reminderTime;
   const RecurringTransaction({
     required this.id,
     required this.name,
@@ -6155,6 +6657,10 @@ class RecurringTransaction extends DataClass
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,
+    required this.autoAdd,
+    required this.reminderEnabled,
+    required this.reminderDayOffset,
+    required this.reminderTime,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -6178,6 +6684,10 @@ class RecurringTransaction extends DataClass
     if (!nullToAbsent || deletedAt != null) {
       map['deleted_at'] = Variable<String>(deletedAt);
     }
+    map['auto_add'] = Variable<bool>(autoAdd);
+    map['reminder_enabled'] = Variable<bool>(reminderEnabled);
+    map['reminder_day_offset'] = Variable<int>(reminderDayOffset);
+    map['reminder_time'] = Variable<String>(reminderTime);
     return map;
   }
 
@@ -6202,6 +6712,10 @@ class RecurringTransaction extends DataClass
       deletedAt: deletedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(deletedAt),
+      autoAdd: Value(autoAdd),
+      reminderEnabled: Value(reminderEnabled),
+      reminderDayOffset: Value(reminderDayOffset),
+      reminderTime: Value(reminderTime),
     );
   }
 
@@ -6226,6 +6740,10 @@ class RecurringTransaction extends DataClass
       createdAt: serializer.fromJson<String>(json['createdAt']),
       updatedAt: serializer.fromJson<String>(json['updatedAt']),
       deletedAt: serializer.fromJson<String?>(json['deletedAt']),
+      autoAdd: serializer.fromJson<bool>(json['autoAdd']),
+      reminderEnabled: serializer.fromJson<bool>(json['reminderEnabled']),
+      reminderDayOffset: serializer.fromJson<int>(json['reminderDayOffset']),
+      reminderTime: serializer.fromJson<String>(json['reminderTime']),
     );
   }
   @override
@@ -6247,6 +6765,10 @@ class RecurringTransaction extends DataClass
       'createdAt': serializer.toJson<String>(createdAt),
       'updatedAt': serializer.toJson<String>(updatedAt),
       'deletedAt': serializer.toJson<String?>(deletedAt),
+      'autoAdd': serializer.toJson<bool>(autoAdd),
+      'reminderEnabled': serializer.toJson<bool>(reminderEnabled),
+      'reminderDayOffset': serializer.toJson<int>(reminderDayOffset),
+      'reminderTime': serializer.toJson<String>(reminderTime),
     };
   }
 
@@ -6266,6 +6788,10 @@ class RecurringTransaction extends DataClass
     String? createdAt,
     String? updatedAt,
     Value<String?> deletedAt = const Value.absent(),
+    bool? autoAdd,
+    bool? reminderEnabled,
+    int? reminderDayOffset,
+    String? reminderTime,
   }) => RecurringTransaction(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -6284,6 +6810,10 @@ class RecurringTransaction extends DataClass
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+    autoAdd: autoAdd ?? this.autoAdd,
+    reminderEnabled: reminderEnabled ?? this.reminderEnabled,
+    reminderDayOffset: reminderDayOffset ?? this.reminderDayOffset,
+    reminderTime: reminderTime ?? this.reminderTime,
   );
   RecurringTransaction copyWithCompanion(RecurringTransactionsCompanion data) {
     return RecurringTransaction(
@@ -6310,6 +6840,16 @@ class RecurringTransaction extends DataClass
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+      autoAdd: data.autoAdd.present ? data.autoAdd.value : this.autoAdd,
+      reminderEnabled: data.reminderEnabled.present
+          ? data.reminderEnabled.value
+          : this.reminderEnabled,
+      reminderDayOffset: data.reminderDayOffset.present
+          ? data.reminderDayOffset.value
+          : this.reminderDayOffset,
+      reminderTime: data.reminderTime.present
+          ? data.reminderTime.value
+          : this.reminderTime,
     );
   }
 
@@ -6330,7 +6870,11 @@ class RecurringTransaction extends DataClass
           ..write('skipMonth: $skipMonth, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
-          ..write('deletedAt: $deletedAt')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('autoAdd: $autoAdd, ')
+          ..write('reminderEnabled: $reminderEnabled, ')
+          ..write('reminderDayOffset: $reminderDayOffset, ')
+          ..write('reminderTime: $reminderTime')
           ..write(')'))
         .toString();
   }
@@ -6352,6 +6896,10 @@ class RecurringTransaction extends DataClass
     createdAt,
     updatedAt,
     deletedAt,
+    autoAdd,
+    reminderEnabled,
+    reminderDayOffset,
+    reminderTime,
   );
   @override
   bool operator ==(Object other) =>
@@ -6371,7 +6919,11 @@ class RecurringTransaction extends DataClass
           other.skipMonth == this.skipMonth &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
-          other.deletedAt == this.deletedAt);
+          other.deletedAt == this.deletedAt &&
+          other.autoAdd == this.autoAdd &&
+          other.reminderEnabled == this.reminderEnabled &&
+          other.reminderDayOffset == this.reminderDayOffset &&
+          other.reminderTime == this.reminderTime);
 }
 
 class RecurringTransactionsCompanion
@@ -6391,6 +6943,10 @@ class RecurringTransactionsCompanion
   final Value<String> createdAt;
   final Value<String> updatedAt;
   final Value<String?> deletedAt;
+  final Value<bool> autoAdd;
+  final Value<bool> reminderEnabled;
+  final Value<int> reminderDayOffset;
+  final Value<String> reminderTime;
   final Value<int> rowid;
   const RecurringTransactionsCompanion({
     this.id = const Value.absent(),
@@ -6408,6 +6964,10 @@ class RecurringTransactionsCompanion
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.deletedAt = const Value.absent(),
+    this.autoAdd = const Value.absent(),
+    this.reminderEnabled = const Value.absent(),
+    this.reminderDayOffset = const Value.absent(),
+    this.reminderTime = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   RecurringTransactionsCompanion.insert({
@@ -6426,6 +6986,10 @@ class RecurringTransactionsCompanion
     required String createdAt,
     required String updatedAt,
     this.deletedAt = const Value.absent(),
+    this.autoAdd = const Value.absent(),
+    this.reminderEnabled = const Value.absent(),
+    this.reminderDayOffset = const Value.absent(),
+    this.reminderTime = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        name = Value(name),
@@ -6456,6 +7020,10 @@ class RecurringTransactionsCompanion
     Expression<String>? createdAt,
     Expression<String>? updatedAt,
     Expression<String>? deletedAt,
+    Expression<bool>? autoAdd,
+    Expression<bool>? reminderEnabled,
+    Expression<int>? reminderDayOffset,
+    Expression<String>? reminderTime,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -6474,6 +7042,10 @@ class RecurringTransactionsCompanion
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (deletedAt != null) 'deleted_at': deletedAt,
+      if (autoAdd != null) 'auto_add': autoAdd,
+      if (reminderEnabled != null) 'reminder_enabled': reminderEnabled,
+      if (reminderDayOffset != null) 'reminder_day_offset': reminderDayOffset,
+      if (reminderTime != null) 'reminder_time': reminderTime,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -6494,6 +7066,10 @@ class RecurringTransactionsCompanion
     Value<String>? createdAt,
     Value<String>? updatedAt,
     Value<String?>? deletedAt,
+    Value<bool>? autoAdd,
+    Value<bool>? reminderEnabled,
+    Value<int>? reminderDayOffset,
+    Value<String>? reminderTime,
     Value<int>? rowid,
   }) {
     return RecurringTransactionsCompanion(
@@ -6512,6 +7088,10 @@ class RecurringTransactionsCompanion
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       deletedAt: deletedAt ?? this.deletedAt,
+      autoAdd: autoAdd ?? this.autoAdd,
+      reminderEnabled: reminderEnabled ?? this.reminderEnabled,
+      reminderDayOffset: reminderDayOffset ?? this.reminderDayOffset,
+      reminderTime: reminderTime ?? this.reminderTime,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -6564,6 +7144,18 @@ class RecurringTransactionsCompanion
     if (deletedAt.present) {
       map['deleted_at'] = Variable<String>(deletedAt.value);
     }
+    if (autoAdd.present) {
+      map['auto_add'] = Variable<bool>(autoAdd.value);
+    }
+    if (reminderEnabled.present) {
+      map['reminder_enabled'] = Variable<bool>(reminderEnabled.value);
+    }
+    if (reminderDayOffset.present) {
+      map['reminder_day_offset'] = Variable<int>(reminderDayOffset.value);
+    }
+    if (reminderTime.present) {
+      map['reminder_time'] = Variable<String>(reminderTime.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -6588,6 +7180,10 @@ class RecurringTransactionsCompanion
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
+          ..write('autoAdd: $autoAdd, ')
+          ..write('reminderEnabled: $reminderEnabled, ')
+          ..write('reminderDayOffset: $reminderDayOffset, ')
+          ..write('reminderTime: $reminderTime, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -11375,6 +11971,10 @@ typedef $$TransactionsTableCreateCompanionBuilder =
       Value<String?> exchangeSourceIncomeId,
       Value<String?> remainingAmountText,
       Value<String?> activityType,
+      Value<String?> paymentSourceId,
+      Value<String?> creditCardPaymentId,
+      Value<String?> transferSourceId,
+      Value<String?> transferDestinationId,
       Value<String?> costBasisText,
       Value<String?> saleValueText,
       Value<String?> realizedGainText,
@@ -11401,6 +12001,10 @@ typedef $$TransactionsTableUpdateCompanionBuilder =
       Value<String?> exchangeSourceIncomeId,
       Value<String?> remainingAmountText,
       Value<String?> activityType,
+      Value<String?> paymentSourceId,
+      Value<String?> creditCardPaymentId,
+      Value<String?> transferSourceId,
+      Value<String?> transferDestinationId,
       Value<String?> costBasisText,
       Value<String?> saleValueText,
       Value<String?> realizedGainText,
@@ -11492,6 +12096,26 @@ class $$TransactionsTableFilterComposer
 
   ColumnFilters<String> get activityType => $composableBuilder(
     column: $table.activityType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get paymentSourceId => $composableBuilder(
+    column: $table.paymentSourceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get creditCardPaymentId => $composableBuilder(
+    column: $table.creditCardPaymentId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get transferSourceId => $composableBuilder(
+    column: $table.transferSourceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get transferDestinationId => $composableBuilder(
+    column: $table.transferDestinationId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -11615,6 +12239,26 @@ class $$TransactionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get paymentSourceId => $composableBuilder(
+    column: $table.paymentSourceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get creditCardPaymentId => $composableBuilder(
+    column: $table.creditCardPaymentId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get transferSourceId => $composableBuilder(
+    column: $table.transferSourceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get transferDestinationId => $composableBuilder(
+    column: $table.transferDestinationId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get costBasisText => $composableBuilder(
     column: $table.costBasisText,
     builder: (column) => ColumnOrderings(column),
@@ -11723,6 +12367,26 @@ class $$TransactionsTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get paymentSourceId => $composableBuilder(
+    column: $table.paymentSourceId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get creditCardPaymentId => $composableBuilder(
+    column: $table.creditCardPaymentId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get transferSourceId => $composableBuilder(
+    column: $table.transferSourceId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get transferDestinationId => $composableBuilder(
+    column: $table.transferDestinationId,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<String> get costBasisText => $composableBuilder(
     column: $table.costBasisText,
     builder: (column) => column,
@@ -11801,6 +12465,10 @@ class $$TransactionsTableTableManager
                 Value<String?> exchangeSourceIncomeId = const Value.absent(),
                 Value<String?> remainingAmountText = const Value.absent(),
                 Value<String?> activityType = const Value.absent(),
+                Value<String?> paymentSourceId = const Value.absent(),
+                Value<String?> creditCardPaymentId = const Value.absent(),
+                Value<String?> transferSourceId = const Value.absent(),
+                Value<String?> transferDestinationId = const Value.absent(),
                 Value<String?> costBasisText = const Value.absent(),
                 Value<String?> saleValueText = const Value.absent(),
                 Value<String?> realizedGainText = const Value.absent(),
@@ -11825,6 +12493,10 @@ class $$TransactionsTableTableManager
                 exchangeSourceIncomeId: exchangeSourceIncomeId,
                 remainingAmountText: remainingAmountText,
                 activityType: activityType,
+                paymentSourceId: paymentSourceId,
+                creditCardPaymentId: creditCardPaymentId,
+                transferSourceId: transferSourceId,
+                transferDestinationId: transferDestinationId,
                 costBasisText: costBasisText,
                 saleValueText: saleValueText,
                 realizedGainText: realizedGainText,
@@ -11851,6 +12523,10 @@ class $$TransactionsTableTableManager
                 Value<String?> exchangeSourceIncomeId = const Value.absent(),
                 Value<String?> remainingAmountText = const Value.absent(),
                 Value<String?> activityType = const Value.absent(),
+                Value<String?> paymentSourceId = const Value.absent(),
+                Value<String?> creditCardPaymentId = const Value.absent(),
+                Value<String?> transferSourceId = const Value.absent(),
+                Value<String?> transferDestinationId = const Value.absent(),
                 Value<String?> costBasisText = const Value.absent(),
                 Value<String?> saleValueText = const Value.absent(),
                 Value<String?> realizedGainText = const Value.absent(),
@@ -11875,6 +12551,10 @@ class $$TransactionsTableTableManager
                 exchangeSourceIncomeId: exchangeSourceIncomeId,
                 remainingAmountText: remainingAmountText,
                 activityType: activityType,
+                paymentSourceId: paymentSourceId,
+                creditCardPaymentId: creditCardPaymentId,
+                transferSourceId: transferSourceId,
+                transferDestinationId: transferDestinationId,
                 costBasisText: costBasisText,
                 saleValueText: saleValueText,
                 realizedGainText: realizedGainText,
@@ -13162,6 +13842,9 @@ typedef $$PendingTransactionsTableCreateCompanionBuilder =
       Value<String?> linkedTransactionId,
       required String updatedAt,
       Value<String?> deletedAt,
+      Value<String?> receivedAt,
+      Value<String?> cardLast4,
+      Value<String?> accountLast4,
       Value<int> rowid,
     });
 typedef $$PendingTransactionsTableUpdateCompanionBuilder =
@@ -13191,6 +13874,9 @@ typedef $$PendingTransactionsTableUpdateCompanionBuilder =
       Value<String?> linkedTransactionId,
       Value<String> updatedAt,
       Value<String?> deletedAt,
+      Value<String?> receivedAt,
+      Value<String?> cardLast4,
+      Value<String?> accountLast4,
       Value<int> rowid,
     });
 
@@ -13325,6 +14011,21 @@ class $$PendingTransactionsTableFilterComposer
 
   ColumnFilters<String> get deletedAt => $composableBuilder(
     column: $table.deletedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get receivedAt => $composableBuilder(
+    column: $table.receivedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get cardLast4 => $composableBuilder(
+    column: $table.cardLast4,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get accountLast4 => $composableBuilder(
+    column: $table.accountLast4,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -13462,6 +14163,21 @@ class $$PendingTransactionsTableOrderingComposer
     column: $table.deletedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get receivedAt => $composableBuilder(
+    column: $table.receivedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get cardLast4 => $composableBuilder(
+    column: $table.cardLast4,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get accountLast4 => $composableBuilder(
+    column: $table.accountLast4,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$PendingTransactionsTableAnnotationComposer
@@ -13583,6 +14299,19 @@ class $$PendingTransactionsTableAnnotationComposer
 
   GeneratedColumn<String> get deletedAt =>
       $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get receivedAt => $composableBuilder(
+    column: $table.receivedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get cardLast4 =>
+      $composableBuilder(column: $table.cardLast4, builder: (column) => column);
+
+  GeneratedColumn<String> get accountLast4 => $composableBuilder(
+    column: $table.accountLast4,
+    builder: (column) => column,
+  );
 }
 
 class $$PendingTransactionsTableTableManager
@@ -13653,6 +14382,9 @@ class $$PendingTransactionsTableTableManager
                 Value<String?> linkedTransactionId = const Value.absent(),
                 Value<String> updatedAt = const Value.absent(),
                 Value<String?> deletedAt = const Value.absent(),
+                Value<String?> receivedAt = const Value.absent(),
+                Value<String?> cardLast4 = const Value.absent(),
+                Value<String?> accountLast4 = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => PendingTransactionsCompanion(
                 id: id,
@@ -13680,6 +14412,9 @@ class $$PendingTransactionsTableTableManager
                 linkedTransactionId: linkedTransactionId,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
+                receivedAt: receivedAt,
+                cardLast4: cardLast4,
+                accountLast4: accountLast4,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -13709,6 +14444,9 @@ class $$PendingTransactionsTableTableManager
                 Value<String?> linkedTransactionId = const Value.absent(),
                 required String updatedAt,
                 Value<String?> deletedAt = const Value.absent(),
+                Value<String?> receivedAt = const Value.absent(),
+                Value<String?> cardLast4 = const Value.absent(),
+                Value<String?> accountLast4 = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => PendingTransactionsCompanion.insert(
                 id: id,
@@ -13736,6 +14474,9 @@ class $$PendingTransactionsTableTableManager
                 linkedTransactionId: linkedTransactionId,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
+                receivedAt: receivedAt,
+                cardLast4: cardLast4,
+                accountLast4: accountLast4,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -13784,6 +14525,10 @@ typedef $$RecurringTransactionsTableCreateCompanionBuilder =
       required String createdAt,
       required String updatedAt,
       Value<String?> deletedAt,
+      Value<bool> autoAdd,
+      Value<bool> reminderEnabled,
+      Value<int> reminderDayOffset,
+      Value<String> reminderTime,
       Value<int> rowid,
     });
 typedef $$RecurringTransactionsTableUpdateCompanionBuilder =
@@ -13803,6 +14548,10 @@ typedef $$RecurringTransactionsTableUpdateCompanionBuilder =
       Value<String> createdAt,
       Value<String> updatedAt,
       Value<String?> deletedAt,
+      Value<bool> autoAdd,
+      Value<bool> reminderEnabled,
+      Value<int> reminderDayOffset,
+      Value<String> reminderTime,
       Value<int> rowid,
     });
 
@@ -13887,6 +14636,26 @@ class $$RecurringTransactionsTableFilterComposer
 
   ColumnFilters<String> get deletedAt => $composableBuilder(
     column: $table.deletedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get autoAdd => $composableBuilder(
+    column: $table.autoAdd,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get reminderEnabled => $composableBuilder(
+    column: $table.reminderEnabled,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get reminderDayOffset => $composableBuilder(
+    column: $table.reminderDayOffset,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get reminderTime => $composableBuilder(
+    column: $table.reminderTime,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -13974,6 +14743,26 @@ class $$RecurringTransactionsTableOrderingComposer
     column: $table.deletedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<bool> get autoAdd => $composableBuilder(
+    column: $table.autoAdd,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get reminderEnabled => $composableBuilder(
+    column: $table.reminderEnabled,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get reminderDayOffset => $composableBuilder(
+    column: $table.reminderDayOffset,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get reminderTime => $composableBuilder(
+    column: $table.reminderTime,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$RecurringTransactionsTableAnnotationComposer
@@ -14037,6 +14826,24 @@ class $$RecurringTransactionsTableAnnotationComposer
 
   GeneratedColumn<String> get deletedAt =>
       $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get autoAdd =>
+      $composableBuilder(column: $table.autoAdd, builder: (column) => column);
+
+  GeneratedColumn<bool> get reminderEnabled => $composableBuilder(
+    column: $table.reminderEnabled,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get reminderDayOffset => $composableBuilder(
+    column: $table.reminderDayOffset,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get reminderTime => $composableBuilder(
+    column: $table.reminderTime,
+    builder: (column) => column,
+  );
 }
 
 class $$RecurringTransactionsTableTableManager
@@ -14100,6 +14907,10 @@ class $$RecurringTransactionsTableTableManager
                 Value<String> createdAt = const Value.absent(),
                 Value<String> updatedAt = const Value.absent(),
                 Value<String?> deletedAt = const Value.absent(),
+                Value<bool> autoAdd = const Value.absent(),
+                Value<bool> reminderEnabled = const Value.absent(),
+                Value<int> reminderDayOffset = const Value.absent(),
+                Value<String> reminderTime = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => RecurringTransactionsCompanion(
                 id: id,
@@ -14117,6 +14928,10 @@ class $$RecurringTransactionsTableTableManager
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
+                autoAdd: autoAdd,
+                reminderEnabled: reminderEnabled,
+                reminderDayOffset: reminderDayOffset,
+                reminderTime: reminderTime,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -14136,6 +14951,10 @@ class $$RecurringTransactionsTableTableManager
                 required String createdAt,
                 required String updatedAt,
                 Value<String?> deletedAt = const Value.absent(),
+                Value<bool> autoAdd = const Value.absent(),
+                Value<bool> reminderEnabled = const Value.absent(),
+                Value<int> reminderDayOffset = const Value.absent(),
+                Value<String> reminderTime = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => RecurringTransactionsCompanion.insert(
                 id: id,
@@ -14153,6 +14972,10 @@ class $$RecurringTransactionsTableTableManager
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
+                autoAdd: autoAdd,
+                reminderEnabled: reminderEnabled,
+                reminderDayOffset: reminderDayOffset,
+                reminderTime: reminderTime,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

@@ -510,9 +510,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('advancedBackupSettingsTile')), findsOneWidget);
-      expect(find.text('Advanced'), findsOneWidget);
-
-      await tester.tap(find.text('Advanced'));
+      await tester.ensureVisible(find.byKey(const Key('advancedBackupSettingsTile')));
+      await tester.tap(find.text('Advanced Settings'));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('advancedBackupSettingsTile')), findsOneWidget);
@@ -568,8 +567,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('advancedBackupSettingsTile')), findsOneWidget);
-
+      await tester.ensureVisible(find.byKey(const Key('advancedBackupSettingsTile')));
       await tester.tap(find.byKey(const Key('advancedBackupSettingsTile')));
       await tester.pumpAndSettle();
 
@@ -1568,14 +1566,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.pump(const Duration(milliseconds: 500));
 
-    final olderBackupCard = find.ancestor(
-      of: find.text('Backup #1'),
-      matching: find.byType(Card),
-    );
-    final restoreBtn = find.descendant(
-      of: olderBackupCard,
-      matching: find.widgetWithText(OutlinedButton, 'Restore'),
-    );
+    await tester.tap(find.text('Backup History'));
+    await tester.pumpAndSettle();
+
+    final restoreBtn = find.widgetWithText(OutlinedButton, 'Restore');
     expect(restoreBtn, findsOneWidget);
     await tester.ensureVisible(restoreBtn);
     await tester.tap(restoreBtn);
@@ -1712,9 +1706,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
 
       expect(
-        find.text(
-          'Status: Google Drive permission was revoked. Please reconnect.',
-        ),
+        find.text('Google Drive permission was revoked. Please reconnect.'),
         findsOneWidget,
       );
       expect(find.text('Connect Google Drive'), findsOneWidget);
@@ -1813,9 +1805,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.pump(const Duration(milliseconds: 500));
 
-    expect(find.text('Last backup'), findsOneWidget);
-    expect(find.text('Backup count'), findsOneWidget);
-    expect(find.text('2'), findsWidgets);
+    expect(find.textContaining('Last backup:'), findsOneWidget);
+    expect(find.text('Latest Backup'), findsOneWidget);
+    expect(find.text('Backup History'), findsOneWidget);
 
     await activeDb.close();
   });
@@ -1891,9 +1883,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.pump(const Duration(milliseconds: 500));
 
-    expect(find.text('Snapshot file missing from Drive'), findsOneWidget);
+    expect(find.text('Unavailable'), findsWidgets);
     expect(find.widgetWithText(OutlinedButton, 'Unavailable'), findsOneWidget);
-    expect(find.text('Refresh backups'), findsOneWidget);
+    expect(find.text('Backup History'), findsOneWidget);
 
     await activeDb.close();
   });

@@ -161,16 +161,16 @@ class _ShortcutSetupGuideScreenState extends State<ShortcutSetupGuideScreen>
         primaryLabel: switch (_index) {
           0 => l10n.tr('setup_continue'),
           1 => l10n.tr('setup_ios_add_shortcut_primary'),
-          2 => l10n.tr('setup_continue'),
-          3 => l10n.tr('setup_continue'),
+          2 => l10n.tr('setup_ios_open_shortcuts'),
+          3 => l10n.tr('setup_ios_open_shortcuts'),
           4 => l10n.tr('setup_done'),
           _ => l10n.tr('setup_continue'),
         },
         onPrimary: switch (_index) {
           0 => _next,
           1 => _openShortcutsInstaller,
-          2 => _next,
-          3 => _next,
+          2 => _openShortcutsInstaller,
+          3 => _openShortcutsInstaller,
           4 => _finish,
           _ => _next,
         },
@@ -195,20 +195,21 @@ class _GuideStepBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.premiumTokens;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         visual,
-        const SizedBox(height: AppSpacing.sm),
+        const SizedBox(height: 16),
         Text(
           headline,
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            color: context.premiumTokens.colors.onHero.withValues(alpha: 0.9),
+            color: tokens.colors.textPrimary,
             fontWeight: FontWeight.w700,
           ),
         ),
-        const SizedBox(height: AppSpacing.sm),
+        const SizedBox(height: 12),
         PremiumChecklist(items: items),
       ],
     );
@@ -231,24 +232,6 @@ class _IosOverviewBody extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        Text(
-          title,
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            color: context.premiumTokens.colors.onHero.withValues(alpha: 0.90),
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        Text(
-          subtitle,
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: context.premiumTokens.colors.onHero.withValues(alpha: 0.74),
-            height: 1.35,
-          ),
-        ),
-        const SizedBox(height: AppSpacing.md),
         PremiumChecklist(items: items),
       ],
     );

@@ -86,11 +86,7 @@ class InvestmentsMapper {
   List<Map<String, dynamic>> _decodeInstallmentPlan(String raw) {
     if (raw.trim().isEmpty) return const <Map<String, dynamic>>[];
     final dynamic decoded = jsonDecode(raw);
-    if (decoded is! List) return const <Map<String, dynamic>>[];
-    return decoded
-        .whereType<Map>()
-        .map((Map<dynamic, dynamic> item) => Map<String, dynamic>.from(item))
-        .toList(growable: false);
+    return model.InvestmentAsset.normalizeInstallmentPlan(decoded);
   }
 
   double _toDouble(String value) => tryParseAmount(value) ?? 0;

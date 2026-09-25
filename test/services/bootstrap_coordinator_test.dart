@@ -8,11 +8,14 @@ import 'package:local_auth/local_auth.dart';
 import 'package:zakatapp_flutter/services/biometric_auth_result.dart';
 
 import 'package:zakatapp_flutter/models/user_profile.dart';
+import 'package:zakatapp_flutter/models/backup_preview.dart';
 import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
 import 'package:zakatapp_flutter/services/app_state_controller.dart';
 import 'package:zakatapp_flutter/services/auth_controller.dart';
+import 'package:zakatapp_flutter/services/backup_service.dart';
 import 'package:zakatapp_flutter/services/bootstrap_cloud_service.dart';
 import 'package:zakatapp_flutter/services/bootstrap_coordinator.dart';
+import 'package:zakatapp_flutter/services/local_backup_service.dart';
 import 'package:zakatapp_flutter/services/local_storage_service.dart';
 import 'package:zakatapp_flutter/features/auth/auth_service.dart';
 import 'package:zakatapp_flutter/services/startup_restore_discovery.dart';
@@ -95,6 +98,7 @@ class _FakeAuthService implements AuthService, AuthGateStateSource {
 class _RecordingAppStateController extends AppStateController {
   _RecordingAppStateController({
     required super.repository,
+    super.localBackupService,
     this.firstLoadGate,
     super.enableBackgroundSync = false,
     super.enableMarketAutoRefresh = false,
@@ -200,6 +204,22 @@ class _RecordingBootstrapCloudService implements BootstrapCloudService {
   String get statusMessage => statusMessageText;
 }
 
+class _FakeLocalBackupService extends LocalBackupService {
+  _FakeLocalBackupService(this.discovery) : super(enableInTesting: true);
+
+  final StartupRestoreDiscoveryResult discovery;
+  int discoverCalls = 0;
+
+  @override
+  Future<StartupRestoreDiscoveryResult> discoverStartupRestore({
+    required String userId,
+    required bool localHasData,
+  }) async {
+    discoverCalls += 1;
+    return discovery;
+  }
+}
+
 BootstrapCoordinator _buildCoordinator({
   required _RecordingAppStateController appStateController,
   required AuthController authController,
@@ -211,6 +231,37 @@ BootstrapCoordinator _buildCoordinator({
       appStateController: appStateController,
       cloudBackupController: cloudBackupService,
     ),
+  );
+}
+
+String _buildLocalBackupJson({
+  required String userId,
+}) {
+  final Map<String, dynamic> appState = <String, dynamic>{
+    'transactions': <Map<String, dynamic>>[
+      <String, dynamic>{
+        'id': 'tx-local-1',
+        'type': 'expense',
+        'date': '2026-08-26',
+        'amount': 42,
+        'currency': 'SAR',
+        'category': 'test',
+        'description': 'local backup transaction',
+        'createdAt': '2026-08-26T00:00:00.000Z',
+        'rolledOver': false,
+      },
+    ],
+    'savings': <Map<String, dynamic>>[],
+    'recurringTransactions': <Map<String, dynamic>>[],
+    'investments': <Map<String, dynamic>>[],
+    'financialPlans': <Map<String, dynamic>>[],
+    'pendingTransactions': <Map<String, dynamic>>[],
+  };
+  return BackupService.exportBackup(
+    appState,
+    userId: userId,
+    provider: 'apple',
+    email: 'user@example.com',
   );
 }
 
@@ -350,6 +401,56 @@ void main() {
     expect(appStateController.recurringCalls, 1);
     expect(cloudBackupService.activateCalls, 1);
     expect(cloudBackupService.resumeCalls, 0);
+    fakeAuth.dispose();
+  });
+
+  test('startup restores from local backup when cloud has nothing useful', () async {
+    final _FakeAuthService fakeAuth = _FakeAuthService(
+      const UserProfile(
+        id: 'user-local',
+        email: 'local@example.com',
+        displayName: 'Local User',
+        provider: 'apple',
+        emailVerified: true,
+      ),
+    );
+    final AuthController authController = AuthController(
+      authService: fakeAuth,
+      localStorage: const LocalStorageService(),
+    );
+    final StartupRestoreDiscoveryResult localDiscovery =
+        StartupRestoreDiscoveryResult(
+      status: StartupRestoreDiscoveryStatus.restorePrompt,
+      message: 'Local backup found.',
+      preview: BackupService.parseBackupPreview(
+        _buildLocalBackupJson(userId: 'user-local'),
+      ),
+      source: StartupRestoreSource.local,
+    );
+    final _FakeLocalBackupService localBackupService =
+        _FakeLocalBackupService(localDiscovery);
+    final _RecordingAppStateController appStateController =
+        _RecordingAppStateController(
+      repository: AppStateRepository(localStorage: const LocalStorageService()),
+      localBackupService: localBackupService,
+    );
+    final _RecordingBootstrapCloudService cloudBackupService =
+        _RecordingBootstrapCloudService();
+    final BootstrapCoordinator coordinator = _buildCoordinator(
+      appStateController: appStateController,
+      authController: authController,
+      cloudBackupService: cloudBackupService,
+    );
+
+    final BootstrapResult result = await coordinator.start();
+    await flushMicrotasks();
+
+    expect(result, isA<BootstrapReady>());
+    expect(coordinator.phase, BootstrapPhase.ready);
+    expect(localBackupService.discoverCalls, 1);
+    expect(cloudBackupService.discoverCalls, 1);
+    expect(appStateController.state.transactions, isNotEmpty);
+    expect(appStateController.state.transactions.first.id, 'tx-local-1');
     fakeAuth.dispose();
   });
 

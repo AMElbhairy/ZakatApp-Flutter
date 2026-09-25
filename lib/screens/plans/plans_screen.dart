@@ -12,6 +12,7 @@ import '../../models/transaction.dart';
 import '../../services/app_state_controller.dart';
 import '../../services/plan_wealth_service.dart';
 import '../../services/projection_service.dart';
+import 'cash_flow_chart_screen.dart';
 import '../entry/add_financial_plan_screen.dart';
 import '../../core/theme/app_theme_extensions.dart';
 import '../account/notifications_screen.dart';
@@ -69,10 +70,14 @@ class _PlansScreenState extends State<PlansScreen> {
     final List<ProjectionPoint> projection =
         ProjectionService.calculateProjection(
           plan: plan,
+          transactions: transactions,
+          savings: savings,
           investments: investments,
           marketData: marketData,
           zakatMethod: controller.state.zakatMethod,
           zakatAnnualDate: controller.state.zakatAnnualDate,
+          lastRollover: controller.state.lastRollover,
+          zakatNisabBasis: controller.state.zakatNisabBasis,
         );
 
     double convertValue(double value) {
@@ -120,8 +125,9 @@ class _PlansScreenState extends State<PlansScreen> {
         DateTime.tryParse(plan.startDate) ?? DateTime.now();
     final DateTime now = DateTime.now();
     final int totalMonths = plan.durationYears * 12;
-    int currentMonthIndex =
+    final int monthDelta =
         (now.year - startDate.year) * 12 + (now.month - startDate.month);
+    int currentMonthIndex = monthDelta < 0 ? 0 : monthDelta + 1;
     currentMonthIndex = currentMonthIndex.clamp(0, totalMonths);
     final DateTime targetDate = DateTime(
       startDate.year + plan.durationYears,
@@ -135,8 +141,14 @@ class _PlansScreenState extends State<PlansScreen> {
           currentMonthIndex: currentMonthIndex,
           startingBalance: plan.startingBalance,
         );
-    final double requiredSurplusNative =
-        plan.monthlyIncome - plan.monthlyExpenses;
+    double requiredSurplusNative = plan.monthlyIncome - plan.monthlyExpenses;
+    if (projection.isNotEmpty) {
+      double totalOutflows = 0.0;
+      for (final ProjectionPoint pt in projection) {
+        totalOutflows += pt.installmentsOutflow + pt.zakatOutflow;
+      }
+      requiredSurplusNative -= (totalOutflows / projection.length);
+    }
     final double currentSurplusNative =
         PlanWealthService.calculateActualAverageSurplus(
           currentNetWorth: actualWealthNative,
@@ -148,21 +160,19 @@ class _PlansScreenState extends State<PlansScreen> {
     final double expectedWealth = convertValue(expectedWealthNative);
     final double requiredSurplus = convertValue(requiredSurplusNative);
     final double currentSurplus = convertValue(currentSurplusNative);
-    final double surplusGap = currentSurplus - requiredSurplus;
     final double variance = actualWealth - expectedWealth;
+    final double plannedToDate = expectedWealth;
+    final double actualToDate = actualWealth;
+    final double toDateGap = actualToDate - plannedToDate;
 
     final double planEndGoal = convertValue(
       projection.isEmpty ? plan.startingBalance : projection.last.balance,
     );
     final int remainingMonths = math.max(0, totalMonths - currentMonthIndex);
-    final double projectedEndBalance =
-        PlanWealthService.calculateForecastEndBalance(
-          planEndGoal: planEndGoal,
-          currentFinancialVariance: variance,
-          averageMonthlySurplus: currentSurplus,
-          requiredMonthlySurplus: requiredSurplus,
-          remainingMonths: remainingMonths,
-        );
+    final double projectedEndBalance = math.max(
+      0.0,
+      planEndGoal + variance,
+    );
     final double projectedGrowth =
         projectedEndBalance - convertValue(plan.startingBalance);
     final double forecastGap = projectedEndBalance - planEndGoal;
@@ -193,9 +203,9 @@ class _PlansScreenState extends State<PlansScreen> {
           .round();
     }
 
-    final double progressRatio = requiredSurplus <= 0
-        ? (currentSurplus >= 0 ? 1.0 : 0.0)
-        : currentSurplus / requiredSurplus;
+    final double progressRatio = plannedToDate <= 0
+        ? (actualToDate >= 0 ? 1.0 : 0.0)
+        : actualToDate / plannedToDate;
 
     final Map<String, Map<String, double>> assetDrift =
         PlanWealthService.calculateAssetDrift(
@@ -217,10 +227,10 @@ class _PlansScreenState extends State<PlansScreen> {
     final double liabilities = assetDrift['liability']?['current'] ?? 0;
 
     final List<_Milestone> milestones = _buildMilestones(
-      projection: displayedProjection,
       actualWealth: actualWealth,
-      projectedEndBalance: planEndGoal,
-      targetDate: targetDate,
+      currentSurplus: currentSurplus,
+      startingNetWorth: convertValue(plan.startingNetWorth),
+      targetNetWorth: planEndGoal,
       isArabic: isArabic,
     );
 
@@ -315,9 +325,9 @@ class _PlansScreenState extends State<PlansScreen> {
               const SizedBox(height: 14),
               _MonthlyGoalCard(
                 currencyCode: currencyCode,
-                required: requiredSurplus,
-                current: currentSurplus,
-                gap: surplusGap,
+                plannedToDate: plannedToDate,
+                actualToDate: actualToDate,
+                gap: toDateGap,
                 progressRatio: progressRatio,
                 healthCode: healthCode,
                 balancesHidden: balancesHidden,
@@ -366,6 +376,7 @@ class _PlansScreenState extends State<PlansScreen> {
               ),
               const SizedBox(height: 14),
               _ProjectionCard(
+                planId: plan.id,
                 projection: displayedProjection,
                 startingBalance: convertValue(plan.startingBalance),
                 actualWealth: actualWealth,
@@ -779,8 +790,8 @@ class _JourneyHero extends StatelessWidget {
 class _MonthlyGoalCard extends StatelessWidget {
   const _MonthlyGoalCard({
     required this.currencyCode,
-    required this.required,
-    required this.current,
+    required this.plannedToDate,
+    required this.actualToDate,
     required this.gap,
     required this.progressRatio,
     required this.healthCode,
@@ -789,8 +800,8 @@ class _MonthlyGoalCard extends StatelessWidget {
   });
 
   final String currencyCode;
-  final double required;
-  final double current;
+  final double plannedToDate;
+  final double actualToDate;
   final double gap;
   final double progressRatio;
   final String healthCode;
@@ -799,11 +810,11 @@ class _MonthlyGoalCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool ahead = current >= required;
+    final bool ahead = actualToDate >= plannedToDate;
     final double displayRatio = progressRatio.clamp(0, 1);
     final int percentage = (progressRatio * 100).clamp(0, 999).round();
     return _DashboardCard(
-      title: isArabic ? 'سرعة الادخار الحالية' : 'Current Saving Pace',
+      title: isArabic ? 'الوضع الحالي' : 'Current Situation',
       icon: Icons.savings_outlined,
       child: Column(
         children: <Widget>[
@@ -811,20 +822,20 @@ class _MonthlyGoalCard extends StatelessWidget {
             children: <Widget>[
               Expanded(
                 child: _MetricBlock(
-                  label: isArabic ? 'المطلوب' : 'Required',
+                  label: isArabic ? 'المخطط حتى اليوم' : 'Planned To Date',
                   value: balancesHidden
                       ? '••••••'
-                      : _compactMoney(required, currencyCode),
+                      : _compactMoney(plannedToDate, currencyCode),
                 ),
               ),
               Expanded(
                 child: _MetricBlock(
                   label: isArabic
-                      ? 'متوسط الفائض الفعلي'
-                      : 'Actual Average Surplus',
+                      ? 'الفعلي حتى اليوم'
+                      : 'Actual To Date',
                   value: balancesHidden
                       ? '••••••'
-                      : _compactMoney(current, currencyCode),
+                      : _compactMoney(actualToDate, currencyCode),
                 ),
               ),
               Expanded(
@@ -846,7 +857,7 @@ class _MonthlyGoalCard extends StatelessWidget {
               Expanded(
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(99),
-                  child: LinearProgressIndicator(
+                    child: LinearProgressIndicator(
                     minHeight: 10,
                     value: displayRatio,
                     backgroundColor: _emerald.withValues(alpha: 0.08),
@@ -874,15 +885,15 @@ class _MonthlyGoalCard extends StatelessWidget {
             child: Text(
               ahead
                   ? (isArabic
-                        ? 'عمل رائع! أنت تدخر أكثر من المطلوب.'
-                        : 'Great job! You are saving more than needed.')
+                        ? 'عمل رائع! وضعك الفعلي أعلى من المخطط حتى اليوم.'
+                        : 'Great job! Your actual balance is ahead of plan to date.')
                   : (isArabic
                         ? (balancesHidden
-                              ? 'تحتاج المزيد للبقاء على المسار.'
-                              : 'تحتاج ${_compactMoney(gap.abs(), currencyCode)} إضافية شهرياً للبقاء على المسار.')
+                              ? 'أنت متأخر عن المخطط حتى اليوم.'
+                              : 'أنت متأخر عن المخطط حتى اليوم بمقدار ${_compactMoney(gap.abs(), currencyCode)}.')
                         : (balancesHidden
-                              ? 'You need more per month to stay on track.'
-                              : 'You need ${_compactMoney(gap.abs(), currencyCode)} more per month to stay on track.')),
+                              ? 'You are behind plan to date.'
+                              : 'You are behind plan to date by ${_compactMoney(gap.abs(), currencyCode)}.')),
               style: TextStyle(
                 color: ahead ? _emeraldLight : _dangerColor(context),
                 fontSize: 12,
@@ -1448,7 +1459,9 @@ class _MilestonesCard extends StatelessWidget {
                             const SizedBox(height: 3),
                             Text(
                               milestone.date != null
-                                  ? '${isArabic ? "متوقع" : "Estimated"} ${DateFormat('MMM yyyy').format(milestone.date!)}'
+                                  ? (milestone.reached
+                                      ? '${isArabic ? "تم الوصول" : "Reached"} ${DateFormat('dd MMM yyyy').format(milestone.date!)}'
+                                      : '${isArabic ? "متوقع" : "Estimated"} ${DateFormat('MMM yyyy').format(milestone.date!)}')
                                   : (balancesHidden
                                         ? (isArabic ? 'متبقية' : 'to go')
                                         : '${_compactMoney(milestone.remaining, currencyCode)} ${isArabic ? "متبقية" : "to go"}'),
@@ -1477,6 +1490,7 @@ class _MilestonesCard extends StatelessWidget {
 
 class _ProjectionCard extends StatelessWidget {
   const _ProjectionCard({
+    required this.planId,
     required this.projection,
     required this.startingBalance,
     required this.actualWealth,
@@ -1488,6 +1502,7 @@ class _ProjectionCard extends StatelessWidget {
     required this.isArabic,
   });
 
+  final String planId;
   final List<ProjectionPoint> projection;
   final double startingBalance;
   final double actualWealth;
@@ -1542,6 +1557,29 @@ class _ProjectionCard extends StatelessWidget {
           _DetailRow(
             label: isArabic ? 'هدف نهاية الخطة' : 'Plan End Goal',
             value: _fullMoney(projectedEndBalance, currencyCode),
+          ),
+          const Divider(height: 24, thickness: 0.5),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.of(context).push(
+                    CashFlowChartScreen.route(planId: planId),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    side: BorderSide(color: Theme.of(context).brightness == Brightness.dark ? _gold : _emerald),
+                  ),
+                  child: Text(
+                    isArabic ? 'مخطط التدفق النقدي' : 'Cash Flow Chart',
+                    style: TextStyle(
+                      color: Theme.of(context).brightness == Brightness.dark ? _gold : _emerald,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -2609,77 +2647,43 @@ class _Milestone {
 }
 
 List<_Milestone> _buildMilestones({
-  required List<ProjectionPoint> projection,
   required double actualWealth,
-  required double projectedEndBalance,
-  required DateTime targetDate,
+  required double currentSurplus,
+  required double startingNetWorth,
+  required double targetNetWorth,
   required bool isArabic,
 }) {
-  final double journey = projectedEndBalance - actualWealth;
-  final List<double> goals = <double>[];
-
-  if (journey > 1000.0) {
-    final double rawStep = journey / 4.0;
-    double roundBase;
-    if (rawStep >= 1000000.0) {
-      roundBase = 500000.0;
-    } else if (rawStep >= 100000.0) {
-      roundBase = 50000.0;
-    } else if (rawStep >= 10000.0) {
-      roundBase = 5000.0;
-    } else {
-      roundBase = 1000.0;
-    }
-
-    for (int i = 1; i <= 3; i++) {
-      final double rawGoal = actualWealth + (rawStep * i);
-      final double roundedGoal =
-          (rawGoal / roundBase).roundToDouble() * roundBase;
-      goals.add(roundedGoal);
-    }
-  } else {
-    final double scaleTarget = math.max(projectedEndBalance, actualWealth);
-    if (scaleTarget >= 15000000.0) {
-      goals.addAll(<double>[3000000.0, 5000000.0, 10000000.0]);
-    } else if (scaleTarget >= 3000000.0) {
-      goals.addAll(<double>[500000.0, 1000000.0, 2000000.0]);
-    } else if (scaleTarget >= 500000.0) {
-      goals.addAll(<double>[100000.0, 250000.0, 500000.0]);
-    } else {
-      goals.addAll(<double>[
-        (scaleTarget * 0.25).roundToDouble(),
-        (scaleTarget * 0.50).roundToDouble(),
-        (scaleTarget * 0.75).roundToDouble(),
-      ]);
-    }
-  }
-
-  // Ensure unique sorted list of intermediate goals
-  final List<double> uniqueGoals = goals.toSet().toList()..sort();
+  final double journey = targetNetWorth - startingNetWorth;
+  final List<double> uniqueGoals = journey <= 0
+      ? <double>[targetNetWorth]
+      : <double>[
+          startingNetWorth + (journey * 0.25),
+          startingNetWorth + (journey * 0.50),
+          startingNetWorth + (journey * 0.75),
+        ]
+          .where((double value) => value > startingNetWorth)
+          .toSet()
+          .toList()
+        ..sort();
 
   final List<_Milestone> result = <_Milestone>[];
-  int lastMatchedIndex = -1;
 
   for (final double goal in uniqueGoals) {
-    if (goal <= 0) continue;
-    ProjectionPoint? match;
-    for (int i = lastMatchedIndex + 1; i < projection.length; i++) {
-      final ProjectionPoint point = projection[i];
-      if (point.balance >= goal) {
-        match = point;
-        lastMatchedIndex = i;
-        break;
-      }
-    }
-
+    final int pct = journey <= 0
+        ? 100
+        : (((goal - startingNetWorth) / journey) * 100).round();
     result.add(
       _Milestone(
         title: isArabic
-            ? 'صافي الثروة ${_shortNumber(goal)}'
-            : 'Net Worth ${_shortNumber(goal)}',
+            ? '$pct% من الرحلة'
+            : '$pct% of Journey',
         remaining: math.max(0, goal - actualWealth),
         reached: actualWealth >= goal,
-        date: actualWealth >= goal ? DateTime.now() : match?.date,
+        date: _estimateMilestoneDateFromCurrentSituation(
+          actualWealth: actualWealth,
+          currentSurplus: currentSurplus,
+          milestoneTarget: goal,
+        ),
       ),
     );
   }
@@ -2687,12 +2691,34 @@ List<_Milestone> _buildMilestones({
   result.add(
     _Milestone(
       title: isArabic ? 'تم الوصول إلى الهدف' : 'Target Achieved',
-      remaining: math.max(0, projectedEndBalance - actualWealth),
-      reached: actualWealth >= projectedEndBalance,
-      date: targetDate,
+      remaining: math.max(0, targetNetWorth - actualWealth),
+      reached: actualWealth >= targetNetWorth,
+      date: _estimateMilestoneDateFromCurrentSituation(
+        actualWealth: actualWealth,
+        currentSurplus: currentSurplus,
+        milestoneTarget: targetNetWorth,
+      ),
     ),
   );
   return result;
+}
+
+DateTime? _estimateMilestoneDateFromCurrentSituation({
+  required double actualWealth,
+  required double currentSurplus,
+  required double milestoneTarget,
+}) {
+  if (milestoneTarget <= actualWealth) {
+    return DateTime.now();
+  }
+  if (currentSurplus <= 0) {
+    return null;
+  }
+
+  final double monthsNeeded = (milestoneTarget - actualWealth) / currentSurplus;
+  final int months = monthsNeeded.ceil();
+  final DateTime now = DateTime.now();
+  return DateTime(now.year, now.month + months, now.day);
 }
 
 String _healthLabel(String code, bool isArabic) {
@@ -2780,20 +2806,6 @@ String _signedFullMoney(double value, String currency, {bool? isArabic}) {
     compact: false,
     showSign: true,
   );
-}
-
-String _shortNumber(double value) {
-  final double absolute = value.abs();
-  if (absolute >= 1000000000) {
-    return '${(value / 1000000000).toStringAsFixed(absolute >= 10000000000 ? 1 : 2)}B';
-  }
-  if (absolute >= 1000000) {
-    return '${(value / 1000000).toStringAsFixed(absolute >= 10000000 ? 1 : 2)}M';
-  }
-  if (absolute >= 1000) {
-    return '${(value / 1000).toStringAsFixed(absolute >= 100000 ? 0 : 1)}K';
-  }
-  return NumberFormat('#,##0.##').format(value);
 }
 
 String _date(DateTime value) => DateFormat('dd MMM yyyy').format(value);

@@ -10,6 +10,8 @@ class CurrencyPresentation {
     'QAR',
     'EUR',
     'GBP',
+    'AUD',
+    'CAD',
     'BHD',
     'OMR',
     'JOD',
@@ -24,10 +26,7 @@ class CurrencyPresentation {
     return '${flagEmoji(code)} $code';
   }
 
-  static String selectorLabel(
-    String currencyCode, {
-    required bool isRtl,
-  }) {
+  static String selectorLabel(String currencyCode, {required bool isRtl}) {
     final String code = currencyCode.trim().toUpperCase();
     final String flag = flagEmoji(code);
     return isRtl ? '$code $flag' : '$flag $code';
@@ -51,6 +50,10 @@ class CurrencyPresentation {
         return '🇪🇺';
       case 'GBP':
         return '🇬🇧';
+      case 'AUD':
+        return '🇦🇺';
+      case 'CAD':
+        return '🇨🇦';
       case 'BHD':
         return '🇧🇭';
       case 'OMR':

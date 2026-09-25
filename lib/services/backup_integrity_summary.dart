@@ -27,6 +27,7 @@ class BackupIntegritySummary {
   }) {
     final Map<String, int> counts = <String, int>{
       'transactions': state.transactions.length,
+      'credit_cards': state.creditCards.length,
       'savings': state.savings.length,
       'pending_transactions': state.pendingTransactions.length,
       'financial_plans': state.financialPlans.length,
@@ -37,8 +38,9 @@ class BackupIntegritySummary {
       'correction_feedback': state.correctionFeedback.length,
       'app_settings': _deriveSettingsCount(state),
     };
-    final Map<String, String> normalizedSources =
-        <String, String>{...collectionSources};
+    final Map<String, String> normalizedSources = <String, String>{
+      ...collectionSources,
+    };
     final String signature = _computeSignature(
       stateRevision: state.lastModifiedAt,
       counts: counts,
@@ -62,8 +64,7 @@ class BackupIntegritySummary {
         ? Map<String, dynamic>.from(json['collectionSources'] as Map)
         : <String, dynamic>{};
     final Map<String, int> counts = rawCounts.map(
-      (String key, dynamic value) =>
-          MapEntry<String, int>(key, _asInt(value)),
+      (String key, dynamic value) => MapEntry<String, int>(key, _asInt(value)),
     );
     final Map<String, String> sources = rawSources.map(
       (String key, dynamic value) =>
@@ -76,13 +77,14 @@ class BackupIntegritySummary {
       stateRevision: stateRevision,
       collectionCounts: counts,
       collectionSources: sources,
-      signature: (json['signature'] ??
-              _computeSignature(
-                stateRevision: stateRevision,
-                counts: counts,
-                collectionSources: sources,
-              ))
-          .toString(),
+      signature:
+          (json['signature'] ??
+                  _computeSignature(
+                    stateRevision: stateRevision,
+                    counts: counts,
+                    collectionSources: sources,
+                  ))
+              .toString(),
     );
   }
 
@@ -98,14 +100,18 @@ class BackupIntegritySummary {
   }
 
   bool get hasData =>
-      collectionCounts.values.fold<int>(0, (int sum, int value) => sum + value) >
+      collectionCounts.values.fold<int>(
+        0,
+        (int sum, int value) => sum + value,
+      ) >
       0;
 
   List<String> suspiciousMissingCollections({
     required BackupIntegritySummary baseline,
   }) {
     final List<String> suspect = <String>[];
-    for (final MapEntry<String, int> entry in baseline.collectionCounts.entries) {
+    for (final MapEntry<String, int> entry
+        in baseline.collectionCounts.entries) {
       if (entry.value <= 0) continue;
       final int currentCount = collectionCounts[entry.key] ?? 0;
       if (currentCount > 0) continue;
@@ -118,9 +124,7 @@ class BackupIntegritySummary {
     return suspect;
   }
 
-  bool isLikelyPartialCandidate({
-    required BackupIntegritySummary baseline,
-  }) {
+  bool isLikelyPartialCandidate({required BackupIntegritySummary baseline}) {
     final List<String> suspect = suspiciousMissingCollections(
       baseline: baseline,
     );
@@ -140,8 +144,10 @@ class BackupIntegritySummary {
     if (reducedBy <= 0) return false;
 
     final String sourceSummary = collectionSources.entries
-        .map((MapEntry<String, String> entry) =>
-            '${entry.key}:${entry.value.toLowerCase()}')
+        .map(
+          (MapEntry<String, String> entry) =>
+              '${entry.key}:${entry.value.toLowerCase()}',
+        )
         .join('|');
     return sourceSummary.contains('empty default');
   }
@@ -158,8 +164,9 @@ class BackupIntegritySummary {
           key: counts[key],
       },
       'sources': <String, dynamic>{
-        for (final String key in collectionSources.keys.toList(growable: false)
-          ..sort())
+        for (final String key in collectionSources.keys.toList(
+          growable: false,
+        )..sort())
           key: collectionSources[key],
       },
     };

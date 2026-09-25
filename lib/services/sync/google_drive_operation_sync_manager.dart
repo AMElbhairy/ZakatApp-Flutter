@@ -82,7 +82,7 @@ class GoogleDriveOperationSyncManager {
     } catch (error) {
       return OperationSyncResult(
         status: GoogleDriveOperationSyncStatus.error,
-        message: error.toString(),
+        message: 'Cloud operation sync could not be completed.',
       );
     }
 
@@ -120,7 +120,7 @@ class GoogleDriveOperationSyncManager {
     } catch (error) {
       return OperationSyncResult(
         status: GoogleDriveOperationSyncStatus.error,
-        message: error.toString(),
+        message: 'Cloud operation sync could not be completed.',
         uploadedCount: uploaded,
         skippedCount: 0,
         manifest: manifestWithSnapshot,
@@ -810,7 +810,9 @@ class GoogleDriveOperationSyncManager {
       parts.add('Applied $applied remote operation batch(es).');
     }
     if (skipped > 0) {
-      parts.add('Skipped $skipped unreadable or incompatible operation batch(es).');
+      parts.add(
+        'Skipped $skipped unreadable or incompatible operation batch(es).',
+      );
     }
     if (parts.isEmpty) {
       return 'No pending operations.';

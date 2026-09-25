@@ -5,6 +5,7 @@ class BackupPreview {
     required this.isLegacy,
     required this.sourceType,
     required this.transactionsCount,
+    this.creditCardsCount = 0,
     required this.savingsCount,
     required this.investmentsCount,
     required this.recurringTransactionsCount,
@@ -25,6 +26,7 @@ class BackupPreview {
   final bool isLegacy;
   final String sourceType;
   final int transactionsCount;
+  final int creditCardsCount;
   final int savingsCount;
   final int investmentsCount;
   final int recurringTransactionsCount;

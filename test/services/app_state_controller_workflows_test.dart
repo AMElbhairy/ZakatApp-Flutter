@@ -2,12 +2,34 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zakatapp_flutter/core/services/zakat_engine.dart';
 import 'package:zakatapp_flutter/models/currency_exchange_edit_request.dart';
+import 'package:zakatapp_flutter/models/credit_card.dart';
+import 'package:zakatapp_flutter/models/market_snapshot.dart';
 import 'package:zakatapp_flutter/models/saving.dart';
 import 'package:zakatapp_flutter/models/transaction.dart';
 import 'package:zakatapp_flutter/repositories/app_state_repository.dart';
 import 'package:zakatapp_flutter/services/app_state_controller.dart';
 import 'package:zakatapp_flutter/services/local_storage_service.dart';
+import 'package:zakatapp_flutter/services/market_data_api_service.dart';
 import 'package:zakatapp_flutter/services/reconciliation_service.dart';
+
+class _CountingMarketRefreshController extends AppStateController {
+  _CountingMarketRefreshController({required super.repository});
+
+  int refreshCalls = 0;
+
+  @override
+  Future<MarketRefreshResult> refreshMarketData({
+    bool force = false,
+    bool respectCooldown = true,
+  }) async {
+    refreshCalls += 1;
+    return const MarketRefreshResult(
+      success: true,
+      updatedFields: 0,
+      message: 'stubbed',
+    );
+  }
+}
 
 void main() {
   Future<AppStateController> makeController() async {
@@ -32,6 +54,85 @@ void main() {
       isTrue,
     );
   });
+
+  test(
+    'supplementary card routes balance to parent and archives independently',
+    () async {
+      final controller = await makeController();
+      const CreditCard parent = CreditCard(
+        id: 'parent-card',
+        bankName: 'Bank',
+        cardNickname: 'Main',
+        network: CreditCardNetwork.visa,
+        last4Digits: '1111',
+        creditLimit: 10000,
+        currency: 'EGP',
+        openingBalance: 100,
+      );
+      await controller.addCreditCard(parent);
+      await controller.addCreditCard(
+        const CreditCard(
+          id: 'child-card',
+          bankName: 'Bank',
+          cardNickname: 'Supplementary',
+          network: CreditCardNetwork.visa,
+          last4Digits: '2222',
+          creditLimit: 1,
+          currency: 'EGP',
+          openingBalance: 1,
+          parentCardId: 'parent-card',
+        ),
+      );
+
+      await controller.addTransaction(
+        const Transaction(
+          id: 'child-expense',
+          type: 'expense',
+          date: '2026-06-01',
+          amount: 250,
+          currency: 'EGP',
+          category: 'Purchase',
+          description: 'Child card purchase',
+          createdAt: '2026-06-01T00:00:00.000Z',
+          rolledOver: false,
+          paymentSourceId: 'child-card',
+        ),
+      );
+
+      final CreditCard updatedParent = controller.state.creditCards.firstWhere(
+        (CreditCard card) => card.id == parent.id,
+      );
+      final CreditCard updatedChild = controller.state.creditCards.firstWhere(
+        (CreditCard card) => card.id == 'child-card',
+      );
+      expect(updatedParent.openingBalance, 350);
+      expect(updatedChild.openingBalance, 350);
+      expect(updatedChild.creditLimit, updatedParent.creditLimit);
+
+      await controller.archiveCreditCard(
+        parent.id,
+        balanceOwnerId: 'child-card',
+      );
+      expect(
+        controller.state.creditCards
+            .firstWhere((c) => c.id == parent.id)
+            .isArchived,
+        isTrue,
+      );
+      expect(
+        controller.state.creditCards
+            .firstWhere((c) => c.id == 'child-card')
+            .parentCardId,
+        isNull,
+      );
+      expect(
+        controller.state.creditCards
+            .firstWhere((c) => c.id == 'child-card')
+            .openingBalance,
+        350,
+      );
+    },
+  );
 
   test('controller executeCurrencyExchange creates linked records', () async {
     final controller = await makeController();
@@ -60,6 +161,48 @@ void main() {
         .toList();
     expect(exchanged.length, 2);
   });
+
+  test(
+    'startMarketAutoRefresh preserves populated snapshots even without a timestamp and refreshes empty snapshot',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      const localStorage = LocalStorageService();
+      final repository = AppStateRepository(localStorage: localStorage);
+
+      final controller = _CountingMarketRefreshController(
+        repository: repository,
+      );
+      await controller.load();
+      await controller.updateMarketSnapshot(
+        const MarketSnapshot(
+          gold24kPricePerGramEgp: 6822.708809035779,
+          silverPricePerGramEgp: 99.26472731392991,
+          usdToEgp: 49.802855,
+          sarToEgp: 13.280761333333334,
+          aedToEgp: 13.561022464261404,
+          kwdToEgp: 161.4046422240155,
+          qarToEgp: 13.682103021978023,
+          eurToEgp: 57.53019584558764,
+          gbpToEgp: 67.07048731053337,
+          bhdToEgp: 132.45440159574468,
+          omrToEgp: 129.5272915003238,
+          jodToEgp: 70.24380112834979,
+          tryToEgp: 1.0464309902985438,
+          myrToEgp: 12.166828189560043,
+          pkrToEgp: 0.17914113641154358,
+          idrToEgp: 0.0027783481730594747,
+          lastUpdated: '',
+        ),
+      );
+
+      await controller.startMarketAutoRefresh();
+      expect(controller.refreshCalls, 1);
+
+      await controller.updateMarketSnapshot(MarketSnapshot.empty);
+      await controller.startMarketAutoRefresh();
+      expect(controller.refreshCalls, 2);
+    },
+  );
 
   test(
     'controller executeCurrencyExchange fills missing source saving date',
@@ -283,7 +426,9 @@ void main() {
         isFalse,
       );
       expect(
-        controller.state.transactions.any((Transaction tx) => tx.id == 'income-delete'),
+        controller.state.transactions.any(
+          (Transaction tx) => tx.id == 'income-delete',
+        ),
         isTrue,
       );
     },

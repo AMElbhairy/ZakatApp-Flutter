@@ -63,6 +63,21 @@ void main() {
     );
   });
 
+  test('merge restore keeps financial month cycle settings', () async {
+    await service.restoreReplace(
+      '{"appName":"ZakatApp","appState":{"transactions":[{"id":"tx1","description":"old"}],"savings":[],"investments":[],"recurringTransactions":[],"financialPlans":[],"financialMonthCycle":"calendar","financialMonthStartDay":1}}',
+      allowWhenLocalDataExists: true,
+    );
+
+    await service.restoreMerge(
+      '{"appName":"ZakatApp","appState":{"transactions":[{"id":"tx1","description":"updated"}],"savings":[],"investments":[],"recurringTransactions":[],"financialPlans":[],"financialMonthCycle":"custom","financialMonthStartDay":25}}',
+      allowWhenLocalDataExists: true,
+    );
+
+    expect(controller.state.financialMonthCycle, 'custom');
+    expect(controller.state.financialMonthStartDay, 25);
+  });
+
   test(
     'restoreReplace normalizes language preference so Arabic and English backups persist the same data',
     () async {
@@ -174,5 +189,45 @@ void main() {
     expect(reloaded.state.zakatExpenseIds, <String, dynamic>{
       '2026-06': 'tx-paid',
     });
+  });
+
+  test('cross-account restore throws when allowCrossAccount is false', () async {
+    final AppStateModel initialState = AppStateDefaults.create().copyWith(
+      userId: 'user-current',
+    );
+    await repository.saveAppState(initialState, userId: 'user-current');
+    controller = AppStateController(repository: repository);
+    await controller.loadAuthenticated('user-current');
+    service = BackupRestoreService(controller: controller);
+
+    expect(
+      () => service.restoreReplace(
+        '{"appName":"ZakatApp","userId":"user-other","appState":{"transactions":[{"id":"tx-other"}],"savings":[],"investments":[],"recurringTransactions":[],"financialPlans":[]}}',
+        allowWhenLocalDataExists: true,
+        allowCrossAccount: false,
+      ),
+      throwsA(isA<StateError>()),
+    );
+  });
+
+  test('cross-account restore succeeds and adopts current userId when allowCrossAccount is true', () async {
+    final AppStateModel initialState = AppStateDefaults.create().copyWith(
+      userId: 'user-current',
+    );
+    await repository.saveAppState(initialState, userId: 'user-current');
+    controller = AppStateController(repository: repository);
+    await controller.loadAuthenticated('user-current');
+    service = BackupRestoreService(controller: controller);
+
+    final RestoreResult result = await service.restoreReplace(
+      '{"appName":"ZakatApp","userId":"user-other","appState":{"transactions":[{"id":"tx-other","type":"income","amount":500,"currency":"EGP","date":"2026-01-01","category":"Salary","description":"test","createdAt":"2026-01-01T00:00:00.000Z","rolledOver":false}],"savings":[],"investments":[],"recurringTransactions":[],"financialPlans":[]}}',
+      allowWhenLocalDataExists: true,
+      allowCrossAccount: true,
+    );
+
+    expect(result.mode, 'replace');
+    expect(controller.state.userId, 'user-current');
+    expect(controller.state.transactions.length, 1);
+    expect(controller.state.transactions.first.id, 'tx-other');
   });
 }

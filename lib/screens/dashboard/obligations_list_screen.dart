@@ -3,9 +3,11 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 
 import '../../core/i18n/app_localizations.dart';
+import '../../core/errors/user_facing_error_mapper.dart';
 import '../../core/services/zakat_engine.dart';
 import '../../core/services/zakat_schedule_service.dart';
 import '../../core/theme/app_theme_extensions.dart';
+import '../../core/utils/amount_parser.dart';
 import '../../core/widgets/app_ui.dart';
 import '../../core/widgets/compact_dropdown.dart';
 import '../../models/investment_asset.dart';
@@ -218,6 +220,12 @@ class _ObligationsListScreenState extends State<ObligationsListScreen> {
       final double totalZakat = ((row['totalZakat'] ?? 0) as num).toDouble();
       final String paymentDate = (row['paymentDate'] ?? '').toString();
       final bool isPaid = state.zakatPaidMonths.contains(monthKey);
+      final DateTime? paymentDateParsed = DateTime.tryParse(
+        normalizeDateText(paymentDate),
+      );
+      final String scheduleMonthKey = paymentDateParsed == null
+          ? (monthKey.length >= 7 ? monthKey.substring(0, 7) : monthKey)
+          : '${paymentDateParsed.year}-${paymentDateParsed.month.toString().padLeft(2, '0')}';
 
       allItems.add(
         _ObligationItem(
@@ -228,9 +236,9 @@ class _ObligationsListScreenState extends State<ObligationsListScreen> {
           amountEgp: totalZakat,
           originalAmount: totalZakat,
           originalCurrency: 'EGP',
-          dateStr: paymentDate,
+          dateStr: paymentDate.isNotEmpty ? paymentDate : monthKey,
           isPaid: isPaid,
-          monthKey: monthKey,
+          monthKey: scheduleMonthKey,
         ),
       );
     }
@@ -248,6 +256,13 @@ class _ObligationsListScreenState extends State<ObligationsListScreen> {
           currency,
           market,
         );
+        final String itemMonthKey = (() {
+          final DateTime? parsed = DateTime.tryParse(
+            normalizeDateText(rawDate),
+          );
+          if (parsed == null) return '';
+          return '${parsed.year}-${parsed.month.toString().padLeft(2, '0')}';
+        })();
 
         allItems.add(
           _ObligationItem(
@@ -261,6 +276,7 @@ class _ObligationsListScreenState extends State<ObligationsListScreen> {
             originalCurrency: currency,
             dateStr: rawDate,
             isPaid: isPaid,
+            monthKey: itemMonthKey,
             installmentIndex: i,
           ),
         );
@@ -272,25 +288,49 @@ class _ObligationsListScreenState extends State<ObligationsListScreen> {
       final String itemMonthKey =
           item.monthKey ??
           (() {
-            final DateTime? parsed = DateTime.tryParse(item.dateStr);
+            final DateTime? parsed = DateTime.tryParse(
+              normalizeDateText(item.dateStr),
+            );
             if (parsed == null) return '';
             return '${parsed.year}-${parsed.month.toString().padLeft(2, '0')}';
           })();
 
+      if (itemMonthKey.isEmpty) return false;
+
       if (widget.filterMode == 'this_month') {
-        return itemMonthKey == thisMonthKey;
+        if (itemMonthKey == thisMonthKey) {
+          return true;
+        }
+        if (itemMonthKey.compareTo(thisMonthKey) < 0) {
+          return !item.isPaid;
+        }
+        return false;
       } else if (widget.filterMode == 'next_month') {
         return itemMonthKey == nextMonthKey;
       } else {
-        return itemMonthKey == thisMonthKey || itemMonthKey == nextMonthKey;
+        // total mode (upcoming + overdue unpaid)
+        if (itemMonthKey == thisMonthKey || itemMonthKey == nextMonthKey) {
+          return true;
+        }
+        if (itemMonthKey.compareTo(thisMonthKey) < 0) {
+          return !item.isPaid;
+        }
+        return false;
       }
     }).toList();
 
-    // Sort by date (unpaid first, then sorted by date)
+    // Sort by status (unpaid first, then sorted by date)
     filteredItems.sort((a, b) {
       if (a.isPaid != b.isPaid) {
         return a.isPaid ? 1 : -1;
       }
+      final DateTime? dtA = DateTime.tryParse(normalizeDateText(a.dateStr));
+      final DateTime? dtB = DateTime.tryParse(normalizeDateText(b.dateStr));
+      if (dtA != null && dtB != null) {
+        return dtA.compareTo(dtB);
+      }
+      if (dtA != null) return -1;
+      if (dtB != null) return 1;
       return a.dateStr.compareTo(b.dateStr);
     });
 
@@ -696,7 +736,11 @@ class _ObligationsListScreenState extends State<ObligationsListScreen> {
                                                 if (!context.mounted) return;
                                                 showTopSnackBar(
                                                   context,
-                                                  error.message,
+                                                  UserFacingErrorMapper.message(
+                                                    context.l10n,
+                                                    error,
+                                                    context: 'save',
+                                                  ),
                                                 );
                                               }
                                             },

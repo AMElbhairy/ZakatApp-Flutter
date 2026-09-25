@@ -3,6 +3,7 @@ import 'dart:io' show Platform;
 import 'package:intl/intl.dart';
 
 import '../utils/amount_parser.dart';
+import '../../models/credit_card.dart';
 import '../../models/investment_asset.dart';
 import '../../models/saving.dart';
 import '../../models/transaction.dart';
@@ -176,6 +177,10 @@ class ZakatEngineService {
         return '€';
       case 'GBP':
         return '£';
+      case 'AUD':
+        return r'A$';
+      case 'CAD':
+        return r'C$';
       case 'TRY':
         return '₺';
       case 'MYR':
@@ -193,11 +198,11 @@ class ZakatEngineService {
     if (!Platform.isAndroid) {
       return '⃁';
     }
-    final Match? match = RegExp(r'Android (\d+)').firstMatch(
-      Platform.operatingSystemVersion,
-    );
+    final Match? match = RegExp(
+      r'Android (\d+)',
+    ).firstMatch(Platform.operatingSystemVersion);
     final int androidVersion = int.tryParse(match?.group(1) ?? '') ?? 0;
-    return androidVersion >= 16 ? '⃁' : 'SR';
+    return androidVersion >= 16 ? '⃁' : 'SAR';
   }
 
   static String formatCurrency(
@@ -206,17 +211,22 @@ class ZakatEngineService {
     bool isArabic = false,
     bool compact = false,
     bool showSign = false,
+    bool trimZeroCents = false,
+    int maxFractionDigits = 2,
   }) {
     final String symbol = getCurrencySymbol(currencyCode, isArabic: isArabic);
     final double absAmount = amount.abs();
     final String formattedNumber;
     if (compact) {
-      final NumberFormat compactFormatter = NumberFormat.compact(
-        locale: 'en_US',
+      formattedNumber = formatCompactNumber(
+        absAmount,
+        maxFractionDigits: maxFractionDigits,
       );
-      formattedNumber = absAmount >= 10000
-          ? compactFormatter.format(absAmount)
-          : NumberFormat('#,##0.##', 'en_US').format(absAmount);
+    } else if (trimZeroCents) {
+      final double cents = (absAmount * 100).roundToDouble() % 100;
+      formattedNumber = cents == 0
+          ? NumberFormat('#,##0', 'en_US').format(absAmount)
+          : NumberFormat('#,##0.00', 'en_US').format(absAmount);
     } else {
       formattedNumber = NumberFormat('#,##0.00', 'en_US').format(absAmount);
     }
@@ -230,12 +240,57 @@ class ZakatEngineService {
     return '\u200E$symbol $formattedNumber';
   }
 
+  static String formatCompactNumber(
+    double absAmount, {
+    int maxFractionDigits = 2,
+  }) {
+    if (absAmount < 10000) {
+      return NumberFormat('#,##0.##', 'en_US').format(absAmount);
+    }
+    double scaled;
+    String suffix;
+    if (absAmount >= 999999999995) {
+      scaled = absAmount / 1e12;
+      suffix = 'T';
+    } else if (absAmount >= 999999995) {
+      scaled = absAmount / 1e9;
+      suffix = 'B';
+    } else if (absAmount >= 999995) {
+      scaled = absAmount / 1e6;
+      suffix = 'M';
+    } else if (absAmount >= 1e3) {
+      scaled = absAmount / 1e3;
+      suffix = 'K';
+    } else {
+      scaled = absAmount;
+      suffix = '';
+    }
+
+    final String pattern = maxFractionDigits == 1 ? '#,##0.#' : '#,##0.##';
+    String formatted = NumberFormat(pattern, 'en_US').format(scaled);
+    if (formatted == '1,000' || formatted == '1000') {
+      if (suffix == 'K') {
+        formatted = '1';
+        suffix = 'M';
+      } else if (suffix == 'M') {
+        formatted = '1';
+        suffix = 'B';
+      } else if (suffix == 'B') {
+        formatted = '1';
+        suffix = 'T';
+      }
+    }
+    return '$formatted$suffix';
+  }
+
   static const List<String> supportedCurrencies = <String>[
     'EGP',
     'USD',
     'SAR',
     'EUR',
     'GBP',
+    'AUD',
+    'CAD',
     'AED',
     'KWD',
     'QAR',
@@ -602,10 +657,17 @@ class ZakatEngineService {
     required InvestmentAsset asset,
     required MarketData marketData,
   }) {
+    final String type = normaliseInvestmentType(asset.investmentType);
+    if (type == 'liability' || type == 'loan') {
+      return 0.0;
+    }
+    final double rate = type == 'car'
+        ? -asset.inflationRateAnnual
+        : asset.inflationRateAnnual;
     final double fallbackMarketValue = estimateInflationAdjustedValue(
       originalPrice: asset.originalPrice,
       valuationDate: asset.valuationDate,
-      inflationRateAnnual: asset.inflationRateAnnual,
+      inflationRateAnnual: rate,
       ownershipType: 'fully_owned',
       paidAmount: asset.originalPrice,
     );
@@ -615,9 +677,7 @@ class ZakatEngineService {
         ? math.max(0, mv)
         : math.max(0, fallbackMarketValue);
 
-    final double share = asset.ownershipSharePct.isFinite
-        ? math.min(1, math.max(0, asset.ownershipSharePct / 100))
-        : 1;
+    final double share = 1.0;
     effectiveMarketValue *= share;
 
     return convertToEgp(effectiveMarketValue, asset.currency, marketData);
@@ -683,12 +743,14 @@ class ZakatEngineService {
     required List<Transaction> transactions,
     required List<Saving> savings,
     String? lastRollover,
+    Set<String>? creditCardIds,
   }) {
     final String normalizedCurrency = currency.trim().toUpperCase();
     final double txnBalance = _calculateTransactionBalanceByCurrency(
       currency: normalizedCurrency,
       transactions: transactions,
       lastRollover: lastRollover,
+      creditCardIds: creditCardIds,
     );
     final double savingsContribution = savings
         .where(
@@ -707,6 +769,7 @@ class ZakatEngineService {
     required String currency,
     required List<Transaction> transactions,
     String? lastRollover,
+    Set<String>? creditCardIds,
   }) {
     final String normalizedCurrency = currency.trim().toUpperCase();
     return transactions
@@ -715,13 +778,23 @@ class ZakatEngineService {
               tx.currency.trim().toUpperCase() == normalizedCurrency,
         )
         .fold<double>(0, (double sum, Transaction tx) {
+          final bool isCardTx = creditCardIds != null
+              ? (tx.paymentSourceId != null &&
+                  creditCardIds.contains(tx.paymentSourceId))
+              : (tx.paymentSourceId ?? '').trim().isNotEmpty;
           if (tx.type == 'income') {
+            if (isCardTx) return sum;
             if (tx.rolledOver && tx.rolledAmount != null) {
               return sum + (tx.amount - tx.rolledAmount!);
             }
             return sum + tx.amount;
           }
           if (tx.type == 'transfer') {
+            if (tx.transferSourceId == 'cash') return sum - tx.amount;
+            if (tx.transferDestinationId == 'cash') return sum + tx.amount;
+            return sum;
+          }
+          if (tx.type == 'expense' && isCardTx) {
             return sum;
           }
           if (lastRollover != null &&
@@ -913,8 +986,7 @@ class ZakatEngineService {
     return investments
         .where(
           (InvestmentAsset asset) =>
-              normaliseInvestmentType(asset.investmentType) !=
-              'company_investment',
+              normaliseInvestmentType(asset.investmentType) == 'real_estate',
         )
         .fold<double>(0, (double sum, InvestmentAsset asset) {
           return sum +
@@ -977,11 +1049,33 @@ class ZakatEngineService {
     });
   }
 
+  static double calculateTotalCreditCardBalancesEgp({
+    required List<CreditCard> creditCards,
+    required MarketData marketData,
+  }) {
+    return creditCards
+        .where(
+          (CreditCard card) =>
+              !card.isArchived && card.parentCardId == null,
+        )
+        .fold<double>(
+          0,
+          (double sum, CreditCard card) =>
+              sum +
+              convertToEgp(
+                card.openingBalance,
+                card.currency,
+                marketData,
+              ),
+        );
+  }
+
   static double calculateTotalLiabilitiesEgp({
     required List<Transaction> transactions,
     required List<Saving> savings,
     required List<InvestmentAsset> investments,
     required MarketData marketData,
+    List<CreditCard> creditCards = const <CreditCard>[],
     String? lastRollover,
   }) {
     final double investmentDebt = calculateTotalInvestmentLoanBalancesEgp(
@@ -1008,7 +1102,11 @@ class ZakatEngineService {
           );
           return sum + (converted ?? 0);
         });
-    return investmentDebt + walletOverdraft;
+    final double creditCardDebt = calculateTotalCreditCardBalancesEgp(
+      creditCards: creditCards,
+      marketData: marketData,
+    );
+    return investmentDebt + walletOverdraft + creditCardDebt;
   }
 
   static double calculateTotalAssetsEgp({
@@ -1032,6 +1130,7 @@ class ZakatEngineService {
     required List<Saving> savings,
     required List<InvestmentAsset> investments,
     required MarketData marketData,
+    List<CreditCard> creditCards = const <CreditCard>[],
     String? lastRollover,
   }) {
     return calculateTotalAssetsEgp(
@@ -1046,6 +1145,7 @@ class ZakatEngineService {
           savings: savings,
           investments: investments,
           marketData: marketData,
+          creditCards: creditCards,
           lastRollover: lastRollover,
         );
   }
@@ -1056,6 +1156,7 @@ class ZakatEngineService {
     required List<Saving> savings,
     required List<InvestmentAsset> investments,
     required MarketData marketData,
+    List<CreditCard> creditCards = const <CreditCard>[],
     String? lastRollover,
   }) {
     final DateTime asOfDate = _dateOnlyDateTime(asOf);
@@ -1075,6 +1176,13 @@ class ZakatEngineService {
           final DateTime? valuationDate = _tryDate(asset.valuationDate);
           return valuationDate != null &&
               valuationDate.compareTo(asOfDate) <= 0;
+        })
+        .toList(growable: false);
+    final List<CreditCard> creditCardsAtDate = creditCards
+        .where((CreditCard card) {
+          if (card.createdAt.isEmpty) return true;
+          final DateTime? createdDate = _tryDate(card.createdAt);
+          return createdDate == null || createdDate.compareTo(asOfDate) <= 0;
         })
         .toList(growable: false);
 
@@ -1102,8 +1210,12 @@ class ZakatEngineService {
           );
           return sum + (converted ?? 0);
         });
+    final double creditCardDebt = calculateTotalCreditCardBalancesEgp(
+      creditCards: creditCardsAtDate,
+      marketData: ratesAtDate,
+    );
 
-    return investmentDebt + walletOverdraft;
+    return investmentDebt + walletOverdraft + creditCardDebt;
   }
 
   static double calculateNetWorthEgpAt({
@@ -1112,6 +1224,7 @@ class ZakatEngineService {
     required List<Saving> savings,
     required List<InvestmentAsset> investments,
     required MarketData marketData,
+    List<CreditCard> creditCards = const <CreditCard>[],
     MarketData? ratesOverride,
     String? lastRollover,
   }) {
@@ -1130,6 +1243,7 @@ class ZakatEngineService {
           savings: savings,
           investments: investments,
           marketData: marketData,
+          creditCards: creditCards,
           lastRollover: lastRollover,
         );
   }
@@ -1242,6 +1356,7 @@ class ZakatEngineService {
     required List<Transaction> transactions,
     required MarketData marketData,
     String? lastRollover,
+    Set<String>? creditCardIds,
   }) {
     // Group transactions by currency
     final Map<String, List<Transaction>> groups = <String, List<Transaction>>{};
@@ -1277,12 +1392,18 @@ class ZakatEngineService {
       final List<Map<String, dynamic>> lots = <Map<String, dynamic>>[];
 
       for (final Transaction tx in sorted) {
+        final bool isCardTx = creditCardIds != null
+            ? (tx.paymentSourceId != null &&
+                creditCardIds.contains(tx.paymentSourceId))
+            : (tx.paymentSourceId ?? '').trim().isNotEmpty;
+
         final double amountEgp = convertToEgp(
           tx.amount,
           tx.currency,
           marketData,
         );
         if (tx.type == 'income') {
+          if (isCardTx) continue;
           double effectiveAmountEgp;
           if (tx.rolledOver && tx.rolledAmount != null) {
             effectiveAmountEgp = convertToEgp(
@@ -1310,6 +1431,7 @@ class ZakatEngineService {
             'description': tx.description,
           });
         } else {
+          if (isCardTx) continue;
           if (lastRollover != null &&
               lastRollover.isNotEmpty &&
               tx.date.isNotEmpty &&

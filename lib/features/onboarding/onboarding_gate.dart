@@ -66,12 +66,15 @@ class _OnboardingGateState extends State<OnboardingGate> {
     final bool hasRunBefore =
         widget.preferences.getBool('has_run_before') ?? false;
 
+    final bool isMidOnboarding =
+        widget.preferences.containsKey(StorageKeys.onboardingStepKey);
+
     _completed =
         widget.skipInTests ||
         legacyCompleted ||
         completedVersion >= _onboardingVersion;
 
-    if (!_completed && hasExistingAppState && hasRunBefore) {
+    if (!_completed && hasExistingAppState && hasRunBefore && !isMidOnboarding) {
       _completed = true;
       unawaited(_markCompleted(versioned: true));
     } else if (_completed && completedVersion < _onboardingVersion) {

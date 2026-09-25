@@ -623,6 +623,27 @@ class _AppShellState extends State<AppShell> {
                     );
                   },
                 ),
+                // Transfer between cash and credit-card accounts
+                ListTile(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  key: const Key('actionAddTransfer'),
+                  leading: const Icon(Icons.swap_horiz_outlined),
+                  title: Text(context.l10n.tr('transfer')),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    Navigator.of(this.context).push(
+                      MaterialPageRoute<void>(
+                        settings: const AppPrivacyRouteSettings(
+                          privacy: ScreenPrivacyClassification.sensitive,
+                        ),
+                        builder: (_) =>
+                            const AddTransactionScreen(initialType: 'transfer'),
+                      ),
+                    );
+                  },
+                ),
                 // Currency Exchange
                 ListTile(
                   shape: RoundedRectangleBorder(

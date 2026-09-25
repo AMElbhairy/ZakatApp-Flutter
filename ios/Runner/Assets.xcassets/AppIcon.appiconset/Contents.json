@@ -31,6 +31,20 @@
       "size" : "29x29"
     },
     {
+      "filename" : "Icon-App-29x29@2x.png",
+      "idiom" : "watch",
+      "role" : "companionSettings",
+      "scale" : "2x",
+      "size" : "29x29"
+    },
+    {
+      "filename" : "Icon-App-29x29@3x.png",
+      "idiom" : "watch",
+      "role" : "companionSettings",
+      "scale" : "3x",
+      "size" : "29x29"
+    },
+    {
       "filename" : "Icon-App-40x40@2x.png",
       "idiom" : "iphone",
       "scale" : "2x",
@@ -90,7 +104,11 @@
       "scale" : "2x",
       "size" : "40x40"
     },
-
+    {
+      "idiom" : "ipad",
+      "scale" : "2x",
+      "size" : "50x50"
+    },
     {
       "filename" : "Icon-App-72x72@1x.png",
       "idiom" : "ipad",

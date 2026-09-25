@@ -31,10 +31,38 @@ struct ZakahWealthProvider: TimelineProvider {
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<ZakahWealthEntry>) -> Void) {
         widgetLog("getTimeline start family=\(context.family) preview=\(context.isPreview)")
-        let summary = WidgetDataStore.loadSummary()
-        widgetLog("getTimeline loaded summary family=\(context.family) hasData=\(summary.hasData)")
-        let entry = ZakahWealthEntry(date: Date(), summary: summary)
-        completion(Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(300))))
+
+        Task {
+            let fallbackSummary = WidgetDataStore.loadSummary()
+            var finalSummary = fallbackSummary
+
+            // If fallbackSummary already has authoritative data computed by the app engine,
+            // preserve it directly to maintain 100% parity with the Dashboard hero.
+            if !fallbackSummary.hasData,
+               let userId = WidgetDataStore.activeUserId(),
+               let jsonString = WidgetDataStore.defaults.string(forKey: WidgetDataStore.portfolioSnapshotKeyForUser(userId)),
+               let data = jsonString.data(using: .utf8) {
+                do {
+                    let snapshot = try JSONDecoder().decode(WidgetPortfolioSnapshot.self, from: data)
+                    if snapshot.schemaVersion == 1 {
+                        let isArabic = fallbackSummary.isArabic
+                        let rates = await WidgetMarketRatesService.fetchRates(baseCurrency: snapshot.baseCurrency)
+                        finalSummary = WidgetWealthCalculator.calculate(
+                            snapshot: snapshot,
+                            rates: rates,
+                            isArabic: isArabic
+                        )
+                        widgetLog("getTimeline native calculation completed successfully")
+                    }
+                } catch {
+                    widgetLog("getTimeline native calculation failed: \(error.localizedDescription), falling back to pre-calculated summary")
+                }
+            }
+
+            let entry = ZakahWealthEntry(date: Date(), summary: finalSummary)
+            let nextRefresh = Calendar.current.date(byAdding: .minute, value: 20, to: Date())!
+            completion(Timeline(entries: [entry], policy: .after(nextRefresh)))
+        }
     }
 }
 
@@ -383,28 +411,34 @@ struct ZakahWealthWidgetView: View {
                     endPoint: .bottomTrailing
                 )
                 .overlay(
-                    RadialGradient(
-                        colors: [
-                            WidgetPalette.emerald.opacity(0.24),
-                            Color.clear,
-                        ],
-                        center: rtl ? .topTrailing : .topLeading,
-                        startRadius: 10,
-                        endRadius: 150
-                    )
-                    .blendMode(.screen)
+                    Rectangle()
+                        .fill(
+                            RadialGradient(
+                                colors: [
+                                    WidgetPalette.emerald.opacity(0.24),
+                                    Color.clear,
+                                ],
+                                center: rtl ? .topTrailing : .topLeading,
+                                startRadius: 10,
+                                endRadius: 150
+                            )
+                        )
+                        .blendMode(.screen)
                 )
                 .overlay(
-                    LinearGradient(
-                        colors: [
-                            Color.clear,
-                            WidgetPalette.emerald.opacity(0.08),
-                            Color.clear,
-                        ],
-                        startPoint: .topTrailing,
-                        endPoint: .bottomLeading
-                    )
-                    .blendMode(.screen)
+                    Rectangle()
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.clear,
+                                    WidgetPalette.emerald.opacity(0.08),
+                                    Color.clear,
+                                ],
+                                startPoint: .topTrailing,
+                                endPoint: .bottomLeading
+                            )
+                        )
+                        .blendMode(.screen)
                 )
             } else {
                 LinearGradient(
@@ -417,28 +451,34 @@ struct ZakahWealthWidgetView: View {
                     endPoint: .bottomTrailing
                 )
                 .overlay(
-                    RadialGradient(
-                        colors: [
-                            WidgetPalette.emerald.opacity(0.11),
-                            Color.clear,
-                        ],
-                        center: rtl ? .topTrailing : .topLeading,
-                        startRadius: 12,
-                        endRadius: 160
-                    )
-                    .blendMode(.multiply)
+                    Rectangle()
+                        .fill(
+                            RadialGradient(
+                                colors: [
+                                    WidgetPalette.emerald.opacity(0.11),
+                                    Color.clear,
+                                ],
+                                center: rtl ? .topTrailing : .topLeading,
+                                startRadius: 12,
+                                endRadius: 160
+                            )
+                        )
+                        .blendMode(.multiply)
                 )
                 .overlay(
-                    LinearGradient(
-                        colors: [
-                            Color.clear,
-                            WidgetPalette.emerald.opacity(0.05),
-                            Color.clear,
-                        ],
-                        startPoint: .topTrailing,
-                        endPoint: .bottomLeading
-                    )
-                    .blendMode(.multiply)
+                    Rectangle()
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.clear,
+                                    WidgetPalette.emerald.opacity(0.05),
+                                    Color.clear,
+                                ],
+                                startPoint: .topTrailing,
+                                endPoint: .bottomLeading
+                            )
+                        )
+                        .blendMode(.multiply)
                 )
             }
 
@@ -585,16 +625,25 @@ struct ZakahWealthWidgetView: View {
         let sign = value < 0 ? "-" : ""
         let absValue = abs(value)
 
-        if absValue >= 1_000_000_000 {
-            return "\(sign)\(trimmedDecimal(absValue / 1_000_000_000, maximumFractionDigits: 1))B"
+        if absValue >= 999_999_999_995 {
+            return "\(sign)\(trimmedDecimal(absValue / 1_000_000_000_000, maximumFractionDigits: 2))T"
         }
-        if absValue >= 1_000_000 {
-            return "\(sign)\(trimmedDecimal(absValue / 1_000_000, maximumFractionDigits: 1))M"
+        if absValue >= 999_999_995 {
+            let num = trimmedDecimal(absValue / 1_000_000_000, maximumFractionDigits: 2)
+            if num == "1000" { return "\(sign)1T" }
+            return "\(sign)\(num)B"
+        }
+        if absValue >= 999_995 {
+            let num = trimmedDecimal(absValue / 1_000_000, maximumFractionDigits: 2)
+            if num == "1000" { return "\(sign)1B" }
+            return "\(sign)\(num)M"
         }
         if absValue >= 1_000 {
-            return "\(sign)\(trimmedDecimal(absValue / 1_000, maximumFractionDigits: 1))k"
+            let num = trimmedDecimal(absValue / 1_000, maximumFractionDigits: 2)
+            if num == "1000" { return "\(sign)1M" }
+            return "\(sign)\(num)k"
         }
-        return "\(sign)\(trimmedDecimal(absValue, maximumFractionDigits: 1))"
+        return "\(sign)\(trimmedDecimal(absValue, maximumFractionDigits: 2))"
     }
 
     private var monthlyNetFlow: Double {
@@ -620,16 +669,50 @@ struct ZakahWealthWidgetView: View {
         return dark ? successDark : successLight
     }
 
+    private func formatLastUpdated(rawString: String, isArabic: Bool) -> String {
+        if rawString.isEmpty { return "" }
+        if rawString.contains("Updated") || rawString.contains("تحديث") {
+            return rawString
+        }
+
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        var dateOpt = isoFormatter.date(from: rawString)
+        if dateOpt == nil {
+            let isoFormatter2 = ISO8601DateFormatter()
+            isoFormatter2.formatOptions = [.withInternetDateTime]
+            dateOpt = isoFormatter2.date(from: rawString)
+        }
+
+        guard let date = dateOpt else {
+            return rawString
+        }
+
+        let displayFormatter = DateFormatter()
+        displayFormatter.locale = Locale(identifier: isArabic ? "ar" : "en")
+        displayFormatter.dateFormat = "h:mm a"
+        let timeStr = displayFormatter.string(from: date)
+        return isArabic ? "تحديث \(timeStr)" : "Updated \(timeStr)"
+    }
+
+    private var lastUpdatedTimestampView: some View {
+        Text(formatLastUpdated(rawString: summary.lastUpdated, isArabic: rtl))
+            .font(.system(size: 8.5, weight: .semibold, design: .rounded))
+            .foregroundStyle(secondaryTextColor)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+    }
+
     private var footerZakahRow: some View {
         HStack(alignment: .center) {
             if rtl {
+                lastUpdatedTimestampView
                 Spacer(minLength: 0)
-            }
-
-            countdownBadge
-
-            if !rtl {
+                countdownBadge
+            } else {
+                countdownBadge
                 Spacer(minLength: 0)
+                lastUpdatedTimestampView
             }
         }
     }
@@ -939,7 +1022,7 @@ struct RubElHizbIconView: View {
 
 struct AppIconView: View {
     var body: some View {
-        Image("WidgetAppIcon")
+        Image("WidgetAppIconSmall")
             .resizable()
             .scaledToFit()
     }
@@ -947,7 +1030,7 @@ struct AppIconView: View {
 
 struct SmallWidgetAppIconView: View {
     var body: some View {
-        Image("WidgetAppIcon")
+        Image("WidgetAppIconSmall")
             .resizable()
             .scaledToFit()
     }
@@ -1161,19 +1244,29 @@ struct ZakahWealthSmallWidgetView: View {
     private func formattedAmount(_ value: Double, currency: String) -> String {
         let absValue = abs(value)
         let sign = value < 0 ? "-" : ""
+        let digits = absValue >= 100_000_000_000 ? 1 : 2
 
-        if absValue >= 1_000_000_000 {
-            return "\(sign)\(currencyDisplayCode(currency)) \(trimmedDecimal(absValue / 1_000_000_000, maximumFractionDigits: 1))B"
+        if absValue >= 999_999_999_995 {
+            let num = trimmedDecimal(absValue / 1_000_000_000_000, maximumFractionDigits: digits)
+            return "\(sign)\(currencyDisplayCode(currency)) \(num)T"
         }
-        if absValue >= 1_000_000 {
-            return "\(sign)\(currencyDisplayCode(currency)) \(trimmedDecimal(absValue / 1_000_000, maximumFractionDigits: 1))M"
+        if absValue >= 999_999_995 {
+            var num = trimmedDecimal(absValue / 1_000_000_000, maximumFractionDigits: digits)
+            if num == "1000" { num = "1"; return "\(sign)\(currencyDisplayCode(currency)) \(num)T" }
+            return "\(sign)\(currencyDisplayCode(currency)) \(num)B"
         }
-
+        if absValue >= 999_995 {
+            var num = trimmedDecimal(absValue / 1_000_000, maximumFractionDigits: digits)
+            if num == "1000" { num = "1"; return "\(sign)\(currencyDisplayCode(currency)) \(num)B" }
+            return "\(sign)\(currencyDisplayCode(currency)) \(num)M"
+        }
         if absValue >= 1_000 {
-            return "\(sign)\(currencyDisplayCode(currency)) \(trimmedDecimal(absValue / 1_000, maximumFractionDigits: 1))K"
+            var num = trimmedDecimal(absValue / 1_000, maximumFractionDigits: digits)
+            if num == "1000" { num = "1"; return "\(sign)\(currencyDisplayCode(currency)) \(num)M" }
+            return "\(sign)\(currencyDisplayCode(currency)) \(num)K"
         }
 
-        return "\(sign)\(currencyDisplayCode(currency)) \(trimmedDecimal(absValue, maximumFractionDigits: 1))"
+        return "\(sign)\(currencyDisplayCode(currency)) \(trimmedDecimal(absValue, maximumFractionDigits: digits))"
     }
 
     private func groupedDecimal(_ value: Double) -> String {
@@ -1189,24 +1282,12 @@ struct ZakahWealthSmallWidgetView: View {
     private func trimmedDecimal(_ value: Double, maximumFractionDigits: Int) -> String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
-        formatter.locale = Locale.current
+        formatter.locale = Locale(identifier: "en_US")
         formatter.usesGroupingSeparator = false
         formatter.minimumFractionDigits = 0
         formatter.maximumFractionDigits = maximumFractionDigits
         formatter.minimumIntegerDigits = 1
-        let fallback = String(format: "%.0f", value)
-        switch maximumFractionDigits {
-        case 0:
-            return fallback
-        case 1:
-            return String(format: "%.1f", value)
-        case 2:
-            return String(format: "%.2f", value)
-        case 3:
-            return String(format: "%.3f", value)
-        default:
-            return String(format: "%.4f", value)
-        }
+        return formatter.string(from: NSNumber(value: value)) ?? String(format: "%.0f", value)
     }
 
     private func currencyDisplayCode(_ currency: String) -> String {
@@ -1437,24 +1518,12 @@ private extension ZakahWealthWidgetView {
     func trimmedDecimal(_ value: Double, maximumFractionDigits: Int) -> String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
-        formatter.locale = Locale.current
+        formatter.locale = Locale(identifier: "en_US")
         formatter.usesGroupingSeparator = false
         formatter.minimumFractionDigits = 0
         formatter.maximumFractionDigits = maximumFractionDigits
         formatter.minimumIntegerDigits = 1
-        let fallback = String(format: "%.0f", value)
-        switch maximumFractionDigits {
-        case 0:
-            return fallback
-        case 1:
-            return String(format: "%.1f", value)
-        case 2:
-            return String(format: "%.2f", value)
-        case 3:
-            return String(format: "%.3f", value)
-        default:
-            return String(format: "%.4f", value)
-        }
+        return formatter.string(from: NSNumber(value: value)) ?? String(format: "%.0f", value)
     }
 }
 
@@ -1510,9 +1579,6 @@ struct ZakahWealthWidgets: WidgetBundle {
     var body: some Widget {
         ZakahWealthSmallWidget()
         ZakahWealthAppWidget()
-        if #available(iOS 16.0, *) {
-            ZakahWealthAccessoryWidget()
-        }
     }
 }
 

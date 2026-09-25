@@ -8,6 +8,7 @@ import 'merchant_rule.dart';
 import 'merchant_confirmation.dart';
 import 'capture_analytics.dart';
 import 'correction_feedback.dart';
+import 'credit_card.dart';
 import '../core/utils/category_visuals.dart';
 import '../core/utils/amount_parser.dart';
 
@@ -17,6 +18,7 @@ class AppStateModel {
     required this.savings,
     required this.recurringTransactions,
     required this.investments,
+    this.creditCards = const <CreditCard>[],
     required this.financialPlans,
     required this.pendingTransactions,
     required this.lastRollover,
@@ -67,6 +69,7 @@ class AppStateModel {
   final List<Saving> savings;
   final List<RecurringTransaction> recurringTransactions;
   final List<InvestmentAsset> investments;
+  final List<CreditCard> creditCards;
   final List<FinancialPlan> financialPlans;
   final List<PendingTransaction> pendingTransactions;
   final String lastRollover;
@@ -127,6 +130,9 @@ class AppStateModel {
       investments: _asList(json['investments'])
           .map((dynamic e) => InvestmentAsset.fromJson(_asMap(e)))
           .toList(growable: false),
+      creditCards: _asList(json['creditCards'])
+          .map((dynamic e) => CreditCard.fromJson(_asMap(e)))
+          .toList(growable: false),
       financialPlans: _asList(json['financialPlans'])
           .map((dynamic e) => FinancialPlan.fromJson(_asMap(e)))
           .toList(growable: false),
@@ -161,10 +167,11 @@ class AppStateModel {
       syncHealth: SyncHealth.fromJson(_asMap(json['syncHealth'])),
       lastModifiedAt: (json['lastModifiedAt'] ?? '').toString(),
       userId: json['userId']?.toString(),
-      userEmail: json['email']?.toString(),
-      userDisplayName: json['displayName']?.toString(),
-      userPhotoUrl: json['photoUrl']?.toString(),
-      userProvider: json['provider']?.toString(),
+      userEmail: (json['email'] ?? json['userEmail'])?.toString(),
+      userDisplayName: (json['displayName'] ?? json['userDisplayName'])
+          ?.toString(),
+      userPhotoUrl: (json['photoUrl'] ?? json['userPhotoUrl'])?.toString(),
+      userProvider: (json['provider'] ?? json['userProvider'])?.toString(),
       languagePreference: (json['languagePreference'] ?? 'en').toString(),
       themeMode: (json['themeMode'] ?? 'system').toString(),
       aiSettings: json['aiSettings'] is Map
@@ -231,6 +238,7 @@ class AppStateModel {
       'investments': investments
           .map((InvestmentAsset e) => e.toJson())
           .toList(),
+      'creditCards': creditCards.map((CreditCard e) => e.toJson()).toList(),
       'financialPlans': financialPlans
           .map((FinancialPlan e) => e.toJson())
           .toList(),

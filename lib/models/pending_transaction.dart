@@ -26,6 +26,7 @@ class PendingTransaction {
     this.suggestedDescription,
     this.merchantName,
     this.suggestedCategory,
+    this.suggestedPaymentSourceId,
     required this.confidence,
     required this.status,
     this.approvalSource,
@@ -37,6 +38,9 @@ class PendingTransaction {
     this.requiresReview = true,
     this.isRead = false,
     this.linkedTransactionId,
+    this.receivedAt,
+    this.cardLast4,
+    this.accountLast4,
   });
 
   final String id;
@@ -51,6 +55,7 @@ class PendingTransaction {
   final String? suggestedDescription;
   final String? merchantName;
   final String? suggestedCategory;
+  final String? suggestedPaymentSourceId;
   final double confidence;
   final CaptureStatus status;
   final ApprovalSource? approvalSource;
@@ -62,6 +67,9 @@ class PendingTransaction {
   final bool requiresReview;
   final bool isRead;
   final String? linkedTransactionId;
+  final String? receivedAt;
+  final String? cardLast4;
+  final String? accountLast4;
 
   String get sourceDisplayLabel {
     switch (source) {
@@ -91,6 +99,7 @@ class PendingTransaction {
     String? suggestedDescription,
     String? merchantName,
     String? suggestedCategory,
+    String? suggestedPaymentSourceId,
     double? confidence,
     CaptureStatus? status,
     ApprovalSource? approvalSource,
@@ -102,9 +111,13 @@ class PendingTransaction {
     bool? requiresReview,
     bool? isRead,
     String? linkedTransactionId,
+    String? receivedAt,
+    String? cardLast4,
+    String? accountLast4,
     bool clearReviewedAt = false,
     bool clearApprovalSource = false,
     bool clearLinkedTransactionId = false,
+    bool clearSuggestedPaymentSourceId = false,
   }) {
     return PendingTransaction(
       id: id ?? this.id,
@@ -119,6 +132,9 @@ class PendingTransaction {
       suggestedDescription: suggestedDescription ?? this.suggestedDescription,
       merchantName: merchantName ?? this.merchantName,
       suggestedCategory: suggestedCategory ?? this.suggestedCategory,
+      suggestedPaymentSourceId: clearSuggestedPaymentSourceId
+          ? null
+          : suggestedPaymentSourceId ?? this.suggestedPaymentSourceId,
       confidence: confidence ?? this.confidence,
       status: status ?? this.status,
       approvalSource: clearApprovalSource
@@ -134,6 +150,9 @@ class PendingTransaction {
       linkedTransactionId: clearLinkedTransactionId
           ? null
           : linkedTransactionId ?? this.linkedTransactionId,
+      receivedAt: receivedAt ?? this.receivedAt,
+      cardLast4: cardLast4 ?? this.cardLast4,
+      accountLast4: accountLast4 ?? this.accountLast4,
     );
   }
 
@@ -155,6 +174,7 @@ class PendingTransaction {
       suggestedDescription: json['suggestedDescription']?.toString(),
       merchantName: json['merchantName']?.toString(),
       suggestedCategory: json['suggestedCategory']?.toString(),
+      suggestedPaymentSourceId: json['suggestedPaymentSourceId']?.toString(),
       confidence: _asDouble(json['confidence'] ?? 1.0),
       status: _parseStatus(json['status']),
       approvalSource: _parseApprovalSource(json['approvalSource']),
@@ -166,6 +186,11 @@ class PendingTransaction {
       requiresReview: _asBool(json['requiresReview'] ?? true),
       isRead: _asBool(json['isRead'] ?? false),
       linkedTransactionId: json['linkedTransactionId']?.toString(),
+      receivedAt: normalizeNullableTimestampText(
+        json['receivedAt']?.toString(),
+      ),
+      cardLast4: json['cardLast4']?.toString(),
+      accountLast4: json['accountLast4']?.toString(),
     );
   }
 
@@ -184,6 +209,8 @@ class PendingTransaction {
         'suggestedDescription': suggestedDescription,
       if (merchantName != null) 'merchantName': merchantName,
       if (suggestedCategory != null) 'suggestedCategory': suggestedCategory,
+      if (suggestedPaymentSourceId != null)
+        'suggestedPaymentSourceId': suggestedPaymentSourceId,
       'confidence': confidence,
       'status': status.name,
       if (approvalSource != null) 'approvalSource': approvalSource!.name,
@@ -196,6 +223,9 @@ class PendingTransaction {
       'isRead': isRead,
       if (linkedTransactionId != null)
         'linkedTransactionId': linkedTransactionId,
+      if (receivedAt != null) 'receivedAt': receivedAt,
+      if (cardLast4 != null) 'cardLast4': cardLast4,
+      if (accountLast4 != null) 'accountLast4': accountLast4,
     };
   }
 
@@ -249,6 +279,7 @@ class PendingTransaction {
         other.suggestedDescription == suggestedDescription &&
         other.merchantName == merchantName &&
         other.suggestedCategory == suggestedCategory &&
+        other.suggestedPaymentSourceId == suggestedPaymentSourceId &&
         other.confidence == confidence &&
         other.status == status &&
         other.approvalSource == approvalSource &&
@@ -259,7 +290,10 @@ class PendingTransaction {
         other.detectedBank == detectedBank &&
         other.requiresReview == requiresReview &&
         other.isRead == isRead &&
-        other.linkedTransactionId == linkedTransactionId;
+        other.linkedTransactionId == linkedTransactionId &&
+        other.receivedAt == receivedAt &&
+        other.cardLast4 == cardLast4 &&
+        other.accountLast4 == accountLast4;
   }
 
   @override
@@ -277,6 +311,7 @@ class PendingTransaction {
       suggestedDescription,
       merchantName,
       suggestedCategory,
+      suggestedPaymentSourceId,
       confidence,
       status,
       approvalSource,
@@ -288,6 +323,10 @@ class PendingTransaction {
       requiresReview,
       isRead,
       linkedTransactionId,
+      receivedAt,
+      cardLast4,
+      accountLast4,
     ]);
   }
+
 }

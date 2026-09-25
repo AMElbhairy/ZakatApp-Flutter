@@ -70,11 +70,14 @@ class AndroidSmsCapturePolicy {
       'authentication code',
       'login code',
       'passcode',
+      'purchase code',
       'رمز التحقق',
       'كود التحقق',
       'رمز لمرة واحدة',
       'كلمة مرور لمرة واحدة',
       'رمز الاستخدام لمرة واحدة',
+      'رمز شراء',
+      'رمز شراء أونلاين',
       'تأكيد الدخول',
     ].any(lower.contains);
   }
@@ -82,6 +85,7 @@ class AndroidSmsCapturePolicy {
   static bool isLikelyFinancialMessage(String message) {
     final String lower = message.toLowerCase();
     if (isLikelyOtpOrSecurityMessage(lower)) return false;
+    if (_containsSubscriptionActivationIndicators(lower)) return false;
     if (_containsAnyCurrencyMarker(lower)) return true;
     return <String>[
       'bank',
@@ -129,9 +133,7 @@ class AndroidSmsCapturePolicy {
       final String normalizedMarker = marker.toLowerCase();
       if (normalizedMarker.length == 2) {
         final RegExp codePattern = RegExp(
-          r'(^|[^a-z0-9])' +
-              RegExp.escape(normalizedMarker) +
-              r'([^a-z0-9]|$)',
+          r'(^|[^a-z0-9])' + RegExp.escape(normalizedMarker) + r'([^a-z0-9]|$)',
         );
         if (codePattern.hasMatch(lower)) return true;
       } else if (lower.contains(normalizedMarker)) {
@@ -147,5 +149,49 @@ class AndroidSmsCapturePolicy {
     }
 
     return false;
+  }
+
+  static bool _containsSubscriptionActivationIndicators(String message) {
+    const List<String> englishKeywords = <String>[
+      'subscribe',
+      'subscription',
+      'subscribed',
+      'welcome prepaid',
+      'welcome package',
+      'new activation',
+      'activation successful',
+      'activated successfully',
+      'package details',
+      'bundle price',
+      'service number',
+      'econtract',
+      'contract',
+      'mobily welcome prepaid',
+    ];
+    if (englishKeywords.any(
+      (String keyword) => RegExp(
+        r'(?<![a-z0-9])' + RegExp.escape(keyword) + r'(?![a-z0-9])',
+        caseSensitive: false,
+      ).hasMatch(message),
+    )) {
+      return true;
+    }
+    return <String>[
+      'اشتراك',
+      'تم تفعيل اشتراكك',
+      'تم الاشتراك',
+      'تفعيل الاشتراك',
+      'الباقة',
+      'الباقة الترحيبية',
+      'الباقة مسبقة الدفع',
+      'تفاصيل الباقة',
+      'سعر الباقة',
+      'رقم الخدمة',
+      'العقد الإلكتروني',
+      'العقد الالكتروني',
+      'تطبيق موبايلي',
+      'حمّل تطبيق',
+      'حمل تطبيق',
+    ].any(message.contains);
   }
 }

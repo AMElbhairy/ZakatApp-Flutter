@@ -36,6 +36,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
   final TextEditingController _ownershipPctController = TextEditingController();
   final TextEditingController _purchasePriceController =
       TextEditingController();
+  final TextEditingController _paidAmountController = TextEditingController();
   final TextEditingController _liabilityController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
   final TextEditingController _growthRateController = TextEditingController();
@@ -100,8 +101,12 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
     _assetType = initial != null
         ? (ZakatEngineService.isCompanyInvestmentType(initial.investmentType)
             ? 'company_share'
-            : 'property')
-        : (widget.initialAssetType ?? 'property');
+            : (initial.investmentType == 'car'
+                ? 'car'
+                : (initial.investmentType == 'liability' || initial.investmentType == 'loan'
+                    ? 'liability'
+                    : 'property')))
+        : (widget.initialAssetType == 'other_assets' ? 'car' : (widget.initialAssetType ?? 'property'));
     _currency = initial?.currency.isNotEmpty == true
         ? initial!.currency
         : (defaultEntryCurrency.trim().isEmpty ? 'EGP' : defaultEntryCurrency);
@@ -118,13 +123,15 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
     if (initial != null) {
       _nameController.text = initial.location;
       _currentValueController.text = _fmt(initial.marketValue);
-      _ownershipPctController.text = _fmt(initial.ownershipSharePct);
+      _ownershipPctController.text = '100';
       _purchasePriceController.text = _fmt(initial.originalPrice);
+      _paidAmountController.text = initial.paidAmount >= 0 ? _fmt(initial.paidAmount) : '';
       _notesController.text = initial.description;
-      _showInstallmentConfig = initial.loanBalance > 0;
+      _showInstallmentConfig = initial.loanBalance > 0 || _assetType == 'liability';
       _growthRateController.text = initial.yearlyGrowthRate > 0 ? _fmt(initial.yearlyGrowthRate) : '';
     } else {
       _ownershipPctController.text = '100';
+      _showInstallmentConfig = _assetType == 'liability';
     }
     _purchasePriceController.addListener(_onGrowthInputsChanged);
     _growthRateController.addListener(_onGrowthInputsChanged);
@@ -160,7 +167,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
     }
 
     final double t = diffDays / 365.25;
-    final double r = growthRate / 100.0;
+    final double r = _assetType == 'car' ? -growthRate / 100.0 : growthRate / 100.0;
 
     final double calculatedValue = purchasePrice * math.pow(1.0 + r, t);
     _currentValueController.text = _fmt(calculatedValue);
@@ -268,6 +275,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                       final String dateStr = _dateIso(selectedDate);
                       _installmentPlan[index]['date'] = dateStr;
                       _installmentPlan[index]['recurrenceDate'] = dateStr;
+                      _installmentPlan = InvestmentAsset.sortInstallmentPlan(_installmentPlan);
                       _updateLiabilityFromInstallments(market);
                     });
                     Navigator.pop(context);
@@ -290,6 +298,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
     _currentValueController.dispose();
     _ownershipPctController.dispose();
     _purchasePriceController.dispose();
+    _paidAmountController.dispose();
     _liabilityController.dispose();
     _notesController.dispose();
     _growthRateController.dispose();
@@ -303,22 +312,14 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
   Widget build(BuildContext context) {
     final bool isArabic =
         Localizations.localeOf(context).languageCode.toLowerCase() == 'ar';
-    final String defaultEntryCurrency =
-        context
-            .watch<AppStateController>()
-            .state
-            .defaultEntryCurrency
-            .trim()
-            .isEmpty
-        ? 'EGP'
-        : context.watch<AppStateController>().state.defaultEntryCurrency;
-    if (!widget.isEditMode &&
-        _currency == 'EGP' &&
-        defaultEntryCurrency != 'EGP') {
-      _currency = defaultEntryCurrency;
-    }
-    return SensitiveContentScope(
-      child: Scaffold(
+    final List<String> dropdownItems = switch (widget.initialAssetType) {
+      'company_share' => const <String>['company_share'],
+      'property' => const <String>['property'],
+      'other_assets' || 'car' => const <String>['car'],
+      'liability' => const <String>['liability'],
+      _ => const <String>['property', 'company_share', 'car', 'liability'],
+    };
+    return Scaffold(
       appBar: AppBar(
         title: Text(
           widget.isEditMode
@@ -326,7 +327,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
               : context.l10n.tr('add_investment_title'),
         ),
       ),
-      body: SafeArea(
+      body: SensitiveContentScope(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
           child: Form(
@@ -338,14 +339,21 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                   key: const Key('investmentTypeField'),
                   value: _assetType,
                   labelText: context.l10n.tr('asset_type'),
-                  items: const <String>['property', 'company_share'],
+                  items: dropdownItems,
                   itemLabel: (String value) => switch (value) {
-                    'property' => context.l10n.tr('property'),
-                    'company_share' => context.l10n.tr('company_share'),
+                    'property' => context.l10n.tr('properties'),
+                    'company_share' => context.l10n.tr('company_shares'),
+                    'car' => context.l10n.tr('vehicles'),
+                    'liability' => context.l10n.tr('other_liabilities'),
                     _ => value,
                   },
                   onChanged: (String value) {
-                    setState(() => _assetType = value);
+                    setState(() {
+                      _assetType = value;
+                      if (value == 'liability') {
+                        _showInstallmentConfig = true;
+                      }
+                    });
                   },
                 ),
                 const SizedBox(height: 16),
@@ -371,7 +379,9 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                     decimal: true,
                   ),
                   decoration: InputDecoration(
-                    labelText: context.l10n.tr('purchase_price'),
+                    labelText: _assetType == 'liability'
+                        ? (context.l10n.tr('total_loan_amount') ?? 'Total Loan Amount')
+                        : context.l10n.tr('purchase_price'),
                     border: const OutlineInputBorder(),
                   ),
                   validator: (String? value) {
@@ -382,6 +392,20 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                     return null;
                   },
                 ),
+                if (_assetType != 'liability') ...[
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    key: const Key('investmentPaidAmountField'),
+                    controller: _paidAmountController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: context.l10n.tr('paid_amount_optional'),
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 16),
                 CompactDropdownFormField<String>(
                   key: const Key('investmentCurrencyField'),
@@ -406,78 +430,66 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                     setState(() => _currency = value);
                   },
                 ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  key: const Key('investmentOwnershipField'),
-                  controller: _ownershipPctController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: InputDecoration(
-                    labelText: context.l10n.tr('ownership_pct'),
-                    border: const OutlineInputBorder(),
-                  ),
-                  validator: (String? value) {
-                    final double pct =
-                        tryParseAmount(value) ?? -1;
-                    if (pct < 0 || pct > 100) {
-                      return context.l10n.tr('ownership_pct_range');
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  key: const Key('investmentCurrentValueField'),
-                  controller: _currentValueController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: InputDecoration(
-                    labelText: context.l10n.tr('current_value_optional'),
-                    border: const OutlineInputBorder(),
-                  ),
-                  validator: (String? value) {
-                    final String trimmed = (value ?? '').trim();
-                    if (trimmed.isEmpty) return null;
-                    final double v = tryParseAmount(trimmed) ?? 0;
-                    if (v < 0) {
-                      return context.l10n.tr('current_value_negative');
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  key: const Key('investmentGrowthRateField'),
-                  controller: _growthRateController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: InputDecoration(
-                    labelText: context.l10n.tr('yearly_growth_rate'),
-                    border: const OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                SwitchListTile(
-                  key: const Key('includeInstallmentsSwitch'),
-                  title: Text(context.l10n.tr('include_installments')),
-                  value: _showInstallmentConfig,
-                  onChanged: (bool value) {
-                    setState(() {
-                      _showInstallmentConfig = value;
-                      if (!value) {
-                        _installmentPlan.clear();
-                        _liabilityController.text = '0';
-                      } else {
-                        final controller = context.read<AppStateController>();
-                        final market = MarketData.fromJson(controller.state.marketData);
-                        _updateLiabilityFromInstallments(market);
+                if (_assetType != 'liability') ...[
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    key: const Key('investmentCurrentValueField'),
+                    controller: _currentValueController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: context.l10n.tr('current_value_optional'),
+                      border: const OutlineInputBorder(),
+                    ),
+                    validator: (String? value) {
+                      final String trimmed = (value ?? '').trim();
+                      if (trimmed.isEmpty) return null;
+                      final double v = tryParseAmount(trimmed) ?? 0;
+                      if (v < 0) {
+                        return context.l10n.tr('current_value_negative');
                       }
-                    });
-                  },
-                ),
+                      return null;
+                    },
+                  ),
+                ],
+                if (_assetType != 'liability') ...[
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    key: const Key('investmentGrowthRateField'),
+                    controller: _growthRateController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: _assetType == 'car'
+                          ? (context.l10n.tr('depreciation_rate') ?? 'Yearly Depreciation Rate (%)')
+                          : context.l10n.tr('yearly_growth_rate'),
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                ],
+                if (_assetType != 'liability') ...[
+                  const SizedBox(height: 16),
+                  SwitchListTile(
+                    key: const Key('includeInstallmentsSwitch'),
+                    title: Text(context.l10n.tr('include_installments')),
+                    value: _showInstallmentConfig,
+                    onChanged: (bool value) {
+                      setState(() {
+                        _showInstallmentConfig = value;
+                        if (!value) {
+                          _installmentPlan.clear();
+                          _liabilityController.text = '0';
+                        } else {
+                          final controller = context.read<AppStateController>();
+                          final market = MarketData.fromJson(controller.state.marketData);
+                          _updateLiabilityFromInstallments(market);
+                        }
+                      });
+                    },
+                  ),
+                ],
                 if (_showInstallmentConfig) ...[
                   const SizedBox(height: 8),
                   TextFormField(
@@ -826,6 +838,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                                 );
                               }
                             }
+                            _installmentPlan = InvestmentAsset.sortInstallmentPlan(_installmentPlan);
                             _updateLiabilityFromInstallments(market);
                           });
                           _numInstallmentsController.clear();
@@ -910,6 +923,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                               'isPaid': false,
                               'currency': _oneByOneCurrency,
                             });
+                            _installmentPlan = InvestmentAsset.sortInstallmentPlan(_installmentPlan);
                             _updateLiabilityFromInstallments(market);
                           });
                           _oneByOneAmountController.clear();
@@ -992,6 +1006,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                                               pickedDate;
                                           _installmentPlan[index]['recurrenceDate'] =
                                               pickedDate;
+                                          _installmentPlan = InvestmentAsset.sortInstallmentPlan(_installmentPlan);
                                           _updateLiabilityFromInstallments(market);
                                         });
                                       }
@@ -1055,6 +1070,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                                                   item['currency'] ??
                                                   _currency,
                                             });
+                                            _installmentPlan = InvestmentAsset.sortInstallmentPlan(_installmentPlan);
                                             _updateLiabilityFromInstallments(market);
                                           });
                                         }
@@ -1187,7 +1203,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
           ),
         ),
       ),
-    ));
+    );
   }
 
   Future<void> _submit() async {
@@ -1203,9 +1219,11 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
         tryParseAmount(_purchasePriceController.text) ?? 0;
     
     final String rawCurrentValue = _currentValueController.text.trim();
-    final double currentValue = rawCurrentValue.isEmpty
-        ? purchasePrice
-        : (tryParseAmount(rawCurrentValue) ?? purchasePrice);
+    final double currentValue = _assetType == 'liability'
+        ? 0.0
+        : (rawCurrentValue.isEmpty
+            ? purchasePrice
+            : (tryParseAmount(rawCurrentValue) ?? purchasePrice));
 
     final AppStateController controller = context.read<AppStateController>();
     final MarketData market = MarketData.fromJson(controller.state.marketData);
@@ -1213,11 +1231,13 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
     double liability = tryParseAmount(_liabilityController.text) ?? 0;
     if (_showInstallmentConfig && _installmentPlan.isNotEmpty) {
       liability = _calculateLiabilityFromInstallments(market);
+    } else if (_assetType == 'liability') {
+      liability = purchasePrice;
     }
 
     final String valuationDate = _dateIso(_selectedDate);
 
-    final List<Map<String, dynamic>> finalPlan = liability > 0
+    final List<Map<String, dynamic>> finalPlan = (_showInstallmentConfig || _assetType == 'liability') && liability > 0
         ? InvestmentAsset.normalizeInstallmentPlan(_installmentPlan)
         : const <Map<String, dynamic>>[];
 
@@ -1225,16 +1245,22 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
         tryParseAmount(_growthRateController.text) ?? 0;
 
     final double finalRemainingAmount = liability;
-    final double finalPaidAmount = purchasePrice > liability
-        ? (purchasePrice - liability)
-        : (purchasePrice > 0 ? 0.0 : (original?.paidAmount ?? 0.0));
+    final double finalPaidAmount = _assetType == 'liability'
+        ? (purchasePrice - finalRemainingAmount)
+        : (_showInstallmentConfig
+            ? (_paidAmountController.text.trim().isEmpty
+                ? 0.0
+                : (tryParseAmount(_paidAmountController.text) ?? 0.0))
+            : purchasePrice);
     final double finalPaidAmountToDate = finalPaidAmount;
 
     final InvestmentAsset asset = InvestmentAsset(
       id: original?.id ?? _uuid.v4(),
       investmentType: _assetType == 'company_share'
           ? 'company_investment'
-          : 'real_estate',
+          : (_assetType == 'car'
+              ? 'car'
+              : (_assetType == 'liability' ? 'liability' : 'real_estate')),
       assetSubtype: _assetType,
       ownershipType: liability > 0 ? 'installment' : 'fully_owned',
       valuationMode: 'net_fair',
@@ -1255,7 +1281,7 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
       ownershipSharePct: ownershipPct,
       country: original?.country ?? 'EG',
       location: _nameController.text.trim(),
-      inflationRateAnnual: original?.inflationRateAnnual ?? 0,
+      inflationRateAnnual: growthRate,
       estimatedCurrentValue: currentValue,
       description: _notesController.text.trim(),
       noZakat: original?.noZakat ?? true,

@@ -264,7 +264,7 @@ void main() {
       ),
     );
 
-    await service.deleteAccount();
+    await service.deleteAccount(requireReauth: true);
 
     expect(authBackend.lastCredentialProviderId, 'google.com');
     expect(callOrder, <String>[
@@ -307,7 +307,7 @@ void main() {
           },
     );
 
-    await service.deleteAccount();
+    await service.deleteAccount(requireReauth: true);
 
     expect(prompts, <String>['user@example.com']);
     expect(authBackend.lastCredentialProviderId, 'password');
@@ -349,7 +349,7 @@ void main() {
           },
     );
 
-    await service.deleteAccount();
+    await service.deleteAccount(requireReauth: true);
 
     expect(choices.single, <AccountReauthMethod>[
       AccountReauthMethod.google,
@@ -393,7 +393,7 @@ void main() {
         ),
       );
 
-      await service.deleteAccount();
+      await service.deleteAccount(requireReauth: true);
 
       expect(callOrder, <String>[
         'reauth:google.com',
@@ -449,7 +449,7 @@ void main() {
         ),
       );
 
-      await service.deleteAccount();
+      await service.deleteAccount(requireReauth: true);
 
       expect(callOrder, <String>[
         'reauth:google.com',
@@ -496,7 +496,7 @@ void main() {
         },
       );
 
-      await service.deleteAccount();
+      await service.deleteAccount(requireReauth: true);
 
       expect(callOrder, <String>[
         'reauth:google.com',
@@ -536,7 +536,7 @@ void main() {
       googleReauthFlow: () async => null,
     );
 
-    await expectLater(service.deleteAccount(), throwsStateError);
+    await expectLater(service.deleteAccount(requireReauth: true), throwsStateError);
 
     expect(callOrder, isEmpty);
     expect(authController.currentUser, isNotNull);
@@ -573,7 +573,7 @@ void main() {
       failLocalDelete: true,
     );
 
-    await expectLater(service.deleteAccount(), throwsStateError);
+    await expectLater(service.deleteAccount(requireReauth: true), throwsStateError);
 
     expect(callOrder, <String>[
       'reauth:google.com',
@@ -619,7 +619,7 @@ void main() {
         failCloudDelete: true,
       );
 
-      await service.deleteAccount();
+      await service.deleteAccount(requireReauth: true);
 
       expect(callOrder, <String>[
         'reauth:google.com',
@@ -631,4 +631,44 @@ void main() {
       expect(authController.currentUser, isNull);
     },
   );
+
+  test('direct deletion without reauth deletes cloud, auth, local data and logs out', () async {
+    final AuthController authController = await buildAuthController(
+      const UserProfile(
+        id: 'user-direct',
+        email: 'user@example.com',
+        displayName: 'User',
+        provider: 'google',
+        accessToken: 'token',
+      ),
+    );
+    final _RecordingAuthBackend authBackend = _RecordingAuthBackend(
+      uid: 'user-direct',
+      email: 'user@example.com',
+      providerIds: <String>['google.com'],
+      callOrder: callOrder,
+    );
+    final AccountDeletionService service = buildService(
+      authController: authController,
+      authBackend: authBackend,
+      promptPassword: (_) async {
+        fail('reauth prompt must not be triggered when requireReauth is false');
+      },
+      chooseMethod: ({required List<AccountReauthMethod> availableMethods}) async {
+        fail('reauth chooser must not be triggered when requireReauth is false');
+      },
+      deleteCloudBackupData: (_) async => callOrder.add('cloudBackupDelete'),
+    );
+
+    await service.deleteAccount(requireReauth: false);
+
+    expect(callOrder, <String>[
+      'cloudBackupDelete',
+      'cloudDelete',
+      'authDelete',
+      'localDelete',
+      'authController.signOut',
+    ]);
+    expect(authController.currentUser, isNull);
+  });
 }

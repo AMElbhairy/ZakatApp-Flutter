@@ -14,10 +14,14 @@ class BackupService {
     required String provider,
     required String email,
   }) {
-    final Map<String, dynamic> cleanedState = Map<String, dynamic>.from(appStateJson);
+    final Map<String, dynamic> cleanedState = Map<String, dynamic>.from(
+      appStateJson,
+    );
     cleanedState['languagePreference'] = 'en';
     if (cleanedState['aiSettings'] is Map) {
-      final Map<String, dynamic> ai = Map<String, dynamic>.from(cleanedState['aiSettings'] as Map);
+      final Map<String, dynamic> ai = Map<String, dynamic>.from(
+        cleanedState['aiSettings'] as Map,
+      );
       ai.remove('keys');
       cleanedState['aiSettings'] = ai;
     }
@@ -87,6 +91,7 @@ class BackupService {
           isLegacy: false,
           sourceType: 'unknown',
           transactionsCount: 0,
+          creditCardsCount: 0,
           savingsCount: 0,
           investmentsCount: 0,
           recurringTransactionsCount: 0,
@@ -113,6 +118,7 @@ class BackupService {
         isLegacy: isLegacy,
         sourceType: sourceType,
         transactionsCount: counts['transactions'] as int,
+        creditCardsCount: counts['creditCards'] as int,
         savingsCount: counts['savings'] as int,
         investmentsCount: counts['investments'] as int,
         recurringTransactionsCount: counts['recurringTransactions'] as int,
@@ -136,12 +142,13 @@ class BackupService {
         isLegacy: false,
         sourceType: 'unknown',
         transactionsCount: 0,
+        creditCardsCount: 0,
         savingsCount: 0,
         investmentsCount: 0,
         recurringTransactionsCount: 0,
         financialPlansCount: 0,
         hasMarketData: false,
-        warnings: <String>[e.message],
+        warnings: const <String>['This backup file could not be read.'],
         unsupportedFields: const <String>[],
         canRestore: false,
         rawJson: rawJson,
@@ -153,12 +160,13 @@ class BackupService {
         isLegacy: false,
         sourceType: 'unknown',
         transactionsCount: 0,
+        creditCardsCount: 0,
         savingsCount: 0,
         investmentsCount: 0,
         recurringTransactionsCount: 0,
         financialPlansCount: 0,
         hasMarketData: false,
-        warnings: <String>['Failed to parse backup file: $e'],
+        warnings: const <String>['This backup file could not be read.'],
         unsupportedFields: const <String>[],
         canRestore: false,
         rawJson: rawJson,
@@ -173,6 +181,7 @@ class BackupService {
   static bool hasData(Map<String, dynamic> state) {
     final Map<String, dynamic> counts = _getCounts(state);
     return (counts['transactions'] as int) +
+            (counts['creditCards'] as int) +
             (counts['savings'] as int) +
             (counts['investments'] as int) +
             (counts['recurringTransactions'] as int) +
@@ -186,6 +195,7 @@ class BackupService {
 
     return <String, dynamic>{
       'transactions': safeCount(state['transactions']),
+      'creditCards': safeCount(state['creditCards']),
       'savings': safeCount(state['savings']),
       'investments': safeCount(state['investments']),
       'recurringTransactions': safeCount(state['recurringTransactions']),

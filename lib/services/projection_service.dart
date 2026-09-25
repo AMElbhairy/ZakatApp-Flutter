@@ -1,7 +1,11 @@
 import 'dart:math' as math;
+
 import '../core/services/zakat_engine.dart';
+import '../core/services/zakat_schedule_service.dart';
 import '../models/financial_plan.dart';
 import '../models/investment_asset.dart';
+import '../models/saving.dart';
+import '../models/transaction.dart';
 
 class ProjectionPoint {
   const ProjectionPoint({
@@ -28,28 +32,28 @@ class ProjectionService {
 
   static List<ProjectionPoint> calculateProjection({
     required FinancialPlan plan,
+    required List<Transaction> transactions,
+    required List<Saving> savings,
     required List<InvestmentAsset> investments,
     required MarketData marketData,
     String zakatMethod = 'hawl',
     String zakatAnnualDate = '',
+    double? startingBalanceOverride,
+    DateTime? now,
+    String? lastRollover,
+    String? zakatNisabBasis,
   }) {
     final List<ProjectionPoint> points = <ProjectionPoint>[];
     final DateTime startDateTime =
         DateTime.tryParse(plan.startDate) ?? DateTime.now();
-
-    double currentBalance = plan.startingBalance;
+    final DateTime effectiveNow = now ?? DateTime.now();
+    final double initialBalance =
+        startingBalanceOverride ?? plan.startingBalance;
     final int totalMonths = plan.durationYears * 12;
 
-    // Calculate the zakatable portion of starting balance (cash + gold + silver only)
-    double zakatableStartingBalance = plan.startingBalance;
-    if (plan.startingAssetBreakdown.isNotEmpty) {
-      final double cashVal = plan.startingAssetBreakdown['cash'] ?? 0.0;
-      final double goldVal = plan.startingAssetBreakdown['gold'] ?? 0.0;
-      final double silverVal = plan.startingAssetBreakdown['silver'] ?? 0.0;
-      zakatableStartingBalance = cashVal + goldVal + silverVal;
-    }
+    double currentBalance = initialBalance;
 
-    // Pre-parse installment data for faster lookup
+    // Pre-parse installment data for faster lookup.
     final List<_UnpaidInstallment> unpaidInstallments = <_UnpaidInstallment>[];
     if (plan.includeInstallments) {
       for (final InvestmentAsset asset in investments) {
@@ -64,7 +68,9 @@ class ProjectionService {
                 _UnpaidInstallment(
                   dueDate: date,
                   amount: amount,
-                  currency: asset.currency,
+                  currency: (item['currency']?.toString().isNotEmpty == true)
+                      ? item['currency'].toString().trim().toUpperCase()
+                      : asset.currency,
                 ),
               );
             }
@@ -72,43 +78,19 @@ class ProjectionService {
         }
       }
     }
-
-    // Determine Nisab threshold
-    double nisabThresholdEgp = plan.startingNisabSnapshot;
-    if (nisabThresholdEgp <= 0) {
-      nisabThresholdEgp = ZakatEngineService.cashNisabThresholdEgp(marketData);
-    }
-    final double nisabThreshold = convertToCurrency(
-      amount: nisabThresholdEgp,
-      from: 'EGP',
-      to: plan.projectionCurrency,
-      marketData: marketData,
-    );
-
-    // Calculate monthly surpluses and find when Nisab is crossed
-    final List<double> monthlySurpluses = List<double>.filled(
-      totalMonths + 1,
-      0.0,
-    );
     final List<double> installmentsOutflows = List<double>.filled(
       totalMonths + 1,
       0.0,
     );
-    double cumulativeNoZakat = plan.startingBalance;
-    int? nisabCrossedMonth; // 1-based month index; 0 if crossed at start
-
-    if (cumulativeNoZakat >= nisabThreshold) {
-      nisabCrossedMonth = 0;
-    }
 
     for (int month = 1; month <= totalMonths; month++) {
       final DateTime monthDate = DateTime(
         startDateTime.year,
-        startDateTime.month + month,
+        startDateTime.month + month - 1,
         startDateTime.day,
       );
 
-      double installmentsOutflow = 0;
+      double installmentsOutflow = 0.0;
       if (plan.includeInstallments) {
         final List<_UnpaidInstallment> currentMonthInsts = unpaidInstallments
             .where(
@@ -116,7 +98,7 @@ class ProjectionService {
                   inst.dueDate.year == monthDate.year &&
                   inst.dueDate.month == monthDate.month,
             )
-            .toList();
+            .toList(growable: false);
 
         for (final _UnpaidInstallment inst in currentMonthInsts) {
           final double amountInProjectionCurrency = convertToCurrency(
@@ -129,99 +111,53 @@ class ProjectionService {
         }
       }
       installmentsOutflows[month] = installmentsOutflow;
-
-      final double surplus =
-          plan.monthlyIncome - plan.monthlyExpenses - installmentsOutflow;
-      monthlySurpluses[month] = surplus;
-
-      cumulativeNoZakat += surplus;
-      if (nisabCrossedMonth == null && cumulativeNoZakat >= nisabThreshold) {
-        nisabCrossedMonth = month;
-      }
     }
 
-    // Calculate Zakat outflow schedule for each month
-    final List<double> projectedZakatByMonth = List<double>.filled(
+    final List<Map<String, dynamic>> mergedZakatSchedule = plan.includeZakat
+        ? ZakatScheduleService.calculateMergedZakatSchedule(
+            zakatMethod: zakatMethod,
+            zakatAnnualDate: zakatAnnualDate,
+            transactions: transactions
+                .map((Transaction tx) => tx.toJson())
+                .toList(growable: false),
+            savings: savings
+                .map((Saving s) => s.toJson())
+                .toList(growable: false),
+            investments: investments
+                .map((InvestmentAsset inv) => inv.toJson())
+                .toList(growable: false),
+            marketData: marketData,
+            now: effectiveNow,
+            lastRollover: lastRollover,
+            zakatNisabBasis: zakatNisabBasis,
+          )
+        : <Map<String, dynamic>>[];
+    final List<double> scheduledZakatByMonth = List<double>.filled(
       totalMonths + 1,
       0.0,
     );
-    // Use a boolean set to track annual Hijri due months (instead of -1.0 flags in numeric array)
-    final Set<int> annualDueMonths = <int>{};
-
-    if (plan.includeZakat) {
-      if (zakatMethod == 'annual') {
-        // Identify months that match the Hijri Annual date in the projection
-        if (zakatAnnualDate.isNotEmpty && zakatAnnualDate.contains('-')) {
-          final List<String> parts = zakatAnnualDate.split('-');
-          final int? hm = int.tryParse(parts[0]);
-          final int? hd = int.tryParse(parts[1]);
-          if (hm != null && hd != null && hm >= 1 && hm <= 12 && hd >= 1) {
-            final DateTime today = DateTime.now();
-            final HijriDate todayH = ZakatEngineService.gregorianToHijri(today);
-            final int yearsToCheck = (totalMonths / 12).ceil() + 2;
-
-            for (
-              int yearOffset = -1;
-              yearOffset <= yearsToCheck;
-              yearOffset++
-            ) {
-              final int hy = todayH.year + yearOffset;
-              if (hy < 1) continue;
-              final int maxDays = ZakatEngineService.hijriMonthLength(hm);
-              final DateTime dueGreg = ZakatEngineService.hijriToGregorian(
-                hy,
-                hm,
-                hd < maxDays ? hd : maxDays,
-              );
-
-              final int monthsDiff =
-                  (dueGreg.year - startDateTime.year) * 12 +
-                  (dueGreg.month - startDateTime.month) +
-                  1;
-              if (monthsDiff >= 1 && monthsDiff <= totalMonths) {
-                annualDueMonths.add(monthsDiff);
-              }
-            }
-          }
-        }
-      } else {
-        // Hawl method: lot-based tracking
-        if (nisabCrossedMonth != null) {
-          // Use the pre-calculated zakatable starting balance
-          double bundleAmount = zakatableStartingBalance;
-
-          for (int m = 1; m <= nisabCrossedMonth; m++) {
-            if (monthlySurpluses[m] > 0) {
-              bundleAmount += monthlySurpluses[m];
-            }
-          }
-          if (bundleAmount > 0) {
-            final int startDueMonth = nisabCrossedMonth == 0
-                ? 12
-                : nisabCrossedMonth + 12;
-            for (int due = startDueMonth; due <= totalMonths; due += 12) {
-              projectedZakatByMonth[due] += bundleAmount * 0.025;
-            }
-          }
-
-          // 2. Subsequent monthly surplus lots
-          for (int m = nisabCrossedMonth + 1; m <= totalMonths; m++) {
-            final double surplus = monthlySurpluses[m];
-            if (surplus > 0) {
-              for (int due = m + 12; due <= totalMonths; due += 12) {
-                projectedZakatByMonth[due] += surplus * 0.025;
-              }
-            }
-          }
-        }
-      }
+    for (final Map<String, dynamic> item in mergedZakatSchedule) {
+      final DateTime? paymentDate = DateTime.tryParse(
+        (item['paymentDate'] ?? '').toString(),
+      );
+      if (paymentDate == null) continue;
+      final int monthsDiff =
+          (paymentDate.year - startDateTime.year) * 12 +
+          (paymentDate.month - startDateTime.month);
+      final int monthIndex = monthsDiff + 1;
+      if (monthIndex < 1 || monthIndex > totalMonths) continue;
+      scheduledZakatByMonth[monthIndex] += convertToCurrency(
+        amount: _asDouble(item['totalZakat']),
+        from: 'EGP',
+        to: plan.projectionCurrency,
+        marketData: marketData,
+      );
     }
 
-    // Run the actual projection loop and subtract Zakat
     for (int month = 1; month <= totalMonths; month++) {
       final DateTime monthDate = DateTime(
         startDateTime.year,
-        startDateTime.month + month,
+        startDateTime.month + month - 1,
         startDateTime.day,
       );
 
@@ -232,35 +168,10 @@ class ProjectionService {
           plan.monthlyExpenses -
           installmentsOutflow;
 
-      double zakatOutflow = 0.0;
-      if (plan.includeZakat) {
-        if (zakatMethod == 'annual') {
-          final bool isDueMonth =
-              annualDueMonths.contains(month) ||
-              (zakatAnnualDate.isEmpty && month % 12 == 0);
-          if (isDueMonth) {
-            // Calculate zakatable balance: start with zakatable starting assets,
-            // then add cumulative positive monthly surpluses up to this month
-            double zakatableBalance = zakatableStartingBalance;
-            for (int m = 1; m <= month; m++) {
-              if (monthlySurpluses[m] > 0) {
-                zakatableBalance += monthlySurpluses[m];
-              }
-              // Subtract any prior Zakat paid
-              zakatableBalance -= projectedZakatByMonth[m];
-            }
-            zakatableBalance = math.max(0.0, zakatableBalance);
-            if (zakatableBalance >= nisabThreshold) {
-              zakatOutflow = zakatableBalance * 0.025;
-              projectedZakatByMonth[month] = zakatOutflow;
-            }
-          }
-        } else {
-          zakatOutflow = math.max(0.0, projectedZakatByMonth[month]);
-          if (zakatOutflow > balanceBeforeZakat) {
-            zakatOutflow = math.max(0.0, balanceBeforeZakat);
-          }
-        }
+      double zakatOutflow = scheduledZakatByMonth[month];
+
+      if (zakatOutflow > balanceBeforeZakat) {
+        zakatOutflow = math.max(0.0, balanceBeforeZakat);
       }
 
       currentBalance = balanceBeforeZakat - zakatOutflow;
@@ -284,6 +195,16 @@ class ProjectionService {
     return points;
   }
 
+  static double cashFlowStartingBalance(FinancialPlan plan) {
+    if (plan.startingAssetBreakdown.isEmpty) {
+      return plan.startingBalance;
+    }
+    final double cashVal = plan.startingAssetBreakdown['cash'] ?? 0.0;
+    final double goldVal = plan.startingAssetBreakdown['gold'] ?? 0.0;
+    final double silverVal = plan.startingAssetBreakdown['silver'] ?? 0.0;
+    return cashVal + goldVal + silverVal;
+  }
+
   static double convertToCurrency({
     required double amount,
     required String from,
@@ -293,7 +214,7 @@ class ProjectionService {
     if (from.trim().toUpperCase() == to.trim().toUpperCase()) {
       return amount;
     }
-    // Convert from source currency to EGP, then from EGP to target currency
+
     final double amountInEgp = ZakatEngineService.convertToEgp(
       amount,
       from,
@@ -303,7 +224,6 @@ class ProjectionService {
       return amountInEgp;
     }
 
-    // Resolve rate from EGP to target currency
     final double? rateToEgp = marketData.ratesToEgp[to.trim().toUpperCase()];
     if (rateToEgp != null && rateToEgp > 0) {
       return amountInEgp / rateToEgp;
@@ -315,7 +235,7 @@ class ProjectionService {
       return amountInEgp / marketData.sarToEgp;
     }
 
-    return amountInEgp; // fallback to EGP if rate is not resolved
+    return amountInEgp;
   }
 
   static double _asDouble(dynamic value) {

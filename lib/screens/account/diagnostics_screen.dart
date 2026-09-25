@@ -13,6 +13,8 @@ import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../core/theme/app_typography.dart';
+import '../../core/errors/user_facing_error_mapper.dart';
+import '../../core/i18n/app_localizations.dart';
 import '../../services/app_diagnostics.dart';
 import '../../services/app_state_controller.dart';
 import '../../services/google_sign_in_factory.dart';
@@ -965,7 +967,10 @@ class _GoogleDrivePoCCardState extends State<_GoogleDrivePoCCard> {
         setState(() {
           _statusMessage = 'Active restore failed: $e';
         });
-        showTopSnackBar(context, 'Restore failed: $e');
+        showTopSnackBar(
+          context,
+          UserFacingErrorMapper.message(context.l10n, e, context: 'restore'),
+        );
       }
     } finally {
       if (mounted) {

@@ -94,7 +94,7 @@ class SecureStorageService {
 
   Future<String?> loadBackupPassphrase({String? userId}) async {
     if (ZakatApp.isTesting) return null;
-    final String key = 'backup_passphrase_${userId ?? "default"}';
+    final String key = StorageKeys.backupPassphraseKeyForUser(userId);
     try {
       return await _storage.read(key: key);
     } catch (_) {
@@ -104,7 +104,7 @@ class SecureStorageService {
 
   Future<void> saveBackupPassphrase(String passphrase, {String? userId}) async {
     if (ZakatApp.isTesting) return;
-    final String key = 'backup_passphrase_${userId ?? "default"}';
+    final String key = StorageKeys.backupPassphraseKeyForUser(userId);
     try {
       await _storage.write(key: key, value: passphrase);
     } catch (_) {}
@@ -112,7 +112,7 @@ class SecureStorageService {
 
   Future<void> deleteBackupPassphrase({String? userId}) async {
     if (ZakatApp.isTesting) return;
-    final String key = 'backup_passphrase_${userId ?? "default"}';
+    final String key = StorageKeys.backupPassphraseKeyForUser(userId);
     try {
       await _storage.delete(key: key);
     } catch (_) {}

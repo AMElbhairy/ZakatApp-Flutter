@@ -3,31 +3,63 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 54;
+	objectVersion = 60;
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0D1A495262A077155A104843 /* ZakahWealthWatchApp.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 355C4E3866E6DB50869D0A90 /* ZakahWealthWatchApp.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		0D36626AE86FC9638148A240 /* WatchInboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AB63DD4CC67BD0C15E57E89 /* WatchInboxView.swift */; };
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
 		26475D1DAD634C2C844DF37C37185A50 /* ZakahWealthWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA4DAB8B82E446B7A94A39AE80362763 /* ZakahWealthWidgets.swift */; };
+		2FEA5145042B75589DFB1381 /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C9C2E3DCA625E264DB385722 /* Pods_Runner.framework */; };
 		331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C807B294A618700263BE5 /* RunnerTests.swift */; };
 		35D29D01802F42FA568442A3 /* ZakahWealthShortcutsProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBF70BF0465FB35BC03DDB92 /* ZakahWealthShortcutsProvider.swift */; };
+		3A80098A8EAB770DAE71C4E5 /* WatchDTOs.swift in Sources */ = {isa = PBXBuildFile; fileRef = C90FBD555C1099127FA079CC /* WatchDTOs.swift */; };
 		3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */; };
 		41FB506D060549949D4B3C39ED3C2A51 /* WidgetModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDD1CD4FEC82485B89319798B6807AA6 /* WidgetModels.swift */; };
+		45155A5F649CC118164ACBE4 /* WatchPendingResolverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 799BECE639A82B4B2955F77D /* WatchPendingResolverView.swift */; };
+		550E06186C0E1FB7D82080CA /* WatchNavigationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FD41D45495855A59CEAAE50 /* WatchNavigationManager.swift */; };
 		6A7B8C9D0E1F23456789ABCD /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6A7B8C9D0E1F23456789ABCE /* Assets.xcassets */; };
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
 		7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */; };
 		78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */ = {isa = PBXBuildFile; productRef = 78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */; };
+		7B624BFB96BEFE0115B58F38 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D0FE293DB822D6F4B40F607B /* Foundation.framework */; };
 		7F0DCF3AB6A2E8A0DCFD17A9 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = BD721DD8D877760869411806 /* GoogleService-Info.plist */; };
-		8DF096CC599848A9BCD79EB7824ABE7B /* ZakahWealthWidgetExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 6D5AC76467894F838CDE321EB7871D0B /* ZakahWealthWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		8DF096CC599848A9BCD79EB7824ABE7B /* ZakahWealthWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 6D5AC76467894F838CDE321EB7871D0B /* ZakahWealthWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		8E7221107DE2CC7F0D022E6C /* WatchConnectivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E6C8D253051214F6E0B0A91 /* WatchConnectivityManager.swift */; };
+		94989F175134CCEA969137B6 /* WatchTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6147A49E67E967E0F0D25D17 /* WatchTheme.swift */; };
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
+		99B196AAE85E53AD63135302 /* WatchReviewItemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7C36D3922C31DD932A42894 /* WatchReviewItemView.swift */; };
+		B11000010000000000000001 /* WatchAmountPadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11000010000000000000001 /* WatchAmountPadView.swift */; };
+		B11000020000000000000002 /* WatchQuickAddReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11000020000000000000002 /* WatchQuickAddReviewView.swift */; };
+		B11000030000000000000003 /* WatchQuickAddHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11000030000000000000003 /* WatchQuickAddHomeView.swift */; };
+		B11000040000000000000004 /* WatchExpenseQuickAddView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11000040000000000000004 /* WatchExpenseQuickAddView.swift */; };
+		B11000050000000000000005 /* WatchIncomeQuickAddView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11000050000000000000005 /* WatchIncomeQuickAddView.swift */; };
+		B11000060000000000000006 /* WatchTransferQuickAddView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11000060000000000000006 /* WatchTransferQuickAddView.swift */; };
+		B11000070000000000000007 /* WatchCurrencyExchangeQuickAddView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11000070000000000000007 /* WatchCurrencyExchangeQuickAddView.swift */; };
+		B11000080000000000000008 /* WatchCreditCardPaymentQuickAddView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11000080000000000000008 /* WatchCreditCardPaymentQuickAddView.swift */; };
+		B11111111111111111111111 /* WidgetPortfolioSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11111111111111111111111 /* WidgetPortfolioSnapshot.swift */; };
+		B22222222222222222222222 /* WidgetMarketRatesService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22222222222222222222222 /* WidgetMarketRatesService.swift */; };
+		B30BE0983556534EE8E67BE7 /* WatchSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F7F26A19E9202BEAB70FA50 /* WatchSessionManager.swift */; };
+		B33333333333333333333333 /* WidgetWealthCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F33333333333333333333333 /* WidgetWealthCalculator.swift */; };
+		B7796C0A51D8D35B06237E4D /* WatchHomeShellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E8E3D2E13E65E7E60205919 /* WatchHomeShellView.swift */; };
 		D2ACD97B03A6C7C0CB3C75D0 /* LogBankMessageIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A83ADCBA555C5DB55C085EF3 /* LogBankMessageIntent.swift */; };
-		D98D1A95F2326E8C5E9A23FE /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B56EE9EBA75477EC681956C2 /* Pods_RunnerTests.framework */; };
-		F7EE484501ED739CF47C151D /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2251E2341B7FE0EF8012370B /* Pods_Runner.framework */; };
+		E106EFC8C6BFA4FB6085F9A5 /* WatchNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9E09567727A16E755778D53 /* WatchNotificationManager.swift */; };
+		E83D1ABF98F033DE1DB624AF /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 66502489D737AEEECC1134F6 /* Assets.xcassets */; };
+		E8EFB43EBCE6ACA5F33D99A0 /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 28F771022A58BCC0ED496525 /* Pods_RunnerTests.framework */; };
+		F8289182326BC05C7AE9A996 /* ZakahWealthWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47B7819E7EAD902DAFB92AC7 /* ZakahWealthWatchApp.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		1425968E8130CF2F5F843435 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 5992AFAB6BA1BD5C05B7FD02;
+			remoteInfo = ZakahWealthWatchApp;
+		};
 		331C8085294A63A400263BE5 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
@@ -45,15 +77,15 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		57B3804744DE4A0D8808201F7B043D74 /* Embed App Extensions */ = {
+		57B3804744DE4A0D8808201F7B043D74 /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				8DF096CC599848A9BCD79EB7824ABE7B /* ZakahWealthWidgetExtension.appex in Embed App Extensions */,
+				8DF096CC599848A9BCD79EB7824ABE7B /* ZakahWealthWidgetExtension.appex in Embed Foundation Extensions */,
 			);
-			name = "Embed App Extensions";
+			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		9705A1C41CF9048500538489 /* Embed Frameworks */ = {
@@ -66,25 +98,47 @@
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D08CA23C29C99D467AC98C79 /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		022EE3A8B847EB60507366F9 /* Pods-RunnerTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.release.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.release.xcconfig"; sourceTree = "<group>"; };
+		0CF5737A8798AA3FE08F1D6E /* Pods-RunnerTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.debug.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.debug.xcconfig"; sourceTree = "<group>"; };
+		0E8E3D2E13E65E7E60205919 /* WatchHomeShellView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchHomeShellView.swift; sourceTree = "<group>"; };
 		1498D2321E8E86230040F4C2 /* GeneratedPluginRegistrant.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GeneratedPluginRegistrant.h; sourceTree = "<group>"; };
 		1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = GeneratedPluginRegistrant.m; sourceTree = "<group>"; };
-		1ECF106DC3224EEBD6387B8F /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
-		2251E2341B7FE0EF8012370B /* Pods_Runner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Runner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		15935B3E88149700EEE29A27 /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
+		1AB63DD4CC67BD0C15E57E89 /* WatchInboxView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchInboxView.swift; sourceTree = "<group>"; };
+		1E6C8D253051214F6E0B0A91 /* WatchConnectivityManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchConnectivityManager.swift; sourceTree = "<group>"; };
 		27FE5A9FFE9F4BF3924BDA4A2A073F9A /* ZakahWealthWidgetExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ZakahWealthWidgetExtension.entitlements; sourceTree = "<group>"; };
+		28F771022A58BCC0ED496525 /* Pods_RunnerTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_RunnerTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		2A876664BD5CE1FC1CD2C589 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		331C807B294A618700263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
 		331C8081294A63A400263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		355C4E3866E6DB50869D0A90 /* ZakahWealthWatchApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ZakahWealthWatchApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = AppFrameworkInfo.plist; path = Flutter/AppFrameworkInfo.plist; sourceTree = "<group>"; };
-		3C5F20ED5763B4A09B4A8C15 /* Pods-Runner.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.debug.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"; sourceTree = "<group>"; };
-		4EAC83846F5049452D7B9885 /* Pods-RunnerTests.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.profile.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.profile.xcconfig"; sourceTree = "<group>"; };
+		3FD41D45495855A59CEAAE50 /* WatchNavigationManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchNavigationManager.swift; sourceTree = "<group>"; };
+		47B7819E7EAD902DAFB92AC7 /* ZakahWealthWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ZakahWealthWatchApp.swift; sourceTree = "<group>"; };
+		54D0666CF16B08EF618ADDF2 /* Pods-Runner.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.debug.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"; sourceTree = "<group>"; };
+		5F7F26A19E9202BEAB70FA50 /* WatchSessionManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchSessionManager.swift; sourceTree = "<group>"; };
+		6147A49E67E967E0F0D25D17 /* WatchTheme.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchTheme.swift; sourceTree = "<group>"; };
+		66502489D737AEEECC1134F6 /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		6A7B8C9D0E1F23456789ABCE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		6D5AC76467894F838CDE321EB7871D0B /* ZakahWealthWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ZakahWealthWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Runner-Bridging-Header.h"; sourceTree = "<group>"; };
 		74858FAE1ED2DC5600515810 /* AppDelegate.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
-		7A8EC5B2E17B1EF3C3E52C68 /* Pods-Runner.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.release.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"; sourceTree = "<group>"; };
+		78E0A7A72DC9AD7400C4905E /* FlutterGeneratedPluginSwiftPackage */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = FlutterGeneratedPluginSwiftPackage; path = Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage; sourceTree = "<group>"; };
+		799BECE639A82B4B2955F77D /* WatchPendingResolverView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchPendingResolverView.swift; sourceTree = "<group>"; };
 		7AFA3C8E1D35360C0083082E /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Release.xcconfig; path = Flutter/Release.xcconfig; sourceTree = "<group>"; };
 		8C78552DCEB1483790A92662B97BFBCA /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		9740EEB21CF90195004384FC /* Debug.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Debug.xcconfig; path = Flutter/Debug.xcconfig; sourceTree = "<group>"; };
@@ -94,15 +148,30 @@
 		97C146FD1CF9000F007C117D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		97C147001CF9000F007C117D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A11000010000000000000001 /* WatchAmountPadView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchAmountPadView.swift; sourceTree = "<group>"; };
+		A11000020000000000000002 /* WatchQuickAddReviewView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchQuickAddReviewView.swift; sourceTree = "<group>"; };
+		A11000030000000000000003 /* WatchQuickAddHomeView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchQuickAddHomeView.swift; sourceTree = "<group>"; };
+		A11000040000000000000004 /* WatchExpenseQuickAddView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchExpenseQuickAddView.swift; sourceTree = "<group>"; };
+		A11000050000000000000005 /* WatchIncomeQuickAddView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchIncomeQuickAddView.swift; sourceTree = "<group>"; };
+		A11000060000000000000006 /* WatchTransferQuickAddView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchTransferQuickAddView.swift; sourceTree = "<group>"; };
+		A11000070000000000000007 /* WatchCurrencyExchangeQuickAddView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchCurrencyExchangeQuickAddView.swift; sourceTree = "<group>"; };
+		A11000080000000000000008 /* WatchCreditCardPaymentQuickAddView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchCreditCardPaymentQuickAddView.swift; sourceTree = "<group>"; };
+		A2D9F1ECC0DA812F311C026F /* Pods-RunnerTests.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.profile.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.profile.xcconfig"; sourceTree = "<group>"; };
 		A83ADCBA555C5DB55C085EF3 /* LogBankMessageIntent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LogBankMessageIntent.swift; sourceTree = "<group>"; };
-		B56EE9EBA75477EC681956C2 /* Pods_RunnerTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_RunnerTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
-		B61199B6B222B2E3BBF56AF6 /* Pods-RunnerTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.debug.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.debug.xcconfig"; sourceTree = "<group>"; };
+		ABCDEF1234567890ABCDEF12 /* Profile.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Profile.xcconfig; path = Flutter/Profile.xcconfig; sourceTree = "<group>"; };
+		B9E09567727A16E755778D53 /* WatchNotificationManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchNotificationManager.swift; sourceTree = "<group>"; };
 		BD721DD8D877760869411806 /* GoogleService-Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; name = "GoogleService-Info.plist"; path = "Runner/GoogleService-Info.plist"; sourceTree = "<group>"; };
+		C7C36D3922C31DD932A42894 /* WatchReviewItemView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchReviewItemView.swift; sourceTree = "<group>"; };
+		C90FBD555C1099127FA079CC /* WatchDTOs.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchDTOs.swift; sourceTree = "<group>"; };
+		C9C2E3DCA625E264DB385722 /* Pods_Runner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Runner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		D0FE293DB822D6F4B40F607B /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS11.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		DA4DAB8B82E446B7A94A39AE80362763 /* ZakahWealthWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZakahWealthWidgets.swift; sourceTree = "<group>"; };
 		DBF70BF0465FB35BC03DDB92 /* ZakahWealthShortcutsProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ZakahWealthShortcutsProvider.swift; sourceTree = "<group>"; };
 		DDD1CD4FEC82485B89319798B6807AA6 /* WidgetModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetModels.swift; sourceTree = "<group>"; };
-		E0B6171EEAB44E1E5BE04611 /* Pods-RunnerTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.release.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.release.xcconfig"; sourceTree = "<group>"; };
-		78E0A7A72DC9AD7400C4905E /* FlutterGeneratedPluginSwiftPackage */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = FlutterGeneratedPluginSwiftPackage; path = Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage; sourceTree = "<group>"; };
+		F11111111111111111111111 /* WidgetPortfolioSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetPortfolioSnapshot.swift; sourceTree = "<group>"; };
+		F22222222222222222222222 /* WidgetMarketRatesService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetMarketRatesService.swift; sourceTree = "<group>"; };
+		F33333333333333333333333 /* WidgetWealthCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWealthCalculator.swift; sourceTree = "<group>"; };
+		F880BED5B622F9019AF84D67 /* Pods-Runner.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.release.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -110,7 +179,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				D98D1A95F2326E8C5E9A23FE /* Pods_RunnerTests.framework in Frameworks */,
+				E8EFB43EBCE6ACA5F33D99A0 /* Pods_RunnerTests.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -119,31 +188,64 @@
 			buildActionMask = 2147483647;
 			files = (
 				78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */,
-				F7EE484501ED739CF47C151D /* Pods_Runner.framework in Frameworks */,
+				2FEA5145042B75589DFB1381 /* Pods_Runner.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DBABED753CB26D3038C7AA49 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7B624BFB96BEFE0115B58F38 /* Foundation.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		225D1342316420B8BDFB3355 /* Frameworks */ = {
+		05145E5CF99D1059D820427C /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
-				2251E2341B7FE0EF8012370B /* Pods_Runner.framework */,
-				B56EE9EBA75477EC681956C2 /* Pods_RunnerTests.framework */,
+				C9C2E3DCA625E264DB385722 /* Pods_Runner.framework */,
+				28F771022A58BCC0ED496525 /* Pods_RunnerTests.framework */,
+				82F62A5F0B8C9318A2EC5F83 /* watchOS */,
 			);
 			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		1EDB23CC1C3440C061DB1AA2 /* ZakahWealthWatchApp */ = {
+			isa = PBXGroup;
+			children = (
+				47B7819E7EAD902DAFB92AC7 /* ZakahWealthWatchApp.swift */,
+				1E6C8D253051214F6E0B0A91 /* WatchConnectivityManager.swift */,
+				8793708F169CC0B3C91FE970 /* Models */,
+				5FB30BE5356C40741FD34D9E /* Theme */,
+				8B381ABE396A13A4A0DDC4DB /* Views */,
+				66502489D737AEEECC1134F6 /* Assets.xcassets */,
+				2A876664BD5CE1FC1CD2C589 /* Info.plist */,
+				D2B551FEEE069C23F5118D31 /* Navigation */,
+				22087C3BD5D08D7BF3B82FCD /* Notifications */,
+			);
+			path = ZakahWealthWatchApp;
+			sourceTree = "<group>";
+		};
+		22087C3BD5D08D7BF3B82FCD /* Notifications */ = {
+			isa = PBXGroup;
+			children = (
+				B9E09567727A16E755778D53 /* WatchNotificationManager.swift */,
+			);
+			path = Notifications;
 			sourceTree = "<group>";
 		};
 		283631FB126A2F83CE6C9D27 /* Pods */ = {
 			isa = PBXGroup;
 			children = (
-				3C5F20ED5763B4A09B4A8C15 /* Pods-Runner.debug.xcconfig */,
-				7A8EC5B2E17B1EF3C3E52C68 /* Pods-Runner.release.xcconfig */,
-				1ECF106DC3224EEBD6387B8F /* Pods-Runner.profile.xcconfig */,
-				B61199B6B222B2E3BBF56AF6 /* Pods-RunnerTests.debug.xcconfig */,
-				E0B6171EEAB44E1E5BE04611 /* Pods-RunnerTests.release.xcconfig */,
-				4EAC83846F5049452D7B9885 /* Pods-RunnerTests.profile.xcconfig */,
+				54D0666CF16B08EF618ADDF2 /* Pods-Runner.debug.xcconfig */,
+				F880BED5B622F9019AF84D67 /* Pods-Runner.release.xcconfig */,
+				15935B3E88149700EEE29A27 /* Pods-Runner.profile.xcconfig */,
+				0CF5737A8798AA3FE08F1D6E /* Pods-RunnerTests.debug.xcconfig */,
+				022EE3A8B847EB60507366F9 /* Pods-RunnerTests.release.xcconfig */,
+				A2D9F1ECC0DA812F311C026F /* Pods-RunnerTests.profile.xcconfig */,
 			);
 			path = Pods;
 			sourceTree = "<group>";
@@ -156,16 +258,70 @@
 			path = RunnerTests;
 			sourceTree = "<group>";
 		};
+		4389910AD6E2F3FB14BA8456 /* WatchBridge */ = {
+			isa = PBXGroup;
+			children = (
+				5F7F26A19E9202BEAB70FA50 /* WatchSessionManager.swift */,
+			);
+			path = WatchBridge;
+			sourceTree = "<group>";
+		};
+		5FB30BE5356C40741FD34D9E /* Theme */ = {
+			isa = PBXGroup;
+			children = (
+				6147A49E67E967E0F0D25D17 /* WatchTheme.swift */,
+			);
+			path = Theme;
+			sourceTree = "<group>";
+		};
 		6166CEF0289F4F8593679C3358DC8F07 /* ZakahWealthWidgetExtension */ = {
 			isa = PBXGroup;
 			children = (
 				DDD1CD4FEC82485B89319798B6807AA6 /* WidgetModels.swift */,
 				DA4DAB8B82E446B7A94A39AE80362763 /* ZakahWealthWidgets.swift */,
+				F11111111111111111111111 /* WidgetPortfolioSnapshot.swift */,
+				F22222222222222222222222 /* WidgetMarketRatesService.swift */,
+				F33333333333333333333333 /* WidgetWealthCalculator.swift */,
 				6A7B8C9D0E1F23456789ABCE /* Assets.xcassets */,
 				8C78552DCEB1483790A92662B97BFBCA /* Info.plist */,
 				27FE5A9FFE9F4BF3924BDA4A2A073F9A /* ZakahWealthWidgetExtension.entitlements */,
 			);
 			path = ZakahWealthWidgetExtension;
+			sourceTree = "<group>";
+		};
+		82F62A5F0B8C9318A2EC5F83 /* watchOS */ = {
+			isa = PBXGroup;
+			children = (
+				D0FE293DB822D6F4B40F607B /* Foundation.framework */,
+			);
+			name = watchOS;
+			sourceTree = "<group>";
+		};
+		8793708F169CC0B3C91FE970 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				C90FBD555C1099127FA079CC /* WatchDTOs.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		8B381ABE396A13A4A0DDC4DB /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				0E8E3D2E13E65E7E60205919 /* WatchHomeShellView.swift */,
+				1AB63DD4CC67BD0C15E57E89 /* WatchInboxView.swift */,
+				C7C36D3922C31DD932A42894 /* WatchReviewItemView.swift */,
+				799BECE639A82B4B2955F77D /* WatchPendingResolverView.swift */,
+				A11000010000000000000001 /* WatchAmountPadView.swift */,
+				A11000020000000000000002 /* WatchQuickAddReviewView.swift */,
+				A11000030000000000000003 /* WatchQuickAddHomeView.swift */,
+				A11000040000000000000004 /* WatchExpenseQuickAddView.swift */,
+				A11000050000000000000005 /* WatchIncomeQuickAddView.swift */,
+				A11000060000000000000006 /* WatchTransferQuickAddView.swift */,
+				A11000070000000000000007 /* WatchCurrencyExchangeQuickAddView.swift */,
+				A11000080000000000000008 /* WatchCreditCardPaymentQuickAddView.swift */,
+			);
+			path = Views;
 			sourceTree = "<group>";
 		};
 		9740EEB11CF90186004384FC /* Flutter */ = {
@@ -175,6 +331,7 @@
 				3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */,
 				9740EEB21CF90195004384FC /* Debug.xcconfig */,
 				7AFA3C8E1D35360C0083082E /* Release.xcconfig */,
+				ABCDEF1234567890ABCDEF12 /* Profile.xcconfig */,
 				9740EEB31CF90195004384FC /* Generated.xcconfig */,
 			);
 			name = Flutter;
@@ -189,8 +346,9 @@
 				6166CEF0289F4F8593679C3358DC8F07 /* ZakahWealthWidgetExtension */,
 				331C8082294A63A400263BE5 /* RunnerTests */,
 				283631FB126A2F83CE6C9D27 /* Pods */,
-				225D1342316420B8BDFB3355 /* Frameworks */,
 				BD721DD8D877760869411806 /* GoogleService-Info.plist */,
+				05145E5CF99D1059D820427C /* Frameworks */,
+				1EDB23CC1C3440C061DB1AA2 /* ZakahWealthWatchApp */,
 			);
 			sourceTree = "<group>";
 		};
@@ -200,6 +358,7 @@
 				97C146EE1CF9000F007C117D /* Runner.app */,
 				6D5AC76467894F838CDE321EB7871D0B /* ZakahWealthWidgetExtension.appex */,
 				331C8081294A63A400263BE5 /* RunnerTests.xctest */,
+				355C4E3866E6DB50869D0A90 /* ZakahWealthWatchApp.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -217,6 +376,7 @@
 				7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
 				C38BBE9164F26062814C0ACB /* AppIntents */,
+				4389910AD6E2F3FB14BA8456 /* WatchBridge */,
 			);
 			path = Runner;
 			sourceTree = "<group>";
@@ -230,6 +390,14 @@
 			path = AppIntents;
 			sourceTree = "<group>";
 		};
+		D2B551FEEE069C23F5118D31 /* Navigation */ = {
+			isa = PBXGroup;
+			children = (
+				3FD41D45495855A59CEAAE50 /* WatchNavigationManager.swift */,
+			);
+			path = Navigation;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -237,7 +405,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 331C8087294A63A400263BE5 /* Build configuration list for PBXNativeTarget "RunnerTests" */;
 			buildPhases = (
-				92EA3AF1DFA3F6B31A93E7E3 /* [CP] Check Pods Manifest.lock */,
+				C561E72A3EA00A732352F4AE /* [CP] Check Pods Manifest.lock */,
 				331C807D294A63A400263BE5 /* Sources */,
 				331C807F294A63A400263BE5 /* Resources */,
 				576A759F03D851FD2894ED13 /* Frameworks */,
@@ -252,21 +420,39 @@
 			productReference = 331C8081294A63A400263BE5 /* RunnerTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		5992AFAB6BA1BD5C05B7FD02 /* ZakahWealthWatchApp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0B98897D67BD50406BF67579 /* Build configuration list for PBXNativeTarget "ZakahWealthWatchApp" */;
+			buildPhases = (
+				0EF6825B76B7D7B924C8CF0C /* Sources */,
+				DBABED753CB26D3038C7AA49 /* Frameworks */,
+				C428774EC8834B33A0D8FA99 /* Resources */,
+				D4B7F5D3F4B94D7A8C9E1A22 /* Fix Watch UIDeviceFamily */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ZakahWealthWatchApp;
+			productName = ZakahWealthWatchApp;
+			productReference = 355C4E3866E6DB50869D0A90 /* ZakahWealthWatchApp.app */;
+			productType = "com.apple.product-type.application";
+		};
 		97C146ED1CF9000F007C117D /* Runner */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 97C147051CF9000F007C117D /* Build configuration list for PBXNativeTarget "Runner" */;
 			buildPhases = (
-				72D4D63A51EFFD13A3864AE1 /* [CP] Check Pods Manifest.lock */,
+				1FD06614E570276A66054C53 /* [CP] Check Pods Manifest.lock */,
 				5E9D3B0F7A8C4E2BB1C6D4A1 /* Prepare Build Directory */,
 				9740EEB61CF901F6004384FC /* Run Script */,
 				97C146EA1CF9000F007C117D /* Sources */,
 				97C146EB1CF9000F007C117D /* Frameworks */,
 				97C146EC1CF9000F007C117D /* Resources */,
 				9705A1C41CF9048500538489 /* Embed Frameworks */,
-				57B3804744DE4A0D8808201F7B043D74 /* Embed App Extensions */,
+				57B3804744DE4A0D8808201F7B043D74 /* Embed Foundation Extensions */,
 				1F7C4D8B3A8D49D0A5E5F4C6A2B1E7D1 /* Strip Embedded Widget Metadata */,
 				3B06AD1E1E4923F5004D2608 /* Thin Binary */,
-				C75C14ACD550B69852A948E2 /* [CP] Embed Pods Frameworks */,
+				F11EBA91B8F939B3FD23D42F /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
 			);
@@ -305,7 +491,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 1510;
+				LastUpgradeCheck = 2650;
 				ORGANIZATIONNAME = "";
 				TargetAttributes = {
 					331C8080294A63A400263BE5 = {
@@ -340,6 +526,7 @@
 				97C146ED1CF9000F007C117D /* Runner */,
 				AB3803B0480440CDAED62141581BED31 /* ZakahWealthWidgetExtension */,
 				331C8080294A63A400263BE5 /* RunnerTests */,
+				5992AFAB6BA1BD5C05B7FD02 /* ZakahWealthWatchApp */,
 			);
 		};
 /* End PBXProject section */
@@ -372,6 +559,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C428774EC8834B33A0D8FA99 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E83D1ABF98F033DE1DB624AF /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
@@ -389,6 +584,28 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "WIDGET_APPEX=\"${TARGET_BUILD_DIR}/${FULL_PRODUCT_NAME}/PlugIns/ZakahWealthWidgetExtension.appex\"\nif [ -d \"$WIDGET_APPEX\" ]; then\n  CLEAN_DIR=\"${TARGET_TEMP_DIR}/embedded-widget-clean.$$\"\n  /bin/rm -rf \"$CLEAN_DIR\"\n  /bin/mkdir -p \"$CLEAN_DIR\"\n  /bin/cp -R -X \"$WIDGET_APPEX\" \"$CLEAN_DIR/\"\n  /bin/rm -rf \"$WIDGET_APPEX\"\n  /bin/mv \"$CLEAN_DIR/ZakahWealthWidgetExtension.appex\" \"$WIDGET_APPEX\"\n  /bin/rm -rf \"$CLEAN_DIR\"\nfi\n";
+		};
+		1FD06614E570276A66054C53 /* [CP] Check Pods Manifest.lock */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
+				"${PODS_ROOT}/Manifest.lock",
+			);
+			name = "[CP] Check Pods Manifest.lock";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/Pods-Runner-checkManifestLockResult.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			showEnvVarsInLog = 0;
 		};
 		3B06AD1E1E4923F5004D2608 /* Thin Binary */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -421,50 +638,6 @@
 			shellPath = /bin/sh;
 			shellScript = "mkdir -p \"${CONFIGURATION_BUILD_DIR}\"\n";
 		};
-		72D4D63A51EFFD13A3864AE1 /* [CP] Check Pods Manifest.lock */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
-				"${PODS_ROOT}/Manifest.lock",
-			);
-			name = "[CP] Check Pods Manifest.lock";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(DERIVED_FILE_DIR)/Pods-Runner-checkManifestLockResult.txt",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
-			showEnvVarsInLog = 0;
-		};
-		92EA3AF1DFA3F6B31A93E7E3 /* [CP] Check Pods Manifest.lock */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
-				"${PODS_ROOT}/Manifest.lock",
-			);
-			name = "[CP] Check Pods Manifest.lock";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(DERIVED_FILE_DIR)/Pods-RunnerTests-checkManifestLockResult.txt",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
-			showEnvVarsInLog = 0;
-		};
 		9740EEB61CF901F6004384FC /* Run Script */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -495,7 +668,45 @@
 			shellPath = /bin/sh;
 			shellScript = "PRODUCT_PATH=\"${TARGET_BUILD_DIR}/${FULL_PRODUCT_NAME}\"\nif [ -d \"$PRODUCT_PATH\" ]; then\n  CLEAN_DIR=\"${TARGET_TEMP_DIR}/widget-clean.$$\"\n  /bin/rm -rf \"$CLEAN_DIR\"\n  /bin/mkdir -p \"$CLEAN_DIR\"\n  /bin/cp -R -X \"$PRODUCT_PATH\" \"$CLEAN_DIR/\"\n  /bin/rm -rf \"$PRODUCT_PATH\"\n  /bin/mv \"$CLEAN_DIR/${FULL_PRODUCT_NAME}\" \"$PRODUCT_PATH\"\n  /bin/rm -rf \"$CLEAN_DIR\"\nfi\n";
 		};
-		C75C14ACD550B69852A948E2 /* [CP] Embed Pods Frameworks */ = {
+		C561E72A3EA00A732352F4AE /* [CP] Check Pods Manifest.lock */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
+				"${PODS_ROOT}/Manifest.lock",
+			);
+			name = "[CP] Check Pods Manifest.lock";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/Pods-RunnerTests-checkManifestLockResult.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			showEnvVarsInLog = 0;
+		};
+		D4B7F5D3F4B94D7A8C9E1A22 /* Fix Watch UIDeviceFamily */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"${TARGET_BUILD_DIR}/${WRAPPER_NAME}/Info.plist",
+			);
+			name = "Fix Watch UIDeviceFamily";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "WATCH_PLIST=\"${TARGET_BUILD_DIR}/${WRAPPER_NAME}/Info.plist\"\nif [ -f \"$WATCH_PLIST\" ]; then\n  /usr/libexec/PlistBuddy -c \"Delete :UIDeviceFamily\" \"$WATCH_PLIST\" 2>/dev/null || true\n  /usr/libexec/PlistBuddy -c \"Add :UIDeviceFamily array\" \"$WATCH_PLIST\"\n  /usr/libexec/PlistBuddy -c \"Add :UIDeviceFamily:0 integer 4\" \"$WATCH_PLIST\"\n  /usr/libexec/PlistBuddy -c \"Delete :WKWatchKitApp\" \"$WATCH_PLIST\" 2>/dev/null || true\n  /usr/libexec/PlistBuddy -c \"Delete :WKApplication\" \"$WATCH_PLIST\" 2>/dev/null || true\n  /usr/libexec/PlistBuddy -c \"Add :WKApplication bool true\" \"$WATCH_PLIST\"\nfi\n";
+		};
+		F11EBA91B8F939B3FD23D42F /* [CP] Embed Pods Frameworks */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -515,12 +726,40 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		0EF6825B76B7D7B924C8CF0C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F8289182326BC05C7AE9A996 /* ZakahWealthWatchApp.swift in Sources */,
+				8E7221107DE2CC7F0D022E6C /* WatchConnectivityManager.swift in Sources */,
+				3A80098A8EAB770DAE71C4E5 /* WatchDTOs.swift in Sources */,
+				94989F175134CCEA969137B6 /* WatchTheme.swift in Sources */,
+				B7796C0A51D8D35B06237E4D /* WatchHomeShellView.swift in Sources */,
+				0D36626AE86FC9638148A240 /* WatchInboxView.swift in Sources */,
+				99B196AAE85E53AD63135302 /* WatchReviewItemView.swift in Sources */,
+				45155A5F649CC118164ACBE4 /* WatchPendingResolverView.swift in Sources */,
+				550E06186C0E1FB7D82080CA /* WatchNavigationManager.swift in Sources */,
+				E106EFC8C6BFA4FB6085F9A5 /* WatchNotificationManager.swift in Sources */,
+				B11000010000000000000001 /* WatchAmountPadView.swift in Sources */,
+				B11000020000000000000002 /* WatchQuickAddReviewView.swift in Sources */,
+				B11000030000000000000003 /* WatchQuickAddHomeView.swift in Sources */,
+				B11000040000000000000004 /* WatchExpenseQuickAddView.swift in Sources */,
+				B11000050000000000000005 /* WatchIncomeQuickAddView.swift in Sources */,
+				B11000060000000000000006 /* WatchTransferQuickAddView.swift in Sources */,
+				B11000070000000000000007 /* WatchCurrencyExchangeQuickAddView.swift in Sources */,
+				B11000080000000000000008 /* WatchCreditCardPaymentQuickAddView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		270C22D554BC42AB8941F21FBA62CF6B /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 				41FB506D060549949D4B3C39ED3C2A51 /* WidgetModels.swift in Sources */,
 				26475D1DAD634C2C844DF37C37185A50 /* ZakahWealthWidgets.swift in Sources */,
+				B11111111111111111111111 /* WidgetPortfolioSnapshot.swift in Sources */,
+				B22222222222222222222222 /* WidgetMarketRatesService.swift in Sources */,
+				B33333333333333333333333 /* WidgetWealthCalculator.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -551,6 +790,12 @@
 			isa = PBXTargetDependency;
 			target = 97C146ED1CF9000F007C117D /* Runner */;
 			targetProxy = 331C8085294A63A400263BE5 /* PBXContainerItemProxy */;
+		};
+		48AA00DAED4F1A537EC9CA43 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = ZakahWealthWatchApp;
+			target = 5992AFAB6BA1BD5C05B7FD02 /* ZakahWealthWatchApp */;
+			targetProxy = 1425968E8130CF2F5F843435 /* PBXContainerItemProxy */;
 		};
 		C6C94FA7DE4B46789C6B21160471939C /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -627,7 +872,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VALIDATE_PRODUCT = YES;
 			};
@@ -635,7 +880,7 @@
 		};
 		249021D4217E4FDB00AE95B9 /* Profile */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 7AFA3C8E1D35360C0083082E /* Release.xcconfig */;
+			baseConfigurationReference = ABCDEF1234567890ABCDEF12 /* Profile.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
@@ -645,7 +890,7 @@
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
-				IPHONEOS_DEPLOYMENT_TARGET = 16.6;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -660,14 +905,14 @@
 		};
 		331C8088294A63A400263BE5 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = B61199B6B222B2E3BBF56AF6 /* Pods-RunnerTests.debug.xcconfig */;
+			baseConfigurationReference = 0CF5737A8798AA3FE08F1D6E /* Pods-RunnerTests.debug.xcconfig */;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 1.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
 				PRODUCT_BUNDLE_IDENTIFIER = com.zakahwealth.app.RunnerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
@@ -679,14 +924,14 @@
 		};
 		331C8089294A63A400263BE5 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = E0B6171EEAB44E1E5BE04611 /* Pods-RunnerTests.release.xcconfig */;
+			baseConfigurationReference = 022EE3A8B847EB60507366F9 /* Pods-RunnerTests.release.xcconfig */;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 1.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
 				PRODUCT_BUNDLE_IDENTIFIER = com.zakahwealth.app.RunnerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
@@ -696,14 +941,14 @@
 		};
 		331C808A294A63A400263BE5 /* Profile */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 4EAC83846F5049452D7B9885 /* Pods-RunnerTests.profile.xcconfig */;
+			baseConfigurationReference = A2D9F1ECC0DA812F311C026F /* Pods-RunnerTests.profile.xcconfig */;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 1.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
 				PRODUCT_BUNDLE_IDENTIFIER = com.zakahwealth.app.RunnerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
@@ -713,6 +958,7 @@
 		};
 		336C5AC194784B6391538AA41DCFAE2A /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -724,12 +970,12 @@
 				ENABLE_BITCODE = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = ZakahWealthWidgetExtension/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.6;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
 				PRODUCT_BUNDLE_IDENTIFIER = com.zakahwealth.app.widget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -741,6 +987,7 @@
 		};
 		50258D50F50D4F82AFC5532ECD9D44DE /* Profile */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -752,12 +999,12 @@
 				ENABLE_BITCODE = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = ZakahWealthWidgetExtension/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.6;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
 				PRODUCT_BUNDLE_IDENTIFIER = com.zakahwealth.app.widget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -766,6 +1013,65 @@
 				VERSIONING_SYSTEM = "apple-generic";
 			};
 			name = Profile;
+		};
+		775615519DF22EF981E3A058 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 39;
+				DEVELOPMENT_TEAM = Y4AR6U5J4X;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ZakahWealthWatchApp/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Zakah Wealth";
+				INFOPLIST_KEY_WKApplication = YES;
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.zakahwealth.app;
+				MARKETING_VERSION = 1.5.2;
+				PRODUCT_BUNDLE_IDENTIFIER = com.zakahwealth.app.watchkitapp;
+				PRODUCT_NAME = ZakahWealthWatchApp;
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				VALIDATE_PRODUCT = YES;
+				WATCHOS_DEPLOYMENT_TARGET = 9.0;
+			};
+			name = Release;
+		};
+		8E8E87F5B0ECD00AA75BD090 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 39;
+				DEVELOPMENT_TEAM = Y4AR6U5J4X;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ZakahWealthWatchApp/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Zakah Wealth";
+				INFOPLIST_KEY_WKApplication = YES;
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.zakahwealth.app;
+				MARKETING_VERSION = 1.5.2;
+				PRODUCT_BUNDLE_IDENTIFIER = com.zakahwealth.app.watchkitapp;
+				PRODUCT_NAME = ZakahWealthWatchApp;
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 9.0;
+			};
+			name = Debug;
 		};
 		97C147031CF9000F007C117D /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -874,7 +1180,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -894,7 +1200,7 @@
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
-				IPHONEOS_DEPLOYMENT_TARGET = 16.6;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -920,7 +1226,7 @@
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
-				IPHONEOS_DEPLOYMENT_TARGET = 16.6;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -935,6 +1241,7 @@
 		};
 		A99D9604AB864B209CA316C544F131BD /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -946,12 +1253,12 @@
 				ENABLE_BITCODE = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = ZakahWealthWidgetExtension/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.6;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
 				PRODUCT_BUNDLE_IDENTIFIER = com.zakahwealth.app.widget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -963,9 +1270,49 @@
 			};
 			name = Release;
 		};
+		C7766BE9D98F050093B827D8 /* Profile */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 39;
+				DEVELOPMENT_TEAM = Y4AR6U5J4X;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ZakahWealthWatchApp/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Zakah Wealth";
+				INFOPLIST_KEY_WKApplication = YES;
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.zakahwealth.app;
+				MARKETING_VERSION = 1.5.2;
+				PRODUCT_BUNDLE_IDENTIFIER = com.zakahwealth.app.watchkitapp;
+				PRODUCT_NAME = ZakahWealthWatchApp;
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				VALIDATE_PRODUCT = YES;
+				WATCHOS_DEPLOYMENT_TARGET = 9.0;
+			};
+			name = Profile;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		0B98897D67BD50406BF67579 /* Build configuration list for PBXNativeTarget "ZakahWealthWatchApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				775615519DF22EF981E3A058 /* Release */,
+				8E8E87F5B0ECD00AA75BD090 /* Debug */,
+				C7766BE9D98F050093B827D8 /* Profile */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		331C8087294A63A400263BE5 /* Build configuration list for PBXNativeTarget "RunnerTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

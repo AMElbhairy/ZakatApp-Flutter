@@ -130,6 +130,9 @@ class _StartupOnboardingFlowState extends State<StartupOnboardingFlow> {
   }
 
   Future<void> _selectLanguage(String languageCode) async {
+    _index = 1;
+    await _persistIndex();
+    if (!mounted) return;
     await context.read<AppStateController>().updateLanguagePreference(
       languageCode,
     );
@@ -172,8 +175,6 @@ class _StartupOnboardingFlowState extends State<StartupOnboardingFlow> {
   Widget build(BuildContext context) {
     final AppLocalizations l10n = context.l10n;
     final bool isCompact = MediaQuery.sizeOf(context).width < 420;
-    final bool isAndroid = _isAndroidPlatform(context);
-    final bool isIOS = _isIOSPlatform(context);
     final bool hasStoredLanguagePreference = widget.preferences.containsKey(
       'language_preference',
     );
@@ -219,6 +220,7 @@ class _StartupOnboardingFlowState extends State<StartupOnboardingFlow> {
     final tokens = context.premiumTokens;
     final TextTheme textTheme = Theme.of(context).textTheme;
     final Color textColor = tokens.colors.textPrimary;
+    final bool isArabic = Localizations.localeOf(context).languageCode == 'ar';
 
     return Column(
       key: key,
@@ -233,6 +235,39 @@ class _StartupOnboardingFlowState extends State<StartupOnboardingFlow> {
             logoSize: compact ? 70 : 76,
           )
         else ...<Widget>[
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '${_index + 1} / $_pageCount',
+                style: TextStyle(
+                  color: tokens.colors.gold,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+              GestureDetector(
+                onTap: () => unawaited(_complete()),
+                child: Text(
+                  isArabic ? 'تخطي' : 'Skip',
+                  style: TextStyle(
+                    color: tokens.colors.gold,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          LinearProgressIndicator(
+            value: (_index + 1) / _pageCount,
+            backgroundColor: tokens.colors.divider,
+            valueColor: AlwaysStoppedAnimation<Color>(tokens.colors.gold),
+            minHeight: 4,
+            borderRadius: BorderRadius.circular(2),
+          ),
+          const SizedBox(height: 36),
           Text(
             _titleForStep(l10n),
             textAlign: TextAlign.start,
@@ -241,7 +276,7 @@ class _StartupOnboardingFlowState extends State<StartupOnboardingFlow> {
               fontWeight: FontWeight.w800,
             ),
           ),
-          const SizedBox(height: AppSpacing.xs),
+          const SizedBox(height: 8),
           Text(
             _subtitleForStep(context, l10n),
             textAlign: TextAlign.start,
@@ -250,10 +285,10 @@ class _StartupOnboardingFlowState extends State<StartupOnboardingFlow> {
               height: 1.35,
             ),
           ),
-          const SizedBox(height: AppSpacing.lg),
+          const SizedBox(height: 32),
         ],
         _buildBody(context, l10n, textTheme),
-        const SizedBox(height: AppSpacing.xl),
+        const SizedBox(height: 40),
         _buildActions(context, l10n, selectedLanguage),
       ],
     );
@@ -267,11 +302,6 @@ class _StartupOnboardingFlowState extends State<StartupOnboardingFlow> {
     final Color muted = context.premiumTokens.colors.textPrimary.withValues(
       alpha: 0.74,
     );
-    final TargetPlatform platform = Theme.of(context).platform;
-    final bool isAndroid = platform == TargetPlatform.android;
-    final bool isIOS = platform == TargetPlatform.iOS;
-    final CloudBackupController? cloudBackupController =
-        _maybeCloudBackupController(context);
 
     switch (_index) {
       case 0:
@@ -316,6 +346,59 @@ class _StartupOnboardingFlowState extends State<StartupOnboardingFlow> {
     }
   }
 
+  Widget _buildPrimaryButton({required VoidCallback? onPressed, required String label, Key? key}) {
+    final tokens = context.premiumTokens;
+    return FilledButton(
+      key: key,
+      onPressed: onPressed,
+      style: FilledButton.styleFrom(
+        backgroundColor: tokens.colors.gold,
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.md),
+        ),
+      ),
+      child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+    );
+  }
+
+  Widget _buildSecondaryButton({required VoidCallback? onPressed, required String label, Key? key}) {
+    final tokens = context.premiumTokens;
+    return OutlinedButton(
+      key: key,
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        side: BorderSide(color: tokens.colors.gold),
+        foregroundColor: tokens.colors.gold,
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.md),
+        ),
+      ),
+      child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+    );
+  }
+
+  Widget _buildBackButton({required VoidCallback onPressed, required String label}) {
+    final tokens = context.premiumTokens;
+    return TextButton(
+      onPressed: onPressed,
+      style: TextButton.styleFrom(
+        foregroundColor: tokens.colors.textPrimary.withValues(alpha: 0.6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.arrow_back, size: 16),
+          const SizedBox(width: 4),
+          Text(label),
+        ],
+      ),
+    );
+  }
+
   Widget _buildActions(
     BuildContext context,
     AppLocalizations l10n,
@@ -335,19 +418,9 @@ class _StartupOnboardingFlowState extends State<StartupOnboardingFlow> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Row(
-            children: <Widget>[
-              if (canGoBack)
-                TextButton(
-                  onPressed: () => unawaited(_back()),
-                  child: Text(l10n.tr('onboarding_back')),
-                ),
-              const Spacer(),
-              FilledButton(
-                onPressed: () => unawaited(_next()),
-                child: Text(continueLabel),
-              ),
-            ],
+          _buildPrimaryButton(
+            onPressed: () => unawaited(_next()),
+            label: continueLabel,
           ),
         ],
       );
@@ -383,24 +456,24 @@ class _StartupOnboardingFlowState extends State<StartupOnboardingFlow> {
             ),
           const SizedBox(height: AppSpacing.lg),
           if (isEnabled)
-            FilledButton(
+            _buildPrimaryButton(
               key: const ValueKey<String>('onboarding-capture-continue'),
               onPressed: () => unawaited(_next()),
-              child: Text(l10n.tr('onboarding_continue')),
+              label: l10n.tr('onboarding_continue'),
             )
           else if (showAndroidStatus) ...<Widget>[
-            FilledButton(
+            _buildPrimaryButton(
               key: const ValueKey<String>('onboarding-capture-enable'),
               onPressed: _androidSmsRequestInFlight
                   ? null
                   : () => unawaited(_enableAndroidSmsCapture()),
-              child: Text(l10n.tr('onboarding_capture_enable_sms')),
+              label: l10n.tr('onboarding_capture_enable_sms'),
             ),
             const SizedBox(height: AppSpacing.sm),
-            OutlinedButton(
+            _buildSecondaryButton(
               key: const ValueKey<String>('onboarding-capture-not-now'),
               onPressed: () => unawaited(_next()),
-              child: Text(l10n.tr('onboarding_not_now')),
+              label: l10n.tr('onboarding_not_now'),
             ),
             if (_androidSmsKnown && !_androidSmsGranted) ...<Widget>[
               const SizedBox(height: AppSpacing.sm),
@@ -411,29 +484,29 @@ class _StartupOnboardingFlowState extends State<StartupOnboardingFlow> {
               ),
             ],
           ] else if (showIosStatus) ...<Widget>[
-            FilledButton(
+            _buildPrimaryButton(
               key: const ValueKey<String>('onboarding-capture-shortcuts'),
               onPressed: () => unawaited(_openShortcutsGuide()),
-              child: Text(l10n.tr('onboarding_open_shortcuts')),
+              label: l10n.tr('onboarding_open_shortcuts'),
             ),
             const SizedBox(height: AppSpacing.sm),
-            OutlinedButton(
+            _buildSecondaryButton(
               key: const ValueKey<String>('onboarding-capture-not-now'),
               onPressed: () => unawaited(_next()),
-              child: Text(l10n.tr('onboarding_not_now')),
+              label: l10n.tr('onboarding_not_now'),
             ),
           ] else ...<Widget>[
-            FilledButton(
+            _buildPrimaryButton(
               key: const ValueKey<String>('onboarding-capture-not-now'),
               onPressed: () => unawaited(_next()),
-              child: Text(l10n.tr('onboarding_not_now')),
+              label: l10n.tr('onboarding_not_now'),
             ),
           ],
           if (canGoBack) ...<Widget>[
             const SizedBox(height: AppSpacing.md),
-            TextButton(
+            _buildBackButton(
               onPressed: () => unawaited(_back()),
-              child: Text(l10n.tr('onboarding_back')),
+              label: l10n.tr('onboarding_back'),
             ),
           ],
         ],
@@ -458,13 +531,13 @@ class _StartupOnboardingFlowState extends State<StartupOnboardingFlow> {
           ),
           const SizedBox(height: AppSpacing.lg),
           if (biometricEnabled || (_biometricKnown && !_biometricAvailable))
-            FilledButton(
+            _buildPrimaryButton(
               key: const ValueKey<String>('onboarding-security-continue'),
               onPressed: () => unawaited(_next()),
-              child: Text(l10n.tr('onboarding_continue')),
+              label: l10n.tr('onboarding_continue'),
             )
           else ...<Widget>[
-            FilledButton(
+            _buildPrimaryButton(
               key: const ValueKey<String>('onboarding-security-enable'),
               onPressed: () async {
                 if (!_biometricKnown) {
@@ -476,20 +549,20 @@ class _StartupOnboardingFlowState extends State<StartupOnboardingFlow> {
                       .updateBiometricLockEnabled(true);
                 }
               },
-              child: Text(l10n.tr('onboarding_security_enable')),
+              label: l10n.tr('onboarding_security_enable'),
             ),
             const SizedBox(height: AppSpacing.sm),
-            OutlinedButton(
+            _buildSecondaryButton(
               key: const ValueKey<String>('onboarding-security-not-now'),
               onPressed: () => unawaited(_next()),
-              child: Text(l10n.tr('onboarding_security_not_now')),
+              label: l10n.tr('onboarding_security_not_now'),
             ),
           ],
           if (canGoBack) ...<Widget>[
             const SizedBox(height: AppSpacing.md),
-            TextButton(
+            _buildBackButton(
               onPressed: () => unawaited(_back()),
-              child: Text(l10n.tr('onboarding_back')),
+              label: l10n.tr('onboarding_back'),
             ),
           ],
         ],
@@ -509,7 +582,7 @@ class _StartupOnboardingFlowState extends State<StartupOnboardingFlow> {
             colorScheme: colorScheme,
           ),
           const SizedBox(height: AppSpacing.lg),
-          FilledButton(
+          _buildPrimaryButton(
             key: const ValueKey<String>('onboarding-backup-primary'),
             onPressed: connected
                 ? () => unawaited(_next())
@@ -519,23 +592,21 @@ class _StartupOnboardingFlowState extends State<StartupOnboardingFlow> {
                       await _next();
                     }
                   },
-            child: Text(
-              connected
-                  ? l10n.tr('onboarding_continue')
-                  : l10n.tr('onboarding_connect_google_drive'),
-            ),
+            label: connected
+                ? l10n.tr('onboarding_continue')
+                : l10n.tr('onboarding_connect_google_drive'),
           ),
           const SizedBox(height: AppSpacing.sm),
-          OutlinedButton(
+          _buildSecondaryButton(
             key: const ValueKey<String>('onboarding-backup-not-now'),
             onPressed: () => unawaited(_next()),
-            child: Text(l10n.tr('onboarding_skip_for_now')),
+            label: l10n.tr('onboarding_skip_for_now'),
           ),
           if (canGoBack) ...<Widget>[
             const SizedBox(height: AppSpacing.md),
-            TextButton(
+            _buildBackButton(
               onPressed: () => unawaited(_back()),
-              child: Text(l10n.tr('onboarding_back')),
+              label: l10n.tr('onboarding_back'),
             ),
           ],
         ],
@@ -545,21 +616,20 @@ class _StartupOnboardingFlowState extends State<StartupOnboardingFlow> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        FilledButton(
+        _buildPrimaryButton(
           key: ValueKey<String>(
             isFinal ? 'onboarding-start' : 'onboarding-continue',
           ),
           onPressed:
               isFinal ? () => unawaited(_complete()) : () => unawaited(_next()),
-          child: Text(
-            isFinal ? l10n.tr('onboarding_start') : l10n.tr('onboarding_continue'),
-          ),
+          label: isFinal ? l10n.tr('onboarding_start') : l10n.tr('onboarding_continue'),
         ),
         const SizedBox(height: AppSpacing.sm),
-        TextButton(
-          onPressed: canGoBack ? () => unawaited(_back()) : null,
-          child: Text(l10n.tr('onboarding_back')),
-        ),
+        if (canGoBack)
+          _buildBackButton(
+            onPressed: () => unawaited(_back()),
+            label: l10n.tr('onboarding_back'),
+          ),
       ],
     );
   }
@@ -611,7 +681,25 @@ class _TextBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text(lines.join('\n\n'), style: style, textAlign: TextAlign.start);
+    final tokens = context.premiumTokens;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color bodyColor = isDark ? tokens.colors.textSecondary : const Color(0xFF4A5D5A);
+
+    return Container(
+      padding: const EdgeInsets.all(20.0),
+      decoration: BoxDecoration(
+        color: tokens.colors.card,
+        borderRadius: BorderRadius.circular(AppRadii.md),
+        border: Border.all(color: tokens.colors.divider),
+        boxShadow: tokens.softShadow,
+      ),
+      child: Text(
+        lines.join('\n\n'),
+        style: style?.copyWith(color: bodyColor, fontSize: 14, height: 1.55) ??
+            TextStyle(color: bodyColor, fontSize: 14, height: 1.55),
+        textAlign: TextAlign.start,
+      ),
+    );
   }
 }
 
@@ -635,7 +723,6 @@ class _LanguageStep extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool arabicSelected = selectedLanguage == 'ar';
-    final bool englishSelected = selectedLanguage != 'ar';
     final List<Widget> options = arabicSelected
         ? <Widget>[
             _LanguageChoiceButton(
@@ -643,6 +730,7 @@ class _LanguageStep extends StatelessWidget {
               label: arabicLabel,
               subtitle: arabicSubtitle,
               selected: true,
+              flag: '🇸🇦',
               onPressed: () => unawaited(onSelectLanguage('ar')),
             ),
             const SizedBox(height: AppSpacing.sm),
@@ -651,6 +739,7 @@ class _LanguageStep extends StatelessWidget {
               label: englishLabel,
               subtitle: englishSubtitle,
               selected: false,
+              flag: '🇬🇧',
               onPressed: () => unawaited(onSelectLanguage('en')),
             ),
           ]
@@ -660,6 +749,7 @@ class _LanguageStep extends StatelessWidget {
               label: englishLabel,
               subtitle: englishSubtitle,
               selected: true,
+              flag: '🇬🇧',
               onPressed: () => unawaited(onSelectLanguage('en')),
             ),
             const SizedBox(height: AppSpacing.sm),
@@ -668,6 +758,7 @@ class _LanguageStep extends StatelessWidget {
               label: arabicLabel,
               subtitle: arabicSubtitle,
               selected: false,
+              flag: '🇸🇦',
               onPressed: () => unawaited(onSelectLanguage('ar')),
             ),
           ];
@@ -685,50 +776,96 @@ class _LanguageChoiceButton extends StatelessWidget {
     required this.subtitle,
     required this.selected,
     required this.onPressed,
+    required this.flag,
   });
 
   final String label;
   final String subtitle;
   final bool selected;
   final VoidCallback onPressed;
+  final String flag;
 
   @override
   Widget build(BuildContext context) {
-    final Widget content = Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: <Widget>[
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                if (selected) ...<Widget>[
-                  const Icon(Icons.check_rounded, size: 18),
-                  const SizedBox(width: 8),
-                ],
-                Text(label),
-              ],
-            ),
-            const SizedBox(height: 2),
+    final tokens = context.premiumTokens;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return GestureDetector(
+      onTap: onPressed,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.all(16.0),
+        decoration: BoxDecoration(
+          color: tokens.colors.card,
+          borderRadius: BorderRadius.circular(AppRadii.md),
+          border: Border.all(
+            color: selected ? tokens.colors.gold : tokens.colors.divider,
+            width: selected ? 2.0 : 1.0,
+          ),
+          boxShadow: selected
+              ? [
+                  BoxShadow(
+                    color: tokens.colors.gold.withValues(alpha: 0.25),
+                    blurRadius: 10,
+                    spreadRadius: 1,
+                  )
+                ]
+              : null,
+        ),
+        child: Row(
+          children: [
             Text(
-              subtitle,
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: Theme.of(context).colorScheme.onPrimary.withValues(
-                  alpha: selected ? 0.88 : 0.72,
+              flag,
+              style: const TextStyle(fontSize: 28),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: tokens.colors.textPrimary,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: isDark ? tokens.colors.textSecondary : const Color(0xFF4A5D5A),
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: selected ? tokens.colors.gold : Colors.transparent,
+                border: Border.all(
+                  color: selected ? tokens.colors.gold : tokens.colors.divider,
+                  width: 2,
                 ),
               ),
+              child: selected
+                  ? const Icon(
+                      Icons.check,
+                      color: Colors.white,
+                      size: 14,
+                    )
+                  : null,
             ),
           ],
         ),
-      ],
+      ),
     );
-    return selected
-        ? FilledButton(onPressed: onPressed, child: content)
-        : FilledButton.tonal(onPressed: onPressed, child: content);
   }
 }
 
@@ -737,7 +874,105 @@ class _CaptureStep extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const SizedBox.shrink();
+    final tokens = context.premiumTokens;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color descColor = isDark ? tokens.colors.textSecondary : const Color(0xFF4A5D5A);
+    final bool isArabic = Localizations.localeOf(context).languageCode == 'ar';
+    final bool isAndroid = Theme.of(context).platform == TargetPlatform.android;
+
+    return Container(
+      padding: const EdgeInsets.all(20.0),
+      decoration: BoxDecoration(
+        color: tokens.colors.card,
+        borderRadius: BorderRadius.circular(AppRadii.md),
+        border: Border.all(color: tokens.colors.divider),
+        boxShadow: tokens.softShadow,
+      ),
+      child: Column(
+        children: [
+          CircleAvatar(
+            backgroundColor: tokens.colors.gold.withValues(alpha: 0.15),
+            radius: 36,
+            child: Icon(
+              isAndroid ? Icons.message_outlined : Icons.bolt_outlined,
+              color: tokens.colors.gold,
+              size: 38,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            isArabic
+                ? (isAndroid ? 'الالتقاط الذكي للرسائل' : 'مزامنة اختصارات سيري')
+                : (isAndroid ? 'Smart SMS Capture' : 'Siri Shortcuts Sync'),
+            style: TextStyle(
+              color: tokens.colors.textPrimary,
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 16),
+          _buildDetailRow(
+            tokens: tokens,
+            descColor: descColor,
+            icon: Icons.lock_outline,
+            text: isArabic
+                ? (isAndroid
+                    ? 'تتم معالجة جميع الرسائل محلياً بالكامل على هاتفك. لا يتم رفع أي بيانات شخصية إلى خوادم خارجية.'
+                    : 'أتمتة المعاملات على نظام iOS باستخدام الاختصارات المدمجة. معالجة محلية خاصة وآمنة.')
+                : (isAndroid
+                    ? 'All SMS messages are processed locally on your phone. No personal data ever uploads to external servers.'
+                    : 'Automate transactions on iOS using native Shortcuts. Fully private and locally processed.'),
+          ),
+          const Divider(height: 24),
+          _buildDetailRow(
+            tokens: tokens,
+            descColor: descColor,
+            icon: Icons.filter_list_off_outlined,
+            text: isArabic
+                ? (isAndroid
+                    ? 'تجاهل الرسائل الشخصية تماماً، ورموز التحقق الثنائي (OTP). يقرأ فقط رسائل تنبيهات المعاملات البنكية.'
+                    : 'يعمل تلقائياً عند استلام رسائل المعاملات البنكية. يقرأ البيانات المطابقة فقط.')
+                : (isAndroid
+                    ? 'Strictly ignores personal messages, verification codes, and OTPs. Reads only transaction SMS alerts.'
+                    : 'Triggers automatically when you receive bank SMS alerts. Only reads matching structures.'),
+          ),
+          const Divider(height: 24),
+          _buildDetailRow(
+            tokens: tokens,
+            descColor: descColor,
+            icon: Icons.check_circle_outline,
+            text: isArabic
+                ? 'يقوم بصياغة مسودات معلقة آمنة لتتمكن من مراجعتها والموافقة عليها يدوياً قبل الدخول في حسابات الزكاة.'
+                : 'Creates safe pending transaction drafts for your manual review and approval before Zakat calculation.',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailRow({
+    required PremiumThemeTokens tokens,
+    required Color descColor,
+    required IconData icon,
+    required String text,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 18, color: tokens.colors.gold),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(
+              color: descColor,
+              fontSize: 12,
+              height: 1.45,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -746,7 +981,138 @@ class _SecurityStep extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const SizedBox.shrink();
+    final tokens = context.premiumTokens;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color descColor = isDark ? tokens.colors.textSecondary : const Color(0xFF4A5D5A);
+    final bool isArabic = Localizations.localeOf(context).languageCode == 'ar';
+    final stateController = context.watch<AppStateController>();
+    final bool biometricEnabled = stateController.state.biometricLockEnabled;
+
+    return Column(
+      children: [
+        Container(
+          width: 90,
+          height: 90,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: tokens.colors.gold.withValues(alpha: 0.15),
+            border: Border.all(color: tokens.colors.gold, width: 2.0),
+          ),
+          child: Icon(
+            Icons.fingerprint_rounded,
+            color: tokens.colors.gold,
+            size: 54,
+          ),
+        ),
+        const SizedBox(height: 20),
+        Container(
+          padding: const EdgeInsets.all(16.0),
+          decoration: BoxDecoration(
+            color: tokens.colors.card,
+            borderRadius: BorderRadius.circular(AppRadii.md),
+            border: Border.all(color: tokens.colors.divider),
+            boxShadow: tokens.softShadow,
+          ),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                    backgroundColor: tokens.colors.gold.withValues(alpha: 0.10),
+                    radius: 18,
+                    child: Icon(Icons.security_outlined, color: tokens.colors.gold, size: 18),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          isArabic ? 'تفعيل الحماية البيومترية' : 'Setup Biometrics',
+                          style: TextStyle(
+                            color: tokens.colors.textPrimary,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          isArabic ? 'استخدم بصمة الإصبع أو الوجه لتسجيل الدخول الآمن' : 'Use Face ID or Fingerprint for secure login',
+                          style: TextStyle(
+                            color: descColor,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Switch.adaptive(
+                    value: biometricEnabled,
+                    activeTrackColor: tokens.colors.gold,
+                    onChanged: (bool value) async {
+                      await stateController.updateBiometricLockEnabled(value);
+                    },
+                  ),
+                ],
+              ),
+              const Divider(height: 24),
+              Row(
+                children: [
+                  CircleAvatar(
+                    backgroundColor: tokens.colors.gold.withValues(alpha: 0.10),
+                    radius: 18,
+                    child: Icon(Icons.password_outlined, color: tokens.colors.gold, size: 18),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          isArabic ? 'رمز مرور الجهاز الاحتياطي' : 'Fallback Device Lock',
+                          style: TextStyle(
+                            color: tokens.colors.textPrimary,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          isArabic ? 'استخدام رمز مرور قفل الشاشة كبديل لحماية حسابك' : 'Use system screen lock PIN/Pattern as fallback',
+                          style: TextStyle(
+                            color: descColor,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Switch.adaptive(
+                    value: biometricEnabled,
+                    activeTrackColor: tokens.colors.gold,
+                    onChanged: (bool value) async {
+                      await stateController.updateBiometricLockEnabled(value);
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          isArabic 
+              ? 'الخصوصية أولاً: بياناتك المالية مشفرة وآمنة تماماً على هذا الجهاز.' 
+              : 'Privacy First: Your financial records are encrypted and secured locally.',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: descColor,
+            fontSize: 11,
+            fontStyle: FontStyle.italic,
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -763,18 +1129,68 @@ class _BackupStep extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme colorScheme = Theme.of(context).colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        Wrap(
-          spacing: AppSpacing.sm,
-          runSpacing: AppSpacing.sm,
-          children: <Widget>[
-            _StatusPill(label: encryptedLabel, colorScheme: colorScheme),
-            _StatusPill(label: privateLabel, colorScheme: colorScheme),
-            _StatusPill(label: restoreLabel, colorScheme: colorScheme),
-          ],
+    final tokens = context.premiumTokens;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color descColor = isDark ? tokens.colors.textSecondary : const Color(0xFF4A5D5A);
+    final bool isArabic = Localizations.localeOf(context).languageCode == 'ar';
+
+    return Container(
+      padding: const EdgeInsets.all(20.0),
+      decoration: BoxDecoration(
+        color: tokens.colors.card,
+        borderRadius: BorderRadius.circular(AppRadii.md),
+        border: Border.all(color: tokens.colors.divider),
+        boxShadow: tokens.softShadow,
+      ),
+      child: Column(
+        children: [
+          CircleAvatar(
+            backgroundColor: tokens.colors.gold.withValues(alpha: 0.15),
+            radius: 36,
+            child: Icon(
+              Icons.cloud_upload_outlined,
+              color: tokens.colors.gold,
+              size: 38,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            isArabic ? 'النسخ الاحتياطي السحابي' : 'Cloud Backup Sync',
+            style: TextStyle(
+              color: tokens.colors.textPrimary,
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 16),
+          _buildItem(tokens, descColor, Icons.lock_outline, encryptedLabel),
+          const Divider(height: 24),
+          _buildItem(tokens, descColor, Icons.privacy_tip_outlined, privateLabel),
+          const Divider(height: 24),
+          _buildItem(tokens, descColor, Icons.settings_backup_restore_outlined, restoreLabel),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildItem(PremiumThemeTokens tokens, Color descColor, IconData icon, String label) {
+    return Row(
+      children: [
+        CircleAvatar(
+          backgroundColor: tokens.colors.gold.withValues(alpha: 0.10),
+          radius: 16,
+          child: Icon(icon, color: tokens.colors.gold, size: 16),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              color: descColor,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
         ),
       ],
     );
@@ -789,26 +1205,28 @@ class _StatusPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.premiumTokens;
     return Align(
-      alignment: AlignmentDirectional.centerStart,
+      alignment: Alignment.center,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.72),
-          borderRadius: AppRadii.pill,
+          color: tokens.colors.gold.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(999),
           border: Border.all(
-            color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+            color: tokens.colors.gold.withValues(alpha: 0.3),
           ),
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(
             horizontal: AppSpacing.md,
-            vertical: AppSpacing.sm,
+            vertical: 6,
           ),
           child: Text(
             label,
-            style: Theme.of(context).textTheme.labelLarge?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-              fontWeight: FontWeight.w700,
+            style: const TextStyle(
+              color: Color(0xFFC5A059),
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
             ),
           ),
         ),

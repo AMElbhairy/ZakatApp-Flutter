@@ -61,8 +61,10 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test('cached Firebase session is restored for offline startup', () async {
+    final String? scopedKey = StorageKeys.userProfileKeyForUser('user-a');
     SharedPreferences.setMockInitialValues(<String, Object>{
-      StorageKeys.userProfileKey:
+      if (scopedKey != null)
+        scopedKey:
           '{"id":"user-a","email":"a@example.com","displayName":"User","provider":"google","emailVerified":true,"photoUrl":null,"accessToken":"token"}',
     });
     const UserProfile cachedUser = UserProfile(
@@ -83,9 +85,12 @@ void main() {
     expect(controller.currentUser, isNotNull);
     expect(controller.currentUser!.id, cachedUser.id);
     expect(controller.currentUser!.email, cachedUser.email);
+    if (scopedKey != null) {
+      expect(await const LocalStorageService().loadString(scopedKey), isNotNull);
+    }
     expect(
       await const LocalStorageService().loadString(StorageKeys.userProfileKey),
-      isNotNull,
+      isNull,
     );
   });
 
@@ -118,4 +123,42 @@ void main() {
       expect(service.signOutCalls, 0);
     },
   );
+
+  test('sign out preserves scoped app state', () async {
+    final String? scopedKey = StorageKeys.appStateKeyForUser('user-a');
+    final String? profileKey = StorageKeys.userProfileKeyForUser('user-a');
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      if (profileKey != null)
+        profileKey:
+          '{"id":"user-a","email":"a@example.com","displayName":"User","provider":"google","emailVerified":true,"photoUrl":null,"accessToken":"token"}',
+      if (scopedKey != null) scopedKey: '{"transactions":[{"id":"t1"}]}',
+      StorageKeys.appStateAnonymousKey: '{"transactions":[{"id":"anon"}]}',
+    });
+    const UserProfile cachedUser = UserProfile(
+      id: 'user-a',
+      email: 'a@example.com',
+      displayName: 'User',
+      provider: 'google',
+      emailVerified: true,
+      accessToken: 'token',
+    );
+    final AuthController controller = AuthController(
+      authService: _CachedSessionAuthService(cachedUser),
+      localStorage: const LocalStorageService(),
+    );
+
+    await controller.load();
+    await controller.signOut();
+
+    final LocalStorageService storage = const LocalStorageService();
+    if (profileKey != null) {
+      expect(await storage.loadString(profileKey), isNull);
+    }
+    expect(await storage.loadString(StorageKeys.userProfileKey), isNull);
+    expect(await storage.loadString(StorageKeys.appStateAnonymousKey), isNotNull);
+    if (scopedKey != null) {
+      expect(await storage.loadString(scopedKey), isNotNull);
+    }
+    expect(controller.currentUser, isNull);
+  });
 }

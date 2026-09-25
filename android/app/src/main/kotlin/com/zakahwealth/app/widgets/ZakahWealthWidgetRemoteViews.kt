@@ -331,9 +331,9 @@ internal object ZakahWealthWidgetRemoteViews {
     }
   }
 
-  private fun saudiRiyalSymbol(): String {
-    return if (Build.VERSION.SDK_INT >= 36) "⃁" else "SR"
-  }
+internal fun saudiRiyalSymbol(): String {
+  return if (Build.VERSION.SDK_INT >= 36) "⃁" else "SAR"
+}
 
   private fun isDarkMode(context: Context): Boolean {
     val mode = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
@@ -487,8 +487,10 @@ internal data class WidgetSnapshotData(
         "$", "USD" -> "$"
       "€", "EUR" -> "€"
       "£", "GBP" -> "£"
+      "AUD" -> "A$"
+      "CAD" -> "C$"
       "E£", "EGP" -> "E£"
-      "SAR" -> "SR"
+      "SAR" -> if (Build.VERSION.SDK_INT >= 36) "⃁" else "SAR"
       "AED" -> "د.إ"
         "QAR" -> "ر.ق"
         "KWD" -> "د.ك"

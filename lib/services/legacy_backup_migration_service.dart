@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../models/credit_card.dart';
 import '../models/investment_asset.dart';
 
 class LegacyMigrationReport {
@@ -54,6 +55,11 @@ class LegacyBackupMigrationService {
       state['transactions'],
       warnings,
     );
+    state['creditCards'] = _normalizeCreditCards(
+      state['creditCards'] ?? state['credit_cards'],
+      warnings,
+    );
+    state.remove('credit_cards');
     state['savings'] = _normalizeSavings(
       state['savings'],
       mainCurrency,
@@ -96,7 +102,15 @@ class LegacyBackupMigrationService {
     List<String> warnings,
   ) {
     if (root['appName'] == 'ZakatApp' && root['appState'] is Map) {
-      return Map<String, dynamic>.from(root['appState'] as Map);
+      final Map<String, dynamic> state = Map<String, dynamic>.from(
+        root['appState'] as Map,
+      );
+      if ((state['userId'] == null ||
+              state['userId'].toString().trim().isEmpty) &&
+          root['userId'] != null) {
+        state['userId'] = root['userId'].toString();
+      }
+      return state;
     }
 
     if (root['version'] != null && root['data'] is String) {
@@ -105,12 +119,26 @@ class LegacyBackupMigrationService {
       if (parsed is! Map) {
         throw const FormatException('Legacy V1 data is not a JSON object.');
       }
-      return Map<String, dynamic>.from(parsed);
+      final Map<String, dynamic> state = Map<String, dynamic>.from(parsed);
+      if ((state['userId'] == null ||
+              state['userId'].toString().trim().isEmpty) &&
+          root['userId'] != null) {
+        state['userId'] = root['userId'].toString();
+      }
+      return state;
     }
 
     if (root['schema'] == 'zakatapp.backup' && root['data'] is Map) {
       warnings.add('Detected legacy backup V2. Unwrapped nested data.');
-      return Map<String, dynamic>.from(root['data'] as Map);
+      final Map<String, dynamic> state = Map<String, dynamic>.from(
+        root['data'] as Map,
+      );
+      if ((state['userId'] == null ||
+              state['userId'].toString().trim().isEmpty) &&
+          root['userId'] != null) {
+        state['userId'] = root['userId'].toString();
+      }
+      return state;
     }
 
     throw const FormatException('Unrecognized backup schema.');
@@ -308,6 +336,76 @@ class LegacyBackupMigrationService {
     return result;
   }
 
+  List<Map<String, dynamic>> _normalizeCreditCards(
+    dynamic value,
+    List<String> warnings,
+  ) {
+    final List<dynamic> items = _normalizeList(value);
+    return items
+        .asMap()
+        .entries
+        .map((MapEntry<int, dynamic> entry) {
+          final int index = entry.key;
+          final Map<String, dynamic> card = _asMap(entry.value);
+          final String id = _ensureString(card['id'], 'card_$index');
+          final String bankName = _firstNonEmpty(card, <String>[
+            'bankName',
+            'bank',
+            'issuer',
+          ]);
+          final String rawLast4 = _firstNonEmpty(card, <String>[
+            'last4Digits',
+            'lastFour',
+            'last4',
+          ]);
+          final String digits = rawLast4.replaceAll(RegExp(r'\D'), '');
+          final String last4 = digits.length >= 4
+              ? digits.substring(digits.length - 4)
+              : digits.padLeft(4, '0');
+          if (last4 != rawLast4 || rawLast4.isEmpty) {
+            warnings.add('Sanitized credit card $id last four digits.');
+          }
+
+          final Map<String, dynamic> normalized = <String, dynamic>{
+            ...card,
+            'id': id,
+            'bankName': bankName.isEmpty ? 'Credit Card' : bankName,
+            'cardNickname': _firstNonEmpty(card, <String>[
+              'cardNickname',
+              'nickname',
+              'name',
+            ]),
+            'network': CreditCardNetworkJson.parse(
+              _firstNonEmpty(card, <String>['network', 'cardNetwork']),
+            ).value,
+            'last4Digits': last4,
+            'creditLimit': _asNum(
+              card['creditLimit'],
+            ).clamp(0, double.infinity),
+            'currency': _normaliseCurrency(
+              _firstNonEmpty(card, <String>['currency', 'currencyCode']),
+            ),
+            'openingBalance': _asNum(
+              card['openingBalance'] ?? card['currentBalanceOwed'],
+            ).clamp(0, double.infinity),
+            'themeId':
+                _firstNonEmpty(card, <String>['themeId', 'theme']).isEmpty
+                ? 'emerald'
+                : _firstNonEmpty(card, <String>['themeId', 'theme']),
+            'createdAt': _ensureCreatedAt(card['createdAt'], null, index),
+          };
+          if ((normalized['currency'] as String).isEmpty) {
+            normalized['currency'] = 'EGP';
+            warnings.add('Backfilled credit card $id currency with EGP.');
+          }
+          _preserveBool(normalized, 'paymentReminderEnabled');
+          _preserveBool(normalized, 'isArchived');
+          _preserveNum(normalized, 'minimumPaymentAmount');
+          return CreditCard.fromJson(normalized).toJson();
+        })
+        .toList(growable: false);
+  }
+
   List<Map<String, dynamic>> _normalizeInvestments(
     dynamic value,
     List<String> warnings,
@@ -403,6 +501,14 @@ class LegacyBackupMigrationService {
           );
           tx['skipMonth'] = (tx['skipMonth'] ?? '').toString();
           _preserveBool(tx, 'enabled');
+          _preserveBool(tx, 'autoAdd');
+          _preserveBool(tx, 'reminderEnabled');
+          if (tx['reminderDayOffset'] == null) {
+            tx['reminderDayOffset'] = 0;
+          }
+          if (tx['reminderTime'] == null) {
+            tx['reminderTime'] = '09:00';
+          }
           tx['createdAt'] = _ensureCreatedAt(
             tx['createdAt'],
             tx['lastProcessed'],

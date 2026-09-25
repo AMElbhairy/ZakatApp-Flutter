@@ -16,6 +16,11 @@ class Transaction {
     this.exchangePairId,
     this.exchangeSourceIncomeId,
     this.remainingAmount,
+    this.paymentSourceId,
+    this.displaySourceId,
+    this.creditCardPaymentId,
+    this.transferSourceId,
+    this.transferDestinationId,
     this.activityType,
     this.costBasis,
     this.saleValue,
@@ -38,6 +43,14 @@ class Transaction {
   final String? exchangePairId;
   final String? exchangeSourceIncomeId;
   final double? remainingAmount;
+
+  /// Non-financial source metadata used to show the capture/inbox account.
+  /// Balance calculations must use paymentSourceId instead.
+  final String? displaySourceId;
+  final String? paymentSourceId;
+  final String? creditCardPaymentId;
+  final String? transferSourceId;
+  final String? transferDestinationId;
   final String? activityType;
   final double? costBasis;
   final double? saleValue;
@@ -48,7 +61,8 @@ class Transaction {
   bool get isTransferActivity {
     final String normalizedCategory = category.trim().toLowerCase();
     final String normalizedDescription = description.trim().toLowerCase();
-    return activityType?.trim().toLowerCase() == 'transfer' ||
+    return creditCardPaymentId != null ||
+        activityType?.trim().toLowerCase() == 'transfer' ||
         normalizedCategory == 'currency exchange' ||
         normalizedCategory == 'precious metals purchase' ||
         normalizedCategory == 'gold purchase' ||
@@ -84,6 +98,11 @@ class Transaction {
       remainingAmount: json['remainingAmount'] == null
           ? null
           : _asDouble(json['remainingAmount']),
+      paymentSourceId: json['paymentSourceId']?.toString(),
+      displaySourceId: json['displaySourceId']?.toString(),
+      creditCardPaymentId: json['creditCardPaymentId']?.toString(),
+      transferSourceId: json['transferSourceId']?.toString(),
+      transferDestinationId: json['transferDestinationId']?.toString(),
       activityType: json['activityType']?.toString().trim().toLowerCase(),
       costBasis: json['costBasis'] == null
           ? null
@@ -118,6 +137,13 @@ class Transaction {
       if (exchangeSourceIncomeId != null)
         'exchangeSourceIncomeId': exchangeSourceIncomeId,
       if (remainingAmount != null) 'remainingAmount': remainingAmount,
+      if (paymentSourceId != null) 'paymentSourceId': paymentSourceId,
+      if (displaySourceId != null) 'displaySourceId': displaySourceId,
+      if (creditCardPaymentId != null)
+        'creditCardPaymentId': creditCardPaymentId,
+      if (transferSourceId != null) 'transferSourceId': transferSourceId,
+      if (transferDestinationId != null)
+        'transferDestinationId': transferDestinationId,
       if (activityType != null) 'activityType': activityType,
       if (costBasis != null) 'costBasis': costBasis,
       if (saleValue != null) 'saleValue': saleValue,
