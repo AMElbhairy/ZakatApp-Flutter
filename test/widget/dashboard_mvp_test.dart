@@ -933,13 +933,11 @@ void main() {
         findsOneWidget,
       );
 
-      // Open the analysis screen from the dashboard entry point.
-      await tester.tap(
+      // Expense analysis is disabled; keep the category summary only.
+      expect(
         find.byKey(const Key('dashboardOpenExpenseAnalysisButton')),
+        findsNothing,
       );
-      await tester.pumpAndSettle();
-
-      expect(find.text('Expenses Analysis'), findsOneWidget);
     },
   );
 

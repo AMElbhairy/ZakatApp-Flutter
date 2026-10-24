@@ -40,7 +40,6 @@ class DashboardScreen extends StatefulWidget {
     this.onOpenAddTransaction,
     this.onOpenAddAsset,
     this.onViewAssets,
-    this.onOpenExpenseAnalysis,
   });
 
   final VoidCallback? onViewAllActivity;
@@ -49,7 +48,6 @@ class DashboardScreen extends StatefulWidget {
   final ValueChanged<String>? onOpenAddTransaction;
   final VoidCallback? onOpenAddAsset;
   final VoidCallback? onViewAssets;
-  final VoidCallback? onOpenExpenseAnalysis;
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -341,7 +339,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 market: market,
                 mainCurrency: state.mainCurrency,
                 balancesHidden: balancesHidden,
-                onOpenExpenseAnalysis: widget.onOpenExpenseAnalysis,
               ),
             ),
             const SizedBox(height: 16),
@@ -4234,14 +4231,12 @@ class _TopExpenseCategoriesCard extends StatefulWidget {
     required this.market,
     required this.mainCurrency,
     required this.balancesHidden,
-    this.onOpenExpenseAnalysis,
   });
 
   final List<Transaction> transactions;
   final MarketData market;
   final String mainCurrency;
   final bool balancesHidden;
-  final VoidCallback? onOpenExpenseAnalysis;
 
   @override
   State<_TopExpenseCategoriesCard> createState() =>
@@ -4451,24 +4446,13 @@ class _TopExpenseCategoriesCardState extends State<_TopExpenseCategoriesCard> {
       ),
       child: _PremiumSection(
         title: context.l10n.tr('top_expense_categories'),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Text(
-              context.l10n.tr('this_month'),
-              style: TextStyle(
-                fontSize: 12.0,
-                fontWeight: FontWeight.w600,
-                color: dark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-              ),
-            ),
-            const SizedBox(width: 8),
-            _DashboardActionLink(
-              key: const Key('dashboardOpenExpenseAnalysisButton'),
-              label: context.l10n.tr('view_details'),
-              onPressed: widget.onOpenExpenseAnalysis,
-            ),
-          ],
+        trailing: Text(
+          context.l10n.tr('this_month'),
+          style: TextStyle(
+            fontSize: 12.0,
+            fontWeight: FontWeight.w600,
+            color: dark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+          ),
         ),
         child: cardContent,
       ),

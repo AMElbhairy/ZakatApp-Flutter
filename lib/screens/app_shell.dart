@@ -14,7 +14,6 @@ import '../core/widgets/app_ui.dart';
 
 import 'account/account_screen.dart';
 import 'activity/activity_screen.dart';
-import 'analysis/expenses_analysis_screen.dart';
 import 'assets/assets_screen.dart';
 import 'dashboard/dashboard_screen.dart';
 import 'entry/add_investment_screen.dart';
@@ -142,9 +141,6 @@ class _AppShellState extends State<AppShell> {
           },
           onOpenAddAsset: () => _showAddAssetActions(context),
           onViewAssets: () => _setIndex(0),
-          onOpenExpenseAnalysis: () {
-            Navigator.of(context).push(ExpenseAnalysisScreen.route());
-          },
         );
       case 3:
         return const PlansScreen();

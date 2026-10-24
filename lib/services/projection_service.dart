@@ -200,9 +200,7 @@ class ProjectionService {
       return plan.startingBalance;
     }
     final double cashVal = plan.startingAssetBreakdown['cash'] ?? 0.0;
-    final double goldVal = plan.startingAssetBreakdown['gold'] ?? 0.0;
-    final double silverVal = plan.startingAssetBreakdown['silver'] ?? 0.0;
-    return cashVal + goldVal + silverVal;
+    return cashVal;
   }
 
   static double convertToCurrency({

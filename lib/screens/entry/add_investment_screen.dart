@@ -323,8 +323,16 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
       appBar: AppBar(
         title: Text(
           widget.isEditMode
-              ? context.l10n.tr('edit_investment_title')
-              : context.l10n.tr('add_investment_title'),
+              ? context.l10n.tr(
+                  _assetType == 'liability'
+                      ? 'edit_liability_title'
+                      : 'edit_investment_title',
+                )
+              : context.l10n.tr(
+                  _assetType == 'liability'
+                      ? 'add_liability_title'
+                      : 'add_investment_title',
+                ),
         ),
       ),
       body: SensitiveContentScope(
@@ -1193,8 +1201,16 @@ class _AddInvestmentScreenState extends State<AddInvestmentScreen> {
                     label: _saving
                         ? context.l10n.tr('saving_progress')
                         : (widget.isEditMode
-                              ? context.l10n.tr('update_investment')
-                              : context.l10n.tr('save_investment')),
+                              ? context.l10n.tr(
+                                  _assetType == 'liability'
+                                      ? 'update_liability'
+                                      : 'update_investment',
+                                )
+                              : context.l10n.tr(
+                                  _assetType == 'liability'
+                                      ? 'save_liability'
+                                      : 'save_investment',
+                                )),
                     icon: Icons.check,
                   ),
                 ),

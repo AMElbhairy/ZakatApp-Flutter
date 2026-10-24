@@ -205,7 +205,7 @@ void main() {
       expect(points[0].actualBalance, 0.0);
     });
 
-    test('Cash flow starting balance uses cash plus gold breakdown', () {
+    test('Cash flow starting balance uses cash only from asset breakdown', () {
       final plan = FinancialPlan(
         id: 'plan_cash_gold',
         name: 'Cash Gold Plan',
@@ -241,8 +241,8 @@ void main() {
         now: DateTime(2026, 06, 10),
       );
 
-      expect(points[0].plannedBalance, closeTo(9049168.54, 1e-6));
-      expect(points[0].actualBalance, closeTo(9049168.54, 1e-6));
+      expect(points[0].plannedBalance, closeTo(8000000.0, 1e-6));
+      expect(points[0].actualBalance, closeTo(8000000.0, 1e-6));
     });
 
     test('Mixed-currency installments use each item currency in planned cash out', () {
